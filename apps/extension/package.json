@@ -7,7 +7,8 @@
   "scripts": {
     "build": "vite build && node scripts/verify-dist.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@pdf-editor/core": "workspace:*",
