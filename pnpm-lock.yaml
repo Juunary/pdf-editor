@@ -84,6 +84,21 @@ importers:
 
   packages/shared-types: {}
 
+  tools/spike-m0:
+    dependencies:
+      '@pdf-editor/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@pdf-editor/pdf-ops':
+        specifier: workspace:*
+        version: link:../../packages/pdf-ops
+      '@pdf-editor/shared-types':
+        specifier: workspace:*
+        version: link:../../packages/shared-types
+      mupdf:
+        specifier: 1.28.1
+        version: 1.28.1
+
 packages:
 
   '@cacheable/memory@2.2.0':
