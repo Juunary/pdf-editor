@@ -17,7 +17,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "spike": "pnpm --filter @pdf-editor/pdf-ops spike"
+    "spike": "turbo run build --filter=@pdf-editor/spike-m0 && pnpm --filter @pdf-editor/spike-m0 spike"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
