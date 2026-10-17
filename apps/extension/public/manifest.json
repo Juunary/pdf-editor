@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "PDF Editor (M0 dev)",
+  "version": "0.0.1",
+  "description": "PDF 문단·표·벡터 편집기 M0 개발 빌드",
+  "minimum_chrome_version": "128",
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "PDF Editor 뷰어 열기"
+  },
+  "mime_types_handler": {
+    "application/pdf": {
+      "handler_url": "viewer.html",
+      "can_embed": true
+    }
+  },
+  "permissions": ["declarativeNetRequestWithHostAccess", "downloads"],
+  "host_permissions": ["<all_urls>"],
+  "web_accessible_resources": [
+    {
+      "resources": ["viewer.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

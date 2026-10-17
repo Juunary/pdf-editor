@@ -1,0 +1,51 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, 'Malgun Gothic', sans-serif;
+  font-size: 13px;
+}
+body {
+  margin: 0;
+  background: #525659;
+}
+#toolbar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  background: #323639;
+  color: #eee;
+}
+#context-badge {
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #555;
+  font-family: monospace;
+}
+#status[data-state='error'] {
+  color: #ff8a80;
+}
+#page-container {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+#page-canvas {
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 50%);
+}
+#diag {
+  margin: 0 16px 16px;
+  padding: 8px;
+  background: #f5f5f5;
+  color: #222;
+}
+#diag-log {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+body.embedded #diag {
+  display: none;
+}

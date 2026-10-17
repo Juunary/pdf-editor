@@ -4,9 +4,24 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PDF Editor</title>
+    <link rel="stylesheet" href="./src/viewer/viewer.css" />
   </head>
   <body>
-    <p id="status" data-state="loading">로딩 중</p>
+    <header id="toolbar">
+      <span id="context-badge">-</span>
+      <label id="open-label" hidden>
+        PDF 열기 <input id="open-file" type="file" accept="application/pdf,.pdf" />
+      </label>
+      <span id="status" data-state="idle">대기</span>
+    </header>
+    <main id="page-container">
+      <canvas id="page-canvas" width="0" height="0"></canvas>
+    </main>
+    <details id="diag" open>
+      <summary>M0 진단</summary>
+      <pre id="diag-log"></pre>
+      <button id="copy-diag" type="button">진단 결과 복사</button>
+    </details>
     <script type="module" src="./src/viewer/main.ts"></script>
   </body>
 </html>
