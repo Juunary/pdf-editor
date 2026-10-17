@@ -57,8 +57,11 @@ export interface SaveResult {
   /** MuPDF `saveToBuffer` 옵션 문자열. */
   options: string;
   saveMs: number;
-  /** 저장 직후 WASM 선형 메모리 크기(byte). 선형 메모리는 줄지 않으므로 그 시점까지의 최대치다. */
-  wasmHeapBytes: number;
+  /**
+   * 저장 직후 WASM 선형 메모리 크기(byte). 선형 메모리는 줄지 않으므로 그 시점까지의 최대치다.
+   * 측정 객체가 연결되지 않은 환경이면 null.
+   */
+  wasmHeapBytes: number | null;
 }
 
 /** 뷰어 → 뷰어 소유 module Worker RPC 계약(Comlink). */

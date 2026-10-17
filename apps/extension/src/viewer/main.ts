@@ -14,6 +14,7 @@ const badgeEl = byId<HTMLSpanElement>('context-badge');
 const openLabel = byId<HTMLLabelElement>('open-label');
 const openInput = byId<HTMLInputElement>('open-file');
 const diagLogEl = byId<HTMLPreElement>('diag-log');
+const canvas = byId<HTMLCanvasElement>('page-canvas');
 
 const diag = new DiagLog((log) => {
   diagLogEl.textContent = log.toJSON();
@@ -29,6 +30,10 @@ function setStatus(state: string, text: string): void {
 
 const worker = new Worker(new URL('../worker/pdf-worker.ts', import.meta.url), { type: 'module' });
 const pdf = wrapPdfWorker(worker);
+worker.addEventListener('error', (e) => {
+  diag.add('worker-error', e.message || 'Worker 스크립트 로드 실패');
+  setStatus('error', `Worker 오류: ${e.message}`);
+});
 
 interface UADataLike {
   getHighEntropyValues(hints: string[]): Promise<{
@@ -68,12 +73,39 @@ async function environmentInfo(): Promise<Record<string, unknown>> {
   };
 }
 
+/** CSS 기준 배율. 폭이 좁으면 화면 폭에 맞춘다. */
+function cssScaleFor(pageWidthPt: number): number {
+  const available = Math.max(320, document.documentElement.clientWidth - 32);
+  return Math.min(1.5, available / pageWidthPt);
+}
+
+async function renderFirstPage(pageWidthPt: number): Promise<void> {
+  const dpr = window.devicePixelRatio || 1;
+  const cssScale = cssScaleFor(pageWidthPt);
+  const page = await pdf.renderPage({ pageIndex: 0, scale: cssScale * dpr });
+  canvas.width = page.width;
+  canvas.height = page.height;
+  canvas.style.width = `${page.width / dpr}px`;
+  canvas.style.height = `${page.height / dpr}px`;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2d 컨텍스트 없음');
+  ctx.putImageData(new ImageData(page.rgba, page.width, page.height), 0, 0);
+  diag.add('render', {
+    pageIndex: page.pageIndex,
+    width: page.width,
+    height: page.height,
+    scale: cssScale * dpr,
+    renderMs: page.renderMs,
+  });
+}
+
 async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   setStatus('opening', `여는 중: ${label}`);
   const info = await pdf.open(transferBytes(bytes));
   diag.add('open', info);
   document.title = `${label} - PDF Editor`;
-  setStatus('opened', `${info.pageCount} 페이지`);
+  await renderFirstPage(info.firstPage.width);
+  setStatus('rendered', `${info.pageCount} 페이지 · 1페이지 렌더 완료`);
 }
 
 function describeSource(source: ViewerSource): Record<string, unknown> {
