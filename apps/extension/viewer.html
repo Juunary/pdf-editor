@@ -12,6 +12,16 @@
       <label id="open-label" hidden>
         PDF 열기 <input id="open-file" type="file" accept="application/pdf,.pdf" />
       </label>
+      <button id="save-as" type="button" disabled>다른 이름으로 저장</button>
+      <button id="save" type="button" disabled title="Ctrl+S">저장</button>
+      <button
+        id="save-downloads"
+        type="button"
+        disabled
+        title="M0 진단: chrome.downloads 경로 강제"
+      >
+        downloads 저장
+      </button>
       <span id="status" data-state="idle">대기</span>
     </header>
     <main id="page-container">
@@ -21,6 +31,9 @@
       <summary>M0 진단</summary>
       <pre id="diag-log"></pre>
       <button id="copy-diag" type="button">진단 결과 복사</button>
+      <button id="bench-full-save" type="button" disabled title="파일은 저장하지 않는다">
+        전체 저장 측정
+      </button>
     </details>
     <script type="module" src="./src/viewer/main.ts"></script>
   </body>

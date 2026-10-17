@@ -12,10 +12,12 @@
 | # | 체크리스트 | 서버 상태 | Windows 확인 |
 |---|---|---|---|
 | 1 | 모노레포·mupdf 고정·wasm 복사 | 완료 | 해당 없음 |
-| 2 | manifest·viewer·Worker, 세 문맥 가로채기 | 코드 완료 | 필요(9.1) |
+| 2 | manifest·viewer·Worker, 세 문맥 가로채기 | 완료. 헤드리스 Chromium 156 에서 MIME handler 세 문맥 동작 확인. DNR(128–150) 경로는 미실측 | 필요(9.1) |
 | 3 | Worker 1페이지 렌더 → 캔버스 | 완료 | 필요(9.2) |
-| 4 | 스파이크(redaction → 한글 임베딩 → 전체 저장 → 재열기·검색) | 완료, 통과 | 다른 뷰어 표시 확인 필요(9.3) |
-| 5 | FSA 세 문맥·downloads 폴백·Playwright | 5절 참조 | 필요(9.4) |
+| 4 | 스파이크(redaction → 한글 임베딩 → 전체 저장 → 재열기·검색) | 완료, 통과(MuPDF·Poppler) | 다른 뷰어 표시 확인 필요(9.3) |
+| 5 | FSA 세 문맥·downloads 폴백·Playwright | 완료. downloads 는 세 문맥 동작, FSA 실제 쓰기·재저장은 헤드리스 한계로 미확인 | 필요(9.4) |
+
+완료 기준: `pnpm build`, `pnpm test`(Vitest 45건 — OTF 대조 1건 포함, OTF 원본이 없으면 건너뜀 — + Playwright 1건) 서버 통과(2026-10-18).
 
 ## 2. 환경·도구 버전
 
@@ -48,11 +50,43 @@
 - 뷰어 문맥 판정: `mime-handler-top` / `mime-handler-embedded` / `url-param`(DNR 리다이렉트·`?file=`) / `viewer-page`. MIME handler 문맥은 `streamUrl` 1회 fetch, `originalUrl` 은 표시만. 열기 실패 시 `abortAndFallbackToNativeHandler()`.
 - Worker: 뷰어 소유 module Worker 에서 MuPDF·문서 상태 관리(Comlink). 메인 스레드 번들에 MuPDF 미포함.
 - 결함 1건 발견·수정: module Worker 가 MuPDF top-level await(wasm 로드) 중 받은 첫 RPC 메시지를 리스너 부재로 잃어 `open` 이 응답하지 않음 → Worker 진입점에서 Comlink 리스너를 동기 등록하고 MuPDF 구현은 동적 import.
-- Playwright 번들 Chromium 156(headless) 임시 확인: `viewer.html?file=http://…` 렌더 완료, http PDF 직접 이동 시 MIME handler 가 `viewer.html` 프레임으로 가로채 렌더 완료. 자동 테스트는 5절.
+- Playwright 번들 Chromium 156(headless) 확인(자동 테스트는 5절):
+  - `viewer.html?file=http://…` 렌더 완료
+  - http PDF 직접 이동 → MIME handler 가 PDF URL 페이지 안의 `viewer.html` 하위 프레임으로 가로채 렌더(`window.top !== window`)
+  - `<embed>`·`<iframe>`·`<object>` 3종 모두 `mime-handler-embedded` 로 렌더(http 페이지, 확장 페이지 양쪽)
+  - 비PDF 응답(`diag/not-a-pdf.pdf`, `content-type: application/pdf`) → 열기 실패 → `abortAndFallbackToNativeHandler()` → Chrome 기본 PDF 뷰어(`chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/index.html`)로 전환 확인(임시 스크립트)
 
 ## 5. 체크리스트 5: FSA·downloads·Playwright
 
-(5단계 커밋에서 기록)
+### 5.1 구현
+
+- `apps/extension/src/viewer/save-target.ts`
+  - "다른 이름으로 저장": FSA `showSaveFilePicker` → 쓰기 → 핸들 보관
+  - "저장"/Ctrl+S: 보관한 핸들에 덮어쓰기(`queryPermission` → 필요 시 `requestPermission`). 핸들이 없으면 "다른 이름으로 저장"
+  - FSA 미지원·피커 오류(SecurityError 등) → `chrome.downloads.download({saveAs: true, conflictAction: 'uniquify'})`. 사용자 취소(AbortError)는 폴백하지 않음
+  - 피커·권한 요청을 먼저 하고 Worker 저장 바이트는 그 뒤에 받는다(사용자 활성화 만료 방지)
+- 뷰어 툴바: "다른 이름으로 저장", "저장"(Ctrl+S, Shift+Ctrl+S = 다른 이름으로), "downloads 저장"(진단용 강제 경로). 결과는 진단 로그 `save` 항목(문맥, `isTopLevel`, channel, status, fsaError, 재사용 여부)
+- 진단 패널 "전체 저장 측정": 브라우저 Worker 에서 전체 저장 시간·WASM 힙 기록(파일 저장 없음)
+- `dist/diag/embed-test.html`: `<embed>`·`<iframe>`·`<object>` 로 `m0-sample.pdf` 를 임베드(임베디드 문맥 수동 확인용)
+
+### 5.2 서버 자동 검증
+
+| 구분 | 내용 | 결과 |
+|---|---|---|
+| 단위(Vitest) | 최초 FSA 저장 → Ctrl+S 같은 핸들 덮어쓰기(피커 1회, 쓰기 2회) / SecurityError → downloads / AbortError → 폴백 없음 / FSA·downloads 부재 / 재저장 권한 거부 / 파일명 정리 | 6건 통과 |
+| Playwright 1건 (`apps/extension/e2e/extension.spec.ts`) | 번들 Chromium 156.0.8078.4, persistent context, `channel: 'chromium'`, headless. 서비스 워커 기동, MIME handler 경로(동적 규칙 0개), 세 문맥 렌더·캔버스 잉크, 문맥별 downloads·FSA 호출 | 통과 |
+
+Playwright 문맥별 결과(헤드리스, 서버):
+
+| 문맥 | 배지 | `window.top === window` | `showSaveFilePicker` | FSA "다른 이름으로 저장" | downloads 저장 |
+|---|---|---|---|---|---|
+| 일반 뷰어 페이지 | `url-param` | true | 있음 | 피커 단계 도달, AbortError(헤드리스 자동 취소) → `cancelled` | 다운로드 이벤트, 11,674 B |
+| 최상위 MIME handler | `mime-handler-top` | **false** | 있음 | 동일(SecurityError 없음) | 동일 |
+| 임베디드 MIME handler(embed/iframe/object) | `mime-handler-embedded` ×3 | false | 있음 | 동일(SecurityError 없음) | 동일 |
+
+- 최상위 MIME handler 도 PDF URL 페이지의 하위 프레임이다. 헤드리스 Chromium 156 에서는 두 MIME handler 문맥 모두 교차 출처 하위 프레임 제한(SecurityError) 없이 피커 단계까지 갔다.
+- 헤드리스 피커는 즉시 취소되므로 실제 파일 쓰기와 같은 대상 Ctrl+S 재저장은 서버에서 확인할 수 없다 → 9.4.
+- 번들 Chromium 은 151+ 이므로 DNR 폴백(128–150) 경로는 자동화되지 않았다 → 9.1 G3·I7.
 
 ## 6. 체크리스트 4: 스파이크 결과
 
@@ -120,7 +154,8 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 
 - 열기만으로 파일 크기의 약 1.2–1.3배가 WASM 힙에 올라간다(입력 바이트 복사). `saveToBuffer` 는 출력 전체를 WASM 메모리 버퍼로 만든다.
 - 저장 후 WASM 힙은 파일 크기의 2.9–4.5배. WASM 힙 상한 2 GiB 기준 단순 환산 시 전체 저장 가능 문서는 약 450–700 MB 이하(합성 문서 기준 추정, 실제 코퍼스 미측정).
-- 서버 Node 수치이며 Windows Chrome Worker 수치가 아니다. 기준 PC 조건 수치는 9.3 에서 측정한다.
+- 같은 100쪽 문서를 서버 헤드리스 Chromium 156 Worker 에서 "전체 저장 측정"(편집 없음, `garbage=compact,compress`): 수신 231 ms, 열기 75 ms, 1쪽 렌더 28 ms, 전체 저장 185.6 ms, WASM 힙 340.3 MiB(356,777,984 B). Node 측정과 같은 수준.
+- 서버 수치이며 Windows Chrome 수치가 아니다. 기준 PC 조건 수치는 9.3 V4 에서 측정한다.
 
 ## 7. 문제·결정 사항
 
@@ -132,11 +167,96 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 | P4 | module Worker 첫 메시지 유실(4절) | 수정 완료 |
 | P5 | WASM 힙 측정은 `$libmupdf_wasm_Module` 설정 객체로 emscripten `HEAPU8` 를 읽는다. core 보다 먼저 `mupdf` 를 import 하면 측정값 `null` | 진입점·테스트 import 순서 고정, 주석 명시 |
 | P6 | 페이지 단위 `applyRedactions()` 는 문서에 원래 있던 Redact 주석까지 적용 | 새 주석만 주석 단위 `applyRedaction()` 으로 적용, 기존 Redact 주석 수 보고 |
+| P7 | 최상위 MIME handler 도 하위 프레임(`window.top !== window`)이다(5.2) | 문맥 구분은 `StreamInfo.embedded` 로 한다. FSA 교차 출처 제한 여부는 Windows 9.4 결과로 확정 |
+| P8 | `@types/chrome` DNR 열거형은 ambient enum 이라 Chrome 밖에서 값이 없다 | 규칙은 문자열 리터럴로 만들고 타입만 맞춤 |
 
 ## 8. Action Items
 
-(5단계 커밋에서 기록)
+| # | 내용 | 담당 | 근거 |
+|---|---|---|---|
+| A1 | 9절 Windows 체크리스트 수행, 결과 칸 기입(Chrome 버전 포함, PLAN.md 11절 "사용자 기입" 칸 동시 갱신) | 사용자 | 2·3·5번 Windows 검증 |
+| A2 | PLAN.md 2절 폴백 폰트 표기 갱신: "서브셋 OTF, 문서 기준 1.8MB" → "glyf TTF 서브셋, 실측 2,556,960 B" | 승인 후 메인 세션 | P1 |
+| A3 | 브라우저(Windows Chrome Worker) 전체 저장 피크 메모리·시간 측정, 벤치마크 문서 세트·기준 PC 조건 확정 | M0 후속 | PLAN.md 3.1, 8절 |
+| A4 | 대형 문서 저장 정책: 저장 전 예상 WASM 힙(파일 크기 × 실측 배율) 계산·경고, 출력 스트리밍 쓰기 가능 여부 조사 | M0 후속 | P3 |
+| A5 | Chrome 128–150 DNR 경로 실측 수단 확보(구버전 Chrome for Testing 설치 후 Playwright 자동화 또는 별도 PC) | M0 후속 | PLAN.md 5.1 |
+| A6 | M0 DoD 중 Day 1 범위 밖 항목: 공유 Form XObject 복제 정책, 기존 Redact 주석 문서 처리 UI, 표 셀 교체 | M0 후속 | PLAN.md 6절 |
+| A7 | 코퍼스 `fixtures/` 수집(한글 논문·표 중심 재무 문서 등)과 실제 문서 스파이크 재실행 | M0 후속 | PLAN.md 8절 |
+| A8 | 폴백 폰트 배포 용량 검토(현재 2.56 MB 원본, brotli 미측정). 축소안(KS X 1001 2,350자) 비교는 선택 | M5 전 | P1 |
 
 ## 9. Windows 확인 체크리스트
 
-(5단계 커밋에서 기록)
+결과 칸에 O/X 와 관찰 내용을 적는다. 각 항목 후 뷰어 "진단 결과 복사" JSON 을 붙여 두면 원인 분석에 쓴다.
+
+### 9.0 준비
+
+1. 기존 복사본이 있으면 먼저 지운다(scp 는 기존 폴더 안에 `dist` 를 하나 더 만든다).
+   ```powershell
+   Remove-Item -Recurse -Force C:\Users\harry\pdf-editor-dist
+   ```
+2. 복사:
+   ```powershell
+   scp -r Mustree:/mnt/nas4/kjune/pdf-editor/apps/extension/dist C:\Users\harry\pdf-editor-dist
+   ```
+3. `chrome://extensions` → 개발자 모드 → "압축해제된 확장 프로그램 로드" → `C:\Users\harry\pdf-editor-dist`.
+4. `chrome://version` 의 버전을 기록한다. 가로채기 경로는 뷰어 진단 `env.interceptionMode`·`env.dynamicRuleIds` 로 확인한다.
+5. http 임베드 확인용 로컬 서버(Node 24 사용):
+   ```powershell
+   npx --yes http-server@14.1.1 C:\Users\harry\pdf-editor-dist\diag -p 8000
+   ```
+
+| # | 항목 | 결과 |
+|---|---|---|
+| G1 | Chrome 버전(`chrome://version`) | |
+| G2 | 뷰어 진단 `env.interceptionMode`(151+ 기대값 `mime-handler`, `dynamicRuleIds` 빈 배열) | |
+| G3 | Chrome 128–150 환경 유무(있으면 9.1 I7 수행) | |
+
+### 9.1 가로채기(세 문맥 + file://)
+
+| # | 절차 | 기대 | 결과 |
+|---|---|---|---|
+| I1 | 공개 https PDF 주소로 이동(예: 임의의 웹 PDF 링크) | 배지 `mime-handler-top`, 1쪽 렌더 | |
+| I2 | `C:\Users\harry\pdf-editor-dist\diag\m0-sample.pdf` 를 주소창에 입력(“파일 URL에 대한 액세스 허용” **끔** 상태) | 배지 `mime-handler-top`, 렌더(파일 URL 설정 불필요) | |
+| I3 | `file:///C:/Users/harry/pdf-editor-dist/diag/embed-test.html` | embed·iframe·object 3개 모두 배지 `mime-handler-embedded`, 렌더 | |
+| I4 | `http://localhost:8000/embed-test.html` (9.0-5 서버) | I3 과 동일 | |
+| I5 | `C:\Users\harry\pdf-editor-dist\diag\not-a-pdf.pdf` | 확장 뷰어가 Chrome 기본 PDF 뷰어로 넘어감(오류 화면) | |
+| I6 | 확장 아이콘 클릭 → 뷰어에서 로컬 PDF 선택 | 배지 `viewer-page`, 렌더 | |
+| I7 | (Chrome 128–150 에서만) I1·I2 반복. I2 는 “파일 URL에 대한 액세스 허용” 끔/켬 각각 | 배지 `url-param`(DNR 리다이렉트), 렌더. file:// 결과는 그대로 기록 | |
+
+### 9.2 렌더
+
+| # | 절차 | 기대 | 결과 |
+|---|---|---|---|
+| R1 | I1–I4, I6 각 문맥의 캔버스 | 페이지 표시, 흐림·깨짐 없음, 진단 `render.renderMs` 기록 | |
+| R2 | `diag\m0-spike-saved.pdf` 를 확장 뷰어로 열기 | 한글 문단 정상 표시 | |
+
+### 9.3 스파이크 결과 파일: 다른 뷰어 표시·검색·복사
+
+대상: `C:\Users\harry\pdf-editor-dist\diag\m0-spike-saved.pdf` (서버 출력과 같은 sha256 `58b19a53…f468`).
+
+| # | 뷰어 | 확인 | 결과 |
+|---|---|---|---|
+| V1 | Chrome 기본 뷰어(확장 끈 상태 또는 다른 프로필) | 한글 문단 표시, 배경·괘선·이미지 유지, Ctrl+F `폴백 폰트` 검색, 문단 복사 → 메모장 붙여넣기 일치 | |
+| V2 | Acrobat Reader(설치 시) | V1 과 동일 + 문서 속성 › 글꼴: `NotoSansKR` "포함된 하위 집합" | |
+| V3 | pdf.js(Firefox 또는 https://mozilla.github.io/pdf.js/web/viewer.html 에 파일 끌어놓기) | V1 과 동일 | |
+| V4 | 확장 뷰어에서 큰 PDF(100쪽 이상 실제 문서) 열기 → 진단 "전체 저장 측정" | 진단 `bench-full-save.saveMs`, `wasmHeapBytes`, 문서 크기·쪽수, PC 사양(CPU·RAM) 기록 | |
+
+### 9.4 FSA·downloads(세 문맥)
+
+각 문맥(F1 일반 뷰어 페이지 = I6, F2 최상위 MIME handler = I2, F3 임베디드 = I3 의 embed 프레임)에서 순서대로 수행한다.
+
+| 단계 | 절차 | 기록 |
+|---|---|---|
+| 1 | "다른 이름으로 저장" | 저장 대화상자 종류(FSA 파일 선택기 / Chrome 다운로드 "다른 이름으로 저장"), 진단 `save.channel`·`fsaError` |
+| 2 | 대화상자에서 새 파일로 저장 | 파일 생성 여부 |
+| 3 | Ctrl+S | 상태 표시 "(같은 대상 재저장)" 여부, 탐색기에서 같은 파일의 수정 시각 변경·새 파일 미생성 |
+| 4 | 탭을 닫지 않고 다시 Ctrl+S | 권한 재요청 대화상자 여부 |
+| 5 | "downloads 저장" | 다운로드 "다른 이름으로 저장" 대화상자, 파일 생성 |
+
+| 문맥 | 1 대화상자 / channel / fsaError | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| F1 일반 뷰어 페이지 | | | | | |
+| F2 최상위 MIME handler | | | | | |
+| F3 임베디드 MIME handler | | | | | |
+
+- 기대(서버 헤드리스 결과 기준): 세 문맥 모두 FSA 선택기 표시. F2·F3 에서 SecurityError 가 나오면 downloads 로 넘어가며 그 사실이 `fsaError` 에 남는다.
+- downloads 경로는 매번 새 파일이며 같은 대상 재저장이 아니다.

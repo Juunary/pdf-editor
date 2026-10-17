@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>M0 임베디드 문맥 테스트</title>
+    <style>
+      body {
+        font-family: system-ui, 'Malgun Gothic', sans-serif;
+        margin: 16px;
+      }
+      section {
+        margin-bottom: 24px;
+      }
+      embed,
+      iframe,
+      object {
+        width: 100%;
+        height: 560px;
+        border: 1px solid #888;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>M0 임베디드 MIME handler 문맥 테스트</h1>
+    <p>
+      이 파일을 file:// 또는 http(s) 로 열어, 아래 세 요소가 PDF Editor 뷰어(배지
+      <code>mime-handler-embedded</code>)로 표시되는지 확인한다. 각 뷰어에서 "다른 이름으로
+      저장"·"저장"을 눌러 결과를 기록한다(docs/m0-day1-log.md 9절).
+    </p>
+    <section>
+      <h2>&lt;embed&gt;</h2>
+      <embed id="embed" src="m0-sample.pdf" type="application/pdf" />
+    </section>
+    <section>
+      <h2>&lt;iframe&gt;</h2>
+      <iframe id="iframe" src="m0-sample.pdf"></iframe>
+    </section>
+    <section>
+      <h2>&lt;object&gt;</h2>
+      <object id="object" data="m0-sample.pdf" type="application/pdf"></object>
+    </section>
+  </body>
+</html>
