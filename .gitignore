@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+# 스파이크 실행 산출물(저장된 PDF 등). 결과 요약은 docs/ 에 기록한다.
+out/
+assets/fonts/src/

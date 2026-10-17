@@ -1,0 +1,7 @@
+dist/
+node_modules/
+pnpm-lock.yaml
+LICENSE
+PLAN.md
+fixtures/
+*.pdf
