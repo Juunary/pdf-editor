@@ -1,6 +1,151 @@
-// M0 Day 1 1단계: Worker 기동 확인용 최소 엔트리. 2단계에서 뷰어로 교체한다.
-const status = document.getElementById('status');
+import { transferBytes, wrapPdfWorker } from '@pdf-editor/core/client';
+import { decideInterceptionMode, parseChromeMajor } from '../interception.js';
+import { DiagLog } from './diag.js';
+import { resolveViewerSource, type ViewerSource } from './source.js';
+
+function byId<T extends HTMLElement>(id: string): T {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`#${id} 없음`);
+  return el as T;
+}
+
+const statusEl = byId<HTMLSpanElement>('status');
+const badgeEl = byId<HTMLSpanElement>('context-badge');
+const openLabel = byId<HTMLLabelElement>('open-label');
+const openInput = byId<HTMLInputElement>('open-file');
+const diagLogEl = byId<HTMLPreElement>('diag-log');
+
+const diag = new DiagLog((log) => {
+  diagLogEl.textContent = log.toJSON();
+});
+byId<HTMLButtonElement>('copy-diag').addEventListener('click', () => {
+  void navigator.clipboard.writeText(diag.toJSON());
+});
+
+function setStatus(state: string, text: string): void {
+  statusEl.dataset.state = state;
+  statusEl.textContent = text;
+}
+
 const worker = new Worker(new URL('../worker/pdf-worker.ts', import.meta.url), { type: 'module' });
-worker.onmessage = (e: MessageEvent<{ ready: boolean }>) => {
-  if (status) status.textContent = e.data.ready ? 'MuPDF 로드됨' : 'MuPDF 로드 실패';
-};
+const pdf = wrapPdfWorker(worker);
+
+interface UADataLike {
+  getHighEntropyValues(hints: string[]): Promise<{
+    fullVersionList?: { brand: string; version: string }[];
+  }>;
+}
+
+async function environmentInfo(): Promise<Record<string, unknown>> {
+  const chromeMajor = parseChromeMajor(navigator.userAgent);
+  const hasMimeHandlerApi = 'mimeHandler' in chrome && chrome.mimeHandler !== undefined;
+  let chromeFullVersion: string | null = null;
+  try {
+    const uaData = (navigator as Navigator & { userAgentData?: UADataLike }).userAgentData;
+    const values = await uaData?.getHighEntropyValues(['fullVersionList']);
+    chromeFullVersion =
+      values?.fullVersionList?.find((b) => /Chrom/.test(b.brand))?.version ?? null;
+  } catch {
+    // 일부 문맥에서는 high entropy 값을 줄 수 없다.
+  }
+  let dynamicRuleIds: number[] | string;
+  try {
+    dynamicRuleIds = (await chrome.declarativeNetRequest.getDynamicRules()).map((r) => r.id);
+  } catch (e) {
+    dynamicRuleIds = `조회 실패: ${String(e)}`;
+  }
+  return {
+    userAgent: navigator.userAgent,
+    chromeMajor,
+    chromeFullVersion,
+    hasMimeHandlerApi,
+    interceptionMode: decideInterceptionMode({ hasMimeHandlerApi, chromeMajor }),
+    dynamicRuleIds,
+    isTopLevel: window.top === window,
+    isSecureContext: window.isSecureContext,
+    hasShowSaveFilePicker: 'showSaveFilePicker' in window,
+    hasDownloadsApi: typeof chrome.downloads?.download === 'function',
+  };
+}
+
+async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
+  setStatus('opening', `여는 중: ${label}`);
+  const info = await pdf.open(transferBytes(bytes));
+  diag.add('open', info);
+  document.title = `${label} - PDF Editor`;
+  setStatus('opened', `${info.pageCount} 페이지`);
+}
+
+function describeSource(source: ViewerSource): Record<string, unknown> {
+  const info = source.streamInfo;
+  return {
+    kind: source.kind,
+    displayUrl: source.displayUrl,
+    byteLength: source.bytes?.byteLength ?? null,
+    fetchMs: source.fetchMs,
+    streamInfo: info && {
+      mimeType: info.mimeType,
+      embedded: info.embedded,
+      originalUrl: info.originalUrl,
+      streamUrlScheme: new URL(info.streamUrl).protocol,
+      tabId: info.tabId,
+    },
+  };
+}
+
+function fileLabel(url: string | null): string {
+  if (!url) return 'document.pdf';
+  try {
+    const name = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '');
+    return name || 'document.pdf';
+  } catch {
+    return 'document.pdf';
+  }
+}
+
+async function main(): Promise<void> {
+  diag.add('env', await environmentInfo());
+  const source = await resolveViewerSource({
+    href: location.href,
+    mimeHandler: 'mimeHandler' in chrome ? chrome.mimeHandler : undefined,
+    fetch: (input, init) => fetch(input, init),
+    now: () => performance.now(),
+  });
+  badgeEl.textContent = source.kind;
+  if (source.kind === 'mime-handler-embedded') document.body.classList.add('embedded');
+  diag.add('source', describeSource(source));
+
+  if (source.bytes) {
+    try {
+      await openBytes(source.bytes, fileLabel(source.displayUrl));
+    } catch (e) {
+      diag.add('open-error', String(e));
+      if (source.streamInfo) {
+        // 지원하지 않는 문서: Chrome 기본 뷰어로 넘긴다. 이후 코드는 실행되지 않는다.
+        await chrome.mimeHandler.abortAndFallbackToNativeHandler();
+        return;
+      }
+      setStatus('error', `열기 실패: ${String(e)}`);
+    }
+    return;
+  }
+
+  openLabel.hidden = false;
+  setStatus('idle', 'PDF 파일을 선택하세요');
+  openInput.addEventListener('change', () => {
+    const file = openInput.files?.[0];
+    if (!file) return;
+    void file
+      .arrayBuffer()
+      .then((bytes) => openBytes(bytes, file.name))
+      .catch((e: unknown) => {
+        diag.add('open-error', String(e));
+        setStatus('error', `열기 실패: ${String(e)}`);
+      });
+  });
+}
+
+main().catch((e: unknown) => {
+  diag.add('fatal', String(e));
+  setStatus('error', String(e));
+});

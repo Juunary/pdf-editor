@@ -60,6 +60,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@pdf-editor/pdf-ops':
+        specifier: workspace:*
+        version: link:../pdf-ops
       '@pdf-editor/shared-types':
         specifier: workspace:*
         version: link:../shared-types

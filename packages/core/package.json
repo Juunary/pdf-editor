@@ -8,6 +8,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "default": "./dist/worker.js"
     }
   },
   "files": [
@@ -21,7 +29,8 @@
   "dependencies": {
     "@pdf-editor/shared-types": "workspace:*",
     "comlink": "4.4.2",
-    "mupdf": "1.28.1"
+    "mupdf": "1.28.1",
+    "@pdf-editor/pdf-ops": "workspace:*"
   },
   "devDependencies": {}
 }
