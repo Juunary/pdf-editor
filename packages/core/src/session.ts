@@ -1,7 +1,14 @@
 import * as mupdf from 'mupdf';
 import { decideSaveMethod } from '@pdf-editor/pdf-ops';
-import type { OpenResult, SaveRequest, SaveResult } from '@pdf-editor/shared-types';
+import type {
+  OpenResult,
+  RenderRequest,
+  RenderedPage,
+  SaveRequest,
+  SaveResult,
+} from '@pdf-editor/shared-types';
 import { openPdf } from './open.js';
+import { renderPageRgba } from './render.js';
 import { wasmHeapBytes } from './wasm-module.js';
 
 /**
@@ -38,6 +45,17 @@ export class PdfSession {
       byteLength: original.byteLength,
       openMs: performance.now() - t0,
     };
+  }
+
+  renderPage({ pageIndex, scale }: RenderRequest): RenderedPage {
+    const page = this.document.loadPage(pageIndex);
+    try {
+      const t0 = performance.now();
+      const { width, height, rgba } = renderPageRgba(page, scale);
+      return { pageIndex, width, height, rgba, renderMs: performance.now() - t0 };
+    } finally {
+      page.destroy();
+    }
   }
 
   save({ changes }: SaveRequest): SaveResult {

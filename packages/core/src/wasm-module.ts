@@ -16,7 +16,10 @@ g.$libmupdf_wasm_Module ??= {};
 
 export const libmupdfModule: LibMupdfModuleConfig = g.$libmupdf_wasm_Module;
 
-/** 현재 WASM 선형 메모리 크기(byte). 선형 메모리는 줄지 않으므로 지금까지의 최대치와 같다. */
-export function wasmHeapBytes(): number {
-  return libmupdfModule.HEAPU8?.byteLength ?? 0;
+/**
+ * 현재 WASM 선형 메모리 크기(byte). 선형 메모리는 줄지 않으므로 지금까지의 최대치와 같다.
+ * `mupdf` 가 이 모듈보다 먼저 초기화되어 설정 객체가 연결되지 않았으면 null.
+ */
+export function wasmHeapBytes(): number | null {
+  return libmupdfModule.HEAPU8?.byteLength ?? null;
 }

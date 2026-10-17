@@ -52,13 +52,19 @@ if (files.includes(join(dist, 'manifest.json'))) {
   }
 }
 
+// MuPDF 는 Worker 가 동적 import 하는 청크 하나에만 있어야 한다.
 const MUPDF_MARKER = '_wasm_init_context';
-const jsWithMupdf = files
-  .filter((f) => f.endsWith('.js') && readFileSync(f, 'utf8').includes(MUPDF_MARKER))
-  .map(rel);
-if (jsWithMupdf.length !== 1 || !/pdf-worker-/.test(jsWithMupdf[0] ?? '')) {
-  errors.push(`MuPDF 포함 청크가 Worker 하나가 아님: ${jsWithMupdf.join(', ') || '없음'}`);
+const jsFiles = files.filter((f) => f.endsWith('.js'));
+const jsWithMupdf = jsFiles.filter((f) => readFileSync(f, 'utf8').includes(MUPDF_MARKER)).map(rel);
+if (jsWithMupdf.length !== 1) {
+  errors.push(`MuPDF 포함 청크 ${jsWithMupdf.length}개 (기대 1): ${jsWithMupdf.join(', ')}`);
 }
+const forbidden = jsFiles
+  .map(rel)
+  .filter((f) => f === 'background.js' || /^assets\/viewer-/.test(f))
+  .filter((f) => jsWithMupdf.includes(f));
+if (forbidden.length > 0)
+  errors.push(`메인 스레드·서비스 워커에 MuPDF 포함: ${forbidden.join(', ')}`);
 
 if (errors.length > 0) {
   console.error(`[verify-dist] 실패\n- ${errors.join('\n- ')}`);
