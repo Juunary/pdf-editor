@@ -180,10 +180,23 @@ export interface CorpusEditResult {
 const squash = (s: string) => s.replace(/\s+/g, '');
 const pageText = (page: mupdf.Page) => page.toStructuredText('preserve-whitespace').asText();
 
-/** 길이 8 이상(공백 제외) 줄 중 text 에 없는 수 */
-function missingLines(lines: string[], text: string): number {
-  const hay = squash(text);
-  return lines.filter((l) => !hay.includes(l)).length;
+const occurrences = (hay: string, needle: string) => hay.split(needle).length - 1;
+
+/**
+ * 지운 문단 줄이 남은 수. 같은 쪽에 같은 문장이 또 있을 수 있으므로(공유 Form 의 다른 사용 위치 등)
+ * 존재 여부가 아니라 등장 횟수가 문단 안 횟수만큼 줄었는지로 판정한다. 텍스트는 공백 제거 기준.
+ */
+function targetRemaining(lines: string[], target: string, before: string, after: string): number {
+  return lines.filter(
+    (l) => occurrences(after, l) > occurrences(before, l) - occurrences(target, l),
+  ).length;
+}
+
+/** 다른 블록 줄 중 등장 횟수가 줄어든(함께 지워진) 수. */
+function neighborsLost(lines: string[], target: string, before: string, after: string): number {
+  return [...new Set(lines)].filter(
+    (l) => occurrences(after, l) < occurrences(before, l) - occurrences(target, l),
+  ).length;
 }
 
 const meaningful = (lines: string[]) => lines.map(squash).filter((l) => l.length >= 8);
@@ -286,6 +299,9 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       exclusionPx: Rect;
       neighborLines: string[];
       targetLines: string[];
+      /** 공백 제거한 원 문단 텍스트·편집 전 쪽 텍스트 */
+      target: string;
+      beforeText: string;
       text: string;
     }[] = [];
 
@@ -300,6 +316,8 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         blocks.filter((_b, i) => i !== para.blockIndex).flatMap((b) => b.lines.map(lineText)),
       );
       const before = renderPage(page, scale);
+      const target = squash(para.lines.map((l) => l.text).join(''));
+      const beforeText = squash(pageText(page));
       const impact = assessRedactionImpact(doc, para.pageIndex, [para.rect]);
       const restrictions = judgeRestrictions(para);
       if (impact.preexisting.length)
@@ -364,6 +382,8 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         exclusionPx,
         neighborLines,
         targetLines,
+        target,
+        beforeText,
         text: '',
       });
 
@@ -380,10 +400,19 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       }
       page = doc.loadPage(para.pageIndex);
       const redacted = renderPage(page, scale);
-      const textAfter = pageText(page);
-      result.redaction.targetLinesRemaining =
-        targetLines.length - missingLines(targetLines, textAfter);
-      result.redaction.neighborLinesLost = missingLines(neighborLines, textAfter);
+      const textAfter = squash(pageText(page));
+      result.redaction.targetLinesRemaining = targetRemaining(
+        targetLines,
+        target,
+        beforeText,
+        textAfter,
+      );
+      result.redaction.neighborLinesLost = neighborsLost(
+        neighborLines,
+        target,
+        beforeText,
+        textAfter,
+      );
       const outside = diffRasters(before, redacted, exclusionPx);
       result.redaction.outsidePx = outside.differing;
       result.redaction.outsideBbox = outside.bbox;
@@ -410,11 +439,13 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         missing: missingCodepoints(embedded.font, fit.text),
         glyphs: fit.layout.glyphs.length,
       };
-      const reference = renderPage(page, scale, {
-        font: embedded.font,
-        fontSize: para.fontSize,
-        glyphs: fit.layout.glyphs,
-      });
+      // 참조 렌더는 주석을 뺀 콘텐츠만 비교한다(기존 주석 외관이 새 텍스트 위에 그려지는 순서 차이 제외).
+      const reference = renderPage(
+        page,
+        scale,
+        { font: embedded.font, fontSize: para.fontSize, glyphs: fit.layout.glyphs },
+        { contentsOnly: true },
+      );
 
       // 3. 새 콘텐츠 스트림
       resourceName = addPageFontResource(doc, page, embedded.ref);
@@ -432,7 +463,10 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       const preSave = renderPage(page, scale);
       states[index]!.preSave = preSave;
       result.preSave = {
-        vsReferencePx: diffRasters(preSave, reference).differing,
+        vsReferencePx: diffRasters(
+          renderPage(page, scale, undefined, { contentsOnly: true }),
+          reference,
+        ).differing,
         referenceInkPx: inkPixels(reference, exclusionPx),
         outsidePx: diffRasters(before, preSave, exclusionPx).differing,
       };
@@ -496,12 +530,12 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         const s = states[i]!;
         if (!r.redaction.ok || !s.preSave) return;
         const page = re.loadPage(r.pageIndex);
-        const text = pageText(page);
+        const text = squash(pageText(page));
         const raster = renderPage(page, s.scale);
         r.reopen = {
-          textFound: squash(text).includes(squash(s.text)),
-          targetLinesRemaining: s.targetLines.length - missingLines(s.targetLines, text),
-          neighborLinesLost: missingLines(s.neighborLines, text),
+          textFound: text.includes(squash(s.text)),
+          targetLinesRemaining: targetRemaining(s.targetLines, s.target, s.beforeText, text),
+          neighborLinesLost: neighborsLost(s.neighborLines, s.target, s.beforeText, text),
           searchHits: Object.fromEntries(
             r.searchTerms.map((t) => [t, page.search(t, '').length] as const),
           ),
