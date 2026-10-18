@@ -51,7 +51,7 @@ function measure(helper: HelperPolicy, policy: GlyphSeqPolicy): Row {
     try {
       model = buildTestPageModel(doc, 0, helper);
       dev = deliveryTrace(doc.loadPage(0), true, {
-        skipSamePointerAllKinds: helper === 'first-arrival-all',
+        step1FillStrokeOnly: helper === 'first-arrival-v2',
       });
     } catch {
       continue; // MuPDF 페이지 해석 예외(R10)
@@ -95,8 +95,8 @@ function measure(helper: HelperPolicy, policy: GlyphSeqPolicy): Row {
 
 describe('glyphSeq 정책 측정(퍼징)', () => {
   it('정책별 실패 쪽·가짜/놓친 재전송', () => {
-    const confirmed = measure('first-arrival', 'first-arrival');
-    const proposal = measure('first-arrival-all', 'first-arrival');
+    const firstArrival = measure('first-arrival', 'first-arrival');
+    const v2 = measure('first-arrival-v2', 'first-arrival');
     const noClip = measure('no-clip', 'no-clip');
     const view = (r: Row) => ({
       failedPages: r.failedPages.length,
@@ -105,12 +105,23 @@ describe('glyphSeq 정책 측정(퍼징)', () => {
       causes: r.causes,
     });
     expect({
-      confirmed: view(confirmed),
-      proposal: view(proposal),
+      firstArrival: view(firstArrival),
+      firstArrivalV2: view(v2),
       noClip: noClip.failedPages,
     }).toMatchInlineSnapshot(`
       {
-        "confirmed": {
+        "firstArrival": {
+          "causes": {
+            "falseResend": 18,
+            "missedOnly": 1,
+            "other": 0,
+            "r2": 4,
+          },
+          "failedPages": 23,
+          "falseResend": 73,
+          "missedResend": 8,
+        },
+        "firstArrivalV2": {
           "causes": {
             "falseResend": 18,
             "missedOnly": 11,
@@ -127,17 +138,6 @@ describe('glyphSeq 정책 측정(퍼징)', () => {
           288,
           390,
         ],
-        "proposal": {
-          "causes": {
-            "falseResend": 18,
-            "missedOnly": 1,
-            "other": 0,
-            "r2": 4,
-          },
-          "failedPages": 23,
-          "falseResend": 73,
-          "missedResend": 8,
-        },
       }
     `);
   }, 180_000);

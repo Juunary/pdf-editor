@@ -1,8 +1,8 @@
 /**
- * 테스트 전용: 계약 3.1 core 판정("첫 등장 계수", 확정 2026-10-19, 수정 4 키 규칙)을 그대로 구현한다.
+ * 테스트 전용: 계약 3.1 core 판정("첫 등장 계수", 확정 2026-10-19, 수정 4 키 규칙·수정 6 1단계)을 그대로 구현한다.
  *
  * 0) gid −1 보조 글리프는 대상 아님(호출자가 거른다).
- * 1) 직전 텍스트 콜백과 포인터가 같은 fillText·strokeText 는 통째로 건너뛴다.
+ * 1) 직전 텍스트 콜백과 포인터가 같은 텍스트 콜백은 종류와 무관하게 통째로 건너뛴다(수정 6).
  * 2) fillText·strokeText: 글리프마다 센다. 키(폰트, gid, trm 6값, 콜백 ctm 6값)를 센 목록에 넣는다(항목 목록).
  * 3) clipText·clipStrokeText·ignoreText: 키가 센 목록의 미소비 항목과 같으면 항목 하나를 소비하고 세지 않는다.
  *    아니면 센다. clipText·clipStrokeText 에서 새로 센 글리프는 센 목록에 넣는다(콜백 처리 후).
@@ -12,11 +12,8 @@
 export type TextCallbackKind = 'fill' | 'stroke' | 'clip' | 'clip-stroke' | 'ignore';
 
 export interface JudgeOptions {
-  /**
-   * 1단계를 텍스트 콜백 종류와 무관하게 적용한다(수정 제안, docs/m1-pdf-ops.md 4절).
-   * 확정 규칙(false)은 fillText·strokeText 만 건너뛴다.
-   */
-  skipSamePointerAllKinds?: boolean;
+  /** 비교용: 계약 수정 2–5 의 1단계(fillText·strokeText 만 건너뜀). 수정 6 이전 규칙의 회귀 재현에만 쓴다. */
+  step1FillStrokeOnly?: boolean;
 }
 
 export class FirstArrivalJudge {
@@ -29,7 +26,7 @@ export class FirstArrivalJudge {
   judge(kind: TextCallbackKind, pointer: number, keys: readonly string[]): boolean[] | null {
     const same = pointer === this.lastPointer;
     this.lastPointer = pointer;
-    if (same && (this.options.skipSamePointerAllKinds || kind === 'fill' || kind === 'stroke')) {
+    if (same && (!this.options.step1FillStrokeOnly || kind === 'fill' || kind === 'stroke')) {
       return null;
     }
     if (kind === 'fill' || kind === 'stroke') {

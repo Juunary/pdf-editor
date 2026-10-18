@@ -529,7 +529,7 @@ describe('도형·이미지·패턴', () => {
     expectFull(r);
   });
 
-  it('계약 3.1 판정 불일치 재현: 채움·선 패턴 색 Tr 6(clipText → 같은 객체 clipStrokeText 가 소비·비움 → ET 재전송 놓침)', () => {
+  it('패턴 색 Tr 6: 같은 객체 clipStrokeText 는 1단계로 건너뛴다(계약 수정 6, 수정 2 규칙의 불일치 회귀)', () => {
     const b = build(
       '/Pattern cs /SP scn /Pattern CS /SP SCN BT /F1 20 Tf 50 700 Td 6 Tr (Ef) Tj ET 0 Tr ' +
         '0 g /Pattern CS /SP SCN BT /F1 20 Tf 50 650 Td 6 Tr (Gh) Tj ET 0 Tr',
@@ -553,10 +553,10 @@ describe('도형·이미지·패턴', () => {
       'clip:2:RR',
     ]);
     expect(map.glyphCount).toBe(4);
-    // 확정 규칙: 같은 객체의 clipStrokeText 가 항목을 소비해 목록을 비우므로 ET 재전송 2+2개를 새로 센다.
-    expect(buildTestPageModel(b.doc, 0, 'first-arrival').glyphCount).toBe(8);
-    // 1단계를 모든 텍스트 콜백에 적용하면 일치한다.
-    expectFull(match(b, 'first-arrival-all'));
+    // 수정 6 판정은 일치한다.
+    expectFull(match(b));
+    // 수정 2 의 1단계(fill·stroke 만 건너뜀)는 같은 객체 clipStrokeText 가 항목을 소비·비워 ET 재전송 2+2개를 새로 셌다.
+    expect(buildTestPageModel(b.doc, 0, 'first-arrival-v2').glyphCount).toBe(8);
   });
 
   it('타일링 패턴: 직접 실행(작은 영역, 셀 글리프 포함)과 beginTile 경로(큰 영역)', () => {
