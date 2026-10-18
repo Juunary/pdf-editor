@@ -105,6 +105,10 @@ function median(xs: number[]): number {
 export interface ParagraphCandidate {
   pageIndex: number;
   blockIndex: number;
+  /** stext 블록 그대로(block) 또는 연속한 한 줄 블록을 이은 것(merged-lines) */
+  source: 'block' | 'merged-lines';
+  /** 후보를 이루는 stext 블록 번호(인접 텍스트 판정에서 제외) */
+  memberBlocks: number[];
   /** redaction 영역 = 블록 글자 추정 잉크 범위의 합(여유 0.5pt) */
   rect: Rect;
   /** 줄별 텍스트·기준선·가로 범위 */
@@ -149,6 +153,10 @@ export interface SelectionReport {
   /** 회전(/Rotate ≠ 0)이라 건너뛴 쪽 수(훑은 쪽 중) */
   rotatedSkipped: number;
   rejected: Partial<Record<RejectReason, number>>;
+  /** 블록 후보가 없는 쪽에서 한 줄 블록을 이은 후보의 탈락 사유 */
+  mergedRejected: Partial<Record<RejectReason, number>>;
+  /** 훑은 쪽 중 한 줄 블록 비율(공백 아닌 줄 1개인 블록 ÷ 텍스트 블록) */
+  singleLineBlockRatio: number | null;
   selected: ParagraphCandidate[];
 }
 
@@ -164,7 +172,11 @@ export function judgeBlock(
   others: StextBlock[],
   pageHeight: number,
   bodySize: number | null,
-): { reason: RejectReason } | { candidate: Omit<ParagraphCandidate, 'pageIndex' | 'blockIndex'> } {
+):
+  | { reason: RejectReason }
+  | {
+      candidate: Omit<ParagraphCandidate, 'pageIndex' | 'blockIndex' | 'source' | 'memberBlocks'>;
+    } {
   const lines = block.lines.filter((l) => l.chars.some((c) => !isSpace(c.c)));
   if (lines.length < 3) return { reason: 'too-few-lines' };
   if (
@@ -235,6 +247,60 @@ export function judgeBlock(
   };
 }
 
+const MAX_MERGED_LINES = 8;
+
+const nonEmptyLines = (b: StextBlock) => b.lines.filter((l) => l.chars.some((c) => !isSpace(c.c)));
+
+/**
+ * 보조 경로: MuPDF stext 가 줄마다 블록을 나누는 문서(실측: Word·한컴·일부 LaTeX 출력)에서 연속한 한 줄
+ * 블록을 이어 문단 후보를 만든다. 같은 글자 크기(±0.6pt), 왼쪽 정렬(±2em), 기준선 간격 0.95~2.4em 이고
+ * 직전 간격과 ±25% 이내면 같은 문단으로 본다. 3줄 이상인 묶음만 돌려준다. 여러 줄 블록은 묶음을 끊는다.
+ * 문단 사이 간격이 없는 문서는 쪽 전체가 한 묶음이 되므로 8줄마다 끊는다(짧은 문단 교체 시나리오).
+ */
+export function mergeLineBlocks(blocks: StextBlock[]): { block: StextBlock; members: number[] }[] {
+  const out: { block: StextBlock; members: number[] }[] = [];
+  let group: { lines: StextLine[]; members: number[]; gap: number | null } | null = null;
+  const flush = () => {
+    if (group && group.lines.length >= 3) {
+      const bbox = group.lines.map((l) => l.bbox).reduce(unionRect);
+      out.push({ block: { bbox, lines: group.lines }, members: group.members });
+    }
+    group = null;
+  };
+  const sizeOf = (l: StextLine) => median(l.chars.filter((c) => !isSpace(c.c)).map((c) => c.size));
+  const baseOf = (l: StextLine) => median(l.chars.map((c) => c.y));
+  blocks.forEach((b, i) => {
+    const lines = nonEmptyLines(b);
+    if (lines.length !== 1) {
+      flush();
+      return;
+    }
+    const line = lines[0]!;
+    const g = group as { lines: StextLine[]; members: number[]; gap: number | null } | null;
+    if (g) {
+      const last = g.lines.at(-1)!;
+      const size = sizeOf(last);
+      const gap = baseOf(line) - baseOf(last);
+      const ok =
+        Math.abs(sizeOf(line) - size) <= 0.6 &&
+        Math.abs(line.chars[0]!.box[0] - g.lines[0]!.chars[0]!.box[0]) <= 2 * size &&
+        gap >= 0.95 * size &&
+        gap <= 2.4 * size &&
+        (g.gap === null || Math.abs(gap - g.gap) <= 0.25 * g.gap);
+      if (ok && g.lines.length < MAX_MERGED_LINES) {
+        g.lines.push(line);
+        g.members.push(i);
+        g.gap ??= gap;
+        return;
+      }
+      flush();
+    }
+    group = { lines: [line], members: [i], gap: null };
+  });
+  flush();
+  return out;
+}
+
 /**
  * 쪽 훑기 구간: 표지(0쪽) 다음부터 문서 15%·50%·85% 지점에서 시작해 앞으로 `perStart` 쪽씩, 마지막 구간은
  * 나머지 쪽(앞에서부터, 전체 60쪽 상한). 쪽은 중복되지 않는다.
@@ -297,9 +363,17 @@ export function selectParagraphs(doc: mupdf.PDFDocument, max = 3): SelectionRepo
   const bodyFontSize = hist.size ? [...hist].sort((a, b) => b[1] - a[1])[0]![0] : null;
 
   const rejected: SelectionReport['rejected'] = {};
+  const mergedRejected: SelectionReport['mergedRejected'] = {};
+  let textBlocks = 0;
+  let singleLineBlocks = 0;
   const byPage = new Map<number, ParagraphCandidate[]>();
   for (const s of scanned) {
     const found: ParagraphCandidate[] = [];
+    for (const b of s.blocks) {
+      const n = nonEmptyLines(b).length;
+      if (n > 0) textBlocks++;
+      if (n === 1) singleLineBlocks++;
+    }
     s.blocks.forEach((b, i) => {
       const r = judgeBlock(
         b,
@@ -308,8 +382,34 @@ export function selectParagraphs(doc: mupdf.PDFDocument, max = 3): SelectionRepo
         bodyFontSize,
       );
       if ('reason' in r) rejected[r.reason] = (rejected[r.reason] ?? 0) + 1;
-      else found.push({ pageIndex: s.pageIndex, blockIndex: i, ...r.candidate });
+      else
+        found.push({
+          pageIndex: s.pageIndex,
+          blockIndex: i,
+          source: 'block',
+          memberBlocks: [i],
+          ...r.candidate,
+        });
     });
+    if (found.length === 0) {
+      for (const m of mergeLineBlocks(s.blocks)) {
+        const r = judgeBlock(
+          m.block,
+          s.blocks.filter((_o, i) => !m.members.includes(i)),
+          s.height,
+          bodyFontSize,
+        );
+        if ('reason' in r) mergedRejected[r.reason] = (mergedRejected[r.reason] ?? 0) + 1;
+        else
+          found.push({
+            pageIndex: s.pageIndex,
+            blockIndex: m.members[0]!,
+            source: 'merged-lines',
+            memberBlocks: m.members,
+            ...r.candidate,
+          });
+      }
+    }
     byPage.set(s.pageIndex, found);
     scans.push({
       pageIndex: s.pageIndex,
@@ -345,6 +445,8 @@ export function selectParagraphs(doc: mupdf.PDFDocument, max = 3): SelectionRepo
     bodyFontSize,
     rotatedSkipped,
     rejected,
+    mergedRejected,
+    singleLineBlockRatio: textBlocks ? singleLineBlocks / textBlocks : null,
     selected,
   };
 }

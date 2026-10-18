@@ -4,7 +4,14 @@ import { describe, expect, it } from 'vitest';
 // core 를 mupdf 보다 먼저 import 한다(src/corpus-edit.ts 참고).
 import { analyzeForEdit } from '../src/corpus-cli.js';
 import { judgeRestrictions, runCorpusEdit, type ParagraphContext } from '../src/corpus-edit.js';
-import { rectsIntersect, scanSegments } from '../src/corpus-select.js';
+import {
+  mergeLineBlocks,
+  rectsIntersect,
+  scanSegments,
+  type StextBlock,
+} from '../src/corpus-select.js';
+import { pickSharedTextForms, runFormUsageEdit } from '../src/corpus-xobject.js';
+import { openPdf } from '@pdf-editor/core';
 import { TARGET_RECT } from '../src/fixture.js';
 import { m0FixturePairs, runPdfjsCheck } from '../src/pdfjs-check.js';
 
@@ -55,6 +62,36 @@ describe('코퍼스 문단 자동 선택(stext)', () => {
     const all = segs.flat();
     expect(new Set(all).size).toBe(all.length);
     expect(scanSegments(1)).toEqual([[0]]);
+  });
+});
+
+describe('한 줄 블록 병합(stext 가 줄마다 블록을 나누는 문서)', () => {
+  const line = (y: number, x = 50, size = 10, text = 'lorem ipsum dolor sit amet'): StextBlock => ({
+    bbox: [x, y - 8, x + 200, y + 2],
+    lines: [
+      {
+        bbox: [x, y - 8, x + 200, y + 2],
+        wmode: 0,
+        dir: [1, 0],
+        chars: [...text].map((c, i) => ({
+          c,
+          x: x + i * 5,
+          y,
+          size,
+          font: 'F',
+          box: [x + i * 5, y - 8, x + i * 5 + 5, y + 2],
+        })),
+      },
+    ],
+  });
+  it('왼쪽 정렬·같은 크기·고른 간격이면 묶고, 크기가 다른 줄에서 끊는다', () => {
+    const blocks = [line(100), line(112), line(124), line(136), line(160, 50, 14), line(200)];
+    const merged = mergeLineBlocks(blocks);
+    expect(merged.map((m) => m.members)).toEqual([[0, 1, 2, 3]]);
+  });
+  it('8줄마다 끊는다', () => {
+    const blocks = Array.from({ length: 12 }, (_v, i) => line(100 + i * 12));
+    expect(mergeLineBlocks(blocks).map((m) => m.members.length)).toEqual([8, 4]);
   });
 });
 
@@ -120,6 +157,22 @@ describe('코퍼스 문단 교체(redaction → 한글 폴백 임베딩 → 전�
   it('rectsIntersect: 면적 있는 교차만', () => {
     expect(rectsIntersect([0, 0, 10, 10], [10, 0, 20, 10])).toBe(false);
     expect(rectsIntersect([0, 0, 10, 10], [9, 9, 20, 20])).toBe(true);
+  });
+});
+
+describe('공유 Form 사용 위치 1곳만 복제·수정(코퍼스 경로)', () => {
+  it('합성 공유 XObject: 텍스트 Form 2개, 선택 위치만 바뀌고 다른 쪽 0 px', () => {
+    const bytes = fixture('m0-shared-xobject.pdf');
+    const doc = openPdf(bytes);
+    const picks = pickSharedTextForms(doc);
+    doc.destroy();
+    expect(picks.map((p) => p.usages.length)).toEqual([4, 5]);
+    for (const [i, p] of picks.entries()) {
+      const r = runFormUsageEdit(bytes, fontBytes, p.objectNumber, i + 1);
+      expect(r.failures, `Form ${p.objectNumber}`).toEqual([]);
+      expect(r.charsInBox.after).toBe(0);
+      expect(r.render.otherPages).toEqual([{ pageIndex: 1, diffPx: 0 }]);
+    }
   });
 });
 
