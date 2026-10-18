@@ -166,6 +166,7 @@ export function runCorpusChild(
   plan: string | undefined,
   out: string,
   ttf: string,
+  subsetFonts = true,
 ): void {
   const { marks, mark } = marker();
   const bytes = new Uint8Array(readFileSync(input));
@@ -180,6 +181,7 @@ export function runCorpusChild(
       bytes,
       paragraphs: planned.paragraphs,
       fontBytes: new Uint8Array(readFileSync(ttf)),
+      subsetFonts,
       onPhase: mark,
     });
     const { savedBytes, ...rest } = r;
@@ -325,7 +327,13 @@ function spawnTask(cli: string, args: string[]): { ok: boolean; stderr: string }
   return { ok: r.status === 0, stderr: (r.stderr ?? '').split('\n').slice(-8).join('\n') };
 }
 
-export function runCorpusCli(opts: { root: string; out: string; only: string[] | null }): void {
+export function runCorpusCli(opts: {
+  root: string;
+  out: string;
+  only: string[] | null;
+  /** false 면 저장 전 subsetFonts() 를 생략하는 대조 실행(--no-subset) */
+  subsetFonts?: boolean;
+}): void {
   const { root, out } = opts;
   const manifest = JSON.parse(
     readFileSync(join(root, 'fixtures/corpus/manifest.json'), 'utf8'),
@@ -375,6 +383,7 @@ export function runCorpusCli(opts: { root: string; out: string; only: string[] |
       planFile,
       '--out',
       editFile,
+      ...(opts.subsetFonts === false ? ['--no-subset'] : []),
     ]);
     if (!e.ok || !existsSync(editFile)) {
       results.push({ ...base, status: 'edit-failed', analyze, error: e.stderr });
@@ -419,6 +428,8 @@ export function runCorpusCli(opts: { root: string; out: string; only: string[] |
       }
       if (p.preSave && p.preSave.vsReferencePx > 0 && p.preSave.vsReferenceStrongPx === 0)
         notes.push('mupdf-glyph-aa-diff');
+      if (p.redaction.outsidePx > 0 && p.redaction.outsideStrongPx === 0)
+        notes.push('mupdf-outside-aa-diff');
       return {
         index: p.index,
         pageIndex: p.pageIndex,

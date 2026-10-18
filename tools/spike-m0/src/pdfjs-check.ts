@@ -10,7 +10,7 @@ import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
-import { renderScale } from './corpus-edit.js';
+import { GLYPH_DELTA, renderScale } from './corpus-edit.js';
 import { inkPixels, renderPage } from './raster.js';
 
 const require = createRequire(import.meta.url);
@@ -20,6 +20,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = join(PDFJS_ROOT, 'legacy/build/pdf.worker.
 export const PDFJS_VERSION = `${pdfjs.version} (${pdfjs.build})`;
 
 const squash = (s: string) => s.replace(/\s+/g, '');
+const occurrences = (hay: string, needle: string) => hay.split(needle).length - 1;
 
 export interface PdfjsPageSpec {
   pageIndex: number;
@@ -73,6 +74,34 @@ async function open(path: string) {
   }).promise;
 }
 
+/**
+ * 편집 영역(MuPDF 페이지 좌표) 밖 텍스트 항목의 글자 다중집합(공백 제외, 정렬). 항목 기준점은 텍스트 행렬
+ * 원점을 scale 1 뷰포트로 옮긴 값이다. 재직렬화로 항목 분할이 바뀌어도 글자 구성이 같으면 같다.
+ */
+async function outsideChars(
+  doc: pdfjs.PDFDocumentProxy,
+  pageIndex: number,
+  exclusions: Rect[],
+  bounds: Rect,
+): Promise<string> {
+  const page = await doc.getPage(pageIndex + 1);
+  const vp = page.getViewport({ scale: 1 });
+  const tc = await page.getTextContent();
+  const chars: string[] = [];
+  for (const i of tc.items) {
+    if (!('str' in i)) continue;
+    const [x, y] = vp.convertToViewportPoint(i.transform[4] as number, i.transform[5] as number);
+    const px = x + bounds[0];
+    const py = y + bounds[1];
+    if (
+      exclusions.some((r) => px >= r[0] - 2 && px <= r[2] + 2 && py >= r[1] - 2 && py <= r[3] + 2)
+    )
+      continue;
+    for (const c of i.str) if (!/\s/u.test(c)) chars.push(c);
+  }
+  return chars.sort().join('');
+}
+
 async function pageText(doc: pdfjs.PDFDocumentProxy, pageIndex: number): Promise<string> {
   const tc = await (await doc.getPage(pageIndex + 1)).getTextContent();
   return tc.items.map((i) => ('str' in i ? i.str + (i.hasEOL ? '\n' : '') : '')).join('');
@@ -86,7 +115,8 @@ async function render(
   const page = await doc.getPage(pageIndex + 1);
   const vp = page.getViewport({ scale });
   const factory = (doc as unknown as { canvasFactory: CanvasFactoryLike }).canvasFactory;
-  const { canvas, context } = factory.create(Math.ceil(vp.width), Math.ceil(vp.height));
+  // 저장 시 페이지 상자 숫자가 근소하게 정규화되므로(실측: 1224.00002 → 1224) ceil 대신 반올림한다.
+  const { canvas, context } = factory.create(Math.round(vp.width), Math.round(vp.height));
   await page.render({
     canvas: canvas as unknown as HTMLCanvasElement,
     canvasContext: context as unknown as CanvasRenderingContext2D,
@@ -102,21 +132,31 @@ function inside(x: number, y: number, rects: Rect[]): boolean {
   return rects.some((r) => x >= r[0] && x < r[2] && y >= r[1] && y < r[3]);
 }
 
-function diffOutside(a: Rgba, b: Rgba, exclude: Rect[]): number {
-  if (a.width !== b.width || a.height !== b.height) return -1;
-  let n = 0;
+/** 편집 영역 밖 다른 픽셀 수·96단계 초과 수·최대 채널 차이(corpus-edit GLYPH_DELTA 와 같은 기준). */
+function diffOutside(
+  a: Rgba,
+  b: Rgba,
+  exclude: Rect[],
+): { differing: number; strong: number; maxDelta: number } {
+  if (a.width !== b.width || a.height !== b.height)
+    return { differing: -1, strong: -1, maxDelta: -1 };
+  let differing = 0;
+  let strong = 0;
+  let maxDelta = 0;
   for (let y = 0; y < a.height; y++)
     for (let x = 0; x < a.width; x++) {
       if (inside(x, y, exclude)) continue;
       const i = (y * a.width + x) * 4;
-      if (
-        a.data[i] !== b.data[i] ||
-        a.data[i + 1] !== b.data[i + 1] ||
-        a.data[i + 2] !== b.data[i + 2]
-      )
-        n++;
+      const d = Math.max(
+        Math.abs(a.data[i]! - b.data[i]!),
+        Math.abs(a.data[i + 1]! - b.data[i + 1]!),
+        Math.abs(a.data[i + 2]! - b.data[i + 2]!),
+      );
+      if (d > 0) differing++;
+      if (d > GLYPH_DELTA) strong++;
+      if (d > maxDelta) maxDelta = d;
     }
-  return n;
+  return { differing, strong, maxDelta };
 }
 
 function inkIn(img: Rgba, rects: Rect[]): number {
@@ -141,8 +181,15 @@ export interface PdfjsPageResult {
   pageIndex: number;
   expectedFound: boolean[];
   removedAbsent: boolean[];
+  /** 원본 pdf.js 추출에 그대로 나오지 않아 판정하지 않은 원 문단 줄 수 */
+  removedUnchecked: number;
   searchHits: Record<string, boolean>;
+  /** 편집 영역 밖 렌더 차이(관찰): 다른 픽셀 수·96단계 초과 수·최대 채널 차이 */
   outsidePx: number;
+  outsideStrongPx: number;
+  outsideMaxDelta: number;
+  /** 편집 영역 밖 텍스트 글자 구성이 원본과 같음(판정 기준) */
+  outsideTextSame: boolean;
   /** 편집 영역 잉크(pdf.js) ÷ 같은 배율 MuPDF 렌더 잉크 */
   inkRatioVsMupdf: number | null;
   png: string;
@@ -183,6 +230,7 @@ export async function runPdfjsCheck(
         const bounds = [...muPage.getBounds()] as Rect;
         const scale = renderScale(bounds);
         const text = squash(await pageText(edit, spec.pageIndex));
+        const origText = squash(await pageText(orig, spec.pageIndex));
         const a = await render(orig, spec.pageIndex, scale);
         const b = await render(edit, spec.pageIndex, scale);
         const ex = spec.exclusions.map((r) => toPx(r, bounds, scale));
@@ -193,11 +241,27 @@ export async function runPdfjsCheck(
         pages.push({
           pageIndex: spec.pageIndex,
           expectedFound: spec.expectedTexts.map((t) => text.includes(squash(t))),
-          removedAbsent: spec.removedTexts.map((t) => !text.includes(squash(t))),
+          // 같은 쪽에 같은 문장이 또 있을 수 있으므로 등장 횟수가 줄었는지로 판정한다(corpus-edit 와 같은 방식).
+          // MuPDF 줄 문자열이 원본 pdf.js 추출에 그대로 없으면(합자·분할 차이) 판정하지 않고 수만 센다.
+          removedAbsent: spec.removedTexts
+            .filter((t) => occurrences(origText, squash(t)) > 0)
+            .map((t) => occurrences(text, squash(t)) < occurrences(origText, squash(t))),
+          removedUnchecked: spec.removedTexts.filter((t) => occurrences(origText, squash(t)) === 0)
+            .length,
           searchHits: Object.fromEntries(
             spec.searchTerms.map((t) => [t, text.includes(squash(t))]),
           ),
-          outsidePx: diffOutside(a.rgba, b.rgba, ex),
+          ...(() => {
+            const d = diffOutside(a.rgba, b.rgba, ex);
+            return {
+              outsidePx: d.differing,
+              outsideStrongPx: d.strong,
+              outsideMaxDelta: d.maxDelta,
+            };
+          })(),
+          outsideTextSame:
+            (await outsideChars(orig, spec.pageIndex, spec.exclusions, bounds)) ===
+            (await outsideChars(edit, spec.pageIndex, spec.exclusions, bounds)),
           inkRatioVsMupdf: muInk > 0 ? inkIn(b.rgba, ex.slice(0, 1)) / muInk : null,
           png,
         });
@@ -209,7 +273,7 @@ export async function runPdfjsCheck(
         muPage.destroy();
         const a = await render(orig, p, scale);
         const b = await render(edit, p, scale);
-        unchangedPages.push({ pageIndex: p, diffPx: diffOutside(a.rgba, b.rgba, []) });
+        unchangedPages.push({ pageIndex: p, diffPx: diffOutside(a.rgba, b.rgba, []).differing });
       }
       mu.destroy();
       await orig.loadingTask.destroy();
@@ -220,7 +284,7 @@ export async function runPdfjsCheck(
             p.expectedFound.every(Boolean) &&
             p.removedAbsent.every(Boolean) &&
             Object.values(p.searchHits).every(Boolean) &&
-            p.outsidePx === 0,
+            p.outsideTextSame,
         ) && unchangedPages.every((u) => u.diffPx === 0);
       results.push({ id: pair.id, ok, pages, unchangedPages, warnings: warnings.slice(0, 20) });
     } catch (e) {
@@ -386,7 +450,7 @@ export async function runPdfjsCli(opts: { root: string; corpusOut: string }): Pr
           .map(
             (p) =>
               `p${p.pageIndex + 1}[텍스트 ${p.expectedFound.filter(Boolean).length}/${p.expectedFound.length}, ` +
-              `밖 ${p.outsidePx}px, 잉크비 ${p.inkRatioVsMupdf?.toFixed(2) ?? '-'}]`,
+              `밖 텍스트 ${p.outsideTextSame ? '동일' : '다름'}, 밖 ${p.outsidePx}px(>96: ${p.outsideStrongPx}), 잉크비 ${p.inkRatioVsMupdf?.toFixed(2) ?? '-'}]`,
           )
           .join(' ') +
         (r.error ? ` 오류 ${r.error}` : '') +
