@@ -1,11 +1,13 @@
 /**
  * 원본 연결 정보 생성과 PageModel 매칭(PLAN.md 3.4, docs/m1-contract.md).
  *
- * 이 파일의 두 함수는 M1 계약 커밋에서 시그니처만 고정했다. 구현은 M1 pdf-ops 작업
- * (콘텐츠 스트림 인터프리터)이 채운다. 시그니처 변경은 메인 세션만 한다.
+ * 두 함수의 시그니처는 M1 계약 커밋에서 고정했다. 시그니처 변경은 메인 세션만 한다.
+ * 구현: content-interp.ts(인터프리터·전달 시점 모델), link.ts(매칭).
  */
 import type * as mupdf from 'mupdf';
 import type { PageLinkage, PageModel, SourceMap } from '@pdf-editor/shared-types';
+import { buildSourceMapImpl, GLYPH_SEQ_POLICY } from './content-interp.js';
+import { link } from './link.js';
 
 export interface SourceMapOptions {
   /** Form XObject 재귀 깊이 상한(기본 8). 넘으면 form-depth-exceeded(L5). */
@@ -23,16 +25,13 @@ export function buildSourceMap(
   pageIndex: number,
   options: SourceMapOptions = {},
 ): SourceMap {
-  void doc;
-  void pageIndex;
-  void options;
-  throw new Error('M1 미구현: pdf-ops buildSourceMap');
+  return buildSourceMapImpl(doc, pageIndex, options.maxFormDepth ?? 8, GLYPH_SEQ_POLICY);
 }
 
-/** glyphSeq·paintSeq 와 원점으로 PageModel 의 글자·도형을 SourceMap 연산에 연결한다. */
+/**
+ * glyphSeq·paintSeq 와 원점으로 PageModel 의 글자·도형을 SourceMap 연산에 연결한다.
+ * 짝이 없는 번호를 가진 연산에는 map.ops[].limits 에 `unmatched` 를 더한다.
+ */
 export function linkPage(model: PageModel, map: SourceMap, options: LinkOptions = {}): PageLinkage {
-  void model;
-  void map;
-  void options;
-  throw new Error('M1 미구현: pdf-ops linkPage');
+  return link(model, map, { originTolerance: options.originTolerance ?? 1, window: 64 });
 }
