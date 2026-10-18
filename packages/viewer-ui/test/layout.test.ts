@@ -161,6 +161,25 @@ describe('layoutTextLayer', () => {
     expect(lines[0]!.chars[0]!.style.transform).toBeUndefined();
   });
 
+  it('합성 공백은 글자 오른쪽 끝에 두고, 표시하지 않은 글자는 null', () => {
+    const m = makePageModel([{ text: 'AB', spaceAfter: [0] }]);
+    const lines = layoutTextLayer(m, buildReadingOrder(m), layout);
+    const [a, b] = lines[0]!.chars;
+    expect(a!.space).toEqual({ left: '60px', top: '40px', fontSize: '24px', lineHeight: '28px' });
+    expect(b!.space).toBeNull();
+  });
+
+  it('회전한 글자의 합성 공백은 회전 방향 끝에 둔다', () => {
+    const m = makePageModel([{ text: 'AB', spaceAfter: [0] }]);
+    m.chars[0]!.quad = [50, 10, 50, 20, 46, 10, 46, 20]; // 90도 시계 방향, 폭 10pt
+    const lines = layoutTextLayer(m, buildReadingOrder(m), layout);
+    expect(lines[0]!.chars[0]!.space).toMatchObject({
+      left: '100px',
+      top: '40px', // 20 + 폭 20px
+      transform: 'rotate(90deg)',
+    });
+  });
+
   it('회전 quad 는 rotate 와 scaleX 를 함께 쓴다', () => {
     const rotated = makePageModel(['A']);
     rotated.chars[0]!.quad = [50, 10, 50, 20, 46, 10, 46, 20];

@@ -3,6 +3,9 @@
  *
  * 읽기 순서는 `PageModel.lines` 배열 순서(MuPDF 기준 읽기 순서)이고, 줄 안은 `LineInfo.chars` 순서다.
  * 구조화 텍스트에 없는 글자(`line` = -1, 줄이 참조하지 않는 글자)는 뒤에 따로 모아 붙인다.
+ * `LineInfo.spaceAfter`(Device 글리프가 없는 합성 공백, docs/m1-contract.md 4절)는 글자 사이에 공백을 넣는
+ * 위치로만 쓴다. 공백은 글자가 아니므로 캐럿 위치·선택 구간에는 들어가지 않고, 양옆 글자가 모두 선택 구간에
+ * 있을 때만 복사 텍스트에 들어간다.
  * 선택은 글자 사이 "캐럿 위치"(0 … items.length)로 다룬다. 선택 구간 = 캐럿 구간 [from, to).
  */
 import type { CharInfo, PageModel, Point } from '@pdf-editor/shared-types';
@@ -15,6 +18,11 @@ export interface ReadingItem {
   line: number;
   /** PageModel.blocks 인덱스. 줄에 속하지 않은 글자는 ORPHAN_BLOCK. */
   block: number;
+  /**
+   * 이 글자와 같은 줄의 다음 글자 사이에 합성 공백이 있다. 줄의 마지막 글자 뒤 공백(바로 줄바꿈이 오므로
+   * 공백류를 접으면 같다)은 표시하지 않는다.
+   */
+  spaceAfter: boolean;
 }
 
 export interface ReadingLine {
@@ -71,14 +79,23 @@ export function buildReadingOrder(model: PageModel): ReadingOrder {
 
   for (const line of model.lines) {
     const start = items.length;
-    for (const charIndex of line.chars) {
+    const spaces = new Set(line.spaceAfter);
+    line.chars.forEach((charIndex, position) => {
       if (!Number.isInteger(charIndex) || charIndex < 0 || charIndex >= n || covered[charIndex]) {
-        continue;
+        return;
       }
       covered[charIndex] = 1;
-      items.push({ charIndex, line: lines.length, block: line.block });
-    }
+      // spaceAfter 의 k 는 원래 chars 배열 위치다(걸러진 글자가 있어도 위치가 밀리지 않는다).
+      items.push({
+        charIndex,
+        line: lines.length,
+        block: line.block,
+        spaceAfter: spaces.has(position),
+      });
+    });
     if (items.length > start) {
+      // 줄 끝 공백은 표시하지 않는다.
+      items[items.length - 1]!.spaceAfter = false;
       lines.push({ start, end: items.length, block: line.block, orphan: false });
     }
   }
@@ -88,7 +105,7 @@ export function buildReadingOrder(model: PageModel): ReadingOrder {
   for (const group of groupOrphanLines(model.chars, orphans)) {
     const start = items.length;
     for (const charIndex of group) {
-      items.push({ charIndex, line: lines.length, block: ORPHAN_BLOCK });
+      items.push({ charIndex, line: lines.length, block: ORPHAN_BLOCK, spaceAfter: false });
     }
     lines.push({ start, end: items.length, block: ORPHAN_BLOCK, orphan: true });
   }
@@ -119,8 +136,11 @@ export function assembleText(
     const item = order.items[k]!;
     if (k > lo) {
       const prev = order.items[k - 1]!;
-      if (item.line !== prev.line)
+      if (item.line !== prev.line) {
         out += item.block !== prev.block ? blockSeparator : lineSeparator;
+      } else if (prev.spaceAfter) {
+        out += ' ';
+      }
     }
     out += model.chars[item.charIndex]!.text;
   }
@@ -204,7 +224,9 @@ function isBlank(text: string): boolean {
   return text.trim() === '';
 }
 
-/** 더블클릭: 같은 줄에서 공백/비공백이 이어지는 구간(캐럿 구간). */
+/**
+ * 더블클릭: 같은 줄에서 공백/비공백이 이어지는 구간(캐럿 구간). 합성 공백(`spaceAfter`)은 단어 경계다.
+ */
 export function wordRange(model: PageModel, order: ReadingOrder, item: number): [number, number] {
   const target = order.items[item];
   if (!target) return [0, 0];
@@ -214,11 +236,16 @@ export function wordRange(model: PageModel, order: ReadingOrder, item: number): 
   let to = item + 1;
   while (
     from > line.start &&
+    !order.items[from - 1]!.spaceAfter &&
     isBlank(model.chars[order.items[from - 1]!.charIndex]!.text) === kind
   ) {
     from--;
   }
-  while (to < line.end && isBlank(model.chars[order.items[to]!.charIndex]!.text) === kind) {
+  while (
+    to < line.end &&
+    !order.items[to - 1]!.spaceAfter &&
+    isBlank(model.chars[order.items[to]!.charIndex]!.text) === kind
+  ) {
     to++;
   }
   return [from, to];
