@@ -12,3 +12,8 @@ export * from './search-nav.js';
 export * from './debug-info.js';
 export * from './failure.js';
 export * from './viewer-host.js';
+export * from './shortcuts.js';
+export * from './controller.js';
+export * from './selection-dom.js';
+export * from './text-measure.js';
+export * from './mount.js';
