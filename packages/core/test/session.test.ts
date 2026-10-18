@@ -43,7 +43,7 @@ describe('PdfSession', () => {
 
   it('열기 결과의 입력 방식, 페이지 정보', () => {
     const s = new PdfSession();
-    expect(s.open(bluePdf()).inputMode).toBe('buffer');
+    expect(s.open(bluePdf()).inputMode).toBe('stream');
     expect(s.getPageInfo(0)).toEqual({
       pageIndex: 0,
       bounds: [0, 0, 200, 100],

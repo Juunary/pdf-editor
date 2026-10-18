@@ -1,5 +1,10 @@
 import * as mupdf from 'mupdf';
-import { buildSourceMap, decideSaveMethod, linkPage } from '@pdf-editor/pdf-ops';
+import {
+  STREAM_INPUT_PEAK_HEAP_RATIO,
+  buildSourceMap,
+  decideSaveMethod,
+  linkPage,
+} from '@pdf-editor/pdf-ops';
 import type {
   ExtractRequest,
   InputMode,
@@ -40,14 +45,18 @@ export class PdfSession {
     return this.#original;
   }
 
-  open(bytes: ArrayBuffer | Uint8Array): OpenResult {
+  /**
+   * 문서를 연다. 기본은 Stream 입력(A3-1): 보관 중인 원본 바이트를 MuPDF 가 필요한 구간만 읽어
+   * 입력 크기만큼의 WASM 힙을 쓰지 않는다. `buffer` 는 비교·측정용이다.
+   */
+  open(bytes: ArrayBuffer | Uint8Array, inputMode: InputMode = 'stream'): OpenResult {
     this.close();
     const t0 = performance.now();
     const original = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-    const doc = openPdf(original);
+    const doc = openPdf(original, { inputMode });
     this.#original = original;
     this.#doc = doc;
-    this.#inputMode = 'buffer';
+    this.#inputMode = inputMode;
     const page = doc.loadPage(0);
     const [x0, y0, x1, y1] = page.getBounds();
     page.destroy();
@@ -112,6 +121,8 @@ export class PdfSession {
     const canBeSavedIncrementally = this.document.canBeSavedIncrementally();
     const decision = decideSaveMethod(changes, canBeSavedIncrementally, {
       inputBytes: this.originalBytes.byteLength,
+      // Stream 입력은 입력 크기만큼의 힙을 쓰지 않으므로 실측 배율이 낮다(docs/m0-dod-xobject-redact-save.md 3.3).
+      ...(this.#inputMode === 'stream' ? { ratio: STREAM_INPUT_PEAK_HEAP_RATIO } : {}),
     });
     if (!decision.heap) throw new Error('예상 피크 힙 계산 실패');
     return {
