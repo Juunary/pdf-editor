@@ -90,3 +90,89 @@ export function brief(events: readonly DeviceEvent[], skip: readonly string[] = 
   }
   return out;
 }
+
+/**
+ * 계약 계수 대상 콜백만의 전달 순서(인터프리터 trace 와 비교용).
+ * 텍스트는 `종류:글리프 수`(gid −1 보조 글리프 제외, fill 다음 같은 포인터 stroke 는 fill+stroke),
+ * 칠하기는 `P`. beginMask~endMask 구간은 빼고, beginTile 은 1(캐시됨)을 돌려준다.
+ */
+export function deliveryTrace(page: mupdf.Page, flags = false): string[] {
+  const out: string[] = [];
+  // flags: first-arrival 판정(테스트 헬퍼 규칙)으로 글리프마다 N(새 글리프)·R(재전송)을 붙인다.
+  let known = new Set<string>();
+  const held: mupdf.Text[] = [];
+  let mask = 0;
+  let last: { pointer: number; kind: string; index: number } | null = null;
+  const kinds: Record<string, string> = {
+    fillText: 'fill',
+    strokeText: 'stroke',
+    clipText: 'clip',
+    clipStrokeText: 'clip-stroke',
+    ignoreText: 'ignore',
+  };
+  const text = (name: string) => (t: mupdf.Text) => {
+    if (mask > 0) return;
+    held.push(t);
+    let n = 0;
+    let f = '';
+    const kind = kinds[name]!;
+    const samePointer = last !== null && last.pointer === t.pointer;
+    let resend = false;
+    t.walk({
+      showGlyph: (font, m, gid) => {
+        if (gid < 0) return;
+        n++;
+        const key = `${font.pointer}:${gid}:${m.join(',')}`;
+        if (samePointer) f += 'R';
+        else if (kind !== 'fill' && kind !== 'stroke' && known.has(key)) {
+          f += 'R';
+          resend = true;
+        } else {
+          f += 'N';
+          if (kind === 'fill' || kind === 'stroke') known.add(key);
+        }
+      },
+    });
+    if (resend) known = new Set();
+    const tag = flags ? `:${f}` : '';
+    if (
+      kind === 'stroke' &&
+      last &&
+      last.pointer === t.pointer &&
+      last.kind === 'fill' &&
+      last.index === out.length - 1
+    ) {
+      // 직전 fill 항목의 플래그를 그대로 쓴다(같은 객체의 두 번째 콜백).
+      out[out.length - 1] = out[out.length - 1]!.replace(/^fill:/, 'fill+stroke:');
+      last = null;
+      return;
+    }
+    out.push(`${kind}:${n}${tag}`);
+    last = { pointer: t.pointer, kind, index: out.length - 1 };
+  };
+  const paint = () => {
+    if (mask > 0) return;
+    out.push('P');
+  };
+  const device = new mupdf.Device({
+    fillText: text('fillText'),
+    strokeText: text('strokeText'),
+    clipText: text('clipText'),
+    clipStrokeText: text('clipStrokeText'),
+    ignoreText: text('ignoreText'),
+    fillPath: paint,
+    strokePath: paint,
+    clipPath: paint,
+    clipStrokePath: paint,
+    fillShade: paint,
+    fillImage: paint,
+    fillImageMask: paint,
+    clipImageMask: paint,
+    beginMask: () => void mask++,
+    endMask: () => void mask--,
+    beginTile: () => 1,
+  });
+  page.runPageContents(device, mupdf.Matrix.identity);
+  device.close();
+  return out;
+}
