@@ -773,13 +773,12 @@ describe('extractPage: 합자', () => {
     expect(glyphText(0xd800)).toBe('�');
   });
 
-  it('ToUnicode 가 글리프 하나를 여러 글자로 대응시키면 글리프는 한 번만 세고 text 에 모은다', () => {
-    // MuPDF 는 이런 글리프를 gid 한 번 + 나머지 글자 gid -1(폭 0) 항목으로 보낸다.
-    const gidA = koreanFont.encodeCharacter('A').toString(16).padStart(4, '0');
-    const gidB = koreanFont.encodeCharacter('B').toString(16).padStart(4, '0');
-    const m = extract({
-      content: `BT /F2 14 Tf 10 150 Td ${hexGlyphs('ABA')} Tj ET`,
+  /** F2 의 코드 A 를 "fi"(두 코드포인트)로, B 를 "B" 로 대응시키는 ToUnicode 를 단 한 쪽을 추출한다. */
+  const extractMultiChar = (tr: number, glyphs: string) =>
+    extract({
+      content: `BT /F2 14 Tf ${tr} Tr 10 150 Td ${hexGlyphs(glyphs)} Tj ET`,
       resources: (doc, res) => {
+        const gid = (c: string) => koreanFont.encodeCharacter(c).toString(16).padStart(4, '0');
         const font = (res.Font as Record<string, mupdf.PDFObject>).F2!;
         font.put(
           'ToUnicode',
@@ -789,7 +788,7 @@ describe('extractPage: 합자', () => {
               '/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def',
               '/CMapName /Adobe-Identity-UCS def /CMapType 2 def',
               '1 begincodespacerange <0000> <FFFF> endcodespacerange',
-              `2 beginbfchar <${gidA}> <00540068> <${gidB}> <0042> endbfchar`,
+              `2 beginbfchar <${gid('A')}> <00660069> <${gid('B')}> <0042> endbfchar`,
               'endcmap CMapName currentdict /CMap defineresource pop end end',
             ].join('\n'),
             {},
@@ -797,12 +796,52 @@ describe('extractPage: 합자', () => {
         );
       },
     });
+
+  it('ToUnicode 가 글리프 하나를 여러 글자로 대응시키면 글리프는 한 번만 세고 text 에 모은다', () => {
+    // MuPDF 는 이런 글리프를 gid 한 번 + 나머지 글자 gid -1(폭 0) 항목으로 보낸다(계약 3.1 단계 0).
+    const m = extractMultiChar(0, 'ABA');
     expect(m.glyphCount).toBe(3);
-    expect(m.chars.map((c) => c.text)).toEqual(['Th', 'B', 'Th']);
+    expect(m.chars.map((c) => c.text)).toEqual(['fi', 'B', 'fi']);
     expect(seqs(m)).toEqual([0, 1, 2]);
     expect(m.chars.every((c) => c.line === 0)).toBe(true);
     expect(m.lines[0]!.chars).toEqual([0, 1, 2]);
     expect(m.warnings).toEqual([]);
+  });
+
+  it('Tr 2: stroke 콜백을 건너뛰어도 그 글리프 CharInfo 의 text 는 "fi"', () => {
+    const m = extractMultiChar(2, 'AB');
+    expect(m.chars.map((c) => [c.text, c.render])).toEqual([
+      ['fi', 'fill-stroke'],
+      ['B', 'fill-stroke'],
+    ]);
+  });
+
+  it('Tr 4: 클립 재전송을 소비해도 text 는 "fi" 한 번(보조 글자가 두 번 붙지 않는다)', () => {
+    const m = extractMultiChar(4, 'AB');
+    expect(m.glyphCount).toBe(2);
+    expect(m.chars.map((c) => [c.text, c.clip])).toEqual([
+      ['fi', true],
+      ['B', true],
+    ]);
+  });
+
+  it('알려진 한계: Tr 7 처럼 클립 콜백에서 처음 세는 글리프는 MuPDF 가 보조 글자를 보내지 않아 text 가 첫 글자뿐', () => {
+    const m = extractMultiChar(7, 'AB');
+    expect(m.chars.map((c) => c.text)).toEqual(['f', 'B']);
+    expect(seqs(m)).toEqual([0, 1]);
+  });
+
+  it('unionQuads: 같은 줄의 quad 를 줄 방향으로 합친다(회전한 줄 포함)', async () => {
+    const { unionQuads } = await import('../src/extract-stext.js');
+    const ch = (quad: number[]) =>
+      ({ quad }) as unknown as Parameters<typeof unionQuads>[0][number];
+    expect(unionQuads([ch([0, 0, 5, 0, 0, 10, 5, 10])])).toEqual([0, 0, 5, 0, 0, 10, 5, 10]);
+    expect(unionQuads([ch([0, 0, 5, 0, 0, 10, 5, 10]), ch([5, 0, 9, 0, 5, 10, 9, 10])])).toEqual([
+      0, 0, 9, 0, 0, 10, 9, 10,
+    ]);
+    // 아래로 진행하는 줄(ul→ur 이 +y).
+    const down = unionQuads([ch([0, 0, 0, 5, -10, 0, -10, 5]), ch([0, 5, 0, 9, -10, 5, -10, 9])]);
+    expect(down.map((v) => Math.round(v))).toEqual([0, 0, 0, 9, -10, 0, -10, 9]);
   });
 
   it.skipIf(!existsSync(DEJAVU))(
@@ -820,6 +859,8 @@ describe('extractPage: 합자', () => {
       expect(m.chars.every((c) => c.line === 0)).toBe(true);
       expect(m.lines[0]!.chars).toEqual([0, 1, 2]);
       expect(m.warnings).toEqual([]);
+      // 합자 글리프의 quad 는 'f'·'i' 두 글자를 합쳐 뒤 글자 'B' 의 원점까지 닿는다.
+      expect(m.chars[1]!.quad[2]).toBeCloseTo(m.chars[2]!.origin[0], 1);
     },
   );
 });

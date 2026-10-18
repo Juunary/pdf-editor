@@ -189,27 +189,35 @@ export class DeviceCollector {
   #showUnpainted(text: mupdf.Text, ctm: Matrix, isClip: boolean): void {
     const first = this.glyphs.length;
     let consumed = 0;
-    let pending: number | null = null;
+    // 직전 글리프(새로 센 것이든 소비한 것이든)의 인덱스와, 그 글리프에 붙은 보조 글리프 수.
+    let target: number | null = null;
+    let auxSeen = 0;
     try {
       text.walk({
         showGlyph: (font, trm, gid, unicode, wmode) => {
           if (gid < 0) {
-            // 새로 센 글리프의 추가 유니코드만 붙인다(소비한 글리프는 fill/stroke 에서 받았다).
-            if (pending !== null) this.glyphs[pending]!.extra.push(unicode);
+            // 계약 3.1 단계 0: 직전 글리프의 CharInfo 에 유니코드를 붙인다. 소비한 재전송 글리프는 fill/stroke 에서
+            // 이미 받았으면 다시 붙이지 않는다(재전송에는 보통 보조 글리프가 없다).
+            if (target !== null) {
+              const g = this.glyphs[target]!;
+              if (auxSeen >= g.extra.length) g.extra.push(unicode);
+              auxSeen++;
+            }
             return;
           }
-          pending = null;
+          auxSeen = 0;
           const hit = this.#consume(`${this.#fontId(font)}|${gid}|${trm.join(',')}`);
           if (hit !== undefined) {
             consumed++;
             this.retransmitted++;
             this.glyphs[hit]!.clip = true;
+            target = hit;
             return;
           }
           // 처음 센 글리프. 클립 콜백이면 Tr 7 처럼 보이는 글리프로 표기하고(패턴 색 텍스트는 뒤에 고친다),
           // ignoreText 면 Tr 3 으로 표기한다.
           const index = this.#push(font, trm, gid, unicode, wmode, 'invisible', isClip, null, ctm);
-          pending = index;
+          target = index;
           if (isClip) {
             this.clipCounted++;
             this.#remember(index, trm);

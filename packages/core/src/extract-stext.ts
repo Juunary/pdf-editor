@@ -20,6 +20,8 @@ export interface StextChar {
   indexInLine: number;
   /** 결합된 Device 글리프 인덱스. 짝이 없으면 -1. */
   owner: number;
+  /** 글리프 하나가 여러 글자(합자·다중 글자 ToUnicode)일 때 함께 소비한 뒷 글자들(주 글자에만 채운다). */
+  parts: StextChar[];
 }
 
 export interface StextLine {
@@ -78,6 +80,7 @@ export function readStructuredText(page: mupdf.Page): StextData {
           line,
           indexInLine: lineData.chars.length,
           owner: -1,
+          parts: [],
         };
         lineData.chars.push(ch);
         data.chars.push(ch);
@@ -194,5 +197,36 @@ function claimExtraParts(
     const next = line.chars[first.indexInLine + k];
     if (!next || next.owner !== -1 || next.rune !== text.charCodeAt(k)) return;
     next.owner = glyphIndex;
+    first.parts.push(next);
   }
+}
+
+/**
+ * 글리프 하나에 대응하는 구조화 텍스트 글자들의 quad 를 합친다. 첫 글자의 줄 방향(ul→ur)으로 모든 꼭짓점을
+ * 투영해 가장 앞·뒤를 잡고, 높이(ul→ll)는 첫 글자 것을 쓴다. 글자가 하나면 그 quad 그대로다.
+ */
+export function unionQuads(chars: readonly StextChar[]): Quad {
+  const first = chars[0]!.quad;
+  if (chars.length === 1) return first;
+  const ux = first[2] - first[0];
+  const uy = first[3] - first[1];
+  const len = Math.hypot(ux, uy) || 1;
+  const dx = ux / len;
+  const dy = uy / len;
+  let tMin = Infinity;
+  let tMax = -Infinity;
+  for (const ch of chars) {
+    for (let i = 0; i < 8; i += 2) {
+      const t = (ch.quad[i]! - first[0]) * dx + (ch.quad[i + 1]! - first[1]) * dy;
+      if (t < tMin) tMin = t;
+      if (t > tMax) tMax = t;
+    }
+  }
+  const hx = first[4] - first[0];
+  const hy = first[5] - first[1];
+  const ulx = first[0] + dx * tMin;
+  const uly = first[1] + dy * tMin;
+  const urx = first[0] + dx * tMax;
+  const ury = first[1] + dy * tMax;
+  return [ulx, uly, urx, ury, ulx + hx, uly + hy, urx + hx, ury + hy];
 }
