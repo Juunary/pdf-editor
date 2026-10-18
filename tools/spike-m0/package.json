@@ -13,12 +13,17 @@
     "fixtures": "node dist/cli.js --write-fixtures",
     "spike:xobject": "node dist/cli.js --xobject",
     "spike:redact": "node dist/cli.js --redact-existing",
-    "spike:save-bench": "node dist/cli.js --save-bench"
+    "spike:save-bench": "node dist/cli.js --save-bench",
+    "spike:corpus": "node dist/cli.js --corpus",
+    "spike:pdfjs": "node dist/cli.js --pdfjs"
   },
   "dependencies": {
     "@pdf-editor/core": "workspace:*",
     "@pdf-editor/pdf-ops": "workspace:*",
     "@pdf-editor/shared-types": "workspace:*",
     "mupdf": "1.28.1"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.4.299"
   }
 }
