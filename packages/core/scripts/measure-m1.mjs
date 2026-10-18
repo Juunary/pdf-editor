@@ -111,6 +111,7 @@ function openOnce(file, mode) {
   page.destroy();
   const afterExtract = wasmHeapBytes();
   const plan = session.planSave({ changes: ['content-stream'] });
+  const saved = session.save({ changes: ['content-stream'] });
   console.log(
     JSON.stringify({
       mode,
@@ -122,6 +123,9 @@ function openOnce(file, mode) {
       page0ExtractMs: +extractMs.toFixed(2),
       planRatio: plan.heap.ratio,
       planEstimatedPeakMiB: mib(plan.heap.estimatedPeakBytes),
+      afterFullSaveMiB: mib(saved.wasmHeapBytes),
+      fullSaveMs: +saved.saveMs.toFixed(0),
+      outputBytes: saved.bytes.byteLength,
     }),
   );
   session.close();
