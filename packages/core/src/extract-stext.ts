@@ -118,18 +118,24 @@ class OriginGrid {
   }
 }
 
-/** 합자 코드포인트(U+FB00–FB06)의 NFKC 전개. 합자가 아니면 null. */
-function ligatureExpansion(unicode: number): string | null {
-  if (unicode < 0xfb00 || unicode > 0xfb06) return null;
-  const expanded = String.fromCodePoint(unicode).normalize('NFKC');
-  return expanded.length > 1 ? expanded : null;
+/** 유니코드 한 글자의 문자열. 매핑이 없거나 잘못된 값이면 null. */
+function codePointText(unicode: number): string | null {
+  if (!Number.isInteger(unicode) || unicode <= 0 || unicode > 0x10ffff) return null;
+  if (unicode >= 0xd800 && unicode <= 0xdfff) return null;
+  return String.fromCodePoint(unicode);
 }
 
-/** Device 글리프가 나타내는 유니코드 문자열. 매핑이 없으면 "�". */
-export function glyphText(unicode: number): string {
-  if (!Number.isInteger(unicode) || unicode <= 0 || unicode > 0x10ffff) return '�';
-  if (unicode >= 0xd800 && unicode <= 0xdfff) return '�';
-  return ligatureExpansion(unicode) ?? String.fromCodePoint(unicode);
+/**
+ * Device 글리프가 나타내는 유니코드 문자열. 추가 유니코드(ToUnicode 다중 글자)를 이어 붙이고,
+ * 합자 코드포인트(U+FB00–FB06)는 NFKC 로 전개한다. 매핑이 없으면 "�".
+ */
+export function glyphText(unicode: number, extra: readonly number[] = []): string {
+  const base = codePointText(unicode);
+  if (base === null) return '\uFFFD';
+  let text =
+    extra.length === 0 && unicode >= 0xfb00 && unicode <= 0xfb06 ? base.normalize('NFKC') : base;
+  for (const e of extra) text += codePointText(e) ?? '';
+  return text;
 }
 
 /**
@@ -142,8 +148,8 @@ export function matchGlyphs(glyphs: readonly RawGlyph[], data: StextData): Array
   const matches: Array<StextChar | null> = new Array(glyphs.length).fill(null);
   for (let i = 0; i < glyphs.length; i++) {
     const g = glyphs[i]!;
-    const expansion = ligatureExpansion(g.unicode);
-    const wanted = expansion ? expansion.charCodeAt(0) : g.unicode & 0xffff;
+    const text = glyphText(g.unicode, g.extra);
+    const wanted = text.charCodeAt(0);
     const x = g.m[4];
     const y = g.m[5];
     let best: StextChar | null = null;
@@ -154,10 +160,7 @@ export function matchGlyphs(glyphs: readonly RawGlyph[], data: StextData): Array
       if (d > SEARCH_RADIUS) continue;
       // 원점이 사실상 같으면 유니코드가 같은 쪽(0)을 먼저, 다르면(1) 그다음. 어긋난 후보는 거리순.
       const score = d <= TIGHT_EPS ? (ch.rune === wanted ? 0 : 1) : 2 + d;
-      if (
-        score < bestScore ||
-        (score === bestScore && best && ch.owner === -1 && isBefore(ch, best))
-      ) {
+      if (score < bestScore || (score === bestScore && best && isBefore(ch, best))) {
         best = ch;
         bestScore = score;
       }
@@ -165,7 +168,7 @@ export function matchGlyphs(glyphs: readonly RawGlyph[], data: StextData): Array
     if (!best) continue;
     best.owner = i;
     matches[i] = best;
-    if (expansion) claimLigatureParts(best, expansion, data, i);
+    if (text.length > 1) claimExtraParts(best, text, data, i);
   }
   return matches;
 }
@@ -175,16 +178,21 @@ function isBefore(a: StextChar, b: StextChar): boolean {
   return a.line !== b.line ? a.line < b.line : a.indexInLine < b.indexInLine;
 }
 
-function claimLigatureParts(
+/**
+ * 글리프 하나가 여러 글자(합자·ToUnicode 다중 글자)면 구조화 텍스트도 글자를 전개해 같은 줄에 이어
+ * 놓는다(뒷 글자 원점은 다음 글리프 원점에 걸친다). 뒷 글자를 같은 글리프가 소비해야 다음 글리프의
+ * 짝과 섞이지 않는다.
+ */
+function claimExtraParts(
   first: StextChar,
-  expansion: string,
+  text: string,
   data: StextData,
   glyphIndex: number,
 ): void {
   const line = data.lines[first.line]!;
-  for (let k = 1; k < expansion.length; k++) {
+  for (let k = 1; k < text.length; k++) {
     const next = line.chars[first.indexInLine + k];
-    if (!next || next.owner !== -1 || next.rune !== expansion.charCodeAt(k)) return;
+    if (!next || next.owner !== -1 || next.rune !== text.charCodeAt(k)) return;
     next.owner = glyphIndex;
   }
 }

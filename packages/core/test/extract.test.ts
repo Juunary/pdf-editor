@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { PdfSession, extractPageDetailed } from '../src/index.js';
 import * as mupdf from 'mupdf';
 import type { PageModel } from '@pdf-editor/shared-types';
-import { buildPdf, hexGlyphs, type PageSpec } from './pdf-fixtures.js';
+import { buildPdf, hexGlyphs, koreanFont, type PageSpec } from './pdf-fixtures.js';
 
 function open(pages: Array<string | PageSpec>): PdfSession {
   const s = new PdfSession();
@@ -699,6 +701,38 @@ describe('extractPage: 합자', () => {
     expect(glyphText(0xd800)).toBe('�');
   });
 
+  it('ToUnicode 가 글리프 하나를 여러 글자로 대응시키면 글리프는 한 번만 세고 text 에 모은다', () => {
+    // MuPDF 는 이런 글리프를 gid 한 번 + 나머지 글자 gid -1(폭 0) 항목으로 보낸다.
+    const gidA = koreanFont.encodeCharacter('A').toString(16).padStart(4, '0');
+    const gidB = koreanFont.encodeCharacter('B').toString(16).padStart(4, '0');
+    const m = extract({
+      content: `BT /F2 14 Tf 10 150 Td ${hexGlyphs('ABA')} Tj ET`,
+      resources: (doc, res) => {
+        const font = (res.Font as Record<string, mupdf.PDFObject>).F2!;
+        font.put(
+          'ToUnicode',
+          doc.addStream(
+            [
+              '/CIDInit /ProcSet findresource begin 12 dict begin begincmap',
+              '/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def',
+              '/CMapName /Adobe-Identity-UCS def /CMapType 2 def',
+              '1 begincodespacerange <0000> <FFFF> endcodespacerange',
+              `2 beginbfchar <${gidA}> <00540068> <${gidB}> <0042> endbfchar`,
+              'endcmap CMapName currentdict /CMap defineresource pop end end',
+            ].join('\n'),
+            {},
+          ),
+        );
+      },
+    });
+    expect(m.glyphCount).toBe(3);
+    expect(m.chars.map((c) => c.text)).toEqual(['Th', 'B', 'Th']);
+    expect(seqs(m)).toEqual([0, 1, 2]);
+    expect(m.chars.every((c) => c.line === 0)).toBe(true);
+    expect(m.lines[0]!.chars).toEqual([0, 1, 2]);
+    expect(m.warnings).toEqual([]);
+  });
+
   it.skipIf(!existsSync(DEJAVU))(
     '합자 글리프 하나가 "fi" 한 글자로 들어오고 뒤 글자와 짝이 어긋나지 않는다',
     () => {
@@ -716,4 +750,43 @@ describe('extractPage: 합자', () => {
       expect(m.warnings).toEqual([]);
     },
   );
+});
+
+describe('extractPage: 래퍼 소유권(mupdf.js Shade 래퍼)', () => {
+  it('셰이드가 있는 쪽을 GC 와 함께 반복 추출해도 문서가 손상되지 않는다', async () => {
+    v8.setFlagsFromString('--expose-gc');
+    const gc = vm.runInNewContext('gc') as () => void;
+    const s = open([
+      {
+        content: 'q 10 10 80 80 re W n /Sh1 sh Q BT /F1 12 Tf 10 150 Td (shade) Tj ET',
+        resources: (_doc, res) => {
+          res.Shading = {
+            Sh1: {
+              ShadingType: 2,
+              ColorSpace: 'DeviceRGB',
+              Coords: [0, 0, 100, 0],
+              Function: { FunctionType: 2, Domain: [0, 1], C0: [1, 0, 0], C1: [0, 0, 1], N: 1 },
+              Extend: [true, true],
+            },
+          };
+        },
+      },
+    ]);
+    for (let i = 0; i < 400; i++) {
+      s.invalidatePageCache();
+      expect(s.extractPage({ pageIndex: 0 }).shades).toHaveLength(1);
+      if (i % 20 === 0) {
+        gc();
+        // 종료자(FinalizationRegistry)는 GC 뒤 다음 태스크에서 돈다.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    gc();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // 해제된 셰이드를 다시 쓰면 "Unexpected mesh type" 으로 실패한다.
+    expect(s.renderPage({ pageIndex: 0, scale: 1 }).width).toBe(300);
+    s.invalidatePageCache();
+    expect(s.extractPage({ pageIndex: 0 }).shades).toHaveLength(1);
+    s.close();
+  });
 });
