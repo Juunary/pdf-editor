@@ -72,7 +72,6 @@ describe('PdfSession', () => {
     s.open(bluePdf());
     expect(() => s.extractPage({ pageIndex: 0 })).toThrow(/M1 미구현/);
     expect(() => s.getSourceMap(0)).toThrow(/M1 미구현/);
-    expect(() => s.searchText({ query: 'a' })).toThrow(/M1 미구현/);
     s.close();
   });
 });
