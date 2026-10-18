@@ -7,6 +7,7 @@ import {
   pageLayout,
   pageToCss,
   quadBounds,
+  quadFrame,
   quadToCssBox,
   renderScale,
 } from '../src/layout.js';
@@ -166,5 +167,27 @@ describe('layoutTextLayer', () => {
     const lines = layoutTextLayer(rotated, buildReadingOrder(rotated), layout, () => 10);
     // 폭 10pt × 2 = 20px, 자연 폭 10px
     expect(lines[0]!.chars[0]!.style.transform).toBe('rotate(90deg) scaleX(2)');
+  });
+});
+
+describe('quadFrame', () => {
+  it('축 정렬 quad: 원점 ul, u=(1,0), v=(0,1), 길이 폭·높이', () => {
+    expect(quadFrame(rectQuad(10, 20, 30, 12))).toEqual({
+      ox: 10,
+      oy: 20,
+      ux: 1,
+      uy: 0,
+      vx: 0,
+      vy: 1,
+      lu: 30,
+      lv: 12,
+    });
+  });
+
+  it('폭 0 이면 높이 축에 수직으로, 둘 다 0 이면 기본 축', () => {
+    const noWidth = quadFrame([5, 5, 5, 5, 5, 15, 5, 15]);
+    expect([noWidth.ux, noWidth.uy, noWidth.lu]).toEqual([1, 0, 0]);
+    const point = quadFrame([5, 5, 5, 5, 5, 5, 5, 5]);
+    expect([point.ux, point.uy, point.vx, point.vy]).toEqual([1, 0, 0, 1]);
   });
 });

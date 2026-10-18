@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 import type { PageModel } from '@pdf-editor/shared-types';
-import { cssToPage, type PageLayout } from '../layout.js';
+import { cssToPage, type CssBox, type PageLayout } from '../layout.js';
 import {
   assembleText,
   caretAt,
@@ -10,9 +10,11 @@ import {
   type ReadingOrder,
 } from '../reading-order.js';
 import { rangeToCaretInterval, selectInterval } from '../selection-dom.js';
+import { selectionRects } from '../selection-rects.js';
 import { isSelectAllShortcut, isTypingTarget } from '../shortcuts.js';
 import { layoutTextLayer } from '../text-layout.js';
 import { TEXT_LAYER_FONT, canvasMeasure } from '../text-measure.js';
+import { SelectionOverlay, createRectsStore } from './SelectionOverlay.js';
 
 interface Props {
   model: PageModel;
@@ -42,15 +44,18 @@ export function TextLayer({ model, order, layout }: Props) {
   const spansRef = useRef<HTMLElement[] | null>(null);
   const latest = useRef({ model, order, layout });
   latest.current = { model, order, layout };
+  const rectsStore = useRef(createRectsStore()).current;
+  const refreshSelection = useRef<() => void>(() => {});
 
   const lines = useMemo(
     () => layoutTextLayer(model, order, layout, canvasMeasure() ?? undefined),
     [model, order, layout],
   );
 
-  // 레이아웃이 바뀌면 span 목록 캐시를 버린다.
+  // 레이아웃이 바뀌면 span 목록 캐시를 버리고, 남은 선택의 하이라이트를 새 배율로 다시 그린다.
   useLayoutEffect(() => {
     spansRef.current = null;
+    refreshSelection.current();
   }, [lines]);
 
   useEffect(() => {
@@ -59,6 +64,8 @@ export function TextLayer({ model, order, layout }: Props) {
     let drag: Drag | null = null;
     /** Shift+클릭 확장용: 마지막 단일 클릭의 캐럿. */
     let lastAnchor: number | null = null;
+    /** 이 층이 마지막으로 만든 선택 구간(복사·하이라이트가 글자를 훑지 않게 하는 힌트). */
+    let lastInterval: [number, number] | null = null;
 
     const spans = (): HTMLElement[] => {
       spansRef.current ??= Array.from(layer.querySelectorAll<HTMLElement>('span[data-i]'));
@@ -83,7 +90,7 @@ export function TextLayer({ model, order, layout }: Props) {
         from = Math.min(d.base[0], r[0]);
         to = Math.max(d.base[1], r[1]);
       }
-      selectInterval(selection, spans(), from, to);
+      lastInterval = selectInterval(selection, spans(), from, to);
     };
 
     const onMove = (e: MouseEvent) => {
@@ -128,7 +135,7 @@ export function TextLayer({ model, order, layout }: Props) {
       if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
       const range = selection.getRangeAt(0);
       if (!layer.contains(range.startContainer) || !layer.contains(range.endContainer)) return;
-      const interval = rangeToCaretInterval(range, spans());
+      const interval = rangeToCaretInterval(range, spans(), lastInterval);
       if (!interval || !e.clipboardData) return;
       const { model, order } = latest.current;
       e.clipboardData.setData('text/plain', assembleText(model, order, interval[0], interval[1]));
@@ -141,19 +148,48 @@ export function TextLayer({ model, order, layout }: Props) {
       const selection = document.getSelection();
       if (!selection) return;
       e.preventDefault();
-      selectInterval(selection, spans(), 0, spans().length);
+      lastInterval = selectInterval(selection, spans(), 0, spans().length);
     };
+
+    /** DOM 선택(어떤 경로로 만들어졌든)을 읽어 하이라이트 상자를 갱신한다. */
+    const updateHighlight = () => {
+      const { model, order, layout } = latest.current;
+      let rects: CssBox[] = [];
+      const selection = document.getSelection();
+      if (selection && selection.rangeCount > 0 && !selection.isCollapsed) {
+        const range = selection.getRangeAt(0);
+        if (layer.contains(range.startContainer) && layer.contains(range.endContainer)) {
+          const interval = rangeToCaretInterval(range, spans(), lastInterval);
+          if (interval) {
+            rects = selectionRects(
+              model,
+              order,
+              interval[0],
+              interval[1],
+              layout.cssScale,
+              layout.origin,
+            );
+          }
+        }
+      }
+      rectsStore.set(rects);
+    };
+    refreshSelection.current = updateHighlight;
 
     layer.addEventListener('mousedown', onDown);
     document.addEventListener('copy', onCopy);
     document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('selectionchange', updateHighlight);
     return () => {
       layer.removeEventListener('mousedown', onDown);
       document.removeEventListener('copy', onCopy);
       document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('selectionchange', updateHighlight);
+      refreshSelection.current = () => {};
+      rectsStore.set([]);
       onUp();
     };
-  }, []);
+  }, [rectsStore]);
 
   return (
     <div
@@ -164,6 +200,7 @@ export function TextLayer({ model, order, layout }: Props) {
       data-chars={order.items.length}
       data-orphan-chars={order.orphanChars}
     >
+      <SelectionOverlay store={rectsStore} />
       {lines.map((line, li) => (
         <div key={li} class="pe-line" data-block={line.block}>
           {line.chars.map((c) => (

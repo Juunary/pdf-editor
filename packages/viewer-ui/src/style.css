@@ -135,9 +135,20 @@
   color: transparent;
   white-space: pre;
 }
+/* 글자마다 블록이라 기본 선택 표시가 줄바꿈 표식과 겹쳐 줄무늬가 진다. 하이라이트는 .pe-sel 로 직접 그린다. */
 .pe-text-layer span::selection {
-  background: rgb(0 100 220 / 35%);
+  background: transparent;
   color: transparent;
+}
+.pe-sel-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pe-sel {
+  position: absolute;
+  transform-origin: 0 0;
+  background: rgb(0 100 220 / 35%);
 }
 
 /* ── 디버그 오버레이 ─────────────────────────────────────────── */
@@ -148,10 +159,11 @@
   pointer-events: none;
 }
 .pe-debug-hud {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  z-index: 5;
+  /* 페이지 글자를 가리지 않도록 화면 왼쪽 아래에 고정한다. */
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  z-index: 30;
   padding: 4px 8px;
   border-radius: 4px;
   background: rgb(255 255 255 / 92%);

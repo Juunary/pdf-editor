@@ -15,5 +15,6 @@ export * from './viewer-host.js';
 export * from './shortcuts.js';
 export * from './controller.js';
 export * from './selection-dom.js';
+export * from './selection-rects.js';
 export * from './text-measure.js';
 export * from './mount.js';
