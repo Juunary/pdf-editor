@@ -86,9 +86,10 @@ describe('증분 저장 대조', () => {
 });
 
 describe.skipIf(!existsSync(OTF))('대조: CFF OTF 폴백 폰트(MuPDF 1.28.1 알려진 실패)', () => {
-  const r = spike(OTF);
-
   it('재열기 렌더가 참조와 크게 다르고 서브셋되지 않는다', () => {
+    // 원본 OTF 는 git 에 없다(assets/fonts/src). skipIf 여도 describe 본문은 수집 시 실행되므로
+    // 파일 읽기는 테스트 안에서 한다.
+    const r = spike(OTF);
     // 이 테스트가 실패하면 MuPDF 동작이 바뀐 것이다 → CFF 경로 재평가.
     expect(r.reopen.diffVsReferencePx).toBeGreaterThan(1000);
     expect(r.reopen.font?.subsetTagged).toBe(false);
