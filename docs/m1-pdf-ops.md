@@ -3,9 +3,9 @@
 | 항목 | 내용 |
 |---|---|
 | 작성일 | 2026-10-19 |
-| 브랜치 | `m1-pdf-ops`(기준 `97a6fb4`, 계약 수정 1–4 머지(`956c57b`·`43e1c22`·`77707d5`), worktree `/mnt/nas4/kjune/pdf-editor-m1-pdf-ops`) |
+| 브랜치 | `m1-pdf-ops`(기준 `97a6fb4`, 계약 수정 1–6 머지(`956c57b`·`43e1c22`·`77707d5`·`c84f3fa`), worktree `/mnt/nas4/kjune/pdf-editor-m1-pdf-ops`) |
 | 범위 | `docs/m1-contract.md` 5.1절 |
-| 상태 | `buildSourceMap`·`linkPage` 구현 완료. glyphSeq 계수는 계약 3.1 확정 규칙(첫 등장 계수, `GLYPH_SEQ_POLICY = 'first-arrival'`)이다. 확정 core 판정과 실제가 어긋나는 사례 1건을 재현 테스트와 함께 보고했다(4.3절) |
+| 상태 | 계약 5.1 범위 구현 완료. glyphSeq 계수는 계약 3.1 확정 규칙(첫 등장 계수, 수정 6 판정, `GLYPH_SEQ_POLICY = 'first-arrival'`). 코퍼스 정책 비교용 측정 도구(`@pdf-editor/pdf-ops/measure`, 5.5절) 제공 |
 | 측정 환경 | 서버 `sailab01`, Node 22, npm `mupdf` 1.28.1, `Page.runPageContents(device, Matrix.identity)`(주석 제외). MuPDF 동작 근거는 Device 실측과 MuPDF 1.28.x C 소스(`pdf-op-run.c`·`pdf-interpret.c`·`pdf-font.c`·`pdf-type3.c`·`pdf-cmap.c`·`pdf-layer.c`·`path.c`) 대조 |
 
 ## 1. 구현 범위
@@ -18,9 +18,12 @@
 | `src/optional-content.ts` | /OC 숨김 판정(MuPDF `pdf_is_ocg_hidden`, usage View, 기본 구성 /D) |
 | `src/link.ts` | `linkPage` 본체(번호 짝짓기·원점 검증·재동기화·`unmatched` 표시) |
 | `src/source-map.ts` | 계약 시그니처 그대로 `buildSourceMap`·`linkPage` 연결 |
+| `src/measure.ts` | 측정 도구(하위 경로 `@pdf-editor/pdf-ops/measure`, index 미노출): 정책 지정 SourceMap, 쪽·문서 측정, Markdown 표 |
+| `src/clock.ts` | 경과 시간 측정(빌드 lib 호환) |
 | `test/helpers/page-model.ts` | 테스트 전용 최소 PageModel 생성기(Device 콜백, core 의존 없음. 계약 3.1 판정·수정안·no-clip 비교) |
 | `test/helpers/device-log.ts` | 테스트 전용 Device 기록 헬퍼, 계수 대상 콜백 전달 순서열(`deliveryTrace`) |
-| `test/helpers/first-arrival.ts` | 계약 3.1 core 판정 구현(테스트 전용, PageModel 헬퍼와 전달 순서열이 공유) |
+| `test/helpers/first-arrival.ts` | 계약 3.1 core 판정 구현(수정 6, 테스트 전용, PageModel 헬퍼와 전달 순서열이 공유). 수정 2–5 의 1단계는 비교 옵션 |
+| `test/corpus-measure.test.ts` | 코퍼스 측정 러너(`LINK_MEASURE_DIR` 지정 시만 실행, 5.5절) |
 | `test/helpers/fuzz-content.ts` | 고정 시드 무작위 콘텐츠 생성기(테스트 도구, pdf-ops 비의존. 통합 단계 core 퍼징용) |
 
 내보내기: 패키지 index 는 기존대로 `buildSourceMap`·`linkPage`·옵션 타입만 새로 노출한다(`content-stream.ts` 의 새 함수 포함). 인터프리터·폰트·OC·정책 선택(`buildSourceMapImpl`)은 내보내지 않는다.
@@ -97,7 +100,7 @@
 
 인터프리터는 글리프마다 도착(fill·stroke·fill+stroke·ignore·clip·clip-stroke)을 기록하고, 확정 규칙대로 첫 도착에서 번호를 준다(`GLYPH_SEQ_POLICY = 'first-arrival'`). 번호를 받는 도착 시점의 CTM 으로 원점을 계산한다(MuPDF 는 텍스트 객체를 플러시 시점 CTM 으로 보낸다: ET 재전송 전 Q, Form 경계를 넘는 실행 단위). 비교용으로 `no-clip`(채택하지 않은 core 안 A) 정책도 남겨 둔다(`buildSourceMapImpl` 인자, index 미노출).
 
-테스트 헬퍼의 core 쪽 판정(`test/helpers/first-arrival.ts`)은 계약 3.1 의 0–5단계와 같다: gid −1 제외, 직전 텍스트 콜백과 포인터가 같은 fillText·strokeText 건너뛰기, 센 목록(항목 목록, 키 = 폰트 포인터·gid·trm 6값·콜백 ctm 6값)에 fill·stroke 와 clipText·clipStrokeText 신규 글리프를 넣기, 클립·숨김 콜백에서 같은 키 항목 하나 소비, 소비가 있었던 콜백 뒤 비우기, 마스크 구간 제외.
+테스트 헬퍼의 core 쪽 판정(`test/helpers/first-arrival.ts`)은 계약 3.1 의 0–5단계(수정 6)와 같다: gid −1 제외, 직전 텍스트 콜백과 포인터가 같은 텍스트 콜백을 종류 무관하게 건너뛰기, 센 목록(항목 목록, 키 = 폰트 포인터·gid·trm 6값·콜백 ctm 6값)에 fill·stroke 와 clipText·clipStrokeText 신규 글리프를 넣기, 클립·숨김 콜백에서 같은 키 항목 하나 소비, 소비가 있었던 콜백 뒤 비우기, 마스크 구간 제외.
 
 ### 4.2 퍼징 측정(`test/policy-fuzz.test.ts`, 실측 2026-10-19)
 
@@ -105,21 +108,21 @@
 
 | 판정 | 실패 쪽 | 원인별 실패 쪽 | 가짜 재전송(글리프) | 놓친 재전송(글리프) |
 |---|---|---|---|---|
-| 계약 3.1 확정 규칙 | 33 | R2 4, 가짜 재전송 18, 놓친 재전송만 11 | 73 | 67 |
-| 수정안(4.3: 1단계를 모든 텍스트 콜백에 적용) | 23 | R2 4, 가짜 재전송 18, 놓친 재전송만 1 | 73 | 8 |
+| 계약 3.1 판정(수정 6) | 23 | R2 4, 가짜 재전송 18, 놓친 재전송만 1 | 73 | 8 |
+| 수정 2–5 의 1단계(비교) | 33 | R2 4, 가짜 재전송 18, 놓친 재전송만 11 | 73 | 67 |
 | no-clip(비교용) | 4 | R2 4 | — | — |
 
 원인
 
 - R2(4쪽): 인터프리터의 타일링 패턴 색 텍스트 타일 수 판정(글리프 경계 근사). 판정 규칙과 무관하다.
 - 가짜 재전송(18쪽, 73글리프): 키(폰트·gid·trm·ctm)가 비트 단위로 같은 다른 글리프가 센 목록에 있었다. 퍼징에서는 같은 Form 을 같은 CTM 으로 여러 번 Do 하는 경우가 대부분이다(같은 위치 같은 글자 덧그림, 계약 3.1 알려진 한계). 소비 뒤 목록을 비우므로 그 BT 의 진짜 재전송을 이어서 놓치기도 한다(수정안의 놓친 4글리프, seed 247).
-- 놓친 재전송, 확정 규칙에서만(10쪽, 59글리프): 같은 텍스트 객체의 두 번째 콜백이 clipStrokeText 인 경우(채움·선 모두 패턴 색, 또는 채움 색 + 선 패턴 색인 Tr 6). 1단계가 fillText·strokeText 만 건너뛰므로 clipStrokeText 가 첫 콜백 글리프를 소비하고 목록을 비워, 이어지는 ET 재전송을 새 글리프로 센다. 4.3 의 수정안이 이를 없앤다.
+- 놓친 재전송, 수정 2–5 규칙에서만(10쪽, 59글리프): 같은 텍스트 객체의 두 번째 콜백이 clipStrokeText 인 경우(채움·선 모두 패턴 색, 또는 채움 색 + 선 패턴 색인 Tr 6). 1단계가 fillText·strokeText 만 건너뛰므로 clipStrokeText 가 첫 콜백 글리프를 소비하고 목록을 비워, 이어지는 ET 재전송을 새 글리프로 센다. 4.3 의 수정안(계약 수정 6 으로 채택)이 이를 없앤다.
 - ET 재전송 ctm 전제(계약 3.1 "ET 재전송의 ctm = 표시 시점 ctm")의 근거: PDF 32000-1 8.2 그림 9(그래픽 객체: 텍스트 객체 안 허용 연산)는 BT…ET 안에서 `cm`·`q`·`Q`·`Do` 를 허용하지 않는다. MuPDF 1.28 은 클립 텍스트 누적 중 `cm` 이 오면 "CTM CHANGE IN CLIP TEXT" 예외로 페이지 해석을 끝낸다(`pdf-op-run.c` `pdf_run_cm`, 퍼징 400쪽 중 44쪽이 이 경우이고 인터프리터도 같은 지점에서 멈춘다). 따라서 정상 콘텐츠에서는 전제가 성립한다. 예외는 MuPDF 가 중단하지 않는 비표준 콘텐츠뿐이다(아래 항목).
-- 놓친 재전송, 수정안에도 남는 것(1쪽, 4글리프, seed 130): BT 안 Q(비표준)로 CTM 이 바뀐 뒤 ET 재전송이 와서 ctm 키가 표시 시점과 다르다. MuPDF 는 재전송을 ET 시점 CTM 으로 보낸다(인터프리터 원점도 그 값). BT 안 `Q`(비표준, MuPDF 는 예외 없이 gstate 를 되돌림)가 클립 누적 중 CTM 을 바꾼 경우로, 위 전제의 비표준 예외다. BT 안 `Do`(비표준, `cm` 없이)로 페이지의 클립 누적이 Form 의 ET 에서 Form CTM 으로 재전송되는 경우도 같은 예외다(Form /Matrix 가 항등이 아닐 때만 키가 달라진다).
+- 놓친 재전송, 수정 6 에도 남는 것(1쪽, 4글리프, seed 130): BT 안 Q(비표준)로 CTM 이 바뀐 뒤 ET 재전송이 와서 ctm 키가 표시 시점과 다르다. MuPDF 는 재전송을 ET 시점 CTM 으로 보낸다(인터프리터 원점도 그 값). BT 안 `Q`(비표준, MuPDF 는 예외 없이 gstate 를 되돌림)가 클립 누적 중 CTM 을 바꾼 경우로, 위 전제의 비표준 예외다. BT 안 `Do`(비표준, `cm` 없이)로 페이지의 클립 누적이 Form 의 ET 에서 Form CTM 으로 재전송되는 경우도 같은 예외다(Form /Matrix 가 항등이 아닐 때만 키가 달라진다).
 
-### 4.3 계약 3.1 판정 불일치 보고와 수정안(2026-10-19 메인 세션에 보고)
+### 4.3 계약 3.1 판정 불일치 보고와 수정안(2026-10-19 보고, 계약 수정 6 으로 채택)
 
-재현: `test/source-map.test.ts` "계약 3.1 판정 불일치 재현: 채움·선 패턴 색 Tr 6". `BT 6 Tr (Ef) Tj ET`(채움·선 셰이딩 패턴)과 `BT 6 Tr (Gh) Tj ET`(채움 색, 선 셰이딩 패턴) → 실제 표시 글리프 4개, 인터프리터 4, 확정 규칙 core 판정 8.
+재현(회귀 테스트): `test/source-map.test.ts` "패턴 색 Tr 6: 같은 객체 clipStrokeText 는 1단계로 건너뛴다". `BT 6 Tr (Ef) Tj ET`(채움·선 셰이딩 패턴)과 `BT 6 Tr (Gh) Tj ET`(채움 색, 선 셰이딩 패턴) → 실제 표시 글리프 4개, 인터프리터 4, 확정 규칙 core 판정 8.
 
 | MuPDF 콜백 | 확정 규칙 | 수정안 |
 |---|---|---|
@@ -169,6 +172,15 @@
 
 합성 1쪽(글리프 3,670·경로 2,000·연산 4,165): `buildSourceMap` 12.7–33.8ms, `linkPage` 5.7–9.5ms(3회, 첫 회가 가장 느림).
 
+### 5.5 코퍼스 측정 도구
+
+| 구성 | 내용 |
+|---|---|
+| `@pdf-editor/pdf-ops/measure` | `buildSourceMapForPolicy(doc, page, policy)`, `measurePage(doc, page, model, policy)`, `measureDocument(file, doc, provider, policies)`, `formatMeasureTable(docs)`. provider 는 `(doc, page, policy) => PageModel`(core `extractPage` 를 정책별로 감싸거나 테스트 헬퍼) |
+| 실패 쪽 정의 | 총수 차이(글리프·도형) ≠ 0 이거나 SourceMap 소유 번호의 글자·도형 중 미매칭이 있는 쪽. 소유 없는 번호(패턴 셀 글리프 등)는 따로 집계 |
+| 러너 | `LINK_MEASURE_DIR=<폴더> LINK_MEASURE_OUT=<경로> pnpm --filter @pdf-editor/pdf-ops exec vitest run test/corpus-measure.test.ts`(정책 기본 `first-arrival,no-clip`, `LINK_MEASURE_POLICIES` 로 지정). 결과 `<경로>.json`(문서별·정책별 요약, 실패 쪽 번호, 쪽 예외, 열기 실패)과 `<경로>.md`(문서별·정책별 표 + 합계). PageModel 은 테스트 헬퍼(MuPDF Device, 계약 3.1 판정) |
+| 시험 실행 | fixtures/m0 6개 문서 10쪽: 두 정책 모두 실패 0(테스트 `fixtures-m0.test.ts` 가 같은 도구로 확인) |
+
 ## 6. 폰트 폭·코드 분리(pdf-fonts.ts)
 
 Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`test/pdf-fonts.test.ts` 151건, 실측 2026-10-19). 리뷰·통합은 Opus.
@@ -192,7 +204,7 @@ Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`t
 | R3 | 토크나이저 오류 뒤는 해석하지 않는다. MuPDF 는 오류 토큰을 건너뛰고 계속한다(최대 100회) | 오류 뒤 번호가 MuPDF 와 어긋난다 | `tokenizer-error`, 해당 콘텐츠 편집 불가(L6) |
 | R4 | 필터 있는 인라인 이미지의 EI 는 앞뒤 공백 조건으로 찾는다(MuPDF 는 디코더가 데이터를 소비한 뒤 찾음) | 압축 데이터 안 우연한 " EI " 에서 잘못 끝날 수 있다 | L6 와 같은 위험. 코퍼스에서 확인 |
 | R5 | 깊이 상한(기본 8)을 넘은 Form 은 해석하지 않는다. MuPDF 는 순환이 아니면 실행한다 | 그 뒤 번호 어긋남 | `form-depth-exceeded`, 재동기화 |
-| R6 | 계약 3.1 core 판정 한계(4.2): 같은 위치 같은 글자 덧그림을 재전송으로 오판(구조적), 같은 객체 clipStrokeText 소비(4.3 수정안으로 해소), BT 안 Q·Form 으로 재전송 CTM 변경 | 그 글자 번호가 어긋난다(퍼징 356쪽: 확정 규칙 29쪽, 수정안 19쪽, R2 제외) | 재동기화, 해당 글자 `unmatched` |
+| R6 | 계약 3.1 core 판정 한계(4.2): 같은 위치 같은 글자 덧그림을 재전송으로 오판(구조적), BT 안 Q·Form 으로 재전송 CTM 변경(비표준) | 그 글자 번호가 어긋난다(퍼징 356쪽 중 19쪽, R2 제외) | 재동기화, 해당 글자 `unmatched` |
 | R7 | CID 매핑을 모르는 미리 정의된 CMap(UCS2·UTF16·UHC 등) 폰트는 폭이 균일하지 않으면 원점이 틀린다 | 원점 검증 불가 | `font-encoding-unresolved`, 번호 연속으로만 매칭 |
 | R8 | 도형 매칭 검증: 경로는 CTM, 이미지는 단위 사각형 경계, Form BBox 클립·셰이드는 종류만 본다 | 같은 CTM 의 연속 칠하기 사이 재동기화가 틀릴 여지 | 주인 없는 번호에서는 재동기화하지 않고, 재동기화는 다음 2개 항목 확인 후 채택 |
 | R9 | 주석 외관·SMask 그룹·패턴 셀·Type3 글리프 프로시저 스트림은 SourceOp 를 만들지 않는다(L4) | 편집 대상 아님 | — |
@@ -212,7 +224,8 @@ Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`t
 |---|---|---|
 | P1 | 계약 3.1 확정(첫 등장 계수)·수정 2–4 머지, 기본 정책 first-arrival 유지 | 완료(2026-10-19) |
 | P2 | 계약 3절 보완 3건(타일링 직접 실행 셀, 마스크 이미지 2콜백, gid −1 보조 글리프) → 계약 수정 3 반영, 셀 칠하기 소유·`outside-page-content` 구현 | 완료(2026-10-19) |
-| P7 | 4.3 수정안(1단계를 모든 텍스트 콜백에 적용)·알려진 한계 추가 검토, core 반영 여부 결정 | 메인 세션 |
+| P7 | 4.3 수정안·알려진 한계 → 계약 수정 6 채택, 헬퍼 반영 | 완료(2026-10-19) |
+| P8 | 통합 후 실제 코퍼스(1,647쪽)에서 first-arrival·no-clip 측정(5.5절 도구, core ModelProvider) 후 정책 최종 확인 | 메인 세션 |
 | P3 | 통합 시 core PageModel 로 fixtures/m0·코퍼스 매칭률 재측정(테스트 헬퍼와 core 판정이 같은지 확인) | 메인 세션(통합) |
 | P4 | 코퍼스에서 R1·R2·R4 빈도 확인 후 에뮬레이션 추가 여부 결정 | M1 통합 후 |
 | P5 | core 에 R10(페이지 해석 예외) 전달, 정책 결정 시 4절 퍼징 수치 참고 | 메인 세션 |
