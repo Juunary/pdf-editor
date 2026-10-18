@@ -4,7 +4,7 @@
 |---|---|
 | 작성일 | 2026-10-19 |
 | 범위 | `docs/m1-contract.md` 5.2절(`extractPage`·`searchText`·Stream 입력) |
-| 브랜치 | `m1-core` (기준: 계약 커밋 97a6fb4, 계약 수정 1·2·3·4 머지) |
+| 브랜치 | `m1-core` (기준: 계약 커밋 97a6fb4, 계약 수정 1–5 머지) |
 | 환경 | 서버 Node 22.18.0, mupdf 1.28.1. 브라우저·Windows 는 미측정 |
 | 재현 | `pnpm --filter @pdf-editor/core build` 후 `node packages/core/scripts/measure-m1.mjs <fixtures｜dir <폴더>｜gen <out> [쪽수]｜compare <file>>` |
 
@@ -18,7 +18,8 @@
 | `searchText` | 구현. 대소문자·순환·pageLimit·maxHits·truncated 테스트 10건 |
 | Stream 입력(A3-1) | 구현. 저장 바이트 동일·열기 힙 +0(5절) |
 | 쪽 캐시 | `PdfSession.extractPage` 최근 사용 순 16쪽, `invalidatePageCache(pageIndex?)` |
-| 미결 | 7절. 특히 합성 공백이 모델에 없음(7.1) |
+| 합성 공백 | `LineInfo.spaceAfter` 구현(계약 수정 5), 조립 텍스트 vs `asText()` 코퍼스 비교(4.5) |
+| 미결 | 7절(쪽 밖 글자 정책, 통합 시 확인 등) |
 
 ## 2. 검증 전제 확인 (2026-10-19, 서버 Node, 합성 PDF)
 
@@ -86,6 +87,7 @@ paintSeq 세부(계약 3절 표)와의 대응: Form BBox `clipPath`·셰이딩 �
 | `color.ts` | 원래 색공간 값 + sRGB 근사. DeviceGray·DeviceRGB 는 직접, 그 밖(CMYK·ICC·Cal·Lab·Separation·DeviceN·Indexed)은 1×1 픽스맵 `convertToColorSpace(DeviceRGB)`. 값 단위 캐시 |
 | `page-geometry.ts` | 쪽 회전·행렬·사각형 보조 |
 | `search.ts` | `searchDocument` |
+| `reading-text.ts` | `assembleReadingText`(계약 4절 읽기 텍스트 조립 참조 구현)·`foldWhitespace`(완료 기준 비교용). 테스트·계측용이고 viewer 는 자체 구현 |
 | `open.ts`·`session.ts` | Stream 입력, `planSave` 배율, 쪽 캐시, 추출·검색 연결 |
 | `scripts/measure-m1.mjs` | 계측 |
 
@@ -96,7 +98,7 @@ PageModel 채우기 규칙
 | `chars[].text` | Device `unicode` 문자열. 합자 코드포인트(U+FB00–FB06)는 NFKC 전개. ToUnicode 가 글리프 하나를 여러 글자("Th", "fi", 점선)로 대응시키면 MuPDF 가 gid -1(폭 0) 항목을 덧붙이는데, 이는 글리프가 아니므로 세지 않고 앞 글리프 `text` 에 합친다(실제 코퍼스 첫 5쪽 근사 비율 약 8% → 0.1% 로 감소). 매핑이 없으면 "�" |
 | `origin`·`size` | `Matrix.concat(trm, ctm)` 의 e·f, 두 번째 열 길이 |
 | `quad`·`color`·`line` | 구조화 텍스트 글자와 짝이 되면 그 값(여러 글자가 한 글리프에 대응하면 quad 는 글자들의 합집합, 색은 8비트 sRGB). 아니면 quad 근사(위 0.95 em·아래 0.25 em, 가로폭 = `advanceGlyph`·글자 크기, 세로쓰기는 폭 1 em), 색은 Device 색, `line` -1, 경고 |
-| `lines`·`blocks` | 구조화 텍스트 순서. 글리프와 짝이 된 글자만 담고 비는 줄·블록은 뺀다(Tr 4–6 중복 줄, 합성 공백, 주석 텍스트 제외) |
+| `lines`·`blocks` | 구조화 텍스트 순서. 글리프와 짝이 된 글자만 담고 비는 줄·블록은 뺀다(Tr 4–6 중복 줄, 주석 텍스트 제외). 짝 없는 구조화 텍스트 공백(MuPDF 합성 공백)은 글자로 담지 않고, 앞뒤에 짝 있는 글자가 있으면 `spaceAfter` 에 앞 글자 위치(줄 안 `chars` 인덱스)를 담는다 |
 | `paths[].bbox` | 채움·클립: 경로 점(곡선은 제어점 포함)의 페이지 공간 경계. 선: MuPDF `Path.getBounds(stroke, ctm)`(열린 선은 마이터 한계 여유를 넓게 잡아 큼) |
 | `shades[].bbox` | `Shade.getBounds()` 를 CTM 으로 옮기고 현재 클립 경계로 접는다. 경계가 ±2^31 근처(무한)이면 현재 클립 경계 |
 | `images[].bbox` | 단위 사각형을 CTM 으로 옮긴 경계. 픽셀 수는 `getWidth/Height` (디코드하지 않음) |
@@ -181,9 +183,34 @@ PageModel 채우기 규칙
 | 원인 | 모두 **쪽 밖에 놓인 글자**다. 구조화 텍스트 기본 옵션이 `mediabox-clip` 이라 쪽 밖 글자를 빼므로 짝이 없다. 확인: beamer 6쪽 근사 654개의 원점이 x 2,033–2,415, y −1,836~−1,765 (쪽 453×255), nasa-eo 8쪽 근사 3,267개가 x 615–1,813 (쪽 612 너비). `mediabox-clip=no` 로 구조화 텍스트를 만들면 글자 수가 686 → 1,373, 5,069 → 8,336 으로 늘어 근사가 사라진다. nist-sp800-53r5 는 쪽 오른쪽 가장자리를 넘은 공백 글리프 |
 | 처리 | quad 근사(줄 -1). 쪽 밖 글자는 텍스트 층·검색에서 제외되는 것이 현재 동작이다. 포함하려면 구조화 텍스트 옵션을 바꾸면 되나 텍스트 층에 쪽 밖 글자가 들어간다(7.2) |
 
-### 4.4 짝 없는 구조화 텍스트 글자
+### 4.4 짝 없는 구조화 텍스트 글자와 `spaceAfter`
 
-코퍼스 전체 51,031개(구조화 텍스트 글자의 약 1.2%) 중 49,219개(96%)가 공백이다. MuPDF 가 글자 간격으로 합성한 공백이며 Device 글리프에는 대응이 없다(공백 글리프가 실제로 있으면 짝이 된다). 문서에 따라 글자의 약 16%(arxiv-2609.09268 9,297/58,005; nist-ai-100-1 14,030/90,392; zen-ko-sim 9,746/59,988)에 달한다. 현재 PageModel 에는 이 공백을 담을 곳이 없다(7.1).
+코퍼스 전체 51,031개(구조화 텍스트 글자의 약 1.2%) 중 49,219개(96%)가 공백이다. MuPDF 가 글자 간격으로 합성한 공백이며 Device 글리프에는 대응이 없다(공백 글리프가 실제로 있으면 짝이 된다). 문서에 따라 글자의 약 16%(arxiv-2609.09268 9,297/58,005; nist-ai-100-1 14,030/90,392; zen-ko-sim 9,746/59,988)에 달한다. 계약 수정 5 에서 `LineInfo.spaceAfter` 로 담는다(4.5).
+
+### 4.5 `spaceAfter` 비율과 조립 읽기 텍스트 (2026-10-19, 코퍼스 1,647쪽)
+
+규칙(계약 4절): `chars[k]` 뒤에 공백 하나. 구조화 텍스트의 공백 중 Device 글리프와 짝이 없고 앞뒤에 짝 있는 글자가 있는 것만 담는다(줄 처음·끝의 공백은 읽기 텍스트에 필요 없어 뺀다). 조립: `assembleReadingText`(core 참조 구현, 줄 사이 "\n"·블록 사이 "\n\n"). 비교 기준: 공백류 접기.
+
+| 값 | 결과 |
+|---|---|
+| `spaceAfter` 항목 수 / 글자 수 | 48,950 / 4,126,758 (1.19%). 문서별 0%–16.2% (zen-ko-sim 16.2%, arxiv-2609.09268 16.0%, nist-ai-100-1 15.5%, arxiv-2609.10511 14.9%, zen-beamer-7535020 10.2%, zen-beamer-10545284 8.0%, zen-ko-moon 3.4%; 나머지 문서 1% 이하) |
+| 줄 처음·끝이거나 연속이라 담지 않은 합성 공백 | 269개 (49,219 − 48,950) |
+| 조립 텍스트 = MuPDF `asText()` (공백 접기) | **1,281 / 1,647쪽 (77.8%)**. `spaceAfter` 를 쓰지 않으면 983쪽(59.7%) |
+| 전 쪽 일치한 문서 | 19개 중 12개 (arxiv-2609.10511, fed-h41, nasa-eo-2024, nist-ai-100-1, nist-cswp29, nist-sp800-171r3, nist-sp800-53r5, ustreas-mts, zen-beamer ×2, zen-ko-kimtw, zen-ko-moon) |
+| 불일치 366쪽의 글자 차이(공백 제외) | `asText()` 에만 있는 글자 4,642개, 조립 텍스트에만 있는 글자 2,264개 (모델 글자 4,126,758개 대비 0.11%·0.05%) |
+
+불일치 원인(확인한 것만; 대부분 두 방법의 정의 차이이며 모델 오류가 아니다)
+
+| 원인 | 쪽·글자 | 설명 |
+|---|---|---|
+| 소프트 하이픈 | nasa-se-handbook 260쪽, `\xad` 2,010자 | `asText()` 는 줄끝 하이픈을 U+00AD 로 내고, 모델 `text` 는 Device 유니코드 "-" |
+| `/ActualText` 로만 있는 글자 | nasa-eo-2019 15쪽, 1,058자 (예: 그림 캡션 "Satellite image showing the Aurora Borealis") | Device 글리프에 없고 구조화 텍스트가 /ActualText 로 만든 글자. `ignore-actualtext` 로 만들면 사라짐. `ignore-actualtext` 를 core 에 쓰면 불일치 쪽 수는 그대로(1,281쪽)이고 글자 차이만 바뀌어(missing 4,449·extra 3,342) 채택하지 않았다 |
+| 줄에 속하지 않은 글자 | arxiv-2609.09268 5쪽, 24자 | 벡터 화살표 U+20D7 같은 결합 문자가 구조화 텍스트에 없어 quad 근사(줄 -1)이고 조립 텍스트에서 빠진다 |
+| 구조화 텍스트에만 있는 제어·기호 글자 | zen-ko-report 67쪽, U+0007 322자·➀➁➂ 27자 | 짝이 없는 비공백 글자 |
+| 결합 문자 순서 | zen-ko-sim 16쪽, "≠" 34자 | "̸ =" 와 "=" 의 순서 차이 |
+
+- 합성 공백 보존은 목표(복사 시 단어가 붙지 않음)를 달성했다. 위 불일치는 공백이 아니라 글자 차이다.
+- 짝 없는 비공백 구조화 텍스트 글자(51,031 − 49,219 = 1,812개)는 계약상 담을 곳이 없어 버린다.
 
 ## 5. Stream 입력 (A3-1) 결과 (2026-10-19, 서버 Node)
 
@@ -212,13 +239,14 @@ PageModel 채우기 규칙
 
 ## 6. 테스트
 
-`pnpm --filter @pdf-editor/core test`: 6 파일 97건(계약 커밋 기준 7건).
+`pnpm --filter @pdf-editor/core test`: 7 파일 106건(계약 커밋 기준 7건).
 
 | 파일 | 내용 |
 |---|---|
 | `mupdf-text-callbacks.test.ts` | MuPDF 콜백 관측(V1, Tr 별 콜백·포인터, 래퍼 해제 시 주소 재사용) 9건 |
 | `extract.test.ts` | 글자·좌표·읽기 순서·회전·MediaBox 오프셋, glyphSeq 규칙(Tr 0–7, Form 재귀), 클립 텍스트 첫 등장 계수(타일링·셰이딩 패턴 색 텍스트, Tr 7 + `sh`, Tr 4/7 혼합, pdf-ops 3.1 표 4사례, 같은 Form 두 위치의 ctm 키, 알려진 한계), 패턴 셀·소프트 마스크 제외, quad 근사·합성 공백, 색공간(Gray·RGB·CMYK·Separation·Lab·Indexed), 도형(B 연산 번호 2개·짝홀·곡선·세그먼트·알파·클립), 이미지·인라인·마스크·셰이드, 주석 제외, MuPDF 경고, 캐시(LRU 16쪽·무효화), 합자·다중 글자 ToUnicode(Tr 0/2/4/7)·quad 합집합·DejaVu 합자 글리프, Shade 래퍼 GC 65건 |
 | `search.test.ts` | 대소문자·순환·pageLimit·maxHits·truncated·다줄 결과·한글·빈 검색어·500 quad 상한·인자 오류 10건 |
+| `reading-text.test.ts` | `spaceAfter`(TJ 간격 영문·한글 혼합 CID·실제 공백 글리프·큰 간격=줄바꿈·줄 처음/끝·Tr 4 중복 줄), 조립 텍스트 = `asText()`(공백 접기), `assembleReadingText` 단위 9건 |
 | `stream-input.test.ts` | 저장 바이트 동일(전체·증분), 읽기량, 래퍼 해제, 배율 6건 |
 | `session.test.ts` | 기존 4건 + 계약 커밋의 "M1 미구현" 테스트를 추출·검색 연결 테스트로 교체(5건). `open.test.ts` 2건은 그대로 |
 | 공통 | `pdf-fixtures.ts`: 합성 PDF 생성(Helvetica F1, NotoSansKR 부분집합 F2) |
@@ -227,11 +255,9 @@ PageModel 채우기 규칙
 
 ## 7. 미결 사항 · Action Items
 
-### 7.1 합성 공백이 PageModel 에 없음 — 계약 갭 (메인 세션 결정 필요)
+### 7.1 합성 공백 — 처리됨
 
-- 현상: 4.4. 복사한 텍스트가 TJ 간격으로 단어를 나눈 문서(LaTeX 등)에서 "HelloWorld" 로 붙을 수 있다. 이 PageModel 로 Ctrl+C 를 만들면 문서에 따라 글자의 약 16%가 공백인데 빠진다.
-- 제안(shared-types 변경, 메인 세션 권한): `LineInfo` 에 `spaceAfter: number[]`(= `LineInfo.chars` 의 위치 k 뒤에 공백을 넣는다)를 추가한다. 글자 `text` 를 오염시키지 않고 선택·복사 조립만 쓴다. core 는 이미 줄 안에서 짝 없는 공백 위치를 알고 있어 변경 범위가 `assemble` 한 곳이다. 대안: `LineInfo.text`(공백 포함 읽기 텍스트).
-- viewer-ui 세션과 읽는 쪽을 맞춰야 한다.
+계약 수정 5(`LineInfo.spaceAfter`)로 반영했다(3절 규칙, 4.5 결과). viewer-ui 는 계약 4절 조립 규칙대로 읽는다.
 
 ### 7.2 쪽 밖 글자 정책
 

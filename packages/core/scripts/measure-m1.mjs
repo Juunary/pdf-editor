@@ -2,13 +2,20 @@
 //
 //   node scripts/measure-m1.mjs fixtures                 fixtures/m0 문서의 쪽별 추출 시간·근사 빈도·WASM 힙
 //   node scripts/measure-m1.mjs dir <폴더> [문서당 최대 쪽수]  폴더의 PDF 를 같은 방식으로 측정(읽기 전용)
+//   node scripts/measure-m1.mjs reading <폴더> [문서당 최대 쪽수]  spaceAfter 비율, 조립 읽기 텍스트 vs asText() (공백 접기 기준)
 //   node scripts/measure-m1.mjs gen <out.pdf> [pages]    합성 대형 PDF(쪽마다 비압축 잡음 스트림)
 //   node scripts/measure-m1.mjs open <file> <mode>       한 프로세스에서 열기(buffer|stream) 후 WASM 힙
 //   node scripts/measure-m1.mjs compare <file>           buffer 와 stream 을 별도 프로세스로 비교
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { PdfSession, extractPageDetailed, wasmHeapBytes } from '../dist/index.js';
+import {
+  PdfSession,
+  assembleReadingText,
+  extractPageDetailed,
+  foldWhitespace,
+  wasmHeapBytes,
+} from '../dist/index.js';
 import * as mupdf from 'mupdf';
 
 const MiB = 2 ** 20;
@@ -64,6 +71,72 @@ function fixtures(
     session.close();
   }
   console.log(JSON.stringify(rows, null, 1));
+}
+
+function reading(dir, maxPages = Infinity) {
+  if (!dir.endsWith('/')) dir += '/';
+  const rows = [];
+  for (const name of readdirSync(dir).filter((f) => f.endsWith('.pdf'))) {
+    const session = new PdfSession();
+    const open = session.open(new Uint8Array(readFileSync(dir + name)));
+    for (let p = 0; p < Math.min(open.pageCount, maxPages); p++) {
+      const model = session.extractPage({ pageIndex: p });
+      const page = session.document.loadPage(p);
+      const st = page.toStructuredText('');
+      const expected = foldWhitespace(st.asText());
+      st.destroy();
+      page.destroy();
+      const actual = foldWhitespace(assembleReadingText(model));
+      const noSpaces = foldWhitespace(
+        assembleReadingText({
+          ...model,
+          lines: model.lines.map((l) => ({ ...l, spaceAfter: [] })),
+        }),
+      );
+      let diffAt = -1;
+      if (actual !== expected) {
+        diffAt = 0;
+        while (diffAt < actual.length && actual[diffAt] === expected[diffAt]) diffAt++;
+      }
+      // 공백을 뺀 글자 다중집합 차이: asText 에만 있는 글자(missing)와 조립 텍스트에만 있는 글자(extra).
+      const count = (text) => {
+        const m = new Map();
+        for (const ch of text.replace(/\s/g, '')) m.set(ch, (m.get(ch) ?? 0) + 1);
+        return m;
+      };
+      const a = count(actual);
+      const e = count(expected);
+      let missing = 0;
+      let extra = 0;
+      const missingChars = new Map();
+      for (const [ch, n] of e) {
+        const d = n - (a.get(ch) ?? 0);
+        if (d > 0) {
+          missing += d;
+          missingChars.set(ch, d);
+        }
+      }
+      for (const [ch, n] of a) extra += Math.max(0, n - (e.get(ch) ?? 0));
+      rows.push({
+        file: name,
+        page: p,
+        missing,
+        extra,
+        missingTop: [...missingChars.entries()].sort((x, y) => y[1] - x[1]).slice(0, 4),
+        chars: model.chars.length,
+        lines: model.lines.length,
+        spaceAfter: model.lines.reduce((n, l) => n + l.spaceAfter.length, 0),
+        equal: actual === expected,
+        equalWithoutSpaceAfter: noSpaces === expected,
+        diffAt,
+        actualSample: diffAt >= 0 ? actual.slice(Math.max(0, diffAt - 30), diffAt + 40) : '',
+        expectedSample: diffAt >= 0 ? expected.slice(Math.max(0, diffAt - 30), diffAt + 40) : '',
+      });
+      session.invalidatePageCache(p);
+    }
+    session.close();
+  }
+  console.log(JSON.stringify(rows));
 }
 
 function gen(out, pages = 100) {
@@ -139,6 +212,7 @@ function compare(file) {
 }
 
 if (command === 'fixtures') fixtures();
+else if (command === 'reading') reading(args[0], args[1] ? Number(args[1]) : Infinity);
 else if (command === 'dir') fixtures(args[0], args[1] ? Number(args[1]) : Infinity);
 else if (command === 'gen') gen(args[0], args[1] ? Number(args[1]) : undefined);
 else if (command === 'open') openOnce(args[0], args[1]);
