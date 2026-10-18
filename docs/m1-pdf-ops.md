@@ -3,9 +3,9 @@
 | 항목 | 내용 |
 |---|---|
 | 작성일 | 2026-10-19 |
-| 브랜치 | `m1-pdf-ops`(기준 `97a6fb4`, 계약 수정 1 `956c57b` 머지, worktree `/mnt/nas4/kjune/pdf-editor-m1-pdf-ops`) |
+| 브랜치 | `m1-pdf-ops`(기준 `97a6fb4`, 계약 수정 1–4 머지(`956c57b`·`43e1c22`·`77707d5`), worktree `/mnt/nas4/kjune/pdf-editor-m1-pdf-ops`) |
 | 범위 | `docs/m1-contract.md` 5.1절 |
-| 상태 | `buildSourceMap`·`linkPage` 구현 완료. glyphSeq 계수 정책(계약 3.1)은 결정 대기이므로 두 안을 상수 1개로 전환할 수 있게 구현했다(기본 pdf-ops 안 A). 결정 후 기본값만 바꾼다 |
+| 상태 | `buildSourceMap`·`linkPage` 구현 완료. glyphSeq 계수는 계약 3.1 확정 규칙(첫 등장 계수, `GLYPH_SEQ_POLICY = 'first-arrival'`)이다. 확정 core 판정과 실제가 어긋나는 사례 1건을 재현 테스트와 함께 보고했다(4.3절) |
 | 측정 환경 | 서버 `sailab01`, Node 22, npm `mupdf` 1.28.1, `Page.runPageContents(device, Matrix.identity)`(주석 제외). MuPDF 동작 근거는 Device 실측과 MuPDF 1.28.x C 소스(`pdf-op-run.c`·`pdf-interpret.c`·`pdf-font.c`·`pdf-type3.c`·`pdf-cmap.c`·`pdf-layer.c`·`path.c`) 대조 |
 
 ## 1. 구현 범위
@@ -18,8 +18,10 @@
 | `src/optional-content.ts` | /OC 숨김 판정(MuPDF `pdf_is_ocg_hidden`, usage View, 기본 구성 /D) |
 | `src/link.ts` | `linkPage` 본체(번호 짝짓기·원점 검증·재동기화·`unmatched` 표시) |
 | `src/source-map.ts` | 계약 시그니처 그대로 `buildSourceMap`·`linkPage` 연결 |
-| `test/helpers/page-model.ts` | 테스트 전용 최소 PageModel 생성기(Device 콜백, core 의존 없음, 두 계수 정책) |
-| `test/helpers/device-log.ts` | 테스트 전용 Device 기록 헬퍼 |
+| `test/helpers/page-model.ts` | 테스트 전용 최소 PageModel 생성기(Device 콜백, core 의존 없음. 계약 3.1 판정·수정안·no-clip 비교) |
+| `test/helpers/device-log.ts` | 테스트 전용 Device 기록 헬퍼, 계수 대상 콜백 전달 순서열(`deliveryTrace`) |
+| `test/helpers/first-arrival.ts` | 계약 3.1 core 판정 구현(테스트 전용, PageModel 헬퍼와 전달 순서열이 공유) |
+| `test/helpers/fuzz-content.ts` | 고정 시드 무작위 콘텐츠 생성기(테스트 도구, pdf-ops 비의존. 통합 단계 core 퍼징용) |
 
 내보내기: 패키지 index 는 기존대로 `buildSourceMap`·`linkPage`·옵션 타입만 새로 노출한다(`content-stream.ts` 의 새 함수 포함). 인터프리터·폰트·OC·정책 선택(`buildSourceMapImpl`)은 내보내지 않는다.
 
@@ -61,7 +63,7 @@
 |---|---|
 | V1 | 성립. Form `Do` 는 내용 앞에 BBox clipPath 1개(계약 수정 1 반영) |
 | V2 | 성립(ET 재전송 제외). Tj·TJ·Td·T*·'·"·Tf 변경·q 는 묶이고 색·선 상태·gs·Q·cm·W·marked content 는 나눈다 |
-| V3 | 불일치(계약 수정 1 에 기록, 3.1 결정 대기). Tr 4–7 글리프는 ET 에서 새 텍스트 객체로 재전송 |
+| V3 | 불일치 → 계약 수정 2 로 확정(첫 등장 계수, 3.1). Tr 4–7 글리프는 ET 에서 새 텍스트 객체로 재전송 |
 | V4 | 성립 |
 | V5 | 불일치 → 계약 수정 1 로 정정(꺼진 /OC 안에서도 클립·Tr 3·ET 재전송은 온다) |
 
@@ -87,36 +89,49 @@
 | sh | 1 |
 | SMask(gs) | beginMask~endMask 안 콜백은 세지 않는다(계약 수정 1). 구간 밖 추가 콜백 없음(실측: 텍스트·이미지·Form·sh·W n·BI) |
 
-타일링 패턴(MuPDF `pdf_show_pattern`): 칠할 경계(MuPDF `fz_bound_path` + 선 확장 `adjust_rect_for_stroke`)를 패턴 공간으로 옮겨 `(fx1−fx0 > 1 또는 fy1−fy0 > 1)` 이고 패턴이 블렌드를 쓰지 않으면 beginTile 경로(core 는 1 을 돌려 셀 미실행 → 계수 없음). 그 밖은 셀 내용을 타일 수만큼 직접 실행한다. 이때 셀 콜백은 소유 연산 없이 번호만 소비한다(SourceOp 없음). 셀 안에서는 색 있는 패턴이면 칠하는 쪽 재질만, 색 없는 패턴이면 둘 다 색으로 되돌린다(MuPDF `pdf_unset_pattern`).
+타일링 패턴(MuPDF `pdf_show_pattern`): 칠할 경계(MuPDF `fz_bound_path` + 선 확장 `adjust_rect_for_stroke`, 비직각 CTM 은 변환 선분으로 직각 판정)를 패턴 공간으로 옮겨 `(fx1−fx0 > 1 또는 fy1−fy0 > 1)` 이고 패턴이 블렌드를 쓰지 않으면 beginTile 경로(core 는 1 을 돌려 셀 미실행 → 계수 없음). 그 밖은 셀 내용을 타일 수만큼 직접 실행한다. 셀 칠하기 번호는 그 패턴 칠하기 연산(경로 칠하기·패턴 색 텍스트 실행 단위의 첫 연산·이미지 마스크)의 `paintSeq` 에 넣고 그 연산에 `outside-page-content` 를 단다(계약 수정 3). 셀 글리프는 소유 연산 없이 번호만 소비한다. 셀 안에서는 색 있는 패턴이면 칠하는 쪽 재질만, 색 없는 패턴이면 둘 다 색으로 되돌린다(MuPDF `pdf_unset_pattern`).
 
-## 4. glyphSeq 계수 정책(계약 3.1 결정 대기)
+## 4. glyphSeq 계수(계약 3.1 확정: 첫 등장 계수)
 
-`src/content-interp.ts` 의 `GLYPH_SEQ_POLICY` 상수로 전환한다. 인터프리터는 글리프마다 도착(fill·stroke·fill+stroke·ignore·clip·clip-stroke)을 기록하고 정책이 번호를 정한다. 번호를 받는 도착 시점의 CTM 으로 원점을 계산한다(MuPDF 는 텍스트 객체를 플러시 시점 CTM 으로 보낸다: ET 재전송 전 Q, Form 경계를 넘는 실행 단위).
+### 4.1 구현
 
-| 정책 | 규칙 | core 쪽 판정(테스트 헬퍼 `test/helpers/page-model.ts` 구현) |
+인터프리터는 글리프마다 도착(fill·stroke·fill+stroke·ignore·clip·clip-stroke)을 기록하고, 확정 규칙대로 첫 도착에서 번호를 준다(`GLYPH_SEQ_POLICY = 'first-arrival'`). 번호를 받는 도착 시점의 CTM 으로 원점을 계산한다(MuPDF 는 텍스트 객체를 플러시 시점 CTM 으로 보낸다: ET 재전송 전 Q, Form 경계를 넘는 실행 단위). 비교용으로 `no-clip`(채택하지 않은 core 안 A) 정책도 남겨 둔다(`buildSourceMapImpl` 인자, index 미노출).
+
+테스트 헬퍼의 core 쪽 판정(`test/helpers/first-arrival.ts`)은 계약 3.1 의 0–5단계와 같다: gid −1 제외, 직전 텍스트 콜백과 포인터가 같은 fillText·strokeText 건너뛰기, 센 목록(항목 목록, 키 = 폰트 포인터·gid·trm 6값·콜백 ctm 6값)에 fill·stroke 와 clipText·clipStrokeText 신규 글리프를 넣기, 클립·숨김 콜백에서 같은 키 항목 하나 소비, 소비가 있었던 콜백 뒤 비우기, 마스크 구간 제외.
+
+### 4.2 퍼징 측정(`test/policy-fuzz.test.ts`, 실측 2026-10-19)
+
+고정 시드 400쪽(`test/helpers/fuzz-content.ts`) 중 MuPDF 가 예외로 해석을 끝내는 44쪽(R10)을 뺀 356쪽. 실패 = 총수 차이 또는 소유 번호 글자·도형 미매칭. 글리프 단위 비교는 전달 순서열이 같은 쪽에서, 인터프리터가 아는 실제 첫 도착·재전송과 core 쪽 판정을 비교한다.
+
+| 판정 | 실패 쪽 | 원인별 실패 쪽 | 가짜 재전송(글리프) | 놓친 재전송(글리프) |
+|---|---|---|---|---|
+| 계약 3.1 확정 규칙 | 33 | R2 4, 가짜 재전송 18, 놓친 재전송만 11 | 73 | 67 |
+| 수정안(4.3: 1단계를 모든 텍스트 콜백에 적용) | 23 | R2 4, 가짜 재전송 18, 놓친 재전송만 1 | 73 | 8 |
+| no-clip(비교용) | 4 | R2 4 | — | — |
+
+원인
+
+- R2(4쪽): 인터프리터의 타일링 패턴 색 텍스트 타일 수 판정(글리프 경계 근사). 판정 규칙과 무관하다.
+- 가짜 재전송(18쪽, 73글리프): 키(폰트·gid·trm·ctm)가 비트 단위로 같은 다른 글리프가 센 목록에 있었다. 퍼징에서는 같은 Form 을 같은 CTM 으로 여러 번 Do 하는 경우가 대부분이다(같은 위치 같은 글자 덧그림, 계약 3.1 알려진 한계). 소비 뒤 목록을 비우므로 그 BT 의 진짜 재전송을 이어서 놓치기도 한다(수정안의 놓친 4글리프, seed 247).
+- 놓친 재전송, 확정 규칙에서만(10쪽, 59글리프): 같은 텍스트 객체의 두 번째 콜백이 clipStrokeText 인 경우(채움·선 모두 패턴 색, 또는 채움 색 + 선 패턴 색인 Tr 6). 1단계가 fillText·strokeText 만 건너뛰므로 clipStrokeText 가 첫 콜백 글리프를 소비하고 목록을 비워, 이어지는 ET 재전송을 새 글리프로 센다. 4.3 의 수정안이 이를 없앤다.
+- 놓친 재전송, 수정안에도 남는 것(1쪽, 4글리프, seed 130): BT 안 Q(비표준)로 CTM 이 바뀐 뒤 ET 재전송이 와서 ctm 키가 표시 시점과 다르다. MuPDF 는 재전송을 ET 시점 CTM 으로 보낸다(인터프리터 원점도 그 값). 계약 3.1 의 "BT 안에서는 cm 을 쓸 수 없으므로 ET 재전송의 ctm 은 표시 시점 ctm 과 같다" 의 예외다. BT 안 Form Do 로 클립 누적이 Form 의 ET 에서 재전송되는 경우도 같은 예외다.
+
+### 4.3 계약 3.1 판정 불일치 보고와 수정안(2026-10-19 메인 세션에 보고)
+
+재현: `test/source-map.test.ts` "계약 3.1 판정 불일치 재현: 채움·선 패턴 색 Tr 6". `BT 6 Tr (Ef) Tj ET`(채움·선 셰이딩 패턴)과 `BT 6 Tr (Gh) Tj ET`(채움 색, 선 셰이딩 패턴) → 실제 표시 글리프 4개, 인터프리터 4, 확정 규칙 core 판정 8.
+
+| MuPDF 콜백 | 확정 규칙 | 수정안 |
 |---|---|---|
-| `first-arrival`(기본, pdf-ops 안 A) | 글리프의 첫 도착에서 1 | ① 직전 텍스트 콜백과 포인터가 같으면 세지 않음(Tr 2·6, 패턴 색 fill→stroke) ② clipText·clipStrokeText·ignoreText 글리프 중 (폰트 포인터, gid, trm 6값)이 집합 K 에 있으면 ET 재전송으로 보고 세지 않음. K 에는 fillText·strokeText 로 센 글리프만 넣음. 재전송을 찾은 콜백 뒤 K 비움 ③ gid −1 보조 글리프는 세지 않음 |
-| `no-clip`(core 안 A) | clip·clip-stroke 도착은 세지 않음. 그 밖은 모두 셈. 이미 번호가 있는 글리프가 다시 세어지면(ET ignore 재전송) 소유 없는 번호 | clipText·clipStrokeText 미계수. 직전 텍스트 콜백과 포인터가 같고 그 콜백을 셌으면 미계수 |
+| clipText(Ef) → fillShade → clipStrokeText(같은 객체) → fillShade → ET clipText(재전송) | 2 새로 셈 → 같은 객체 clipStroke 가 소비·비움 → 재전송 2 새로 셈 | 2 새로 셈 → 같은 객체라 건너뜀 → 재전송 소비 |
+| fillText(Gh) → clipStrokeText(같은 객체) → fillShade → ET clipText(재전송) | 같음(4 셈) | 2 셈 |
 
-정책별 결과(실측 2026-10-19)
-
-| 항목 | first-arrival | no-clip |
-|---|---|---|
-| 합성 Tr 0–7 조합 14건: 총수 차이 | 0 | 0 |
-| 합성 Tr 0–7 조합 14건: 글자 전부 매칭 | 14/14 | 13/14(`4 Tr (Ab) 0 Tr (Xy) 7 Tr (Cd) 3 Tr (In)`: ET ignore 재전송 중복 2글자가 소유 없는 번호) |
-| 무작위 콘텐츠 퍼징 356쪽: 매칭 실패 쪽 | 37 | 4 |
-| 실패 원인 | 인터프리터 R2 4쪽 + core 쪽 판정 오판 33쪽(글리프 단위: 가짜 재전송 69, 놓친 재전송 105) | 인터프리터 R2 4쪽 |
-| Tr 7·패턴 색 텍스트 | ET 시점·표시 시점 번호로 PageModel 에 들어감 | 번호 없음(PageModel 에 없음) |
-
-퍼징: 고정 시드 400쪽(텍스트 Tr 0–7, 셰이딩·타일링 패턴, 꺼진·켜진 /OC, MCID, Form, 이미지, 인라인 이미지, sh, q/Q·cm·W·gs) 중 44쪽은 MuPDF 가 예외로 페이지 해석을 끝내므로(BT 안 cm 이 클립 텍스트 누적 중 실행, "CTM CHANGE IN CLIP TEXT") 비교에서 뺐다. 인터프리터도 같은 지점에서 중단 오류를 기록한다.
-
-first-arrival 의 core 쪽 판정은 Device 스트림에 ET 경계 정보가 없어 구조적으로 휴리스틱이다. ① 같은 위치에 같은 글리프를 다시 그린 경우(예: 같은 Form 을 같은 CTM 으로 Tr 0 뒤 Tr 7 로 다시 Do)를 재전송으로 오판하고, ② 패턴 색 Tr 4–6 텍스트의 ET 재전송(첫 도착이 clipText)을 놓친다. 퍼징은 이런 조합을 과대표집한다. 결정 근거로 메인 세션에 전달했다(2026-10-19).
+수정안 문구(1단계): "직전 텍스트 콜백과 텍스트 객체 포인터가 같은 텍스트 콜백은 종류와 무관하게 통째로 건너뛴다(같은 실행 단위의 fill→stroke, 패턴 색 clip→clipStroke, fill→clipStroke). ET 재전송은 항상 새 텍스트 객체로 온다." 알려진 한계에 "BT 안 Q 또는 BT 안 Form Do 로 ET 재전송 시점 CTM 이 표시 시점과 달라지면 재전송을 놓친다" 추가.
 
 ## 5. 매칭률(실측 2026-10-19)
 
 기준: 테스트 전용 PageModel(MuPDF Device 콜백, first-arrival 판정). 매칭 = 총수 차이 0, 소유 번호 글자·도형 전부 짝, 원점 오차 0.01pt 이하.
 
-### 5.1 합성 PDF(`test/source-map.test.ts`, 57건 통과)
+### 5.1 합성 PDF(`test/source-map.test.ts`, 57건 통과, 계약 3.1 판정 기준)
 
 | 범주 | 내용 | 결과 |
 |---|---|---|
@@ -126,7 +141,7 @@ first-arrival 의 core 쪽 판정은 Device 스트림에 ET 경계 정보가 없
 | 폰트 | Type0 Identity-H, Identity-V(/W2), 폭 정보 없는 Helvetica(WinAnsi), Type3(/FontMatrix 0.01, 소수 폭), CID 매핑 미상 CMap(UniKS-UCS2-H) | 전부 매칭(마지막은 원점 불일치를 번호 연속으로 인정, `font-encoding-unresolved`) |
 | Tr 0–7 | 14개 조합 × 정책 2, Tr 7 의 ET 시점 번호, Form 안 텍스트가 페이지 BT 실행 단위·클립 누적에 합쳐짐 | 4절 표 |
 | 선택적 콘텐츠 | 꺼진 BDC 안 Tr 0–7·경로·W n·이미지·sh·Form, /OC 꺼진 Form, BT 안 BDC 경계, OCMD(AnyOn·AllOff)·켜진 OCG, MCID | 전부 매칭 |
-| 도형 | W·W*·빈 경로·B 계열, 인라인 이미지(데이터 안 EI, /IM), 이미지 /SMask(2개), 셰이딩 패턴(칠하기·선·Tr 0·2 텍스트), 타일링 패턴(직접 실행·beginTile·선 패턴 셀 안 채움 패턴 재실행), SMask | 전부 매칭(타일링 셀 콜백은 소유 없는 번호라 매칭 대상 밖). 셰이딩 패턴 색 Tr 6 은 전달 순서열이 MuPDF 와 같고 core 쪽 판정만 재전송을 놓친다(R6) |
+| 도형 | W·W*·빈 경로·B 계열, 인라인 이미지(데이터 안 EI, /IM), 이미지 /SMask(2개), 셰이딩 패턴(칠하기·선·Tr 0·2 텍스트), 타일링 패턴(직접 실행·beginTile·선 패턴 셀 안 채움 패턴 재실행), SMask | 전부 매칭. 직접 실행 셀 칠하기는 패턴 칠하기 연산 소유·`outside-page-content`, 셀 글리프 6개만 소유 없음. 패턴 색 Tr 6 은 4.3 재현 |
 | 오류 | 토크나이저 오류, Tf 리소스 누락(hail-mary), Tf 전 텍스트 | 오류 1건·앞 연산 4개 `tokenizer-error` / 전부 매칭·`font-encoding-unresolved` / 글리프 없음 |
 | linkPage | 모델에 글자 1개를 끼워 번호를 민 경우 재동기화, 원점 2pt 어긋남(허용치 1 → 0/3, 3 → 3/3) | 기대대로 |
 
@@ -145,7 +160,7 @@ first-arrival 의 core 쪽 판정은 Device 스트림에 ET 경계 정보가 없
 
 ### 5.3 전달 순서열 퍼징(`test/delivery-fuzz.test.ts`)
 
-정책과 무관하게 인터프리터의 Device 전달 순서열(텍스트 도착 종류·글리프 수, 칠하기 순서)을 MuPDF 와 비교한다. 4절과 같은 고정 시드 400쪽: MuPDF 예외 종료 44쪽(인터프리터도 같은 지점 중단), 비교 356쪽 중 일치 352쪽, 불일치 4쪽(시드 44·132·288·390, 전부 타일링 패턴 색 텍스트의 타일 수 판정 R2). 테스트는 불일치 집합이 이 4개와 같음을 고정한다. 실행 약 3.4초.
+정책과 무관하게 인터프리터의 Device 전달 순서열(텍스트 도착 종류·글리프 수, 칠하기 순서)을 MuPDF 와 비교한다. 4.2 와 같은 고정 시드 400쪽: MuPDF 예외 종료 44쪽(인터프리터도 같은 지점 중단), 비교 356쪽 중 일치 352쪽, 불일치 4쪽(시드 44·132·288·390, 전부 타일링 패턴 색 텍스트의 타일 수 판정 R2). 테스트는 불일치 집합이 이 4개와 같음을 고정한다. 실행 약 3.4초.
 
 퍼징으로 찾아 고친 인터프리터 결함: 텍스트 원점을 표시 시점 CTM 으로 계산하던 것(→ 도착 시점), 직각 판정을 경로 공간에서만 하던 것(→ 비직각 CTM 은 변환 선분으로 판정, MuPDF `fz_bound_path`), 패턴 셀 안에서 채움·선 재질을 모두 해제하던 것(→ 색 있는 패턴은 칠하는 쪽만).
 
@@ -176,7 +191,7 @@ Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`t
 | R3 | 토크나이저 오류 뒤는 해석하지 않는다. MuPDF 는 오류 토큰을 건너뛰고 계속한다(최대 100회) | 오류 뒤 번호가 MuPDF 와 어긋난다 | `tokenizer-error`, 해당 콘텐츠 편집 불가(L6) |
 | R4 | 필터 있는 인라인 이미지의 EI 는 앞뒤 공백 조건으로 찾는다(MuPDF 는 디코더가 데이터를 소비한 뒤 찾음) | 압축 데이터 안 우연한 " EI " 에서 잘못 끝날 수 있다 | L6 와 같은 위험. 코퍼스에서 확인 |
 | R5 | 깊이 상한(기본 8)을 넘은 Form 은 해석하지 않는다. MuPDF 는 순환이 아니면 실행한다 | 그 뒤 번호 어긋남 | `form-depth-exceeded`, 재동기화 |
-| R6 | first-arrival 정책의 core 쪽 판정 한계(4절): 같은 위치 같은 글리프 재그리기를 재전송으로 오판, 패턴 색 Tr 4–6 의 ET 재전송을 놓침 | 그 글자 번호가 어긋난다(퍼징 356쪽 중 33쪽) | 재동기화, 해당 글자 `unmatched`. no-clip 정책이면 생기지 않는다 |
+| R6 | 계약 3.1 core 판정 한계(4.2): 같은 위치 같은 글자 덧그림을 재전송으로 오판(구조적), 같은 객체 clipStrokeText 소비(4.3 수정안으로 해소), BT 안 Q·Form 으로 재전송 CTM 변경 | 그 글자 번호가 어긋난다(퍼징 356쪽: 확정 규칙 29쪽, 수정안 19쪽, R2 제외) | 재동기화, 해당 글자 `unmatched` |
 | R7 | CID 매핑을 모르는 미리 정의된 CMap(UCS2·UTF16·UHC 등) 폰트는 폭이 균일하지 않으면 원점이 틀린다 | 원점 검증 불가 | `font-encoding-unresolved`, 번호 연속으로만 매칭 |
 | R8 | 도형 매칭 검증: 경로는 CTM, 이미지는 단위 사각형 경계, Form BBox 클립·셰이드는 종류만 본다 | 같은 CTM 의 연속 칠하기 사이 재동기화가 틀릴 여지 | 주인 없는 번호에서는 재동기화하지 않고, 재동기화는 다음 2개 항목 확인 후 채택 |
 | R9 | 주석 외관·SMask 그룹·패턴 셀·Type3 글리프 프로시저 스트림은 SourceOp 를 만들지 않는다(L4) | 편집 대상 아님 | — |
@@ -194,8 +209,9 @@ Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`t
 
 | # | 내용 | 담당 |
 |---|---|---|
-| P1 | 계약 3.1 결정 후 `GLYPH_SEQ_POLICY` 기본값 확정(안 A 면 변경 없음), 계약 수정 2 머지 | 메인 세션 → pdf-ops |
-| P2 | 계약 3절 보완 요청 3건(2026-10-19 메인 세션에 전달): 타일링 패턴 직접 실행 시 셀 콜백, 마스크 이미지 2콜백, ToUnicode 1:N 보조 글리프(gid −1) 미계수 | 메인 세션 |
+| P1 | 계약 3.1 확정(첫 등장 계수)·수정 2–4 머지, 기본 정책 first-arrival 유지 | 완료(2026-10-19) |
+| P2 | 계약 3절 보완 3건(타일링 직접 실행 셀, 마스크 이미지 2콜백, gid −1 보조 글리프) → 계약 수정 3 반영, 셀 칠하기 소유·`outside-page-content` 구현 | 완료(2026-10-19) |
+| P7 | 4.3 수정안(1단계를 모든 텍스트 콜백에 적용)·알려진 한계 추가 검토, core 반영 여부 결정 | 메인 세션 |
 | P3 | 통합 시 core PageModel 로 fixtures/m0·코퍼스 매칭률 재측정(테스트 헬퍼와 core 판정이 같은지 확인) | 메인 세션(통합) |
 | P4 | 코퍼스에서 R1·R2·R4 빈도 확인 후 에뮬레이션 추가 여부 결정 | M1 통합 후 |
 | P5 | core 에 R10(페이지 해석 예외) 전달, 정책 결정 시 4절 퍼징 수치 참고 | 메인 세션 |
