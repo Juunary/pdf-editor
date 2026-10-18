@@ -30,10 +30,21 @@
 
 | 번호 | 세는 대상 | 규칙 |
 |---|---|---|
-| glyphSeq | 텍스트 콜백(fillText·strokeText·clipText·clipStrokeText·ignoreText)의 글리프 | 글리프마다 1. 같은 텍스트 객체(포인터 동일)를 연속으로 받은 fill/stroke/clip 콜백은 한 번으로 센다(Tr 2·4·5·6) |
-| paintSeq | 텍스트 외 그리기 콜백(fillPath·strokePath·clipPath·clipStrokePath·fillShade·fillImage·fillImageMask·clipImageMask) | 콜백마다 1. 채움+선(B·B*·b·b*)은 2 |
+| glyphSeq | 텍스트 콜백(fillText·strokeText·clipText·clipStrokeText·ignoreText)의 글리프 | **결정 대기(3.1)**. 확정된 부분: 글리프마다 1, 같은 텍스트 객체(포인터 동일)를 연속으로 받은 fill→stroke(Tr 2·6)는 한 번. Tr 4–6 클립의 ET 재전송 처리 규칙은 3.1 결정으로 정한다 |
+| paintSeq | 텍스트 외 그리기 콜백(fillPath·strokePath·clipPath·clipStrokePath·fillShade·fillImage·fillImageMask·clipImageMask) | 콜백마다 1. 채움+선(B·B*·b·b*)은 2. 경로가 비어도 칠하기 연산은 콜백을 보낸다. 세부는 아래 표 |
 
 - core 는 `runPageContents`(주석 제외)를 항등 행렬로 실행해 센다. pdf-ops 인터프리터는 같은 규칙으로 센다.
+
+paintSeq 세부(실측 2026-10-19, `docs/m1-pdf-ops.md` 2·5절, `docs/m1-core.md` 2절)
+
+| 상황 | Device 콜백 | 계수 |
+|---|---|---|
+| Form XObject `Do` | 내용보다 먼저 BBox `clipPath` 1개(+ 끝에 popClip) | 1. SourceMap 에서는 그 `Do` 연산의 `paintSeq` |
+| 셰이딩 패턴 색 f / S / B | clipPath+fillShade / clipStrokePath+fillShade / 4개 | 콜백 수만큼 |
+| 타일링 패턴 색 칠하기 | clipPath + beginTile | clipPath 1. core 는 `beginTile` 이 1(캐시됨)을 돌려 MuPDF 가 셀 내용을 실행하지 않게 한다. pdf-ops 는 패턴 셀 스트림을 해석하지 않는다 |
+| 소프트 마스크(SMask) | beginMask ~ endMask 사이 마스크 내용 콜백 | `beginMask`~`endMask` 사이 콜백은 glyphSeq·paintSeq 모두 세지 않는다. pdf-ops 는 SMask 그룹 스트림을 해석하지 않는다. 그 구간 밖의 콜백(예: 마스크 앞의 clipPath)은 센다 — pdf-ops 가 실측으로 확인 |
+| 이미지 XObject / 인라인 이미지 / `/IM true` 인라인 | fillImage / fillImage / fillImageMask | 1 |
+| `ca`·블렌드 | beginGroup/endGroup | 세지 않음 |
 - 매칭(`linkPage`): 같은 번호끼리 짝짓고, 원점 오차가 `originTolerance`(기본 1pt) 이하인지 확인한다. 번호가 어긋난 구간은 원점으로 재동기화를 시도하고, 실패한 글자·도형은 -1 과 `unmatched` 제한으로 남긴다. 총수 차이는 `LinkStats` 에 기록한다.
 
 검증 전제(어긋나면 해당 작업이 즉시 메인 세션에 보고한다. 계약을 임의로 바꾸지 않는다)
@@ -42,9 +53,19 @@
 |---|---|---|
 | V1 | `runPageContents` 의 Device 콜백은 Form XObject 재귀를 포함해 콘텐츠 실행 순서로 온다 | pdf-ops, core |
 | V2 | MuPDF 는 여러 Tj/TJ 를 한 텍스트 콜백으로 묶을 수 있으나 글리프 순서는 보존한다 | pdf-ops |
-| V3 | 모든 표시 글리프가 위 규칙으로 정확히 한 번 센다(Tr 3 은 ignoreText, Tr 7 은 clipText). 포인터 동일 판정이 Tr 2·4–6 중복을 제거한다 | core, pdf-ops |
+| V3 | **불일치 확인(2026-10-19)**. MuPDF 는 BT 안의 Tr 4–7 글리프를 ET 에서 새 텍스트 객체로 다시 보낸다(ET 재전송, 포인터 다름). 포인터 규칙은 Tr 2·6 의 fill→stroke 만 합친다. 패턴 색 텍스트는 Tr 0 이어도 표시 시점 clipText 로 온다. 계수 규칙은 3.1 결정 대기 | core, pdf-ops |
 | V4 | 채움+선 연산은 fillPath → strokePath 콜백 2개다 | pdf-ops |
-| V5 | 꺼진 선택적 콘텐츠(/OC)는 Device 에 오지 않는다. pdf-ops 는 해당 글리프 `seq` 를 null 로 두고 `optional-content` 제한을 단다 | pdf-ops |
+| V5 | **정정(2026-10-19)**. 꺼진 /OC 안의 fill/stroke 경로·이미지·셰이드·Tr 0–2 텍스트(Tr 4–6 의 표시 부분 포함)와 `/OC` 가 꺼진 Form·이미지 XObject 는 Device 에 오지 않는다. 클립(`W n`, Form BBox), Tr 3 텍스트, Tr 4–7 의 ET 재전송은 온다. pdf-ops 는 Device 에 오지 않는 글리프만 `seq` 를 null 로 두고, 꺼진 /OC 안의 연산 전부에 `optional-content` 제한을 단다 | pdf-ops |
+
+### 3.1 클립 텍스트 계수 규칙(결정 대기)
+
+V3 불일치에 대한 수정안. 결정 전까지 core 는 두 정책을 모두 구현하고(전환은 상수 1줄), pdf-ops 는 결정과 무관한 부분(상태 머신·글리프 원점·제한 사유·paintSeq)을 진행한다.
+
+| 안 | 규칙 | Tr 7·패턴 색 텍스트 | 결정성·한계 |
+|---|---|---|---|
+| core 안 A(사용자 1차 승인) | clipText·clipStrokeText 글리프는 세지 않는다. pdf-ops 는 Tr 7 글리프 seq null | 둘 다 PageModel 에 없음(선택·복사·디버그 대상 아님). 패턴 색 Tr 0 텍스트는 pdf-ops 도 null 로 맞춰야 함 | core 쪽 결정적. 보이는 패턴 색 글자가 텍스트 층에서 빠진다 |
+| pdf-ops 안 A(첫 등장 계수) | 글리프를 처음 Device 에 올 때 센다. clipText·clipStrokeText·ignoreText 글리프 중 이미 센 글리프와 (폰트, gid, trm 6값)이 비트 단위로 같은 것은 ET 재전송으로 보고 세지 않는다. pdf-ops 는 MuPDF 전달 시점 표(`docs/m1-pdf-ops.md` 3.1)를 그대로 에뮬레이션한다 | 둘 다 PageModel 에 들어온다(Tr 7 은 ET 시점 번호, Device 에 아예 안 오는 글리프만 null) | pdf-ops 결정적. core 판정은 같은 위치에 비트 단위로 같은 글리프를 덧그린 경우만 오판, linkPage 재동기화로 국소 복구 |
+| core 안 B' | clipText 글리프 중 직전 텍스트 구간에서 센 글리프와 같은 것만 제외 | 들어온다 | pdf-ops 안 A 와 비슷하나 BT 안 경로 칠하기·ignoreText 재전송·Tr 7 순서에서 어긋난다 |
 
 ## 4. 타입(packages/shared-types/src)
 
