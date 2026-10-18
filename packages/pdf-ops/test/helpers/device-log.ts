@@ -3,6 +3,12 @@
  * 텍스트 콜백은 글리프 유니코드를 이어 붙인 문자열과 텍스트 객체 포인터를 남긴다.
  */
 import * as mupdf from 'mupdf';
+import {
+  FirstArrivalJudge,
+  glyphKey,
+  type JudgeOptions,
+  type TextCallbackKind,
+} from './first-arrival.js';
 
 export interface DeviceEvent {
   kind: string;
@@ -96,60 +102,56 @@ export function brief(events: readonly DeviceEvent[], skip: readonly string[] = 
  * 텍스트는 `종류:글리프 수`(gid −1 보조 글리프 제외, fill 다음 같은 포인터 stroke 는 fill+stroke),
  * 칠하기는 `P`. beginMask~endMask 구간은 빼고, beginTile 은 1(캐시됨)을 돌려준다.
  */
-export function deliveryTrace(page: mupdf.Page, flags = false): string[] {
+export function deliveryTrace(
+  page: mupdf.Page,
+  flags = false,
+  judgeOptions: JudgeOptions = {},
+): string[] {
   const out: string[] = [];
-  // flags: first-arrival 판정(테스트 헬퍼 규칙)으로 글리프마다 N(새 글리프)·R(재전송)을 붙인다.
-  let known = new Set<string>();
+  // flags: 계약 3.1 core 판정으로 글리프마다 N(새 글리프)·R(재전송)을 붙인다(콜백을 건너뛰면 전부 R).
+  const judge = new FirstArrivalJudge(judgeOptions);
   const held: mupdf.Text[] = [];
   let mask = 0;
   let last: { pointer: number; kind: string; index: number } | null = null;
-  const kinds: Record<string, string> = {
+  const kinds: Record<string, TextCallbackKind> = {
     fillText: 'fill',
     strokeText: 'stroke',
     clipText: 'clip',
     clipStrokeText: 'clip-stroke',
     ignoreText: 'ignore',
   };
-  const text = (name: string) => (t: mupdf.Text) => {
-    if (mask > 0) return;
-    held.push(t);
-    let n = 0;
-    let f = '';
-    const kind = kinds[name]!;
-    const samePointer = last !== null && last.pointer === t.pointer;
-    let resend = false;
-    t.walk({
-      showGlyph: (font, m, gid) => {
-        if (gid < 0) return;
-        n++;
-        const key = `${font.pointer}:${gid}:${m.join(',')}`;
-        if (samePointer) f += 'R';
-        else if (kind !== 'fill' && kind !== 'stroke' && known.has(key)) {
-          f += 'R';
-          resend = true;
-        } else {
-          f += 'N';
-          if (kind === 'fill' || kind === 'stroke') known.add(key);
-        }
-      },
-    });
-    if (resend) known = new Set();
-    const tag = flags ? `:${f}` : '';
-    if (
-      kind === 'stroke' &&
-      last &&
-      last.pointer === t.pointer &&
-      last.kind === 'fill' &&
-      last.index === out.length - 1
-    ) {
-      // 직전 fill 항목의 플래그를 그대로 쓴다(같은 객체의 두 번째 콜백).
-      out[out.length - 1] = out[out.length - 1]!.replace(/^fill:/, 'fill+stroke:');
-      last = null;
-      return;
-    }
-    out.push(`${kind}:${n}${tag}`);
-    last = { pointer: t.pointer, kind, index: out.length - 1 };
-  };
+  const text =
+    (name: string) =>
+    (t: mupdf.Text, ...rest: unknown[]) => {
+      if (mask > 0) return;
+      held.push(t);
+      const ctm = rest.find((r) => Array.isArray(r) && r.length === 6) as number[];
+      const kind = kinds[name]!;
+      const keys: string[] = [];
+      t.walk({
+        showGlyph: (font, m, gid) =>
+          void (gid >= 0 && keys.push(glyphKey(font.pointer, gid, m, ctm))),
+      });
+      const decisions = judge.judge(kind, t.pointer, keys);
+      const f = decisions
+        ? decisions.map((d) => (d ? 'N' : 'R')).join('')
+        : 'R'.repeat(keys.length);
+      const n = keys.length;
+      if (
+        kind === 'stroke' &&
+        last &&
+        last.pointer === t.pointer &&
+        last.kind === 'fill' &&
+        last.index === out.length - 1
+      ) {
+        // 직전 fill 항목의 플래그를 그대로 쓴다(같은 객체의 두 번째 콜백).
+        out[out.length - 1] = out[out.length - 1]!.replace(/^fill:/, 'fill+stroke:');
+        last = null;
+        return;
+      }
+      out.push(`${kind}:${n}${flags ? `:${f}` : ''}`);
+      last = { pointer: t.pointer, kind, index: out.length - 1 };
+    };
   const paint = () => {
     if (mask > 0) return;
     out.push('P');

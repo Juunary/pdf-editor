@@ -4,6 +4,7 @@
  * - 글자: 같은 glyphSeq 끼리 짝짓고 원점 오차가 허용치 이하인지 확인한다. 어긋나면 번호 차이(delta)를
  *   창 안에서 원점으로 다시 찾고, 다음 글자까지 같은 delta 로 맞을 때만 재동기화한다.
  * - 도형: 같은 paintSeq 끼리 짝짓고 종류 호환·행렬(경로)·경계(이미지)로 확인한다. 재동기화는 글자와 같다.
+ *   `outside-page-content` 연산(직접 실행 패턴 셀 소유)의 셀 칠하기는 현재 delta 에서만 종류 무관 인정한다.
  * - 폭 정보가 불완전한 폰트(font-encoding-unresolved) 글리프는 원점이 어긋날 수 있어, 직전 글자와 번호가
  *   이어지면 원점 확인 없이 인정한다(재동기화 기준으로는 쓰지 않는다).
  * - 실패한 글자·도형은 -1. 짝이 없는 번호를 가진 연산에는 `unmatched` 제한을 단다(map 을 고친다).
@@ -255,6 +256,14 @@ export function link(model: PageModel, map: SourceMap, config: LinkConfig): Page
  * 모델 도형과 맵 연산의 호환. 행렬·경계로 확인되면 strong, 종류만 맞으면 loose(현재 delta 에서만 인정).
  */
 function compatible(mp: ModelPaint, p: MapPaint, u: Matrix): 'strong' | 'loose' | null {
+  const own = compatibleOwn(mp, p, u);
+  if (own) return own;
+  // 직접 실행한 타일링 패턴 셀의 칠하기는 그 패턴 칠하기 연산이 소유한다(계약 3절). 종류·행렬이 셀 기준이라
+  // 현재 delta 에서만 인정한다.
+  return p.op.limits.includes('outside-page-content') ? 'loose' : null;
+}
+
+function compatibleOwn(mp: ModelPaint, p: MapPaint, u: Matrix): 'strong' | 'loose' | null {
   const op = p.op;
   const toPage = concat(op.ctm, u);
   if (mp.kind === 'path') {
