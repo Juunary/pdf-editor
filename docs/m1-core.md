@@ -4,7 +4,7 @@
 |---|---|
 | 작성일 | 2026-10-19 |
 | 범위 | `docs/m1-contract.md` 5.2절(`extractPage`·`searchText`·Stream 입력) |
-| 브랜치 | `m1-core` (기준: 계약 커밋 97a6fb4, 계약 수정 1·2 머지) |
+| 브랜치 | `m1-core` (기준: 계약 커밋 97a6fb4, 계약 수정 1·2·3 머지) |
 | 환경 | 서버 Node 22.18.0, mupdf 1.28.1. 브라우저·Windows 는 미측정 |
 | 재현 | `pnpm --filter @pdf-editor/core build` 후 `node packages/core/scripts/measure-m1.mjs <fixtures｜dir <폴더>｜gen <out> [쪽수]｜compare <file>>` |
 
@@ -14,7 +14,7 @@
 |---|---|
 | V1 (Form 재귀 순서) | 확인됨(2.1) |
 | V3 (글리프 정확히 한 번) | 포인터 규칙 불일치를 보고했고, 사용자 결정 "첫 등장 계수"(계약 3.1)로 구현·검증 완료(2.2–2.4) |
-| `extractPage` | 구현. 합성 PDF 59건 + 실제 코퍼스 1,647쪽 무예외(4절) |
+| `extractPage` | 구현. 합성 PDF 63건 + 실제 코퍼스 1,647쪽 무예외(4절) |
 | `searchText` | 구현. 대소문자·순환·pageLimit·maxHits·truncated 테스트 10건 |
 | Stream 입력(A3-1) | 구현. 저장 바이트 동일·열기 힙 +0(5절) |
 | 쪽 캐시 | `PdfSession.extractPage` 최근 사용 순 16쪽, `invalidatePageCache(pageIndex?)` |
@@ -56,6 +56,7 @@
 
 | 계약 3.1 단계 | 구현 |
 |---|---|
+| 0 | gid -1 보조 글리프는 번호·센 목록에 넣지 않고 같은 텍스트 객체의 직전 글리프(새로 센 것이든 소비한 것이든) `extra` 에 붙인다. 소비한 글리프에 이미 보조 글자가 있으면 다시 붙이지 않는다. 구조화 텍스트의 뒷 글자는 같은 줄에서 함께 소비하고 `quad` 는 `unionQuads` 로 합친다 |
 | 1 | `#showPainted`: 직전 콜백과 `text.pointer` 가 같은 fill↔stroke 는 건너뛰고 앞 글리프를 `fill-stroke` 로 바꾼다. 직전 래퍼는 `#prev` 에 유지 |
 | 2 | fill/stroke 글리프에 번호를 주고 키 `fontId｜gid｜trm 6값 문자열` 로 "센 목록" `#counted` 에 넣는다 |
 | 3 | `#showUnpainted`(clipText·clipStrokeText·ignoreText): 키가 센 목록 미소비 항목과 같으면 소비(세지 않음, 그 글리프 `clip = true`), 아니면 번호를 준다. 클립 콜백에서 새로 센 글리프는 센 목록에 넣는다 |
@@ -70,6 +71,8 @@ paintSeq 세부(계약 3절 표)와의 대응: Form BBox `clipPath`·셰이딩 �
 
 - 같은 폰트·gid·trm 이 비트 단위까지 같은 글리프를 다른 BT 에서 그린 뒤 클립 콜백으로 다시 오면 재전송으로 오판한다(`extract.test.ts` "알려진 한계").
 - BT 마지막 글리프가 Tr 0–2 이면 그 BT 의 Tr 7 글리프는 Device 에 오지 않는다(MuPDF 동작). 모델에도 없다.
+- 클립 콜백에서 처음 세는 글리프(Tr 7 등)는 MuPDF 가 gid -1 보조 글리프를 보내지 않아 `text` 가 첫 글자뿐이다(ToUnicode 가 다중 글자인 글리프에 한함, 구조화 텍스트의 뒷 글자는 줄에서 빠진다).
+- 계약 수정 3의 타일링 패턴 직접 실행 경로(영역이 한 타일 이하 등)는 `beginTile` 없이 셀 내용 콜백이 오므로 받은 대로 센다. 그 안의 글리프는 패턴 색 텍스트 판정(`beginTile`·`fillShade`)에 걸리지 않는다.
 
 ## 3. 구현 범위
 
@@ -92,7 +95,7 @@ PageModel 채우기 규칙
 |---|---|
 | `chars[].text` | Device `unicode` 문자열. 합자 코드포인트(U+FB00–FB06)는 NFKC 전개. ToUnicode 가 글리프 하나를 여러 글자("Th", "fi", 점선)로 대응시키면 MuPDF 가 gid -1(폭 0) 항목을 덧붙이는데, 이는 글리프가 아니므로 세지 않고 앞 글리프 `text` 에 합친다(실제 코퍼스 첫 5쪽 근사 비율 약 8% → 0.1% 로 감소). 매핑이 없으면 "�" |
 | `origin`·`size` | `Matrix.concat(trm, ctm)` 의 e·f, 두 번째 열 길이 |
-| `quad`·`color`·`line` | 구조화 텍스트 글자와 짝이 되면 그 값(색은 8비트 sRGB). 아니면 quad 근사(위 0.95 em·아래 0.25 em, 가로폭 = `advanceGlyph`·글자 크기, 세로쓰기는 폭 1 em), 색은 Device 색, `line` -1, 경고 |
+| `quad`·`color`·`line` | 구조화 텍스트 글자와 짝이 되면 그 값(여러 글자가 한 글리프에 대응하면 quad 는 글자들의 합집합, 색은 8비트 sRGB). 아니면 quad 근사(위 0.95 em·아래 0.25 em, 가로폭 = `advanceGlyph`·글자 크기, 세로쓰기는 폭 1 em), 색은 Device 색, `line` -1, 경고 |
 | `lines`·`blocks` | 구조화 텍스트 순서. 글리프와 짝이 된 글자만 담고 비는 줄·블록은 뺀다(Tr 4–6 중복 줄, 합성 공백, 주석 텍스트 제외) |
 | `paths[].bbox` | 채움·클립: 경로 점(곡선은 제어점 포함)의 페이지 공간 경계. 선: MuPDF `Path.getBounds(stroke, ctm)`(열린 선은 마이터 한계 여유를 넓게 잡아 큼) |
 | `shades[].bbox` | `Shade.getBounds()` 를 CTM 으로 옮기고 현재 클립 경계로 접는다. 경계가 ±2^31 근처(무한)이면 현재 클립 경계 |
@@ -209,12 +212,12 @@ PageModel 채우기 규칙
 
 ## 6. 테스트
 
-`pnpm --filter @pdf-editor/core test`: 6 파일 91건(계약 커밋 기준 7건).
+`pnpm --filter @pdf-editor/core test`: 6 파일 95건(계약 커밋 기준 7건).
 
 | 파일 | 내용 |
 |---|---|
 | `mupdf-text-callbacks.test.ts` | MuPDF 콜백 관측(V1, Tr 별 콜백·포인터, 래퍼 해제 시 주소 재사용) 9건 |
-| `extract.test.ts` | 글자·좌표·읽기 순서·회전·MediaBox 오프셋, glyphSeq 규칙(Tr 0–7, Form 재귀), 클립 텍스트 첫 등장 계수(타일링·셰이딩 패턴 색 텍스트, Tr 7 + `sh`, Tr 4/7 혼합, pdf-ops 3.1 표 4사례, 알려진 한계), 패턴 셀·소프트 마스크 제외, quad 근사·합성 공백, 색공간(Gray·RGB·CMYK·Separation·Lab·Indexed), 도형(B 연산 번호 2개·짝홀·곡선·세그먼트·알파·클립), 이미지·인라인·마스크·셰이드, 주석 제외, MuPDF 경고, 캐시(LRU 16쪽·무효화), 합자·다중 글자 ToUnicode·DejaVu 합자 글리프, Shade 래퍼 GC 59건 |
+| `extract.test.ts` | 글자·좌표·읽기 순서·회전·MediaBox 오프셋, glyphSeq 규칙(Tr 0–7, Form 재귀), 클립 텍스트 첫 등장 계수(타일링·셰이딩 패턴 색 텍스트, Tr 7 + `sh`, Tr 4/7 혼합, pdf-ops 3.1 표 4사례, 알려진 한계), 패턴 셀·소프트 마스크 제외, quad 근사·합성 공백, 색공간(Gray·RGB·CMYK·Separation·Lab·Indexed), 도형(B 연산 번호 2개·짝홀·곡선·세그먼트·알파·클립), 이미지·인라인·마스크·셰이드, 주석 제외, MuPDF 경고, 캐시(LRU 16쪽·무효화), 합자·다중 글자 ToUnicode(Tr 0/2/4/7)·quad 합집합·DejaVu 합자 글리프, Shade 래퍼 GC 63건 |
 | `search.test.ts` | 대소문자·순환·pageLimit·maxHits·truncated·다줄 결과·한글·빈 검색어·500 quad 상한·인자 오류 10건 |
 | `stream-input.test.ts` | 저장 바이트 동일(전체·증분), 읽기량, 래퍼 해제, 배율 6건 |
 | `session.test.ts` | 기존 4건 + 계약 커밋의 "M1 미구현" 테스트를 추출·검색 연결 테스트로 교체(5건). `open.test.ts` 2건은 그대로 |

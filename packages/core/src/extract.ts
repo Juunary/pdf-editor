@@ -11,7 +11,13 @@ import type {
 } from '@pdf-editor/shared-types';
 import { ColorConverter } from './color.js';
 import { DeviceCollector, type RawGlyph } from './extract-device.js';
-import { glyphText, matchGlyphs, readStructuredText, type StextData } from './extract-stext.js';
+import {
+  glyphText,
+  matchGlyphs,
+  readStructuredText,
+  unionQuads,
+  type StextData,
+} from './extract-stext.js';
 import { pageRotation, transformPoint } from './page-geometry.js';
 
 /** 추출 계측값(PageModel 에는 넣지 않는다. 측정·테스트용). */
@@ -268,7 +274,7 @@ function assemble(
       fontId: g.fontId,
       size: g.size,
       origin: [g.m[4], g.m[5]],
-      quad: match ? match.quad : approximateQuad(g),
+      quad: match ? unionQuads([match, ...match.parts]) : approximateQuad(g),
       color: g.noColor ? null : match ? match.rgb : g.rgb,
       render: g.render,
       clip: g.clip,
