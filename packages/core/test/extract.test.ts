@@ -368,6 +368,45 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     expect(model.shades).toHaveLength(1);
   });
 
+  // 계약 수정 6: 포인터가 같은 텍스트 콜백은 종류와 무관하게 건너뛴다(pdf-ops 재현).
+  it('채움·선 모두 패턴 색 Tr 6: clip→clipStroke 의 같은 객체를 건너뛰어 ET 재전송을 소비한다', () => {
+    const { model, stats } = run({
+      content:
+        '/Pattern cs /P2 scn /Pattern CS /P2 SCN BT /F1 20 Tf 50 150 Td 6 Tr (Ef) Tj ET 0 Tr ' +
+        '0 g /Pattern CS /P2 SCN BT /F1 20 Tf 50 100 Td 6 Tr (Gh) Tj ET 0 Tr',
+      resources: shadingResources,
+    });
+    // 표시 글리프 4개. 건너뛰지 않으면 clipStroke 가 목록을 비워 ET 재전송 4개를 더 센다(8).
+    expect(text(model)).toBe('EfGh');
+    expect(seqs(model)).toEqual([0, 1, 2, 3]);
+    expect(stats).toMatchObject({ clipCounted: 2, retransmitted: 4, clipDepth: 0 });
+    // 셰이딩 패턴 칠하기: Ef 는 채움·선 두 번, Gh 는 선만
+    expect(model.shades).toHaveLength(3);
+  });
+
+  it('채움 색 + 선 패턴 Tr 6: fill→clipStroke 의 같은 객체를 건너뛴다', () => {
+    const { model, stats } = run({
+      content: '0 g /Pattern CS /P2 SCN BT /F1 20 Tf 50 150 Td 6 Tr (Ab) Tj ET 0 Tr',
+      resources: shadingResources,
+    });
+    expect(text(model)).toBe('Ab');
+    expect(stats).toMatchObject({ glyphs: 2, retransmitted: 2, clipDepth: 0 });
+    expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
+      ['fill', true],
+      ['fill', true],
+    ]);
+  });
+
+  it('건너뛴 클립 콜백도 클립 스택에 올라 popClip 짝이 맞는다(균형)', () => {
+    const { stats } = run({
+      content:
+        '/Pattern cs /P2 scn /Pattern CS /P2 SCN BT /F1 20 Tf 50 150 Td 6 Tr (Ef) Tj ET 0 Tr ' +
+        'q 10 10 80 80 re W n /Sh1 sh Q',
+      resources: shadingResources,
+    });
+    expect(stats.clipDepth).toBe(0);
+  });
+
   it('Tr 4 와 Tr 7 이 한 BT 에 섞이면 Tr 7 글리프만 새로 센다(번호는 표시 순서)', () => {
     const { model, stats } = run(show(4, '(AB) Tj 7 Tr (CD) Tj'));
     expect(text(model)).toBe('ABCD');

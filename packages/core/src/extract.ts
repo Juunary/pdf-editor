@@ -40,6 +40,8 @@ export interface ExtractStats {
   clipCounted: number;
   /** 색 변환에 실패해 rgb 를 null 로 둔 횟수. */
   colorFailures: number;
+  /** 실행이 끝났을 때 클립 스택에 남은 항목 수. 0 이 아니면 클립 콜백(popClip 짝)을 놓친 것이다. */
+  clipDepth: number;
 }
 
 export interface ExtractResult {
@@ -191,6 +193,7 @@ function build(
     retransmitted: collector.retransmitted,
     clipCounted: collector.clipCounted,
     colorFailures: colors.failures,
+    clipDepth: collector.clipDepth,
   };
   for (const ch of stext.chars) {
     if (ch.owner !== -1) continue;
