@@ -126,7 +126,10 @@ export interface SourceOp {
   optionalContent: boolean;
   /** kind = text-show 일 때만. */
   text?: TextShowInfo;
-  /** text-show 가 만든 glyphSeq 범위 [start, end). 만든 글리프가 없으면 생략. */
+  /**
+   * 이 연산 글리프 seq 의 [최솟값, 최댓값 + 1). ET 시점 번호(Tr 7 등) 때문에 연속이 아닐 수 있으므로
+   * 글자별 값은 text.glyphs[].seq 를 쓴다. 번호를 받은 글리프가 없으면 생략.
+   */
   glyphSeq?: [number, number];
   /** path-paint·inline-image·xobject(이미지·Form BBox 클립)·shading 이 만든 paintSeq 들. */
   paintSeq?: number[];
