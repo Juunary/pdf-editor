@@ -4,13 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 버전 | v2.5 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
+| 버전 | v2.6 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
 | 작성일 | 2026-10-18 |
 | 작성 환경 | Mustree 서버(호스트명 `sailab01`) `/mnt/nas4/kjune/pdf-editor`, Claude Code 세션에서 작성. Windows PC(`C:\Users\harry\pdf-editor\PLAN.md`)에는 scp 복사본만 둔다 |
 | 리서치 근거 | MuPDF 1.28.x 공식 JavaScript/WASM 레퍼런스, Chrome 확장(MV3) 공식 문서, Claude Code 공식 문서 |
 | 수치 표기 규칙 | 용량·버전은 "원본 / 압축 / 배포 번들" 기준과 측정 버전을 함께 적는다. 실측 전 값은 **문서 기준** 으로 표시하고, 실측 값에는 **실측 YYYY-MM-DD** 를 붙인다 |
-| 상태 | 계획 문서. M0 Day 1(12절)과 M0 잔여 DoD(공유 Form XObject·기존 Redact 주석·대형 문서 저장 상한) 서버 검증 완료(2026-10-18, 커밋 8개). 결과·Action Items 는 `docs/m0-day1-log.md`, `docs/m0-dod-xobject-redact-save.md`. Windows Chrome 1차 검증 완료(2026-10-19, Chrome 155, `docs/m0-day1-log.md` 9절·9.5 미확인 목록). 미완: Chrome 128–150 DNR 실측, Acrobat·pdf.js 표시 확인, 대형 문서 브라우저 측정, 실제 코퍼스 재실행, v1 범위·일정 재산정 |
-| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 2026-10-19 v2.3: 11절 "Chrome 버전 / 검증한 가로채기 경로"(이 PC 열) 실측 기입, 0절 상태·변경 이력 갱신. 2026-10-19 v2.4: 6절 M1 에 텍스트 선택 층·Ctrl+F 작업 추가(Windows 검증 알려진 한계 반영), 4절 `viewer-ui` 책임·6절 재산정 메모·8절 "편집 동작" 축에 같은 항목 추가. 2026-10-19 v2.5: 7절 리스크 7 의 업스트림 보고 상태를 게시됨(mupdf.js#201)으로 갱신. 그 외 절은 변경 없음 |
+| 상태 | 계획 문서. **M0 종료(2026-10-19)**: DoD 9항목 통과 4·제한 5, 잔여 해소 작업은 M1·M3 에 반영, 사용자 확인 잔여 4건(`docs/m0-closeout.md`). 근거 `docs/m0-day1-log.md`, `docs/m0-dod-xobject-redact-save.md`, `docs/m0-corpus-recheck.md`. M1 진행 중(`m1` 브랜치, 계약 `docs/m1-contract.md`) |
+| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 2026-10-19 v2.3: 11절 "Chrome 버전 / 검증한 가로채기 경로"(이 PC 열) 실측 기입, 0절 상태·변경 이력 갱신. 2026-10-19 v2.4: 6절 M1 에 텍스트 선택 층·Ctrl+F 작업 추가(Windows 검증 알려진 한계 반영), 4절 `viewer-ui` 책임·6절 재산정 메모·8절 "편집 동작" 축에 같은 항목 추가. 2026-10-19 v2.5: 7절 리스크 7 의 업스트림 보고 상태를 게시됨(mupdf.js#201)으로 갱신. 2026-10-19 v2.6: M0 종료·재산정 반영 — 0절 상태, 3.3 폰트 서브셋(C1), 3.1 redaction 재직렬화(C2), 3.4 공유 Form 코퍼스 결과(C3·C6), 5.1 가로채기 경계 150·DNR 128–149 제한, 5.4 실제 문서 힙 배율(C4), 6절 일정 재산정(M1 4주·M3 5주, MVP 2027-02-28)·M0 DoD 가로채기 행, 7절 리스크 9·10, 8절 코퍼스 방식, 11절 서버 Chrome 실측. 그 외 절은 변경 없음 |
 
 확정된 결정
 - 주력 형태: Chrome 확장 우선. 코어는 TypeScript + MuPDF WebAssembly(npm `mupdf`). 데스크톱(Tauri)은 후속.
@@ -84,6 +84,7 @@
   - `garbage=yes` 와 `garbage=compact` 의 피크 힙은 같다(출력은 `yes` 가 46~70 B 크다). `emptyStore()` 는 선형 메모리를 줄이지 못해 상한 대책이 아니다.
 - redaction 은 "선택 글자만 지우는 함수" 가 아니다. `applyRedactions(blackBoxes=false, imageMethod, lineArtMethod, textMethod)` 의 이미지·선화·텍스트 옵션을 **텍스트 교체 용도로 명시 지정** 한다(기본: 텍스트 제거, 선화·이미지 보존).
 - 기존 Redact 주석이 있는 문서 **확정(M0, 2026-10-18, `docs/m0-dod-xobject-redact-save.md` 2절)**: 열기 시 감지·보고(`pdf-ops.listRedactAnnots`, 쪽·개수). 편집용 redaction 은 **새로 만든 주석만 주석 단위 `applyRedaction()`** 으로 적용해 기존 Redact 주석을 적용·삭제·이동하지 않는다(페이지 단위 `applyRedactions()` 는 기존 주석까지 적용해 인접 문단을 지웠다). 편집 전 `assessRedactionImpact` 가 편집 영역과 겹치는 기존 Redact 주석(`warn`: 나중에 그 표시를 적용하면 새 텍스트도 지워짐)과 함께 제거되는 링크 주석(`warn`: MuPDF redaction 은 겹치는 링크를 지움, 복원 여부는 M3 A2-1)을 보고한다. 페이지 단위 적용이 꼭 필요한 작업만 Redact 주석을 임시 분리(`withRedactAnnotsDetached`) 후 실행하며, 분리 전 그 쪽의 `PDFPage` 를 모두 `destroy()` 한다(MuPDF 는 열려 있는 페이지의 `/Annots` 변경을 다시 읽지 않음). 기존 주석 적용 기능은 v1 범위 밖.
+- **페이지 redaction 재직렬화(C2, 실측 2026-10-19)**: MuPDF 페이지 redaction 은 쪽 콘텐츠 전체를 다시 직렬화한다(실제 문서 연산자 906→2,069, 바이트 +37%). 원본 연산자 바이트 위치(SourceMap)가 무효가 되고, `ActualText` Span 이 있는 쪽에서 편집하지 않은 줄이 최대 3.1pt 이동했다(MuPDF 경고 `ActualText with no position`). 텍스트 제거 경로(SourceMap 연산자 바이트 범위 제거 vs redaction 유지 + 경고 시 편집 제한)는 M1 설계 항목으로 결정한다(A7-2, A1-1 과 함께).
 
 ### 3.2 undo/redo
 - 모델: **원본 바이트 + 편집 로그(EditOp 리스트) 를 진실 원천** 으로 유지한다. 작업용 문서는 "원본 + 로그 재적용" 으로 재구성 가능해야 한다.
@@ -96,7 +97,7 @@
 | 상황 | 처리 |
 |---|---|
 | 원본 폰트 재사용 가능 + 새 글자 표현 가능(`encodeCharacter(cp) !== 0`) | 원본 폰트 리소스 재사용 |
-| 원본이 서브셋이라 새 글자 없음 | 폴백 폰트 선택 → `new Font(name, bytes)` → `doc.addFont(font)`(Identity-H CID) 로 **폰트 바이트 포함 임베딩** → 저장 시 `subsetFonts()` |
+| 원본이 서브셋이라 새 글자 없음 | 폴백 폰트 선택 → `new Font(name, bytes)` → `doc.addFont(font)`(Identity-H CID) 로 **폰트 바이트 포함 임베딩** → 저장 시 **폴백 폰트만 서브셋**(A7-1, M1). MuPDF `subsetFonts()` 는 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트 `/Widths` 를 정수로 반올림해 편집하지 않은 쪽 렌더를 바꾸므로(C1, 실측 2026-10-19 pdfTeX 2/19 문서) 쓰지 않는다 |
 | 원본 폰트의 문자 매핑(CMap/Encoding) 복원 곤란 | 편집 가능 판정 "제한" + 폴백 사용 시 표시 |
 | 저장 후 다른 뷰어 | 모양뿐 아니라 **복사·검색·재추출(ToUnicode)** 검증 |
 
@@ -117,7 +118,7 @@
 
 - SourceMap 생성 방법: `pdf-ops` 의 콘텐츠 스트림 **인터프리터**(토크나이저 + 그래픽 상태 머신 + Form XObject 재귀)가 각 텍스트/패스 연산자의 바이트 범위와 상태를 기록하고, 좌표·폰트·글리프 ID 로 `PageModel` 의 chars/paths 와 매칭한다. 매칭 실패 객체는 편집 불가로 판정한다.
 - MuPDF `PDFProcessor` / `PDFPage.process` 는 `mutool run` 전용이라 npm WASM 에서 쓸 수 없다 → 자체 구현 범위는 단순 토큰 분리보다 넓다.
-- 공유 Form XObject **확정(M0, 2026-10-18, `docs/m0-dod-xobject-redact-save.md` 1절)**: 여러 페이지/위치에서 재사용되면 원본 수정 시 선택하지 않은 위치까지 바뀌므로, 편집하는 사용 위치는 공유 여부와 무관하게 **항상 새 인스턴스로 교체** 한다. 방식: 원 페이지와 같은 MediaBox·CropBox·Rotate 의 임시 페이지에 선택 위치의 최상위 Form 을 같은 CTM 으로 그리고 주석 단위 redaction(텍스트 제거, 선화·이미지 보존)으로 필터된 인스턴스를 얻은 뒤, 페이지 Resources 를 페이지 전용 사본으로 바꿔 새 이름을 등록하고 페이지 콘텐츠에서 해당 `Do` 의 이름 피연산자 바이트만 교체한다(임시 페이지는 삭제, 잔여 객체는 전체 저장에서 제거). 중첩 사용 위치를 편집하면 상위 체인도 인스턴스화한다. 합성 픽스처 실측: 비선택 위치·다른 쪽 렌더 diff 0 px(MuPDF·Poppler), 원본 객체 변경은 페이지 사전 1개. 실제 코퍼스 재실행은 M0 후속(A1-2).
+- 공유 Form XObject **확정(M0, 2026-10-18, `docs/m0-dod-xobject-redact-save.md` 1절)**: 여러 페이지/위치에서 재사용되면 원본 수정 시 선택하지 않은 위치까지 바뀌므로, 편집하는 사용 위치는 공유 여부와 무관하게 **항상 새 인스턴스로 교체** 한다. 방식: 원 페이지와 같은 MediaBox·CropBox·Rotate 의 임시 페이지에 선택 위치의 최상위 Form 을 같은 CTM 으로 그리고 주석 단위 redaction(텍스트 제거, 선화·이미지 보존)으로 필터된 인스턴스를 얻은 뒤, 페이지 Resources 를 페이지 전용 사본으로 바꿔 새 이름을 등록하고 페이지 콘텐츠에서 해당 `Do` 의 이름 피연산자 바이트만 교체한다(임시 페이지는 삭제, 잔여 객체는 전체 저장에서 제거). 중첩 사용 위치를 편집하면 상위 체인도 인스턴스화한다. 합성 픽스처 실측: 비선택 위치·다른 쪽 렌더 diff 0 px(MuPDF·Poppler), 원본 객체 변경은 페이지 사전 1개. 실제 코퍼스(6문서 9개 Form) 재실행 9/9 정책 충족(2026-10-19, `docs/m0-corpus-recheck.md` 2.9). Form `/BBox` 는 정규화해 비교한다(비정규화 4/9, C3·A7-3), 새 텍스트 배치 영역은 원 텍스트 위치 ∩ BBox ∩ CropBox 로 제한한다(BBox ⊄ CropBox 2/9, C6·A7-4 M3).
   - v1 **편집 제한**(사유 표시)으로 판정하는 사용 위치: L1 Form 에 자체 `/Resources` 없음(페이지 리소스 상속), L2 `/StructParents`·MCID 포함(태그 PDF, 1.4 태그 정책으로 처리), L3 새 텍스트가 Form BBox 초과(자동 클립 금지와 충돌, BBox 확장 미구현), L4 페이지 콘텐츠 밖 사용(주석 외관 AP·타일링 패턴·Type3 글리프·SMask), L5 재귀 깊이 > 8 또는 순환 참조, L6 토크나이저 실패 또는 이름 피연산자가 Contents 배열 스트림 경계에 걸침, L7 `/OC` 선택적 콘텐츠(경고만).
   - 주의(A1-1): Form 이 있는 페이지에서 페이지 콘텐츠 텍스트를 직접 redaction 하면(Day 1 경로) MuPDF 가 그 쪽의 모든 Form 사용 위치를 인스턴스화·재직렬화한다. 비편집 위치를 원본 객체로 되돌리는 후처리 또는 임시 페이지 방식으로 통일할지 M1 에서 결정.
 
@@ -154,9 +155,9 @@
 ## 5. Chrome 확장 설계
 
 ### 5.1 가로채기(인터셉트)
-- **v1 기준: Chrome 151+ 공개 MIME handler.** manifest `mime_types_handler: {"application/pdf": {handler_url, can_embed: true}}`.
+- **v1 기준: Chrome 150+ 공개 MIME handler**(Chrome for Testing 150.0.7871.0 이상에서 `chrome.mimeHandler` 실측 2026-10-19, 150.0.7828.0·149 없음. 정식 Chrome 150 확인 전). manifest `mime_types_handler: {"application/pdf": {handler_url, can_embed: true}}`.
 - 조건: `getStreamInfo()` 는 MIME handler 문맥에서 호출한다. `streamUrl` 은 **한 번만 fetch** 하고 `originalUrl` 재요청은 금지한다. 전체 스트림 수신 후 지원 여부를 판정하고, 미지원이면 `abortAndFallbackToNativeHandler()` 를 호출한다. file:// 은 별도 파일 URL 설정이 불필요하다. POST 생성 PDF·일회성 URL 대응은 이 규칙으로 보장한다.
-- 구버전 호환(별도 지원 범위, v1 보장 아님): `declarativeNetRequest` 응답 헤더 조건(`content-type: application/pdf`) 리다이렉트는 **Chrome 128–150 의 제한적 경로** 다. file:// 에 대한 DNR 동작은 "불가" 로 단정하지 않고 **M0 검증 항목** 으로 둔다(현 Chromium 은 파일 접근 권한 검사 방식). 128 미만은 미지원.
+- 구버전 호환(별도 지원 범위, v1 보장 아님): `declarativeNetRequest` 응답 헤더 조건(`content-type: application/pdf`) 리다이렉트는 **Chrome 128–149 의 제한적 경로** 다(CfT 128·140·149 실측 2026-10-19, `docs/m0-corpus-recheck.md` 4절). 제한: 뷰어가 원 URL 을 다시 받는다(GET 2회), POST·`content-disposition: attachment`·embed·object 는 가로채지 않는다(iframe 만, object 추가는 A5-2 에서 결정), file:// 는 "파일 URL에 대한 액세스 허용" 이 켜져 있어야 동작한다(안내 UI A5-3). 128 미만은 미지원.
 
 ### 5.2 실행 위치·보안
 - MuPDF 와 문서 상태는 **뷰어 소유 module Worker** 에서 관리한다. 확장 서비스 워커는 navigation 폴백과 전역 이벤트만 담당한다. SharedArrayBuffer 불필요(단일 스레드 빌드).
@@ -171,21 +172,22 @@
 ### 5.4 메모리
 - 페이지 단위 지연 추출, 렌더 캐시 LRU, 전체 저장 시 피크 메모리 측정. WASM 힙 상한 2GiB(2,147,483,648 B, memory64 빌드 아님. 선형 메모리는 계단식으로 늘고 줄지 않는다).
 - 실측 상한(2026-10-18, 서버 Node, 합성 문서, 1쪽 문단 교체 후 전체 저장): Buffer 입력 525.5 MiB 성공 · 675.7 MiB **실패**(`realloc` 예외, 같은 문서 재저장도 실패) / Stream 입력 675.7 MiB 성공(피크 1,681 MiB, 상한의 82%). 브라우저 탭은 JS 쪽 입력·출력 사본이 더해지므로 Windows Chrome Worker 에서 재측정한다(A3-4). `decideSaveMethod` 경고 경계(전체 저장): Buffer 배율 4.48 → `warn` > 342.9 MiB, `over-limit` > 457.1 MiB; Stream 배율 3.48 → `warn` > 441.4 MiB, `over-limit` > 588.5 MiB(보수적 판정, 이번 측정에서 미탐 0건, 배율 모델 재산정은 M5 A3-5).
+- 실제 코퍼스 19건(최대 492쪽, 2026-10-19)의 순수 저장 힙 증가분은 파일 크기의 0~19.1배로, 파일 크기 비례 배율 모델은 객체 중심 대형 문서에서 과소 추정할 수 있다(C4). 객체 수·디코드 스트림 크기 항을 넣은 모델로 재산정하고 100 MB 이상 실제 문서로 경계를 검증한다(A7-5).
 
 ---
 
-## 6. 마일스톤 (총 20주 = MVP 목표치, M0 후 재산정)
+## 6. 마일스톤 (2026-10-19 재산정: M1–M5 19주, MVP 목표 2027-02-28)
 
 | 단계 | 기간 | 완료 기준(DoD) |
 |---|---|---|
-| **M0 핵심 편집 가능성 검증** | 3주 | 모노레포 초기화 + 최소 확장 셸 + 아래 "M0 DoD" 전부 통과. 결과로 v1 범위·일정 재산정 문서 작성 |
-| M1 추출·원본 연결 | 3주 | `PageModel` + `SourceMap` 생성, Form XObject 재귀, 매칭 실패율 측정. 디버그 오버레이. 코퍼스 회귀 테스트. **텍스트 선택 층·Ctrl+F**(2026-10-19 추가, 근거 `docs/m0-day1-log.md` 9.5): 캔버스 위에 `PageModel` chars 의 quad·유니코드로 투명 텍스트 선택 층을 두어 드래그 선택·Ctrl+C 복사(클립보드 텍스트 = 추출 유니코드), 뷰어가 Ctrl+F 를 가로채 문서 전체 검색(현재 쪽 우선, 결과 수·이전/다음·quad 하이라이트). DoD: Playwright 로 선택→복사 결과가 추출 텍스트와 일치, 검색 하이라이트 위치가 quad 와 일치, 확장이 켜진 상태에서 Chrome 기본 뷰어와 같은 검색·복사 가능 |
-| M2 레이아웃 복원 | 4주 | 문단/열/표 복원, 읽기 순서. **정답 라벨 기반 정확도** 하네스 |
-| M3 텍스트 재작성 | 4주 | 문단 편집 → 리플로우(영역 내) → 초과 UI → 저장. 라틴 후 한글. harfbuzz. undo(체크포인트). **IME 조합 시나리오**. 태그 정책 구현 |
-| M4 표/도표 편집 | 3주 | 셀 텍스트 수정(초과 선택 UI), 벡터 좌표·선·채움 편집, 편집 가능 판정 UI |
-| M5 안정화/배포 | 3주 | 대용량 벤치마크 목표 달성, 폰트 서브셋, Web Store 패키징, 문서화 |
+| **M0 핵심 편집 가능성 검증** | 완료(2026-10-18~19, 계획 3주) | 모노레포 초기화 + 최소 확장 셸 + 아래 "M0 DoD" 전부 통과. 결과로 v1 범위·일정 재산정 문서 작성 → **종료 판정·재산정 `docs/m0-closeout.md`** |
+| M1 추출·원본 연결 | 4주(2026-10-19~11-15) | `PageModel` + `SourceMap` 생성, Form XObject 재귀, 매칭 실패율 측정. 디버그 오버레이. 코퍼스 회귀 테스트. **텍스트 선택 층·Ctrl+F**(2026-10-19 추가, 근거 `docs/m0-day1-log.md` 9.5): 캔버스 위에 `PageModel` chars 의 quad·유니코드로 투명 텍스트 선택 층을 두어 드래그 선택·Ctrl+C 복사(클립보드 텍스트 = 추출 유니코드), 뷰어가 Ctrl+F 를 가로채 문서 전체 검색(현재 쪽 우선, 결과 수·이전/다음·quad 하이라이트). DoD: Playwright 로 선택→복사 결과가 추출 텍스트와 일치, 검색 하이라이트 위치가 quad 와 일치, 확장이 켜진 상태에서 Chrome 기본 뷰어와 같은 검색·복사 가능. **실제 코퍼스·Windows 검증 반영(2026-10-19)**: 폴백 폰트만 서브셋(A7-1), 텍스트 제거 경로 결정(A7-2), 사각형 정규화(A7-3), 가로채기 경계 150·DNR object(A5-1·A5-2), A1-1·A1-3·A2-3·A3-6 결정 |
+| M2 레이아웃 복원 | 4주(2026-11-16~12-13) | 문단/열/표 복원, 읽기 순서. **정답 라벨 기반 정확도** 하네스. stext 줄 병합 문단 복원(A7-6: Word·InDesign·한컴 출력은 한 줄 블록 비율 최대 1.0), 정답 라벨용 코퍼스 보강(A7-10) |
+| M3 텍스트 재작성 | 5주(2026-12-14~2027-01-17) | 문단 편집 → 리플로우(영역 내) → 초과 UI → 저장. 라틴 후 한글. harfbuzz. undo(체크포인트). **IME 조합 시나리오**. 태그 정책 구현. Form·문단 배치 영역 ∩ CropBox(A7-4), 태그 PDF 기본 동작 설계 초기 확정(A7-7, 편집 문단 31/53 이 태그 쪽), 링크 복원(A2-1·A7-8), 저장 실패 복구(A3-3), Redact 보고 UI(A2-2), DNR file:// 안내(A5-3) |
+| M4 표/도표 편집 | 3주(2027-01-18~02-07) | 셀 텍스트 수정(초과 선택 UI), 벡터 좌표·선·채움 편집, 편집 가능 판정 UI |
+| M5 안정화/배포 | 3주(2027-02-08~02-28) | 대용량 벤치마크 목표 달성, 폰트 서브셋, Web Store 패키징, 문서화. 저장 힙 예측 모델 재검증(A7-5) |
 
-재산정 메모(2026-10-18, M0 서버 검증 결과 반영 예정 작업량): M1 에 A3-1(core Stream 입력 전환), 텍스트 선택 층·Ctrl+F(2026-10-19 추가, Windows 검증 알려진 한계), A1-1(Form 페이지 직접 편집 후처리 결정), A2-3(F3 회피 규칙), A1-3(L1 Resources 상속 Form 해소 여부); M3 에 A3-3(저장 실패 복구), A2-1(제거 링크 복원), A2-2(Redact 보고 UI). 정식 재산정은 Windows 검증(Day 1 로그 9절)과 실제 코퍼스 재실행(A7) 후 수행한다.
+재산정(2026-10-19, `docs/m0-closeout.md` 5절): M0 는 계획 3주 대신 2일에 끝났다. 실제 코퍼스·Windows 검증에서 나온 작업을 M1(+1주)·M3(+1주)에 더해 M1–M5 를 19주로 잡는다. 실시간 편집 UI 는 M3 시작(2026-12-14 주)부터 동작한다. 패키지별 병렬 세션을 계속 쓴다는 전제이며 완충 기간은 없다. M1 종료 시 코퍼스 매칭 실패율로 M2 이후를 다시 산정한다.
 
 ### M0 DoD
 끝까지 한 번 통과해야 하는 흐름: 기존 PDF 열기 → 짧은 문단 교체 → 원본에 없던 한글 추가 → 배경·테두리 유지 → 저장 → 재열기 → 검색·복사 확인
@@ -200,7 +202,9 @@
 | 저장 방식 | redaction 후 `canBeSavedIncrementally()` 결과 확인, 전체 저장 피크 메모리·시간 측정 |
 | 첫 저장·재저장 | 파일 선택 후 동일 대상에 Ctrl+S 재저장(세 문맥별 FSA 결과) |
 | 공유 XObject | 복제 후 수정 정책 동작 여부 |
-| 가로채기 | 151+ mimeHandler(최상위/임베디드/file://), 128–150 DNR(file:// 포함) 실측 |
+| 가로채기 | 150+ mimeHandler(최상위/임베디드/file://), 128–149 DNR(file:// 포함) 실측(2026-10-19 경계 정정 151→150) |
+
+M0 최종 판정(2026-10-19): 통과 4(텍스트 교체·새 한글 입력·텍스트 의미 보존(엔진)·가로채기), 제한 5(주변 보존·저장 후 재열기·저장 방식(브라우저)·첫 저장·재저장·공유 XObject 배치). 항목별 근거와 이관은 `docs/m0-closeout.md` 1절.
 
 ---
 
@@ -214,6 +218,8 @@
 6. `mupdfjs` 폐기, `PDFProcessor` 불가 → pdf-ops 인터프리터 자체 구현(Opus 설계).
 7. **MuPDF 1.28.1 결함 F3**(실측 2026-10-18): 압축 필터가 있는 이미지 XObject(JPEG `DCTDecode`, Flate)를 `PDFObject.resolve()` 한 문서를 `garbage=compact`(또는 `deduplicate`)로 저장하면 그 이미지가 스트림 없는 사전으로 기록되어 재열기 시 `object is not a stream` 오류와 이미지 소실이 난다(`destroy()` 해도 같음, `garbage=yes`·garbage 없음은 정상) → **회피 규칙**: 저장할 작업 문서에서 이미지 XObject 를 `resolve()` 하지 않는다(사전 값은 간접 참조 `get()`, 렌더는 `loadImage(ref)`). M1 `PageModel`·`SourceMap` 구현 리뷰 항목으로 고정(A2-3). 대안인 전체 저장 옵션 `garbage=yes` 전환(피크 힙 동일, 출력 46~70 B 증가, Day 1 고정 해시 변경)은 M1 에서 결정(A3-6). 대조 테스트 `tools/spike-m0/test/mupdf-pitfalls.test.ts` 가 MuPDF 동작 변화를 감지한다. 업스트림 보고: 2026-10-19 [ArtifexSoftware/mupdf.js#201](https://github.com/ArtifexSoftware/mupdf.js/issues/201) 게시(A2-4). 1.26.4·1.27.0 미재현·1.28.1 재현(회귀), 원인 분석·수정 제안 포함, 게시 문안·재현 스크립트 `docs/upstream/`.
 8. 대형 문서 전체 저장 실패(WASM 힙 상한, 출력 스트리밍 불가) → 저장 전 예상 피크 힙 경고(3.1), 입력 Stream 열기(M1), 실패 시 Worker 재시작·원본 재열기·편집 로그 재적용 복구(M3), Windows Chrome 실측 후 지원 문서 크기 상한 안내 UI.
+9. **MuPDF `subsetFonts()` 부작용(C1, 실측 2026-10-19)**: 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트 `/Widths` 를 정수 반올림·미사용 글리프 0 으로 다시 써, pdfTeX 문서의 편집하지 않은 쪽이 Poppler·pdf.js 에서 바뀐다(MuPDF 렌더는 동일) → 폴백 폰트만 서브셋(A7-1, M1).
+10. **페이지 redaction 재직렬화(C2)**: 쪽 콘텐츠 전체 재작성으로 원본 바이트 위치가 사라지고 `ActualText` 줄이 이동할 수 있다 → 텍스트 제거 경로 M1 설계 결정(A7-2), `ActualText with no position` 경고를 편집 제한 신호로 사용.
 
 ---
 
@@ -231,7 +237,7 @@
 | 편집 동작 | undo/redo, 연속 수정, 저장 후 재편집, IME, 뷰어 텍스트 선택·복사·Ctrl+F(M1) |
 | 성능 | 첫 렌더, 편집 반응, 저장 시간, 피크 메모리. 벤치마크 문서 세트와 PC 조건을 먼저 정한 뒤 목표 수치 설정 |
 
-- 코퍼스 `fixtures/`: 한글 논문, 영문 보고서, 다단 뉴스레터, 표 중심 재무 문서, 벡터 차트 문서, 태그 PDF, 공유 XObject 문서 각 2~3개 + 수백 페이지 벤치마크 1~2개.
+- 코퍼스 `fixtures/`: 한글 논문, 영문 보고서, 다단 뉴스레터, 표 중심 재무 문서, 벡터 차트 문서, 태그 PDF, 공유 XObject 문서 각 2~3개 + 수백 페이지 벤치마크 1~2개. **구축 완료(2026-10-19)**: 19건·1,647쪽, 공공영역·CC BY 4.0 만. PDF 는 커밋하지 않고 `fixtures/corpus/manifest.json`(URL·라이선스 근거·SHA-256)과 내려받기 스크립트 `scripts/corpus/fetch-corpus.mjs` 만 커밋한다. 보강 목록(학술지 한글 CC BY 논문, 공공누리 제1유형, 한국어 수백 쪽, 100 MB 이상, 기존 Redact 주석 문서, 표 셀 편집용)은 A7-10.
 - 자동화: 서버에서 Vitest(순수 로직) + **Playwright 번들 Chromium, persistent context, `channel: 'chromium'`** 으로 확장 로드. Windows 실제 Chrome 수동 검증과 구분해 기록한다.
 
 ---
@@ -276,7 +282,7 @@ Claude Code 버전 조건(공식 문서 기준): Opus 5.5 v2.1.280+, Sonnet 5.5 
 | git | 2.54 (실측 2026-10-18) | 2.34.1 (실측 2026-10-18) |
 | npm | — | 10.9.3 (실측 2026-10-18) |
 | npm `mupdf` 최신 버전 | — | 1.28.1 (실측 2026-10-18, `npm view mupdf version`) |
-| Chrome 버전 / 검증한 가로채기 경로 | 155.0.8059.82 공식 빌드 64비트 (측정 2026-10-19, 뷰어 진단 JSON). 가로채기 경로 MIME handler(`interceptionMode` "mime-handler", DNR 동적 규칙 0개): 최상위 https·file://, 임베디드(embed·iframe·object), 뷰어 페이지 통과. Chrome 128–150 DNR 경로는 미확인(이 PC 에 해당 환경 없음). 상세 `docs/m0-day1-log.md` 9절 | 해당 없음 |
+| Chrome 버전 / 검증한 가로채기 경로 | 155.0.8059.82 공식 빌드 64비트 (측정 2026-10-19, 뷰어 진단 JSON). 가로채기 경로 MIME handler(`interceptionMode` "mime-handler", DNR 동적 규칙 0개): 최상위 https·file://, 임베디드(embed·iframe·object), 뷰어 페이지 통과. Chrome 128–149 DNR 경로는 이 PC 에서 미확인(해당 환경 없음, 서버 CfT 실측은 오른쪽 열). 상세 `docs/m0-day1-log.md` 9절 | Chrome for Testing 128·140·149: DNR 경로 동작(http GET·file:// 파일 URL 접근 켬), 150.0.7871.124: MIME handler 경로(실측 2026-10-19, 헤드리스, `docs/m0-corpus-recheck.md` 4절) |
 | Claude Code 버전 / 사용 가능 모델 | 사용자 기입 | 사용자 기입 |
 
 서버 관찰 사항
