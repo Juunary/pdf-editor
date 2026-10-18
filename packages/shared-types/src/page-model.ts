@@ -6,7 +6,7 @@
  * - glyphSeq: 표시 글리프마다 1. 처음 Device 에 도착한 텍스트 콜백(fillText·strokeText·clipText·
  *   clipStrokeText·ignoreText)에서 센다. fill→stroke(Tr 2·6, 포인터 동일 연속)는 1회, Tr 4–7 클립의
  *   ET 재전송은 세지 않는다. gid -1 보조 글리프(ToUnicode 1코드→여러 코드포인트)는 세지 않고 직전
- *   글리프의 text 에 붙인다. 판정 규칙: docs/m1-contract.md 3.1.
+ *   글리프의 text 에 붙인다. 재전송 판정 키는 (폰트, gid, trm, ctm) 비트 동일. 판정 규칙: docs/m1-contract.md 3.1.
  * - paintSeq: 텍스트 외 그리기 콜백(fillPath·strokePath·clipPath·clipStrokePath·fillShade·
  *   fillImage·fillImageMask·clipImageMask)마다 1씩. 채움+선(B 등)은 콜백 2개 = 번호 2개다.
  *   Form `Do` 의 BBox clipPath 도 1. beginMask~endMask 사이 콜백은 세지 않는다(계약 3절 세부 표).
