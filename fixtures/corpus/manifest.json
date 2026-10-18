@@ -1,0 +1,411 @@
+{
+  "version": 1,
+  "description": "M0 실제 코퍼스(A7). PDF 는 커밋하지 않는다. scripts/corpus/fetch-corpus.mjs 로 url 에서 받아 sha256 을 검증한다. 유형 정의는 PLAN.md 8절, 결과는 docs/m0-corpus-recheck.md",
+  "selectionDate": "2026-10-19",
+  "licensePolicy": "공공영역(미국 연방 저작물), CC0, CC BY, CC BY-SA, 공공누리 제1유형만. 라이선스 근거(licenseEvidence)를 확인하지 못한 문서는 넣지 않는다. Zenodo 의 라이선스는 업로더 지정값이다",
+  "documents": [
+    {
+      "id": "zen-ko-kimtw-23386644",
+      "type": "korean-paper",
+      "title": "이방원은 무엇을 계승하지 못했는가: 왕통의 확립과 북방 관계 권위의 불완전한 계승 (Kim Tae-Won, 2026 preprint)",
+      "url": "https://zenodo.org/api/records/23386644/files/%EC%9D%B4%EB%B0%A9%EC%9B%90%EC%9D%80_%EB%AC%B4%EC%97%87%EC%9D%84_%EA%B3%84%EC%8A%B9%ED%95%98%EC%A7%80_%EB%AA%BB%ED%96%88%EB%8A%94%EA%B0%80_2.pdf/content",
+      "landingUrl": "https://zenodo.org/records/23386644",
+      "license": "CC BY 4.0",
+      "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader-asserted; uploader is the author). Landing page license field: 'Creative Commons Attribution 4.0 International'. DOI 10.5281/zenodo.23386644.",
+      "notes": "Zenodo 업로더(저자) 지정 CC BY 4.0. Word 출력, 태그 PDF",
+      "sha256": "a9b413127a798b4a1646fc336fb9170435ece4a3f25626c1d3768a65ad937c0b",
+      "bytes": 554309,
+      "pages": 18,
+      "producer": "Microsoft® Word Microsoft 365용",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "zen-ko-sim-21496576",
+      "type": "korean-paper",
+      "title": "콜라츠 규칙열에 따른 초깃값의 분포와 해집합의 대수적 구조에 관한 연구 (Sim & Han, 2026)",
+      "url": "https://zenodo.org/api/records/21496576/files/Paper_v1.1.1.pdf/content",
+      "landingUrl": "https://zenodo.org/records/21496576",
+      "license": "CC BY 4.0",
+      "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader-asserted; uploader is the author). DOI 10.5281/zenodo.21496576.",
+      "notes": "Zenodo 업로더(저자) 지정 CC BY 4.0. pdfTeX, Type1(나눔명조) 소수 /Widths",
+      "sha256": "f8cb04f00ce8bee9ef9a379d7e9f29348dcffb95557b2c299cd88ab8187712d7",
+      "bytes": 3990614,
+      "pages": 49,
+      "producer": "pdfTeX-1.40.27",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "zen-ko-moon-21973474",
+      "type": "korean-paper",
+      "title": "연결어미 '-곤'과 선어말어미 '-고-' (문현수, 구결학회 월례강독회 2023-09 slides/handout)",
+      "url": "https://zenodo.org/api/records/21973474/files/%EC%97%B0%EA%B2%B0%EC%96%B4%EB%AF%B8%20'-%EA%B3%A4'%EA%B3%BC%20%EC%84%A0%EC%96%B4%EB%A7%90%EC%96%B4%EB%AF%B8%20'-%EA%B3%A0-'(2023%EB%85%84%209%EC%9B%94%20%EA%B5%AC%EA%B2%B0%ED%95%99%ED%9A%8C%20%EC%9B%94%EB%A1%80%EA%B0%95%EB%8F%85%ED%9A%8C).pdf/content",
+      "landingUrl": "https://zenodo.org/records/21973474",
+      "license": "CC BY 4.0",
+      "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader-asserted; uploader is the author). DOI 10.5281/zenodo.21973474.",
+      "notes": "Zenodo 업로더(저자) 지정 CC BY 4.0. 학술 발표 자료(학술지 논문 아님), Hancom PDF, Type3 글꼴",
+      "sha256": "d9314b02a4bd1b0b54418ddac91786a8754dd80ad4fd9611442d30459d2d38bf",
+      "bytes": 1456497,
+      "pages": 22,
+      "producer": "Hancom PDF 1.3.0.538",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "nist-ai-100-1",
+      "type": "english-report",
+      "title": "NIST AI 100-1: Artificial Intelligence Risk Management Framework (AI RMF 1.0)",
+      "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.100-1.pdf",
+      "landingUrl": "https://doi.org/10.6028/NIST.AI.100-1",
+      "license": "Public domain (US federal work, 17 USC 105)",
+      "licenseEvidence": "PDF cover: \"This publication is available free of charge from: https://doi.org/10.6028/NIST.AI.100-1\" (no explicit copyright sentence in this PDF). NIST Technical Series Publications policy page: \"Works authored by NIST employees are not subject to Copyright protection within the United States; foreign rights are reserved. To the extent NIST may assert rights outside of the United States, the public is granted the non-exclusive, perpetual, paid-up, royalty-free, worldwide right to reprint works in all formats...\" (https://www.nist.gov/director/copyright-fair-use-and-licensing-statements-srd-data-and-software)",
+      "notes": "미국 연방 저작물(17 U.S.C. 105). PDF 안 저작권 문구 없음, NIST 정책으로 근거",
+      "sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
+      "bytes": 1946127,
+      "pages": 48,
+      "producer": "pdfTeX-1.40.24",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "nist-cswp29",
+      "type": "english-report",
+      "title": "NIST CSWP 29: The NIST Cybersecurity Framework (CSF) 2.0",
+      "url": "https://nvlpubs.nist.gov/nistpubs/CSWP/NIST.CSWP.29.pdf",
+      "landingUrl": "https://doi.org/10.6028/NIST.CSWP.29",
+      "license": "Public domain (US federal work, 17 USC 105)",
+      "licenseEvidence": "PDF cover: \"This publication is available free of charge from: https://doi.org/10.6028/NIST.CSWP.29\"; page 2 references \"NIST Technical Series Policies: Copyright, Use, and Licensing Statements\". NIST Technical Series Publications policy page: \"Works authored by NIST employees are not subject to Copyright protection within the United States; foreign rights are reserved. To the extent NIST may assert rights outside of the United States, the public is granted the non-exclusive, perpetual, paid-up, royalty-free, worldwide right to reprint works in all formats...\" (https://www.nist.gov/director/copyright-fair-use-and-licensing-statements-srd-data-and-software)",
+      "notes": "미국 연방 저작물(17 U.S.C. 105). Word 출력, 태그 PDF",
+      "sha256": "3c31f46fee98cac0c4323453e5109291a213b4de7fef8c058af9bf67f717433c",
+      "bytes": 1518858,
+      "pages": 32,
+      "producer": "Adobe PDF Library 23.8.53",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "nasa-eo-2019-maraprl",
+      "type": "multicolumn-newsletter",
+      "title": "The Earth Observer, Mar-Apr 2019, Vol. 31 Iss. 2",
+      "url": "https://assets.science.nasa.gov/content/dam/science/esd/earth-observer/2019/Mar_Apr_2019_color_508.pdf",
+      "landingUrl": "https://eospso.nasa.gov/earth-observer-archive",
+      "license": "NASA content, generally not subject to copyright in the US (public domain; per-image third-party credits possible)",
+      "licenseEvidence": "NASA Images and Media Usage Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/): \"NASA content ... generally are not subject to copyright in the United States.\" No license statement inside the PDF; newsletter is NASA-published (EOS Project Science Office, GSFC); individual photo/figure credits may name third parties.",
+      "notes": "NASA 일반 공공영역(사진 등 개별 제3자 크레딧 가능, 신뢰도 중간). 2단 25/40쪽",
+      "sha256": "d7e55de12b380260dc22c4db5ffccb26630d6b45e76837011323ac23418418fb",
+      "bytes": 6317940,
+      "pages": 40,
+      "producer": "Adobe PDF Library 15.0",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "nasa-eo-2024-janfeb",
+      "type": "multicolumn-newsletter",
+      "title": "The Earth Observer, Final PDF Issue, Vol. 35 Iss. 7 (Jan-Feb 2024)",
+      "url": "https://assets.science.nasa.gov/content/dam/science/esd/earth-observer/2024/EO%20Jan-Feb%202024-Digital%20508.pdf",
+      "landingUrl": "https://eospso.nasa.gov/earth-observer-archive",
+      "license": "NASA content, generally not subject to copyright in the US (public domain; per-image third-party credits possible)",
+      "licenseEvidence": "NASA Images and Media Usage Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/): \"NASA content ... generally are not subject to copyright in the United States.\" No license statement inside the PDF; newsletter is NASA-published (EOS Project Science Office, GSFC); individual photo/figure credits may name third parties.",
+      "notes": "NASA 일반 공공영역(신뢰도 중간). 2단, 텍스트 있는 공유 Form(러닝헤드) 32쪽",
+      "sha256": "4441d485578e0bab572c4210dd0e8d05cf5b9524f600ebf03efa78878ddbf6ea",
+      "bytes": 6812844,
+      "pages": 34,
+      "producer": "Adobe PDF Library 17.0",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "ustreas-mts-202509",
+      "type": "financial-tables",
+      "title": "Monthly Treasury Statement, September 2025 (final FY2025)",
+      "url": "https://fiscaldata.treasury.gov/static-data/published-reports/mts/MonthlyTreasuryStatement_202509.pdf",
+      "landingUrl": "https://fiscaldata.treasury.gov/datasets/monthly-treasury-statement/",
+      "license": "Public domain (US Treasury / Bureau of the Fiscal Service work); Fiscal Data open-data terms",
+      "licenseEvidence": "https://fiscaldata.treasury.gov/api-documentation/ ('License and Authorization'): \"The data is offered free, without restriction, and available to copy, adapt, redistribute, or otherwise use for non-commercial or commercial purposes.\" plus 17 U.S.C. section 105 (work of a US federal agency).",
+      "notes": "미국 재무부 Fiscal Data 문구 'free, without restriction'. OpenPDF, 표 위주",
+      "sha256": "2a975e8f8d145ef18f53de2dc60c6cb265892cd500e8d725f6297726c78605e8",
+      "bytes": 3966081,
+      "pages": 40,
+      "producer": "OpenPDF 1.3.43",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "fed-h41-current",
+      "type": "financial-tables",
+      "title": "Federal Reserve statistical release H.4.1 (Oct 15, 2026 edition)",
+      "url": "https://www.federalreserve.gov/releases/h41/20261015/h41.pdf",
+      "landingUrl": "https://www.federalreserve.gov/releases/h41/20261015/",
+      "license": "Public domain (Federal Reserve Board work)",
+      "licenseEvidence": "Fed Board disclaimer page (https://www.federalreserve.gov/disclaimer.htm): \"Unless otherwise indicated, information on Board's website is in the public domain and may be copied and distributed without permission.\" No third-party notices found in this release.",
+      "notes": "Fed 이사회 공공영역 고지. 날짜 고정 URL(/releases/h41/20261015/)",
+      "sha256": "f2a78fc4656f00c9b67a060484132f8c664cda41e8b07be21df49c2db550d3c4",
+      "bytes": 191085,
+      "pages": 11,
+      "producer": "Aspose.Words for .NET 21.3.0",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "fed-combined-finstmt-2025",
+      "type": "financial-tables",
+      "title": "Federal Reserve Banks Combined Financial Statements 2025",
+      "url": "https://www.federalreserve.gov/aboutthefed/files/combinedfinstmt2025.pdf",
+      "landingUrl": "https://www.federalreserve.gov/monetarypolicy/bst_fedfinancials.htm",
+      "license": "Public domain (Federal Reserve Board/Banks publication)",
+      "licenseEvidence": "Fed Board disclaimer page (https://www.federalreserve.gov/disclaimer.htm): \"Unless otherwise indicated, information on Board's website is in the public domain and may be copied and distributed without permission.\" No copyright notice found in the PDF text (it contains an independent auditors' report; auditor-copyright not stated).",
+      "notes": "Fed 이사회 공공영역 고지. Workiva, 태그 PDF",
+      "sha256": "3989982bc83546f15747ac86e98b695be0894d2fbd8d829b3000f3a9dcfd1ada",
+      "bytes": 4249784,
+      "pages": 63,
+      "producer": "Wdesk Fidelity Content Translations Version 014.009.086",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "arxiv-2609.09268",
+      "type": "vector-charts",
+      "title": "Reconstructing fluid velocity fields from sparse sensors using a variational quantum algorithm (arXiv 2609.09268v1)",
+      "url": "https://arxiv.org/pdf/2609.09268v1",
+      "landingUrl": "https://arxiv.org/abs/2609.09268v1",
+      "license": "CC BY 4.0",
+      "licenseEvidence": "arXiv abs page license link (checked): http://creativecommons.org/licenses/by/4.0/ (rel title 'Rights to this article').",
+      "notes": "arXiv abs 라이선스 링크 CC BY 4.0. 래스터 이미지 0개, 벡터 플롯. v1 URL 고정(arXiv 재생성 시 해시 변경 가능)",
+      "sha256": "ff3a9c5dcc458be0bb51d480b90dea7ff8575eaff1ae550834f10962e637599d",
+      "bytes": 538839,
+      "pages": 16,
+      "producer": "pikepdf 8.15.1",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "arxiv-2609.10511",
+      "type": "vector-charts",
+      "title": "Hydrodynamic magnetotransport in a GaAs Corbino geometry (arXiv 2609.10511v1)",
+      "url": "https://arxiv.org/pdf/2609.10511v1",
+      "landingUrl": "https://arxiv.org/abs/2609.10511v1",
+      "license": "CC BY 4.0",
+      "licenseEvidence": "arXiv abs page license link (checked): http://creativecommons.org/licenses/by/4.0/ (rel title 'Rights to this article').",
+      "notes": "arXiv abs 라이선스 링크 CC BY 4.0. 2단, 벡터 플롯. v1 URL 고정",
+      "sha256": "4465865acc1e8193a3031c2e637a9e207479213d2b88d09d8b38269b4c45d240",
+      "bytes": 1201156,
+      "pages": 15,
+      "producer": "pikepdf 8.15.1",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "nist-sp800-171r3",
+      "type": "tagged-pdf",
+      "title": "NIST SP 800-171 Rev. 3: Protecting Controlled Unclassified Information in Nonfederal Systems and Organizations",
+      "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-171r3.pdf",
+      "landingUrl": "https://csrc.nist.gov/pubs/sp/800/171/r3/final",
+      "license": "Public domain (US federal work, 17 USC 105)",
+      "licenseEvidence": "In the PDF (front matter): \"This publication may be used by nongovernmental organizations on a voluntary basis and is not subject to copyright in the United States. Attribution would, however, be appreciated by NIST.\" Also: NIST Technical Series Publications policy page: \"Works authored by NIST employees are not subject to Copyright protection within the United States; foreign rights are reserved. To the extent NIST may assert rights outside of the United States, the public is granted the non-exclusive, perpetual, paid-up, royalty-free, worldwide right to reprint works in all formats...\" (https://www.nist.gov/director/copyright-fair-use-and-licensing-statements-srd-data-and-software)",
+      "notes": "미국 연방 저작물. PDF 본문 'not subject to copyright in the United States'. Word 출력, 태그 PDF",
+      "sha256": "3e4631df8b5d61f40a6e542b52779ef30ddbbfff31e09214fa94ad6e6f5e6d08",
+      "bytes": 1593213,
+      "pages": 120,
+      "producer": "Adobe PDF Library 24.2.207",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "zen-ko-report-21333257",
+      "type": "tagged-pdf",
+      "title": "국제개발협력 시민사회 회계 책무성, 투명성 증진을 위한 연구보고서 (KCOC research report, 2022-03-30)",
+      "url": "https://zenodo.org/api/records/21333257/files/%EA%B5%AD%EC%A0%9C%EA%B0%9C%EB%B0%9C%ED%98%91%EB%A0%A5%20%EC%8B%9C%EB%AF%BC%EC%82%AC%ED%9A%8C%20%ED%9A%8C%EA%B3%84%20%EC%B1%85%EB%AC%B4%EC%84%B1,%20%ED%88%AC%EB%AA%85%EC%84%B1%20%EC%A6%9D%EC%A7%84%EC%9D%84%20%EC%9C%84%ED%95%9C%20%EC%97%B0%EA%B5%AC%EB%B3%B4%EA%B3%A0%EC%84%9C.pdf/content",
+      "landingUrl": "https://zenodo.org/records/21333257",
+      "license": "CC BY 4.0",
+      "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader-asserted; creators are KCOC staff: 국제개발협력민간협의회). DOI 10.5281/zenodo.21333257. PDF p.2: '발행처 국제개발협력민간협의회 ... 본 연구는 KOICA DAK 정책협력사업 ... 의 일환으로 진행되었습니다' (no license text inside the PDF). Whether KOICA funding imposes extra terms is not verified.",
+      "notes": "Zenodo 업로더(작성 기관 직원) 지정 CC BY 4.0. KOICA 지원 사업 결과물로 지원기관 조건 미확인. InDesign, 태그 PDF, 한글 텍스트 공유 Form",
+      "sha256": "e8d298692bf68e4a177f8b8418db3adc3666e2c408df0cc1a28cdab07813041c",
+      "bytes": 2637669,
+      "pages": 152,
+      "producer": "Adobe PDF Library 16.0.7",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "zen-beamer-10545284",
+      "type": "shared-form-xobject",
+      "title": "La práctica del cambio estacional de la hora: natural, artificial, (in)conveniente y polémica (Martín-Olalla, beamer slides)",
+      "url": "https://zenodo.org/api/records/10545284/files/main.pdf/content",
+      "landingUrl": "https://zenodo.org/records/10545284",
+      "license": "CC BY 4.0",
+      "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader = author). DOI 10.5281/zenodo.10545284.",
+      "notes": "Zenodo CC BY 4.0. pdfTeX beamer, 삽입 PDF 그림이 여러 쪽 공유 Form",
+      "sha256": "8ef8022753993ae8d7aec46f844f5f45486f4c7057a66320311602807654a28c",
+      "bytes": 2631100,
+      "pages": 54,
+      "producer": "pdfTeX-1.40.24",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "zen-beamer-7535020",
+      "type": "shared-form-xobject",
+      "title": "Science Ouverte (Fressengeas, beamer handout, 2023)",
+      "url": "https://zenodo.org/api/records/7535020/files/Formation_SO_handout.pdf/content",
+      "landingUrl": "https://zenodo.org/records/7535020",
+      "license": "CC BY 4.0",
+      "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0. PDF page 2 (verbatim): \"Licences (compatibles) d'utilisation de ce document : Creative Commons CC-BY, Etalab\". DOI 10.5281/zenodo.7535020.",
+      "notes": "Zenodo CC BY 4.0 + PDF 2쪽 'Creative Commons CC-BY, Etalab'. xdvipdfmx beamer",
+      "sha256": "cade4aff074c710f50c3b541d296e6aeb99eadb6c3e09042dca628f9ceb3c6ec",
+      "bytes": 11820367,
+      "pages": 81,
+      "producer": "xdvipdfmx (20190824)",
+      "tagged": false,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "nasa-eo-2023-sepoct",
+      "type": "shared-form-xobject",
+      "title": "The Earth Observer, Sep-Oct 2023, Vol. 35 Iss. 5",
+      "url": "https://assets.science.nasa.gov/content/dam/science/esd/earth-observer/2023/EO%20Sep-Oct%202023-Digital%20508.pdf",
+      "landingUrl": "https://eospso.nasa.gov/earth-observer-archive",
+      "license": "NASA content, generally not subject to copyright in the US (public domain; per-image third-party credits possible)",
+      "licenseEvidence": "NASA Images and Media Usage Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/): \"NASA content ... generally are not subject to copyright in the United States.\" No license statement inside the PDF; newsletter is NASA-published (EOS Project Science Office, GSFC); individual photo/figure credits may name third parties.",
+      "notes": "NASA 일반 공공영역(신뢰도 중간). 텍스트 있는 러닝헤드 Form 이 58쪽 공유",
+      "sha256": "b6d29535a98dd764bbcb7f72e16d9e2d6b6dd79a1f25da988ea125b3fdc73b46",
+      "bytes": 5191307,
+      "pages": 63,
+      "producer": "Adobe PDF Library 17.0",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "nist-sp800-53r5",
+      "type": "benchmark",
+      "title": "NIST SP 800-53 Rev. 5: Security and Privacy Controls for Information Systems and Organizations",
+      "url": "https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-53r5.pdf",
+      "landingUrl": "https://doi.org/10.6028/NIST.SP.800-53r5",
+      "license": "Public domain (US federal work, 17 USC 105)",
+      "licenseEvidence": "In the PDF: \"This publication may be used by nongovernmental organizations on a voluntary basis and is not subject to copyright in the United States. Attribution would, however, be appreciated by NIST.\" Also: NIST Technical Series Publications policy page: \"Works authored by NIST employees are not subject to Copyright protection within the United States; foreign rights are reserved. To the extent NIST may assert rights outside of the United States, the public is granted the non-exclusive, perpetual, paid-up, royalty-free, worldwide right to reprint works in all formats...\" (https://www.nist.gov/director/copyright-fair-use-and-licensing-statements-srd-data-and-software)",
+      "notes": "미국 연방 저작물. PDF 본문 'not subject to copyright in the United States'. 492쪽",
+      "sha256": "fc63bcd61715d0181dd8e85998b1e6201ae3515fc6626102101cab1841e11ec6",
+      "bytes": 6073678,
+      "pages": 492,
+      "producer": "Adobe PDF Library 20.13.96",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    },
+    {
+      "id": "nasa-se-handbook-sp2016-6105",
+      "type": "benchmark",
+      "title": "NASA Systems Engineering Handbook (NASA/SP-2016-6105 Rev2)",
+      "url": "https://www.nasa.gov/wp-content/uploads/2018/09/nasa_systems_engineering_handbook_0.pdf",
+      "landingUrl": "https://www.nasa.gov/reference/systems-engineering-handbook/",
+      "license": "NASA content, generally not subject to copyright in the US (public domain; per-image third-party credits possible)",
+      "licenseEvidence": "NASA Images and Media Usage Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/): \"NASA content ... generally are not subject to copyright in the United States.\" No license statement inside the PDF; newsletter is NASA-published (EOS Project Science Office, GSFC); individual photo/figure credits may name third parties. Cover text lists photo credits.",
+      "notes": "NASA 일반 공공영역(신뢰도 중간). 297쪽, 태그 PDF, 텍스트 공유 Form",
+      "sha256": "8eeb4887a4dc57a23049da7dd2ed556833cf98e214b240468d987873164ff688",
+      "bytes": 3773440,
+      "pages": 297,
+      "producer": "Adobe PDF Library 15.0",
+      "tagged": true,
+      "retrieved": "2026-10-19"
+    }
+  ],
+  "notFound": [
+    {
+      "type": "korean-paper",
+      "searched": "arXiv 한국어 논문 17건(코멘트 'in Korean' 등) abs 라이선스, DOAJ 한국어 CC BY 학술지, Zenodo",
+      "result": "학술지 게재 논문 중 CC BY/BY-SA/CC0 한국어 본문 0건(arXiv 는 BY-NC-ND·BY-NC-SA·arXiv 비독점 라이선스뿐). Zenodo 저자 업로드본(CC BY 4.0, 업로더 지정)으로 대체. 출판사 조판본을 저자가 올린 것은 학술지 권리 미확인으로 제외"
+    },
+    {
+      "type": "korean-kogl-type1",
+      "searched": "공공누리 제1유형 정부 보고서(개인정보보호위원회 합성데이터 안내서 등)",
+      "result": "게시 페이지·PDF 문구로 제1유형을 확인한 문서 0건. 개인정보보호위원회 안내서는 PDF 2쪽 '무단전재를 금하며' 문구로 제외"
+    },
+    {
+      "type": "benchmark-korean",
+      "searched": "300~600쪽 한국어 공개 라이선스 문서",
+      "result": "미확보. 보건복지백서(KOGL 제4유형, 변경 금지)는 조건 불충족으로 미사용"
+    },
+    {
+      "type": "english-report",
+      "searched": "GAO·CBO 보고서",
+      "result": "gao.gov·cbo.gov 자동 내려받기 403. govinfo 는 최근 GAO 보고서 미제공 → NIST 로 대체"
+    },
+    {
+      "type": "vector-charts",
+      "searched": "EIA STEO, Fed Monetary Policy Report, Fed Z.1",
+      "result": "EIA STEO 는 차트가 래스터 이미지라 유형 부적합. Fed MPR·Z.1 은 본문에 제3자 저작권 고지(S&P Dow Jones Indices 등 재배포 금지)가 있어 라이선스 불명확으로 제외 → arXiv CC BY 2건"
+    },
+    {
+      "type": "multicolumn-newsletter",
+      "searched": "NIH Catalyst, NIH Record, USGS Sound Waves, CDC MMWR",
+      "result": "NIH Catalyst 는 PDF·게시 페이지에 공공영역 문구 없음(라이선스 불명확), 나머지는 403. 3단 뉴스레터 미확보 → NASA The Earth Observer(2단) 2건"
+    },
+    {
+      "type": "shared-form-xobject",
+      "searched": "실제 문서의 텍스트 포함 공유 Form",
+      "result": "확보(beamer 2건, NASA EO 러닝헤드, KCOC 보고서 러닝헤드, NASA SE 핸드북). 합성 픽스처 외 실제 문서에서 정책 경로 실행"
+    }
+  ],
+  "rejected": [
+    {
+      "id": "nih-catalyst-2025-julaug",
+      "reason": "라이선스 명시 문구 없음(미국 연방 저작물로 보이나 근거 미확보)"
+    },
+    {
+      "id": "gpo-911-commission-report",
+      "reason": "benchmark 2건으로 충분. govinfo 일반 고지만 있고 문서별 근거가 약해 제외"
+    },
+    {
+      "id": "ustreas-frusg-fy2025",
+      "reason": "245쪽(수백 쪽 benchmark 기준 미달), 표 문서는 3건 확보"
+    },
+    {
+      "id": "arxiv-2609.09305",
+      "reason": "vector-charts 2건으로 충분(예비)"
+    },
+    {
+      "id": "zen-ko-lee-22195074",
+      "reason": "korean-paper 3건으로 충분(예비, LibreOffice 출력)"
+    },
+    {
+      "id": "usgs-fs-2023-3020",
+      "reason": "4쪽 팩트시트, 유형 부적합(예비)"
+    },
+    {
+      "id": "eia-steo-2026-10",
+      "reason": "차트가 래스터 이미지(유형 부적합)"
+    },
+    {
+      "id": "fed-mpr-2026-07",
+      "reason": "본문 제3자 저작권 고지(S&P Dow Jones Indices 재배포 금지 등)"
+    },
+    {
+      "id": "fed-z1-current",
+      "reason": "본문 제3자 저작권 고지, /current/ URL 이 분기마다 바뀌어 해시 고정 불가"
+    },
+    {
+      "id": "usgs-fs-2022-3015",
+      "reason": "사진 제3자 크레딧('used with permission')"
+    },
+    {
+      "id": "zen-ko-ipbes-5846543",
+      "reason": "PDF 안 'Copyright © 2021, IPBES' 와 Zenodo CC BY 표기 대조 미완료"
+    },
+    {
+      "id": "zen-ko-kim-10199268",
+      "reason": "학회 논문집 수록본을 저자가 재업로드, 발행처 권리 미확인"
+    },
+    {
+      "id": "zen-ko-lee-18513021",
+      "reason": "학술지 출판사 조판본(ezPDF)을 저자가 업로드, 저작권 이전 여부 미확인"
+    },
+    {
+      "id": "zen-ko-srivastava-20203999",
+      "reason": "국제 학술지 조판본, 권리 미확인·영어 앞부분"
+    },
+    {
+      "id": "kogl-pipc-synthetic-data",
+      "reason": "PDF 2쪽 '무단전재를 금하며' — 공공누리 제1유형 확인 불가"
+    }
+  ]
+}
