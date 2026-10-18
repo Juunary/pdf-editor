@@ -1,10 +1,19 @@
 // M0 DoD 잔여 항목(공유 XObject·기존 Redact 주석·대형 문서 저장) 실행기. cli.ts 에서 호출한다.
 import * as mupdf from 'mupdf';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildPreexistingRedactPdf } from './fixture-redact.js';
 import { buildSharedXObjectPdf } from './fixture-xobject.js';
+import { buildSyntheticPdf } from './fixture.js';
+import {
+  runSaveVariant,
+  SAVE_VARIANTS,
+  writeLargePdf,
+  type SaveBenchResult,
+} from './save-bench.js';
 import { popplerPng, popplerRaster, popplerText, popplerVersion, ppmDiff } from './poppler.js';
 import { REDACT_CASES, runRedactCase } from './redact-spike.js';
 import { ADJACENT_LINES } from './fixture.js';
@@ -156,4 +165,84 @@ export function writeDodFixtures(root: string, ttf: string): { name: string; byt
       bytes: runRedactCase('per-annotation', fontBytes).savedBytes,
     },
   ];
+}
+
+/** 자식 프로세스: 저장 변형 1개 실행 → JSON. */
+export function runSaveChild(task: string, input: string, outFile: string, ttf: string): void {
+  const result = runSaveVariant(
+    task.slice('save:'.length),
+    new Uint8Array(readFileSync(input)),
+    new Uint8Array(readFileSync(ttf)),
+  );
+  writeFileSync(
+    outFile,
+    JSON.stringify({ ...result, maxRssBytes: process.resourceUsage().maxRSS * 1024 }, null, 2),
+  );
+}
+
+interface SaveRun extends Partial<SaveBenchResult> {
+  doc: string;
+  variant: string;
+  exitCode: number | null;
+  signal: string | null;
+  stderrTail: string | null;
+  maxRssBytes?: number;
+}
+
+/**
+ * 대형 문서 저장 상한 조사(A4). 합성 100·300쪽(Day 1 생성기) × 저장 변형, 그리고 2 GiB 근처
+ * 대형 문서(JS 직접 생성) × buffer/stream 입력. 변형마다 별도 프로세스.
+ */
+export function runSaveBenchCli({ root, out }: DodPaths, largePages: number[]): void {
+  const dir = join(out, 'save-bench');
+  mkdirSync(dir, { recursive: true });
+  const cli = join(dirname(fileURLToPath(import.meta.url)), 'cli.js');
+  const docs: { name: string; path: string; bytes: number }[] = [];
+  for (const pages of [100, 300]) {
+    const path = join(dir, `synthetic-${pages}.pdf`);
+    if (!existsSync(path)) writeFileSync(path, buildSyntheticPdf(pages));
+    docs.push({ name: `synthetic-${pages}`, path, bytes: readFileSync(path).byteLength });
+  }
+  for (const pages of largePages) {
+    const path = join(dir, `large-${pages}.pdf`);
+    const bytes = existsSync(path) ? readFileSync(path).byteLength : writeLargePdf(path, pages);
+    docs.push({ name: `large-${pages}`, path, bytes });
+  }
+  const runs: SaveRun[] = [];
+  for (const d of docs) {
+    const variants = d.name.startsWith('large')
+      ? ['buffer-compact', 'stream-compact', 'stream-gc1']
+      : Object.keys(SAVE_VARIANTS);
+    for (const variant of variants) {
+      const outFile = join(dir, `${d.name}-${variant}.json`);
+      rmSync(outFile, { force: true });
+      const t0 = performance.now();
+      const r = spawnSync(
+        process.execPath,
+        [cli, '--child', `save:${variant}`, '--input', d.path, '--out', outFile],
+        { encoding: 'utf8', maxBuffer: 1 << 24 },
+      );
+      const run: SaveRun = {
+        doc: d.name,
+        variant,
+        exitCode: r.status,
+        signal: r.signal,
+        stderrTail: r.status === 0 ? null : (r.stderr ?? '').split('\n').slice(-6).join('\n'),
+      };
+      if (existsSync(outFile)) Object.assign(run, JSON.parse(readFileSync(outFile, 'utf8')));
+      runs.push(run);
+      const heap = run.marks?.at(-1)?.wasmHeapBytes;
+      console.log(
+        `${d.name} (${(d.bytes / 2 ** 20).toFixed(1)} MiB) ${variant}: ${run.ok ? 'ok' : `실패(${run.error ?? r.status})`}` +
+          ` 힙 ${heap ? (heap / 2 ** 20).toFixed(1) : '?'} MiB, 배율 ${run.peakRatio?.toFixed(2) ?? '?'}, ${(performance.now() - t0).toFixed(0)} ms`,
+      );
+    }
+  }
+  const summary = {
+    date: new Date().toISOString(),
+    docs: docs.map((d) => ({ name: d.name, bytes: d.bytes })),
+    runs,
+  };
+  writeFileSync(join(out, 'save-bench-result.json'), JSON.stringify(summary, null, 2));
+  console.log(`결과: ${relative(root, join(out, 'save-bench-result.json'))}`);
 }

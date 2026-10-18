@@ -14,6 +14,7 @@
 |---|---|---|---|
 | 1 | 공유 Form XObject: 선택 사용 위치만 복제 후 수정(중첩 1단계 포함) | **통과**(v1 제한 조건 7가지, 1.6) | 3가지 편집 모두 비선택 위치·2쪽 렌더 diff 0 px(MuPDF·Poppler), 원본 객체 중 변경은 1쪽 페이지 사전 1개, 2쪽 객체 트리 저장 후 원시 바이트 동일 |
 | 2 | 기존 Redact 주석이 있는 문서: 새 편집 redaction 만 적용, 기존 주석 유지 | **통과**(정책 초안: 기본 경고, 페이지 단위 작업 시 임시 분리) | 기존 주석 3개 객체 불변·저장 후 위치·OverlayText 동일, 그 아래 텍스트 유지(MuPDF·Poppler), 편집 영역 밖·2쪽 0 px. 대조: 페이지 단위 적용은 기존 2개를 적용해 인접 문단 삭제(9,874 px) |
+| 3 | 대형 문서 저장 상한(A4): 출력 스트리밍 수단 조사, 예상 피크 힙 경고 | 출력 스트리밍 **불가**(1.28.1 npm). 예상 힙 경고 **구현**. 입력 Stream 으로 피크 약 1× 파일 크기 감소 확인 | `saveToBuffer` 외 출력 경로 없음(WASM export 확인). 상한 실측: Buffer 입력 525.5 MiB 성공·675.7 MiB 실패(`realloc` 예외), Stream 입력 675.7 MiB 성공(피크 1,681 MiB) |
 
 ## 1. 공유 Form XObject 복제 정책
 
@@ -218,3 +219,133 @@ PLAN.md 반영 필요:
 PLAN.md 반영 필요:
 - 3.1 "기존 Redact 주석 … 사전 감지해 구분 처리한다(사용자 경고 또는 임시 분리)" → "감지·보고(`listRedactAnnots`), 편집은 주석 단위 적용으로 기존 주석을 적용하지 않음, 겹침·링크 제거는 경고, 페이지 단위 적용이 필요한 작업만 임시 분리" 로 확정.
 - 7절 리스크에 F3(이미지 `resolve()` + compact 저장 결함)과 회피 규칙 추가.
+
+## 3. 대형 문서 저장 상한(A4)
+
+### 3.1 MuPDF 1.28.1 API 조사
+
+근거: npm `mupdf` 1.28.1 `dist/mupdf.js`·`dist/mupdf-wasm.js`(설치본 직접 확인).
+
+| 수단 | 구현 | 힙 영향 | 판정 |
+|---|---|---|---|
+| `PDFDocument.saveToBuffer(options)` | `_wasm_pdf_write_document_buffer`: 출력 전체를 fz_buffer 1개(WASM 힙)로 만든다 | 출력 크기 + 확장 중 이전·새 버퍼 공존(확장 1.5배, 실측 실패 요청 827,430,261 B ≈ 출력 551 MB × 1.5) | 편집한 PDF 의 유일한 저장 경로 |
+| `PDFDocument.save(filename, options)` | Node 전용. `node_fs.writeFileSync(filename, this.saveToBuffer(options).asUint8Array())` | `saveToBuffer` 와 같음 | 스트리밍 아님 |
+| `DocumentWriter(buffer, format, options)` | `_wasm_new_document_writer_with_buffer`: Device 로 그린 페이지로 새 문서를 Buffer 에 씀 | 출력 전체가 Buffer | 편집 PDF 저장 용도 아님(객체 구조 미보존) |
+| fz_output 콜백·청크 쓰기 | WASM export 에 없음. 쓰기 관련 export 는 위 2개뿐 | — | **출력 스트리밍 불가**(사용자 정의 WASM 빌드 필요) |
+| `new Stream({fileSize, read, close})` + `Document.openDocument(stream)` | `_wasm_open_document_with_stream`. 동기 `read(memory, offset, length, position)` 콜백으로 필요한 구간만 읽음 | 입력이 WASM 힙에 복사되지 않음(Buffer 입력은 열기 시 파일 크기만큼 증가) | **채택 후보**(3.3) |
+| `emptyStore()` / `shrinkStore(percent)` | 디코드 캐시(이미지·폰트 등) 해제 | 선형 메모리는 줄지 않고 해제 공간만 재사용 | 효과 불안정(3.3) |
+| `Buffer.asUint8Array()` | `HEAPU8.subarray` 뷰(복사 없음) | JS 쪽 사본 생략 가능. 힙이 늘면 뷰가 무효가 됨 | Worker → FSA 청크 쓰기 후보(JS 쪽 메모리만 해당) |
+| 저장 옵션 `garbage` 단계 | — | `compact` 와 `yes` 피크 동일(3.3) | 힙 기준 차이 없음 |
+| 힙 상한·확장 | `mupdf-wasm.js` 힙 확장 함수: 최대 2,147,483,648 B. 새 크기 = max(요청, 현재 × 1.2), 단 요청 + 96 MiB 이하, 64 KiB 정렬 | 선형 메모리가 계단식으로 늘어 같은 편집도 문서 크기에 따라 배율이 흔들린다 | memory64(4 GiB 이상) 빌드 아님 |
+
+### 3.2 측정 조건
+
+- 실행: `pnpm --filter @pdf-editor/spike-m0 spike:save-bench` → `out/m0-dod/save-bench-result.json`(git 제외). 변형마다 별도 Node 프로세스. 피크 = 프로세스 끝의 WASM 선형 메모리(줄지 않음).
+- 문서: 합성 100쪽(79,631,356 B)·300쪽(238,508,962 B) = Day 1 6.5 와 같은 생성기, 같은 바이트. 대형 500·700·900쪽(393,607,488 / 551,051,253 / 708,495,011 B) = WASM 을 거치지 않고 JS 로 직접 쓴 PDF(쪽마다 Flate 잡음 이미지 약 787 KB + 텍스트 1줄).
+- 편집: Day 1 과 같은 1쪽 문단 교체(redaction + 폰트 임베딩 + 새 스트림) 후 전체 저장. 증분 변형은 주석 1개 추가 후 `incremental`.
+- buffer = `openDocument(Uint8Array)`(현재 core 경로), stream = `new Stream(handle)`(JS 쪽 바이트를 콜백으로 읽음).
+
+### 3.3 결과
+
+| 문서(MiB) | 변형 | 저장 옵션 | 열기 후 힙 | 렌더 후 힙 | 저장 후 힙(피크) MiB | 배율 | 저장 증가분(÷파일) | 저장 ms | 결과 |
+|---|---|---|---|---|---|---|---|---|---|
+| 100쪽 (75.9) | buffer | compact | 98.9 | - | 340.6 | 4.48 | +241.6 (3.18×) | 135 | 성공 |
+| 100쪽 (75.9) | stream | compact | 22.0 | - | 264.6 | 3.48 | +242.6 (3.19×) | 147 | 성공 |
+| 100쪽 (75.9) | buffer | yes | 98.9 | - | 340.6 | 4.48 | +241.6 (3.18×) | 138 | 성공 |
+| 100쪽 (75.9) | stream | yes | 22.0 | - | 264.6 | 3.48 | +242.6 (3.19×) | 156 | 성공 |
+| 100쪽 (75.9) | buffer + 100쪽 렌더 | compact | 98.9 | 205.3 | 440.4 | 5.80 | +235.1 (3.10×) | 136 | 성공 |
+| 100쪽 (75.9) | buffer + 100쪽 렌더 + `emptyStore` | compact | 98.9 | 205.3 | 363.4 | 4.79 | +158.2 (2.08×) | 92 | 성공 |
+| 100쪽 (75.9) | buffer | incremental | 98.9 | - | 301.9 | 3.98 | +203.0 (2.67×) | 103 | 성공 |
+| 100쪽 (75.9) | stream | incremental | 22.0 | - | 226.0 | 2.98 | +204.0 (2.69×) | 179 | 성공 |
+| 300쪽 (227.5) | buffer | compact | 280.8 | - | 648.3 | 2.85 | +367.5 (1.62×) | 329 | 성공 |
+| 300쪽 (227.5) | stream | compact | 22.0 | - | 420.8 | 1.85 | +398.8 (1.75×) | 359 | 성공 |
+| 300쪽 (227.5) | buffer | yes | 280.8 | - | 648.3 | 2.85 | +367.5 (1.62×) | 306 | 성공 |
+| 300쪽 (227.5) | stream | yes | 22.0 | - | 420.8 | 1.85 | +398.8 (1.75×) | 341 | 성공 |
+| 300쪽 (227.5) | buffer + 100쪽 렌더 | compact | 280.8 | 404.4 | 825.6 | 3.63 | +421.3 (1.85×) | 324 | 성공 |
+| 300쪽 (227.5) | buffer + 100쪽 렌더 + `emptyStore` | compact | 280.8 | 404.4 | 904.8 | 3.98 | +500.4 (2.20×) | 379 | 성공 |
+| 300쪽 (227.5) | buffer | incremental | 280.8 | - | 797.1 | 3.50 | +516.4 (2.27×) | 322 | 성공 |
+| 300쪽 (227.5) | stream | incremental | 22.0 | - | 569.7 | 2.50 | +547.7 (2.41×) | 374 | 성공 |
+| 대형 500쪽 (375.4) | buffer | compact | 458.3 | - | 1,266.9 | 3.38 | +808.7 (2.15×) | 532 | 성공 |
+| 대형 500쪽 (375.4) | stream | compact / yes | 22.0 | - | 891.6 | 2.38 | +869.6 (2.32×) | 594 / 573 | 성공 |
+| 대형 700쪽 (525.5) | buffer | compact | 628.1 | - | 1,417.3 | 2.70 | +789.3 (1.50×) | 589 | 성공 |
+| 대형 700쪽 (525.5) | stream | compact / yes | 22.0 | - | 891.8 | 1.70 | +869.8 (1.66×) | 712 / 714 | 성공 |
+| 대형 900쪽 (675.7) | buffer | compact | 778.3 | - | 실패 시점 1,567.8 | - | - | - | **실패**: `realloc (827430261 bytes) failed` |
+| 대형 900쪽 (675.7) | stream | compact / yes | 22.0 | - | 1,681.2 | 2.49 | +1,659.2 (2.46×) | 1,093 / 1,080 | 성공 |
+
+- buffer 100·300쪽 compact 는 Day 1 6.5 와 같은 값(340.6 / 648.3 MiB)으로 재현됐다.
+- Stream 입력: 열기 후 힙 증가 0, 피크가 파일 크기 약 1배만큼 줄었다(100쪽 4.48 → 3.48, 300쪽 2.85 → 1.85, 500쪽 3.38 → 2.38, 700쪽 2.70 → 1.70). 저장 결과는 Buffer 입력과 바이트 단위로 같다(테스트 `tools/spike-m0/test/save-bench.test.ts`). 열기 + 1쪽 렌더 동안 스트림으로 읽은 양은 파일의 1/4 미만(같은 테스트).
+- `garbage=yes` 와 `garbage=compact` 의 피크는 모든 문서에서 같았다. 2.5 F3 회피를 위해 `garbage=yes` 로 바꿔도 메모리 비용은 없다. 출력 크기는 `yes` 가 46–70 B 크다(객체 번호를 압축하지 않아 xref 가 길어짐, 예: 100쪽 79,640,460 → 79,640,526 B). Buffer·Stream 입력의 출력 크기는 같다.
+- `emptyStore()`: 100쪽은 렌더 후 피크를 440.4 → 363.4 MiB 로 낮췄으나 300쪽은 825.6 → 904.8 MiB 로 오히려 높았다(선형 메모리 계단식 확장). 상한 대책으로 신뢰하지 않는다.
+- 실패 양상(대형 900쪽, buffer): JS 예외로 잡힌다. 같은 프로세스에서 새 문서 생성·저장은 정상. 실패한 문서도 계속 쓸 수 있다(900쪽, 편집한 1쪽 텍스트·렌더 정상). 같은 문서 재저장은 힙이 1,918.4 MiB 로 남아 다시 실패(`realloc (551620174 bytes) failed`). 즉 재시도는 Worker 재시작 → 원본 Stream 재열기 → 편집 로그 재적용(PLAN.md 3.2) 이 필요하다.
+- 상한 실측(서버 Node, 합성 문서): Buffer 입력 525.5 MiB 성공·675.7 MiB 실패, Stream 입력 675.7 MiB 성공(피크 1,681 MiB, 상한의 82%).
+- maxRSS(Node 프로세스): 대형 900쪽 buffer 실패 2,788 MiB, stream 성공 2,339 MiB. 브라우저 탭은 WASM 힙 외에 JS 쪽 입력·출력 사본이 더해진다(미측정, A3 Day 1 과 함께).
+
+### 3.4 `decideSaveMethod` 예상 피크 힙 경고(구현)
+
+`packages/pdf-ops/src/save-method.ts`
+
+| 항목 | 값 |
+|---|---|
+| 호출 | `decideSaveMethod(changes, canBeSavedIncrementally, { inputBytes })` → 기존 결과 + `heap` (`size` 없이 부르면 기존과 동일) |
+| 계산 | `estimateSaveHeap`: 예상 피크 = `inputBytes × 배율`. 배율 `MEASURED_PEAK_HEAP_RATIO` = 전체 4.48, 증분 3.98(Day 1 6.5 의 큰 값) |
+| 상한 | `WASM_HEAP_LIMIT_BYTES` = 2,147,483,648 B(3.1) |
+| 수준 | 예상 피크 ≤ 상한의 75% → `ok`, 75% 초과 → `warn`, 100% 초과 → `over-limit`. 상한·비율·배율은 인자로 바꿀 수 있다 |
+| 메시지 | 예: "예상 피크 WASM 힙 1792 MiB(파일 400 MiB × 4.48) 가 상한 2048 MiB 의 88% 입니다. 저장이 실패할 수 있습니다." |
+| 저장 방식 | 바꾸지 않는다. 텍스트 교체를 증분 저장으로 돌리면 원문이 남으므로(Day 1 P2), 상한 초과는 호출자가 저장 전 경고·중단한다 |
+| Stream 입력 배율 | `STREAM_INPUT_PEAK_HEAP_RATIO` = 전체 3.48, 증분 2.98(3.3 의 100쪽 값, core 전환 시 `ratio` 로 넘김) |
+| 테스트 | `packages/pdf-ops/test/save-method.test.ts` 9건(기존 4 + 신규 5) |
+
+전체 저장 경계(파일 크기): Buffer 배율 4.48 → `warn` > 342.9 MiB, `over-limit` > 457.1 MiB. Stream 배율 3.48 → `warn` > 441.4 MiB, `over-limit` > 588.5 MiB.
+
+실측과 대조(전체 저장):
+
+| 문서(MiB) | Buffer 판정(4.48) | Buffer 실제 | Stream 판정(3.48) | Stream 실제 |
+|---|---|---|---|---|
+| 75.9 | ok(17%) | 성공 | ok(13%) | 성공 |
+| 227.5 | ok(50%) | 성공 | ok(39%) | 성공 |
+| 375.4 | warn(82%) | 성공(62%) | ok(64%) | 성공(44%) |
+| 525.5 | over-limit(115%) | 성공(69%) | warn(89%) | 성공(44%) |
+| 675.7 | over-limit(148%) | **실패** | over-limit(115%) | 성공(82%) |
+
+- 4.48 은 작은 문서에서 큰 값이다(고정 기본 힙 22 MiB, 계단식 확장). 대형 문서 실측 배율은 2.3–3.4 라 판정이 보수적이다(거짓 양성: Buffer 457–약 600 MiB, Stream 588–675.7 MiB 이상 미확인). 미탐(판정 ok/warn 인데 실패)은 이번 측정에서 0건.
+
+### 3.5 판정
+
+- 출력 스트리밍: **불가**(mupdf 1.28.1 npm 빌드에 출력 콜백 없음). 우회는 사용자 정의 WASM 빌드뿐이며 v1 범위 밖.
+- 힙 절감: 입력 Stream 열기로 파일 크기 약 1배 절감(실측). `garbage` 단계·`emptyStore` 는 대책이 아님.
+- 사전 경고: `decideSaveMethod` 에 예상 피크 힙(파일 × 실측 배율)과 `ok`/`warn`/`over-limit` 반환 구현. 이번 측정에서 미탐 0건.
+
+### 3.6 Action Items(3번 항목)
+
+| # | 내용 | 시점 |
+|---|---|---|
+| A3-1 | core 열기 경로를 Stream 입력으로 전환. Worker 의 `PdfSession` 은 원본 바이트를 이미 JS 쪽에 보관하므로 그 바이트를 `read` 콜백 소스로 쓴다. 전환 후 `STREAM_INPUT_PEAK_HEAP_RATIO` 적용. File/Blob 을 `FileReaderSync`·OPFS `FileSystemSyncAccessHandle` 로 직접 읽는 방식은 브라우저 미검증 | M1 |
+| A3-2 | `shared-types` `SaveResult`(또는 저장 전 RPC)에 `heap` 추가, `core` `PdfSession.save` 에서 `{ inputBytes }` 전달, 뷰어에서 `warn`·`over-limit` 경고 UI. shared-types 변경이라 메인 세션에서 통합 | M1(계약), M3(UI) |
+| A3-3 | 저장 실패 복구: 예외 시 Worker 재시작 → Stream 재열기 → 편집 로그 재적용 후 재저장(3.3 실패 양상). PLAN.md 3.2 체크포인트 설계에 포함 | M3 |
+| A3-4 | Windows Chrome Worker 에서 같은 문서로 피크·탭 메모리 측정(Day 1 A3 와 함께). 출력 JS 사본을 FSA 에 청크로 쓰는 방식 검토 | M0 후속 |
+| A3-5 | 배율 모델 재산정: 고정분(기본 힙 22 MiB) + 비례분 형태, 실제 코퍼스(A7) 측정 후 | M5 |
+| A3-6 | 전체 저장 옵션 `garbage=compact` → `garbage=yes` 전환 여부 결정(2.5 F3 회피, 힙 비용 없음 실측). 출력 크기·Day 1 고정 해시 영향 확인 필요 | M1(A2-3 과 함께) |
+
+PLAN.md 반영 필요:
+- 3.1 저장 정책: "전체 저장의 최대 메모리·저장 시간을 M0 부터 벤치마크" 에 결과 요약 추가 — 출력 스트리밍 불가, 저장 전 예상 피크 힙 경고, 입력 Stream 열기 채택(검토).
+- 5.4 메모리: "WASM 힙 상한 2GiB" 옆에 실측 상한(서버 Node, 합성 문서) — Buffer 입력 525.5 MiB 성공·675.7 MiB 실패, Stream 입력 675.7 MiB 성공.
+- 12절 이후 일정 재산정 시 A3-1·A3-3 을 M1·M3 작업량에 반영.
+
+## 4. 검증
+
+| 명령 | 결과(2026-10-18) |
+|---|---|
+| `pnpm exec turbo run build typecheck test test:e2e --force` | 통과(아래 건수) |
+| `pnpm lint` | 통과 |
+| `pnpm --filter @pdf-editor/spike-m0 fixtures` 2회 | `fixtures/m0/*.pdf` 6개 해시 동일. Day 1 2개(`913c521a…`, `58b19a53…`) 변화 없음 |
+
+| 패키지 | Vitest(Day 1 → 이번) | 이번 작업에서 추가한 테스트 파일 |
+|---|---|---|
+| `packages/pdf-ops` | 11 → 33 | `content-stream`(4), `xobject`(5), `redact-existing`(7), `save-method`(+5), `text-ops`(+1) |
+| `tools/spike-m0` | 9 → 22 | `xobject`(5), `redact-existing`(4), `mupdf-pitfalls`(2), `save-bench`(2) |
+| `packages/core` | 4 → 4 | — |
+| `apps/extension` | 21 → 21 (+ Playwright 1) | — |
+| 합계 | 45 → **80** + Playwright 1 | |
+
+- 대형 문서(`out/m0-dod/save-bench/large-*.pdf`, 약 1.6 GB)는 측정 후 지웠다. `spike:save-bench` 가 없으면 다시 만든다(같은 생성 규칙).
+

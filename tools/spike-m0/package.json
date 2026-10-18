@@ -12,7 +12,8 @@
     "spike": "node dist/cli.js",
     "fixtures": "node dist/cli.js --write-fixtures",
     "spike:xobject": "node dist/cli.js --xobject",
-    "spike:redact": "node dist/cli.js --redact-existing"
+    "spike:redact": "node dist/cli.js --redact-existing",
+    "spike:save-bench": "node dist/cli.js --save-bench"
   },
   "dependencies": {
     "@pdf-editor/core": "workspace:*",

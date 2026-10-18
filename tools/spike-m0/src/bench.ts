@@ -26,14 +26,8 @@ export interface BenchResult {
   output: Uint8Array;
 }
 
-/** 대형 문서 1쪽 문단 교체 후 전체 저장(스파이크와 같은 편집). */
-export function runBenchFull(
-  bytes: Uint8Array,
-  fontBytes: Uint8Array,
-  onPhase: (p: string) => void,
-): BenchResult {
-  const doc = openPdf(bytes);
-  onPhase('open');
+/** 1쪽 문단 교체(스파이크와 같은 편집): redaction → 폴백 폰트 임베딩 → 새 콘텐츠 스트림. */
+export function applyBenchEdit(doc: mupdf.PDFDocument, fontBytes: Uint8Array): void {
   let page = doc.loadPage(0);
   redactRegions(page, [TARGET_RECT]);
   page = doc.loadPage(0);
@@ -54,6 +48,17 @@ export function runBenchFull(
     page,
     serializeTextBlock({ fontResource: name, fontSize: 11, color: [0, 0, 0], lines: layout.lines }),
   );
+}
+
+/** 대형 문서 1쪽 문단 교체 후 전체 저장(스파이크와 같은 편집). */
+export function runBenchFull(
+  bytes: Uint8Array,
+  fontBytes: Uint8Array,
+  onPhase: (p: string) => void,
+): BenchResult {
+  const doc = openPdf(bytes);
+  onPhase('open');
+  applyBenchEdit(doc, fontBytes);
   onPhase('edit');
   const changes: ChangeKind[] = ['redaction', 'font-embed', 'content-stream'];
   const can = doc.canBeSavedIncrementally();
