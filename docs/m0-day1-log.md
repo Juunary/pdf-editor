@@ -174,7 +174,7 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 
 | # | 내용 | 담당 | 근거 |
 |---|---|---|---|
-| A1 | 9절 Windows 체크리스트 수행, 결과 칸 기입(Chrome 버전 포함, PLAN.md 11절 "사용자 기입" 칸 동시 갱신) | 사용자 | 2·3·5번 Windows 검증 |
+| A1 | 9절 Windows 체크리스트 수행, 결과 칸 기입(Chrome 버전 포함, PLAN.md 11절 "사용자 기입" 칸 동시 갱신). **2026-10-19 1차 완료**(Chrome 155): G1·G2, I1·I2·I3·I5·I6, R1·R2, V1, F1·F2 기입, PLAN.md 11절 갱신(v2.3). 미확인 잔여: 임베디드 문맥 F3 의 Ctrl+S 재저장·fsaError, F1·F3 진단 JSON, I2 파일 URL 접근 설정 상태, F2 권한 재요청 여부, I4, I7(→A5), V2, V3, V4(→A3-4) | 사용자 | 2·3·5번 Windows 검증. 결과 9.5 |
 | A2 | PLAN.md 2절 폴백 폰트 표기 갱신: "서브셋 OTF, 문서 기준 1.8MB" → "glyf TTF 서브셋, 실측 2,556,960 B" | 승인 후 메인 세션 | P1 |
 | A3 | 브라우저(Windows Chrome Worker) 전체 저장 피크 메모리·시간 측정, 벤치마크 문서 세트·기준 PC 조건 확정 | M0 후속 | PLAN.md 3.1, 8절 |
 | A4 | 대형 문서 저장 정책: 저장 전 예상 WASM 힙(파일 크기 × 실측 배율) 계산·경고, 출력 스트리밍 쓰기 가능 여부 조사 | M0 후속 | P3 |
@@ -206,28 +206,28 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 
 | # | 항목 | 결과 |
 |---|---|---|
-| G1 | Chrome 버전(`chrome://version`) | |
-| G2 | 뷰어 진단 `env.interceptionMode`(151+ 기대값 `mime-handler`, `dynamicRuleIds` 빈 배열) | |
-| G3 | Chrome 128–150 환경 유무(있으면 9.1 I7 수행) | |
+| G1 | Chrome 버전(`chrome://version`) | 통과. Chrome 155.0.8059.82 공식 빌드 64비트 (측정: 진단 JSON `env`, 2026-10-19 KST) |
+| G2 | 뷰어 진단 `env.interceptionMode`(151+ 기대값 `mime-handler`, `dynamicRuleIds` 빈 배열) | 통과. `hasMimeHandlerApi` true, `interceptionMode` "mime-handler", `dynamicRuleIds` [], `hasShowSaveFilePicker` true, `hasDownloadsApi` true (측정: 진단 JSON `env`) |
+| G3 | Chrome 128–150 환경 유무(있으면 9.1 I7 수행) | 해당 없음. 이 PC 는 Chrome 155 라 128–150 환경 없음 → I7 미수행, A5 유지 |
 
 ### 9.1 가로채기(세 문맥 + file://)
 
 | # | 절차 | 기대 | 결과 |
 |---|---|---|---|
-| I1 | 공개 https PDF 주소로 이동(예: 임의의 웹 PDF 링크) | 배지 `mime-handler-top`, 1쪽 렌더 | |
-| I2 | `C:\Users\harry\pdf-editor-dist\diag\m0-sample.pdf` 를 주소창에 입력(“파일 URL에 대한 액세스 허용” **끔** 상태) | 배지 `mime-handler-top`, 렌더(파일 URL 설정 불필요) | |
-| I3 | `file:///C:/Users/harry/pdf-editor-dist/diag/embed-test.html` | embed·iframe·object 3개 모두 배지 `mime-handler-embedded`, 렌더 | |
-| I4 | `http://localhost:8000/embed-test.html` (9.0-5 서버) | I3 과 동일 | |
-| I5 | `C:\Users\harry\pdf-editor-dist\diag\not-a-pdf.pdf` | 확장 뷰어가 Chrome 기본 PDF 뷰어로 넘어감(오류 화면) | |
-| I6 | 확장 아이콘 클릭 → 뷰어에서 로컬 PDF 선택 | 배지 `viewer-page`, 렌더 | |
-| I7 | (Chrome 128–150 에서만) I1·I2 반복. I2 는 “파일 URL에 대한 액세스 허용” 끔/켬 각각 | 배지 `url-param`(DNR 리다이렉트), 렌더. file:// 결과는 그대로 기록 | |
+| I1 | 공개 https PDF 주소로 이동(예: 임의의 웹 PDF 링크) | 배지 `mime-handler-top`, 1쪽 렌더 | 통과. https PDF 2개(mozilla.github.io tracemonkey, w3.org dummy.pdf) 확장 뷰어로 열림, 배지 `mime-handler-top` (사용자 보고) |
+| I2 | `C:\Users\harry\pdf-editor-dist\diag\m0-sample.pdf` 를 주소창에 입력(“파일 URL에 대한 액세스 허용” **끔** 상태) | 배지 `mime-handler-top`, 렌더(파일 URL 설정 불필요) | 통과. kind `mime-handler-top`, `streamInfo.embedded` false, byteLength 11674, fetchMs 2.4, openMs 6.1, renderMs 45.2(scale 3) (측정: 진단 JSON). "파일 URL에 대한 액세스 허용" 이 꺼져 있었는지는 **설정 상태 미확인** |
+| I3 | `file:///C:/Users/harry/pdf-editor-dist/diag/embed-test.html` | embed·iframe·object 3개 모두 배지 `mime-handler-embedded`, 렌더 | 통과. embed·iframe·object 3개 모두 배지 `mime-handler-embedded` 로 렌더 (사용자 보고 + 측정: 사용자가 이 페이지를 PDF 로 인쇄한 "M0 임베디드 문맥 테스트.pdf" 의 텍스트에서 배지 3개 확인) |
+| I4 | `http://localhost:8000/embed-test.html` (9.0-5 서버) | I3 과 동일 | 미확인. 로컬 http 서버 미실행(선택 항목) |
+| I5 | `C:\Users\harry\pdf-editor-dist\diag\not-a-pdf.pdf` | 확장 뷰어가 Chrome 기본 PDF 뷰어로 넘어감(오류 화면) | 통과. Chrome 기본 PDF 뷰어의 "PDF 문서를 로드하지 못했습니다." 표시 (사용자 보고). 확장 소스(`apps/extension/src`)에 이 문구가 없고 `abortAndFallbackToNativeHandler` 호출만 `viewer/main.ts` 에 있음(측정) → 기본 뷰어 전환으로 판정. 주소창에 원래 file:// 주소가 남는 것은 MIME handler 의 정상 동작이므로 판정 근거로 쓰지 않음 |
+| I6 | 확장 아이콘 클릭 → 뷰어에서 로컬 PDF 선택 | 배지 `viewer-page`, 렌더 | 통과. 배지 `viewer-page`, 렌더 (사용자 보고). 진단 JSON 없음 |
+| I7 | (Chrome 128–150 에서만) I1·I2 반복. I2 는 “파일 URL에 대한 액세스 허용” 끔/켬 각각 | 배지 `url-param`(DNR 리다이렉트), 렌더. file:// 결과는 그대로 기록 | 미확인. 이 PC 는 Chrome 155 → A5(구버전 실측 수단) 로 유지 |
 
 ### 9.2 렌더
 
 | # | 절차 | 기대 | 결과 |
 |---|---|---|---|
-| R1 | I1–I4, I6 각 문맥의 캔버스 | 페이지 표시, 흐림·깨짐 없음, 진단 `render.renderMs` 기록 | |
-| R2 | `diag\m0-spike-saved.pdf` 를 확장 뷰어로 열기 | 한글 문단 정상 표시 | |
+| R1 | I1–I4, I6 각 문맥의 캔버스 | 페이지 표시, 흐림·깨짐 없음, 진단 `render.renderMs` 기록 | 통과 (사용자 보고). `renderMs` 는 I2 의 45.2 ms(scale 3)만 측정, 다른 문맥의 수치는 진단 JSON 미수신 |
+| R2 | `diag\m0-spike-saved.pdf` 를 확장 뷰어로 열기 | 한글 문단 정상 표시 | 통과. 한글 문단·배경·이미지·꼬리말 정상 (사용자 스크린샷, 확장 뷰어) |
 
 ### 9.3 스파이크 결과 파일: 다른 뷰어 표시·검색·복사
 
@@ -235,10 +235,10 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 
 | # | 뷰어 | 확인 | 결과 |
 |---|---|---|---|
-| V1 | Chrome 기본 뷰어(확장 끈 상태 또는 다른 프로필) | 한글 문단 표시, 배경·괘선·이미지 유지, Ctrl+F `폴백 폰트` 검색, 문단 복사 → 메모장 붙여넣기 일치 | |
-| V2 | Acrobat Reader(설치 시) | V1 과 동일 + 문서 속성 › 글꼴: `NotoSansKR` "포함된 하위 집합" | |
-| V3 | pdf.js(Firefox 또는 https://mozilla.github.io/pdf.js/web/viewer.html 에 파일 끌어놓기) | V1 과 동일 | |
-| V4 | 확장 뷰어에서 큰 PDF(100쪽 이상 실제 문서) 열기 → 진단 "전체 저장 측정" | 진단 `bench-full-save.saveMs`, `wasmHeapBytes`, 문서 크기·쪽수, PC 사양(CPU·RAM) 기록 | |
+| V1 | Chrome 기본 뷰어(확장 끈 상태 또는 다른 프로필) | 한글 문단 표시, 배경·괘선·이미지 유지, Ctrl+F `폴백 폰트` 검색, 문단 복사 → 메모장 붙여넣기 일치 | 통과. `m0-spike-saved.pdf`·`m0-shared-xobject-edited.pdf`·`m0-preexisting-redact-edited.pdf` 3개 표시 정상 (사용자 스크린샷, 확장 끈 상태). shared-xobject: 위 카드 원문 유지, 아래 카드·중첩 배지만 한글 교체, 제목·세로 괘선·꼬리말 유지. preexisting-redact: Redact 상자 2개와 메모 아이콘 유지, R2 상자가 교체 한글 첫 줄과 겹침(정책 초안의 warn 시나리오와 일치). 검색·복사: 확장을 끈 Chrome 기본 뷰어에서 가능 (사용자 보고, 파일·검색어 세부 기록 없음). 독립 측정: PDFium(Python pypdfium2 5.14.0, PDFium 156.0.8076.0, 2026-10-19)으로 3개 파일 추출·검색 → 한글 문단 전문이 정확히 추출되고 한글 검색어가 교체한 쪽에서만 1건씩 검색. 이 수치는 Chrome 155 자체가 아닌 PDFium 156 빌드 결과이며, 스크립트는 저장소에 없고 사용자 PC 임시 폴더에 있음 |
+| V2 | Acrobat Reader(설치 시) | V1 과 동일 + 문서 속성 › 글꼴: `NotoSansKR` "포함된 하위 집합" | 미확인. Acrobat 미실행. A2-5 의 "Acrobat 이 Redact 를 적용 대기로 표시하는지" 도 미확인 |
+| V3 | pdf.js(Firefox 또는 https://mozilla.github.io/pdf.js/web/viewer.html 에 파일 끌어놓기) | V1 과 동일 | 미확인. pdf.js 미실행 |
+| V4 | 확장 뷰어에서 큰 PDF(100쪽 이상 실제 문서) 열기 → 진단 "전체 저장 측정" | 진단 `bench-full-save.saveMs`, `wasmHeapBytes`, 문서 크기·쪽수, PC 사양(CPU·RAM) 기록 | 미확인. 대형 문서 전체 저장 측정 미실행(A3-4 와 함께) |
 
 ### 9.4 FSA·downloads(세 문맥)
 
@@ -254,9 +254,25 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 
 | 문맥 | 1 대화상자 / channel / fsaError | 2 | 3 | 4 | 5 |
 |---|---|---|---|---|---|
-| F1 일반 뷰어 페이지 | | | | | |
-| F2 최상위 MIME handler | | | | | |
-| F3 임베디드 MIME handler | | | | | |
+| F1 일반 뷰어 페이지 | FSA 선택기 정상 (사용자 보고). 진단 JSON 미수신 → channel·fsaError 미확인 | 파일 생성 (사용자 보고) | 같은 대상 재저장 정상 (사용자 보고) | 정상 (사용자 보고. 권한 재요청 창 여부의 세부 기록 없음) | downloads 저장 정상 (사용자 보고) |
+| F2 최상위 MIME handler | FSA 선택기 정상, channel `fsa`, fsaError null (측정: 진단 JSON). 선택기를 닫은 2회는 status `cancelled` 이며 downloads 로 넘어가지 않음 | `saved`: test1.pdf, bytes 11674(선택기 사용 9.9초 포함) (측정). 디스크: `C:\Users\harry\Downloads\test1.pdf` 11,674 B, SHA-256 이 원본 m0-sample.pdf 와 동일(913C521A…5144, 편집이 없었으므로 정상), 수정 시각 = 마지막 저장 시각 (측정). worker-save method `incremental`(편집 없음 + canBeSavedIncrementally true) | Ctrl+S: `reusedHandle` true, 238 ms, 선택기 없이 `saved` (측정: 진단 JSON) | 미확인(추정). 두 번째 Ctrl+S 가 238 ms 였으므로 권한 재요청 창은 뜨지 않은 것으로 보이나 사용자에게 직접 확인받지 못함 | "저장됨: chrome.downloads" 표시 (사용자 보고), Downloads 에 m0-sample.pdf 11,674 B 생성 (측정) |
+| F3 임베디드 MIME handler | FSA "다른 이름으로 저장" 선택기 정상 (사용자 보고. OS 의 덮어쓰기 확인 창은 선택기 기본 동작). 진단 JSON 미수신 → fsaError 값 미확인 | 파일 저장 (사용자 보고) | 미확인. Ctrl+S 가 같은 대상에 덮어썼는지 확인 못 함 | 미확인 | downloads 저장 정상. 같은 이름이 있어 `m0-sample (1).pdf` 로 자동 번호(conflictAction uniquify 동작과 일치) (사용자 보고) |
+
+- 기록 주의: 사용자가 처음 "F1" 로 보고한 진단 JSON 은 문맥이 `mime-handler-top`(file:// 직접 열기)이므로 **F2** 로 기록했다. 이 표의 "임베디드 문맥 F3" 은 `docs/m0-dod-xobject-redact-save.md` 의 "MuPDF 결함 F3"(이미지 `resolve()` + compact 저장) 과 이름만 같은 다른 항목이다.
+- 결론(2026-10-19): **세 문맥 모두 FSA 선택기와 downloads 저장 동작.** 임베디드 문맥 F3 에서 교차 출처 SecurityError 는 사용자 보고상 발생하지 않음(진단 JSON 미수신). 임베디드 문맥 F3 의 Ctrl+S 재저장은 미확인.
 
 - 기대(서버 헤드리스 결과 기준): 세 문맥 모두 FSA 선택기 표시. F2·F3 에서 SecurityError 가 나오면 downloads 로 넘어가며 그 사실이 `fsaError` 에 남는다.
 - downloads 경로는 매번 새 파일이며 같은 대상 재저장이 아니다.
+
+### 9.5 검증 요약 (2026-10-19 KST)
+
+| 항목 | 내용 |
+|---|---|
+| 검증 환경 | Windows PC, Chrome 155.0.8059.82 공식 빌드 64비트(측정). 진단 JSON 의 UTC 시각은 2026-10-18T19:0x(= 2026-10-19 KST 새벽). 가로채기 경로 MIME handler, DNR 동적 규칙 0개 |
+| 근거 표기 | "사용자 보고" = 사용자가 눈으로 확인한 것, "측정" = Windows PC 의 파일·로그·진단 JSON 에서 직접 확인한 것, "미확인" = 수행하지 않았거나 근거를 받지 못한 것 |
+| 통과 | G1·G2, I1·I2·I3·I5·I6, R1·R2, V1, F1(사용자 보고)·F2(측정)·F3 의 1·2·5 단계 |
+| 미확인 | 임베디드 문맥 F3 의 Ctrl+S 재저장(3·4 단계)과 fsaError 값, F1·F3 진단 JSON, I2 "파일 URL에 대한 액세스 허용" 설정 상태, F2 권한 재요청 창 여부(추정만), I4(로컬 http 임베드), I7(Chrome 128–150 DNR → A5), V2(Acrobat, A2-5 포함), V3(pdf.js), V4(대형 문서 브라우저 측정 → A3-4) |
+| 해당 없음 | G3(이 PC 에 Chrome 128–150 없음) |
+
+알려진 한계(코드 미수정, PLAN.md 미반영, 사용자 결정 대기)
+- 확장 뷰어는 페이지를 캔버스 이미지로만 그리므로 **확장이 켜진 상태에서는 Ctrl+F 검색과 텍스트 선택·복사가 되지 않는다.** 확장 소스에 텍스트 선택 층 코드가 없음을 grep 으로 확인(측정). 사용자 보고로도 "확장 끄면 가능, 켜면 불가". 텍스트 선택 층·Ctrl+F 를 M1 에 추가할지는 사용자 결정 대기(PLAN.md 에는 반영하지 않음).
