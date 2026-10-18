@@ -61,4 +61,17 @@ describe('appendPageContent / addPageFontResource', () => {
     expect(addPageFontResource(doc, page, ref)).toBe('FE1');
     expect(addPageFontResource(doc, page, ref)).toBe('FE2');
   });
+
+  it('여러 페이지가 공유하는 Resources(간접 객체·직접 하위 사전)는 고치지 않고 복사한다', () => {
+    const doc = new mupdf.PDFDocument();
+    const shared = doc.addObject({ Font: { F1: doc.addObject({ Type: 'Font' }) } });
+    doc.insertPage(-1, doc.addPage([0, 0, 100, 100], 0, shared, ''));
+    doc.insertPage(-1, doc.addPage([0, 0, 100, 100], 0, shared, ''));
+    const before = shared.resolve().toString();
+    expect(addPageFontResource(doc, doc.loadPage(0), doc.addObject({ Type: 'Font' }))).toBe('FE0');
+    expect(shared.resolve().toString()).toBe(before);
+    expect(doc.findPage(1).get('Resources').asIndirect()).toBe(shared.asIndirect());
+    expect(doc.findPage(0).get('Resources').get('Font').get('FE0').isNull()).toBe(false);
+    expect(doc.findPage(0).get('Resources').get('Font').get('F1').isNull()).toBe(false);
+  });
 });
