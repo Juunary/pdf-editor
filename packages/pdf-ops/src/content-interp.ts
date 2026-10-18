@@ -33,6 +33,7 @@ import {
   type ContentOp,
   type Token,
 } from './content-stream.js';
+import { now } from './clock.js';
 import { OptionalContent } from './optional-content.js';
 import { FontCache, type PdfFont } from './pdf-fonts.js';
 
@@ -1405,7 +1406,7 @@ export function buildSourceMapImpl(
   policy: GlyphSeqPolicy,
   trace?: string[],
 ): SourceMap {
-  const t0 = performance.now();
+  const t0 = now();
   const r = new ContentInterpreter(doc, pageIndex, {
     maxFormDepth,
     policy,
@@ -1419,6 +1420,6 @@ export function buildSourceMapImpl(
     glyphCount: r.glyphCount,
     paintCount: r.paintCount,
     errors: r.errors,
-    buildMs: performance.now() - t0,
+    buildMs: now() - t0,
   };
 }
