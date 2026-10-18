@@ -20,11 +20,14 @@ export interface TextOverlay {
 /**
  * 페이지를 RGB 로 렌더한다. overlay 가 있으면 같은 장치에 fz Text 로 글리프를 직접 그린다.
  * overlay 는 PDF 를 거치지 않고 폰트 파일에서 바로 그린 "참조 렌더" 를 만드는 데 쓴다.
+ * `contentsOnly` 면 주석·위젯을 빼고 페이지 콘텐츠만 그린다(주석 외관이 새 텍스트 위에 겹치는 문서에서
+ * 참조 렌더와 비교할 때).
  */
 export function renderPage(
   page: mupdf.Page,
   scale: number,
   overlay?: TextOverlay | readonly TextOverlay[],
+  options: { contentsOnly?: boolean } = {},
 ): Raster {
   const matrix = mupdf.Matrix.scale(scale, scale);
   const b = mupdf.Rect.transform(page.getBounds(), matrix);
@@ -36,7 +39,9 @@ export function renderPage(
   try {
     pix.clear(255);
     const device = new mupdf.DrawDevice(matrix, pix);
-    page.run(device, mupdf.Matrix.identity);
+    if (options.contentsOnly)
+      (page as mupdf.PDFPage).runPageContents(device, mupdf.Matrix.identity);
+    else page.run(device, mupdf.Matrix.identity);
     const overlays = overlay === undefined ? [] : Array.isArray(overlay) ? overlay : [overlay];
     for (const o of overlays as TextOverlay[]) {
       const text = new mupdf.Text();
