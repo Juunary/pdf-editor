@@ -1,11 +1,10 @@
 /**
  * M1 viewer-ui e2e (docs/m1-viewer-ui.md).
  *
- * 1) 하니스 테스트(항상 실행): core 의 extractPage·searchText·linkPage 가 "M1 미구현" 인 동안에도
- *    viewer-ui 의 DOM 동작(텍스트 층 배치, 드래그 선택·복사, Ctrl+F, 하이라이트, 디버그 오버레이,
- *    기능 비활성화)을 실제 Chromium 에서 확인한다. 합성 PageModel 과 가짜 호스트로 viewer-ui 빌드 산출물만 띄운다.
- * 2) 확장 연동 테스트: 빌드된 확장에서 "M1 미구현" 일 때의 기능 격리(항상 실행)와, 실제 추출·검색·매칭이 필요한
- *    통합 시나리오(`test.skip`, 통합 시 메인 세션이 켠다).
+ * 1) 하니스 테스트: 합성 PageModel 과 가짜 호스트로 viewer-ui 빌드 산출물만 띄워 DOM 동작(텍스트 층 배치,
+ *    드래그 선택·복사, Ctrl+F, 하이라이트, 디버그 오버레이, 기능 비활성화)을 실제 Chromium 에서 확인한다.
+ * 2) 통합 시나리오(2026-10-19 m1 통합 후 활성화): 빌드된 확장에서 실제 core 추출·검색과 pdf-ops 매칭으로
+ *    선택·복사(일반 뷰어·MIME handler 최상위·임베디드), Ctrl+F, 디버그 오버레이를 확인한다(docs/m1-integration.md).
  */
 import {
   chromium,
@@ -874,48 +873,9 @@ async function extractOutcome(page: Page): Promise<'text-layer' | 'unavailable'>
   return found.outcome ?? 'unavailable';
 }
 
-test('확장: extractPage 가 "M1 미구현" 인 동안 해당 기능만 비활성화되고 렌더·저장·페이지 UI 는 유지된다', async () => {
-  await withExtension(async (env) => {
-    const page = await openViewer(env, 'm0-sample.pdf');
-    const outcome = await extractOutcome(page);
-    test.skip(
-      outcome === 'text-layer',
-      'extractPage 구현됨: 이 격리 테스트는 불필요. 아래 통합 시나리오를 켠다',
-    );
-
-    // 첫 페이지는 그려졌고(기존 e2e 와 같은 기준), 비활성화 사유는 진단 로그에 한 번 남는다.
-    const ink = await page.evaluate(() => {
-      const c = document.getElementById('page-canvas') as HTMLCanvasElement;
-      const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
-      let n = 0;
-      for (let i = 0; i < d.length; i += 4) if (d[i]! < 200) n++;
-      return n;
-    });
-    expect(ink).toBeGreaterThan(5000);
-    const log = await diagOf(page.mainFrame());
-    const unavailable = log.filter((e) => e.event === 'extract-unavailable');
-    expect(unavailable).toHaveLength(1);
-    expect(String(unavailable[0]!.data.reason)).toContain('M1 미구현');
-
-    // 텍스트 층 없음·디버그 비활성·페이지 UI 존재, 저장 버튼은 활성
-    await expect(page.locator('#pe-text-layer')).toHaveCount(0);
-    await expect(page.locator('#pe-notice')).toContainText('텍스트 선택');
-    await expect(page.locator('#pe-debug-toggle')).toBeDisabled();
-    await expect(page.locator('#pe-page-input')).toHaveValue('1');
-    await expect(page.locator('#pe-prev')).toBeDisabled();
-    await expect(page.locator('#save-downloads')).toBeEnabled();
-    return undefined;
-  });
-});
-
-// ── 통합 시 켜는 시나리오 ──────────────────────────────────────────────
-// m1-core(extractPage·searchText)·m1-pdf-ops(linkPage) 머지 후 메인 세션이 `test.skip` → `test` 로 바꾼다.
+// ── 통합 시나리오(2026-10-19 m1 통합 후 활성화) ──────────────────────────────
+// 실제 core extractPage·searchText 와 pdf-ops linkPage·getSourceMap 을 쓴다.
 // 기준 문서: m0-sample.pdf(영문, 1쪽), m0-spike-saved.pdf(한글 포함).
-
-const SKIP_EXTRACT = 'core extractPage 가 "M1 미구현" 인 동안 불가(m1-core 머지 후 켠다)';
-const SKIP_SEARCH = 'core searchText 가 "M1 미구현" 인 동안 불가(m1-core 머지 후 켠다)';
-const SKIP_LINK =
-  'pdf-ops linkPage·getSourceMap 이 "M1 미구현" 인 동안 불가(m1-pdf-ops·m1-core 머지 후 켠다)';
 
 /** pdftotext 로 확인한 m0-sample.pdf 본문(줄바꿈·공백 차이는 비교 전에 접는다). */
 const M0_SAMPLE_TEXT =
@@ -941,7 +901,7 @@ async function textLines(page: Page): Promise<string[]> {
     .evaluateAll((lines) => lines.map((l) => l.textContent ?? ''));
 }
 
-test.skip(`[통합] 선택→복사: Ctrl+A 복사 결과가 m0-sample.pdf 추출 텍스트와 일치한다 — ${SKIP_EXTRACT}`, async () => {
+test(`[통합] 선택→복사: Ctrl+A 복사 결과가 m0-sample.pdf 추출 텍스트와 일치한다`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -951,7 +911,7 @@ test.skip(`[통합] 선택→복사: Ctrl+A 복사 결과가 m0-sample.pdf 추�
   });
 });
 
-test.skip(`[통합] 선택→복사: 드래그로 첫 두 줄을 선택하면 DOM 줄 순서대로 복사된다 — ${SKIP_EXTRACT}`, async () => {
+test(`[통합] 선택→복사: 드래그로 첫 두 줄을 선택하면 DOM 줄 순서대로 복사된다`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -962,18 +922,22 @@ test.skip(`[통합] 선택→복사: 드래그로 첫 두 줄을 선택하면 DO
     const secondLine = page.locator('#pe-text-layer .pe-line').nth(1).locator('span');
     const from = await boxOf(firstLine.first());
     const to = await boxOf(secondLine.last());
+    // 끝점은 둘째 줄 끝 바깥(마지막 글자 포함). 줄 구분자는 계약 4절 읽기 텍스트 규칙:
+    // 같은 블록이면 "\n", 다른 블록이면 "\n\n"(m0-sample 은 제목과 본문이 다른 블록).
+    const blocks = await page
+      .locator('#pe-text-layer .pe-line')
+      .evaluateAll((ls) => ls.slice(0, 2).map((l) => l.getAttribute('data-block')));
+    const sep = blocks[0] === blocks[1] ? '\n' : '\n\n';
     await drag(
       page,
       { x: from.x + 1, y: from.y + from.height / 2 },
-      { x: to.x + to.width - 1, y: to.y + to.height / 2 },
+      { x: to.x + to.width + 8, y: to.y + to.height / 2 },
     );
-    expect(await copied(page)).toBe(
-      `${lines[0]}${lines[0]!.endsWith('\n') ? '' : '\n'}${lines[1]}`,
-    );
+    expect(await copied(page)).toBe(`${lines[0]}${sep}${lines[1]}`);
   });
 });
 
-test.skip(`[통합] 선택→복사: MIME handler 최상위·임베디드 문맥에서도 같은 복사 결과 — ${SKIP_EXTRACT}`, async () => {
+test(`[통합] 선택→복사: MIME handler 최상위(열자마자 단축키)·임베디드(클릭 후) 문맥에서도 같은 복사 결과`, async () => {
   await withExtension(async (env) => {
     const top = await env.context.newPage();
     await top.goto(`${env.base}/m0-sample.pdf`);
@@ -989,15 +953,56 @@ test.skip(`[통합] 선택→복사: MIME handler 최상위·임베디드 문맥
         (window as Win).__copied = e.clipboardData?.getData('text/plain') ?? null;
       });
     });
+    // 최상위: 열자마자 뷰어가 포커스를 가져오므로 클릭 없이 단축키가 뷰어로 간다.
     await top.keyboard.press('Control+A');
     await top.keyboard.press('Control+C');
     await expect
       .poll(async () => fold(await frame.evaluate(() => (window as Win).__copied ?? null)))
       .toBe(M0_SAMPLE_TEXT);
+
+    // 임베디드(embed·iframe·object): 바깥 페이지 포커스를 빼앗지 않고, 텍스트를 클릭하면 단축키가 뷰어로 간다.
+    // 요소마다 새 페이지에서 확인한다(한 페이지의 여러 뷰어 사이 포커스 이동은 헤드리스에서 불안정해 범위 밖).
+    // frames() 순서는 iframe(0)·embed(1)·object(2)다. object 는 헤드리스 Chromium 156 에서 클릭 포커스가
+    // 간헐적으로 실패해(2026-10-19 실측 8회 중 3회) 자동 검증에서 빼고 Windows Chrome 수동 확인으로 둔다.
+    for (const index of [0, 1]) {
+      const host = await env.context.newPage();
+      await host.goto(`${env.base}/embed-test.html`);
+      await expect
+        .poll(() => host.frames().filter((f) => f.url().startsWith(prefix)).length)
+        .toBe(3);
+      const f = host.frames().filter((x) => x.url().startsWith(prefix))[index]!;
+      const tag = `embedded#${index}`;
+      // 렌더 완료와 텍스트 층 생성을 기다린 뒤 짧게 안정화한다(렌더 마무리 중 클릭은 놓칠 수 있다).
+      await expect(f.locator('#status')).toHaveAttribute('data-state', 'rendered', {
+        timeout: 20_000,
+      });
+      await f.locator('#pe-text-layer').waitFor({ timeout: 20_000 });
+      await host.waitForTimeout(300);
+      expect(await f.evaluate(() => document.hasFocus()), `${tag}: 자동 포커스 없음`).toBe(false);
+      await f.evaluate(() => {
+        (window as Win).__copied = null;
+        window.addEventListener('copy', (e) => {
+          (window as Win).__copied = e.clipboardData?.getData('text/plain') ?? null;
+        });
+      });
+      // 글자 span 은 투명하므로 force. 클릭이 그 뷰어에 포커스를 줬는지 확인한 뒤 단축키를 보낸다.
+      await f.locator('#pe-text-layer span[data-i]').first().click({ force: true });
+      await expect
+        .poll(() => f.evaluate(() => document.hasFocus()), { message: `${tag}: 클릭 후 포커스` })
+        .toBe(true);
+      await host.keyboard.press('Control+A');
+      await host.keyboard.press('Control+C');
+      await expect
+        .poll(async () => fold(await f.evaluate(() => (window as Win).__copied ?? null)), {
+          message: tag,
+        })
+        .toBe(M0_SAMPLE_TEXT);
+      await host.close();
+    }
   });
 });
 
-test.skip(`[통합] Ctrl+F: 'paragraph' 5건, 하이라이트가 글자 위치와 일치하고 Enter 로 순환한다 — ${SKIP_SEARCH}`, async () => {
+test(`[통합] Ctrl+F: 'paragraph' 5건, 하이라이트가 글자 위치와 일치하고 Enter 로 순환한다`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -1034,7 +1039,7 @@ test.skip(`[통합] Ctrl+F: 'paragraph' 5건, 하이라이트가 글자 위치�
   });
 });
 
-test.skip(`[통합] Ctrl+F: 한글 검색어(m0-spike-saved.pdf '검색과 복사' 1건) — ${SKIP_SEARCH}`, async () => {
+test(`[통합] Ctrl+F: 한글 검색어(m0-spike-saved.pdf '검색과 복사' 1건)`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-spike-saved.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -1045,7 +1050,7 @@ test.skip(`[통합] Ctrl+F: 한글 검색어(m0-spike-saved.pdf '검색과 복�
   });
 });
 
-test.skip(`[통합] 디버그 오버레이: 글자 quad 색 구분과 마우스 위치 글자의 SourceOp 표시 — ${SKIP_LINK}`, async () => {
+test(`[통합] 디버그 오버레이: 글자 quad 색 구분과 마우스 위치 글자의 SourceOp 표시`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');

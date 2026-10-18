@@ -109,7 +109,11 @@ export function TextLayer({ model, order, layout }: Props) {
       if (e.button !== 0) return;
       // 브라우저 기본 선택 시작·드래그를 막고 직접 선택한다. 입력란 포커스는 해제한다.
       e.preventDefault();
-      (document.activeElement as HTMLElement | null)?.blur?.();
+      // 기본 동작을 막으면 하위 프레임(MIME handler·임베디드 문맥)으로 포커스가 옮겨 가지 않아
+      // Ctrl+A·C·F 가 바깥 문서로 간다(2026-10-19 통합 e2e 실측). 층 요소에 직접 포커스를 주면 입력란
+      // 포커스도 해제되고 프레임 포커스도 따라온다(window.focus() 만으로는 embed 에서 간헐적으로 실패).
+      layer.focus({ preventScroll: true });
+      if (!document.hasFocus()) window.focus();
       const hit = caretFromEvent(e);
       if (!hit) return;
       const { model, order } = latest.current;
@@ -196,6 +200,7 @@ export function TextLayer({ model, order, layout }: Props) {
       id="pe-text-layer"
       ref={layerRef}
       class="pe-text-layer"
+      tabIndex={-1}
       style={{ fontFamily: TEXT_LAYER_FONT }}
       data-chars={order.items.length}
       data-orphan-chars={order.orphanChars}

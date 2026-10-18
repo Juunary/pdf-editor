@@ -124,6 +124,10 @@
   cursor: text;
   line-height: 1;
 }
+.pe-text-layer:focus {
+  outline: none;
+}
+
 .pe-text-layer .pe-line {
   display: block;
 }

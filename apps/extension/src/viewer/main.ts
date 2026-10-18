@@ -280,6 +280,9 @@ async function main(): Promise<void> {
   if (source.bytes) {
     try {
       await openBytes(source.bytes, fileLabel(source.displayUrl));
+      // Chrome 기본 PDF 뷰어처럼 열자마자 Ctrl+A·C·F 가 뷰어로 오게 한다. MIME handler 뷰어는 PDF URL
+      // 페이지의 하위 프레임이라 포커스를 직접 가져와야 한다. 임베디드 문맥은 바깥 페이지 포커스를 빼앗지 않는다.
+      if (source.kind === 'mime-handler-top') window.focus();
     } catch (e) {
       diag.add('open-error', String(e));
       if (source.streamInfo) {
