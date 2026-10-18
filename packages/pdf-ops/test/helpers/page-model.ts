@@ -21,8 +21,11 @@ import type {
   ShadeInfo,
 } from '@pdf-editor/shared-types';
 
-/** first-arrival = 계약 3.1 확정 판정, first-arrival-all = 1단계를 모든 텍스트 콜백에 적용(수정 제안). */
-export type HelperPolicy = 'first-arrival' | 'first-arrival-all' | 'no-clip';
+/**
+ * first-arrival = 계약 3.1 판정(수정 6), first-arrival-v2 = 수정 2–5 의 1단계(비교·회귀 재현용),
+ * no-clip = 채택하지 않은 core 안 A(비교용).
+ */
+export type HelperPolicy = 'first-arrival' | 'first-arrival-v2' | 'no-clip';
 
 const apply = (m: Matrix, x: number, y: number): Point => [
   x * m[0] + y * m[2] + m[4],
@@ -52,7 +55,7 @@ export function buildTestPageModel(
   const fontIds = new Map<number, number>();
   let lastPointer: number | null = null;
   let lastCounted = false;
-  const judge = new FirstArrivalJudge({ skipSamePointerAllKinds: policy === 'first-arrival-all' });
+  const judge = new FirstArrivalJudge({ step1FillStrokeOnly: policy === 'first-arrival-v2' });
 
   const pushChar = (
     kind: TextCallbackKind,
