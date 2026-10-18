@@ -10,6 +10,8 @@ body {
 #toolbar {
   position: sticky;
   top: 0;
+  /* 페이지 오버레이(position: relative)와 검색창이 툴바 위에 그려지지 않게 한다. */
+  z-index: 20;
   display: flex;
   gap: 8px;
   align-items: center;

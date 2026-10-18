@@ -12,6 +12,7 @@
       <label id="open-label" hidden>
         PDF 열기 <input id="open-file" type="file" accept="application/pdf,.pdf" />
       </label>
+      <div id="viewer-controls"></div>
       <button id="save-as" type="button" disabled>다른 이름으로 저장</button>
       <button id="save" type="button" disabled title="Ctrl+S">저장</button>
       <button
@@ -24,9 +25,7 @@
       </button>
       <span id="status" data-state="idle">대기</span>
     </header>
-    <main id="page-container">
-      <canvas id="page-canvas" width="0" height="0"></canvas>
-    </main>
+    <main id="page-container"></main>
     <details id="diag" open>
       <summary>M0 진단</summary>
       <pre id="diag-log"></pre>
