@@ -28,3 +28,4 @@ pnpm spike             # M0 스파이크 → out/m0-day1/spike-result.json
 ## 결과·한계
 
 M0 Day 1 결과와 Windows 확인 항목: `docs/m0-day1-log.md`.
+M0 DoD 잔여 항목(공유 Form XObject·기존 Redact 주석·대형 문서 저장 상한): `docs/m0-dod-xobject-redact-save.md`.

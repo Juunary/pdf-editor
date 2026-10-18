@@ -37,7 +37,8 @@ function sample(): Uint8Array {
 }
 
 const EDIT_RECT: [number, number, number, number] = [0, 85, 200, 110];
-const open = (b: Uint8Array) => mupdf.Document.openDocument(b, 'application/pdf') as mupdf.PDFDocument;
+const open = (b: Uint8Array) =>
+  mupdf.Document.openDocument(b, 'application/pdf') as mupdf.PDFDocument;
 const text = (doc: mupdf.PDFDocument, p = 0) => {
   const page = doc.loadPage(p);
   const t = page.toStructuredText('').asText();
@@ -53,7 +54,12 @@ describe('listRedactAnnots', () => {
     expect(r.total).toBe(3);
     expect(r.pages).toEqual([0, 1]);
     const [mark, overlap, p2] = r.annots;
-    expect(mark).toMatchObject({ pageIndex: 0, annotIndex: 0, overlayText: 'REDACTED', contents: '기존: MARK' });
+    expect(mark).toMatchObject({
+      pageIndex: 0,
+      annotIndex: 0,
+      overlayText: 'REDACTED',
+      contents: '기존: MARK',
+    });
     expect(mark!.rect).toEqual([0, 135, 200, 160]);
     expect(overlap!.rect).toEqual([0, 85, 30, 110]);
     expect(p2!.pageIndex).toBe(1);
@@ -121,9 +127,7 @@ describe('기존 Redact 주석이 있는 문서의 편집 redaction', () => {
     expect(listRedactAnnots(doc, [0]).annots.map((a) => a.objectNumber)).toEqual(nums);
     expect(annotStrings(doc, nums)).toEqual(before);
     // 링크는 redaction 으로 제거되어 /Annots 에서 빠진다. 나머지 순서는 원래대로.
-    expect(doc.findPage(0).get('Annots').toString()).toBe(
-      annotsBefore.replace(/ \d+ 0 R\]$/, ']'),
-    );
+    expect(doc.findPage(0).get('Annots').toString()).toBe(annotsBefore.replace(/ \d+ 0 R\]$/, ']'));
   });
 
   it('임시 분리: 그 페이지 객체가 열려 있으면 실패하고 /Annots 를 되돌린다', () => {
