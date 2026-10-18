@@ -19,6 +19,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['packages/viewer-ui/src/**/*.{ts,tsx}', 'packages/viewer-ui/test/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: { ...globals.browser },
+    },
+  },
+  {
     files: ['apps/extension/src/**/*.ts', 'apps/extension/e2e/**/*.ts'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.webextensions, ...globals.worker },

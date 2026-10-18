@@ -38,5 +38,41 @@ describe('PdfSession', () => {
     const full = s.save({ changes: ['redaction'] });
     expect(full.method).toBe('full');
     expect(full.wasmHeapBytes).toBeGreaterThan(0);
+    expect(full.heap?.inputBytes).toBe(s.originalBytes.byteLength);
+  });
+
+  it('열기 결과의 입력 방식, 페이지 정보', () => {
+    const s = new PdfSession();
+    expect(s.open(bluePdf()).inputMode).toBe('buffer');
+    expect(s.getPageInfo(0)).toEqual({
+      pageIndex: 0,
+      bounds: [0, 0, 200, 100],
+      size: { width: 200, height: 100 },
+      rotation: 0,
+    });
+    s.close();
+  });
+
+  it('저장 전 판정은 저장하지 않고 방식·예상 피크 힙을 돌려준다', () => {
+    const s = new PdfSession();
+    s.open(bluePdf());
+    const plan = s.planSave({ changes: ['content-stream'] });
+    expect(plan.method).toBe('full');
+    expect(plan.heap.level).toBe('ok');
+    // pdf-ops 는 예상 피크를 정수 바이트로 반올림한다.
+    expect(
+      Math.abs(plan.heap.estimatedPeakBytes - plan.heap.inputBytes * plan.heap.ratio),
+    ).toBeLessThanOrEqual(1);
+    expect(s.planSave({ changes: [] }).method).toBe('incremental');
+    s.close();
+  });
+
+  it('M1 미구현 RPC 는 명시적 오류를 낸다(계약 커밋 시점)', () => {
+    const s = new PdfSession();
+    s.open(bluePdf());
+    expect(() => s.extractPage({ pageIndex: 0 })).toThrow(/M1 미구현/);
+    expect(() => s.getSourceMap(0)).toThrow(/M1 미구현/);
+    expect(() => s.searchText({ query: 'a' })).toThrow(/M1 미구현/);
+    s.close();
   });
 });
