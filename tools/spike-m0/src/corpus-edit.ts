@@ -7,6 +7,7 @@ import {
   assessRedactionImpact,
   decideSaveMethod,
   embedFont,
+  formatNumber,
   missingCodepoints,
   redactRegions,
   serializeTextBlock,
@@ -139,7 +140,15 @@ export interface ParagraphResult {
     missing: number[];
     glyphs: number;
   } | null;
-  preSave: { vsReferencePx: number; referenceInkPx: number; outsidePx: number } | null;
+  preSave: {
+    /** 참조 렌더와 다른 픽셀 수(엄격) */
+    vsReferencePx: number;
+    /** 그중 채널 차이가 GLYPH_DELTA 를 넘는 픽셀 수(판정 기준) */
+    vsReferenceStrongPx: number;
+    vsReferenceMaxDelta: number;
+    referenceInkPx: number;
+    outsidePx: number;
+  } | null;
   reopen: {
     textFound: boolean;
     targetLinesRemaining: number;
@@ -178,6 +187,47 @@ export interface CorpusEditResult {
 }
 
 const squash = (s: string) => s.replace(/\s+/g, '');
+
+/**
+ * 글리프 판정 임계값(채널 0–255). 같은 글리프도 원점이 1/4 px 양자화 경계를 걸치면 가장자리가 약 64단계
+ * 바뀌고(실측: zen-ko-moon 1글자 최대 65단계), 투명도 그룹이 있는 쪽은 합성 반올림으로 1단계 차이가 난다
+ * (zen-ko-kimtw 15,040 px 전부 1단계). 글리프 누락·대체(Day 1 CFF 실패)는 255단계라 이 값으로 구분된다.
+ */
+export const GLYPH_DELTA = 96;
+
+function diffStats(a: Raster, b: Raster): { differing: number; strong: number; maxDelta: number } {
+  let differing = 0;
+  let strong = 0;
+  let maxDelta = 0;
+  for (let i = 0; i < a.pixels.length; i += 3) {
+    const d = Math.max(
+      Math.abs(a.pixels[i]! - b.pixels[i]!),
+      Math.abs(a.pixels[i + 1]! - b.pixels[i + 1]!),
+      Math.abs(a.pixels[i + 2]! - b.pixels[i + 2]!),
+    );
+    if (d > 0) differing++;
+    if (d > GLYPH_DELTA) strong++;
+    if (d > maxDelta) maxDelta = d;
+  }
+  return { differing, strong, maxDelta };
+}
+const round3 = (n: number) => Number(formatNumber(n));
+
+/** 줄 원점을 직렬화와 같은 소수 셋째 자리로 맞추고, 그 줄 글리프를 같은 만큼 옮긴다. */
+function snapLines(layout: ParagraphLayout): void {
+  let g = 0;
+  for (const line of layout.lines) {
+    if (line.gids.length === 0) continue;
+    const dx = round3(line.x) - line.x;
+    const dy = round3(line.y) - line.y;
+    line.x += dx;
+    line.y += dy;
+    for (let i = 0; i < line.gids.length; i++, g++) {
+      layout.glyphs[g]!.x += dx;
+      layout.glyphs[g]!.y += dy;
+    }
+  }
+}
 const pageText = (page: mupdf.Page) => page.toStructuredText('preserve-whitespace').asText();
 
 const occurrences = (hay: string, needle: string) => hay.split(needle).length - 1;
@@ -423,14 +473,17 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       // 2. 폴백 폰트(문서당 1회) + 배치
       embedded ??= embedFont(doc, 'NotoSansKR', input.fontBytes);
       const box = toPdfRect(page, boxFz);
+      // 직렬화(Tf·Tm)는 소수 셋째 자리로 반올림하므로 참조 렌더도 같은 값으로 배치한다.
+      const fontSize = round3(para.fontSize);
       const fit = fitReplacement(
         embedded.font,
         k,
-        para.fontSize,
-        para.linePitch / para.fontSize,
+        fontSize,
+        para.linePitch / fontSize,
         box,
         para.lines.length,
       );
+      snapLines(fit.layout);
       states[index]!.text = fit.text;
       result.searchTerms = searchTermsFor(k).filter((t) => squash(fit.text).includes(squash(t)));
       result.layout = {
@@ -445,7 +498,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       const reference = renderPage(
         page,
         scale,
-        { font: embedded.font, fontSize: para.fontSize, glyphs: fit.layout.glyphs },
+        { font: embedded.font, fontSize, glyphs: fit.layout.glyphs },
         { contentsOnly: true },
       );
 
@@ -456,7 +509,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         page,
         serializeTextBlock({
           fontResource: resourceName,
-          fontSize: para.fontSize,
+          fontSize,
           color: [0, 0, 0],
           lines: fit.layout.lines,
         }),
@@ -464,11 +517,14 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       page = doc.loadPage(para.pageIndex);
       const preSave = renderPage(page, scale);
       states[index]!.preSave = preSave;
+      const glyph = diffStats(
+        renderPage(page, scale, undefined, { contentsOnly: true }),
+        reference,
+      );
       result.preSave = {
-        vsReferencePx: diffRasters(
-          renderPage(page, scale, undefined, { contentsOnly: true }),
-          reference,
-        ).differing,
+        vsReferencePx: glyph.differing,
+        vsReferenceStrongPx: glyph.strong,
+        vsReferenceMaxDelta: glyph.maxDelta,
         referenceInkPx: inkPixels(reference, exclusionPx),
         outsidePx: diffRasters(before, preSave, exclusionPx).differing,
       };
@@ -567,7 +623,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       if (r.redaction.neighborLinesLost > 0) f.push('neighbor-text-lost');
       if (r.redaction.outsidePx !== 0) f.push('outside-diff-after-redaction');
       if (r.layout?.missing.length) f.push('glyph-missing');
-      if (r.preSave && r.preSave.vsReferencePx !== 0) f.push('glyph-render-mismatch');
+      if (r.preSave && r.preSave.vsReferenceStrongPx !== 0) f.push('glyph-render-mismatch');
       if (r.preSave && r.preSave.outsidePx !== 0) f.push('outside-diff-after-content');
       if (!save.ok) f.push('save-failed');
       if (r.reopen) {

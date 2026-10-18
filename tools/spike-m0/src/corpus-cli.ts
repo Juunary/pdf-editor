@@ -31,7 +31,14 @@ import {
 import { runCorpusEdit, type CorpusEditResult, type ParagraphContext } from './corpus-edit.js';
 import { rectsIntersect, selectParagraphs, type SelectionReport } from './corpus-select.js';
 import { pickSharedTextForms, runFormUsageEdit, type FormEditResult } from './corpus-xobject.js';
-import { popplerRaster, popplerText, popplerVersion, ppmDiff } from './poppler.js';
+import {
+  compareWordsOutside,
+  popplerRaster,
+  popplerText,
+  popplerVersion,
+  popplerWords,
+  ppmDiffStats,
+} from './poppler.js';
 
 const sha256 = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 const squash = (s: string) => s.replace(/\s+/g, '');
@@ -243,11 +250,25 @@ function popplerCheck(original: string, saved: string, edit: EditOutput) {
     const tmp = join(dirname(saved), `tmp-poppler-${process.pid}`);
     const a = popplerRaster(original, p.pageIndex + 1, `${tmp}-a`, dpi);
     const b = popplerRaster(saved, p.pageIndex + 1, `${tmp}-b`, dpi);
+    const st = ppmDiffStats(a, b, ex);
+    const exPt: [number, number, number, number] = [
+      p.exclusion[0] - p.pageBounds[0],
+      p.exclusion[1] - p.pageBounds[1],
+      p.exclusion[2] - p.pageBounds[0],
+      p.exclusion[3] - p.pageBounds[1],
+    ];
     return {
       index: p.index,
       textFound: text.includes(squash(p.layout.text)),
       searchTermsFound: Object.fromEntries(p.searchTerms.map((t) => [t, text.includes(squash(t))])),
-      outsidePx: ppmDiff(a, b, ex),
+      outsidePx: st.differing,
+      outsideStrongPx: st.strong,
+      outsideMaxDelta: st.maxDelta,
+      words: compareWordsOutside(
+        popplerWords(original, p.pageIndex + 1),
+        popplerWords(saved, p.pageIndex + 1),
+        exPt,
+      ),
       dpi,
     };
   });
@@ -283,7 +304,14 @@ export interface CorpusDocResult {
     exact: boolean;
     actualRatio: number;
   };
-  paragraphVerdicts?: { index: number; pageIndex: number; success: boolean; failures: string[] }[];
+  paragraphVerdicts?: {
+    index: number;
+    pageIndex: number;
+    success: boolean;
+    failures: string[];
+    /** 실패로 세지 않는 관찰(Poppler 렌더 미세 차이 등) */
+    notes: string[];
+  }[];
   /** 텍스트가 있는 공유 Form 의 사용 위치 1곳만 복제·수정(M0 정책, A1-2). 해당 Form 이 있는 문서만 */
   formEdits?: FormEditResult[];
   formEditError?: string;
@@ -376,15 +404,28 @@ export function runCorpusCli(opts: { root: string; out: string; only: string[] |
     }
     const paragraphVerdicts = edit.paragraphs.map((p) => {
       const failures = [...p.failures];
+      const notes: string[] = [];
       const pp = pop?.paragraphs.find((x) => x?.index === p.index);
       if (pop && p.reopen) {
         if (!pp?.textFound) failures.push('poppler-text-missing');
         if (pp && Object.values(pp.searchTermsFound).some((v) => !v))
           failures.push('poppler-search-miss');
-        if (pp && pp.outsidePx !== 0) failures.push('poppler-outside-diff');
         if (!pop.embedded || !pop.subset || !pop.toUnicode) failures.push('poppler-font-flags');
+        // 편집 영역 밖: 단어가 사라지거나 0.5pt 넘게 움직이면 실패, 그보다 작은 렌더 차이는 관찰로 기록
+        if (pp && pp.words.unmatched > 0) failures.push('poppler-word-lost');
+        if (pp && pp.words.maxShiftPt > 0.5) failures.push('poppler-word-shift');
+        if (pp && pp.words.maxShiftPt > 0.01) notes.push('poppler-word-subpt-shift');
+        if (pp && pp.outsidePx !== 0) notes.push('poppler-raster-diff');
       }
-      return { index: p.index, pageIndex: p.pageIndex, success: failures.length === 0, failures };
+      if (p.preSave && p.preSave.vsReferencePx > 0 && p.preSave.vsReferenceStrongPx === 0)
+        notes.push('mupdf-glyph-aa-diff');
+      return {
+        index: p.index,
+        pageIndex: p.pageIndex,
+        success: failures.length === 0,
+        failures,
+        notes,
+      };
     });
     let formEdits: FormEditResult[] | undefined;
     let formEditError: string | undefined;
@@ -442,6 +483,7 @@ export function summarize(results: CorpusDocResult[]) {
         agg.paragraphs++;
         if (v.success) agg.success++;
         for (const f of v.failures) agg.failures[f] = (agg.failures[f] ?? 0) + 1;
+        for (const n of v.notes) agg.notes[n] = (agg.notes[n] ?? 0) + 1;
       }
       for (const p of r.edit?.paragraphs ?? []) {
         for (const code of new Set(p.restrictions.map((x) => `${x.code}:${x.level}`)))
@@ -474,6 +516,7 @@ function emptyAgg() {
     success: 0,
     paragraphsLimited: 0,
     failures: {} as Record<string, number>,
+    notes: {} as Record<string, number>,
     restrictions: {} as Record<string, number>,
     savesOk: 0,
     heap: { checked: 0, noMiss: 0, exact: 0 },
