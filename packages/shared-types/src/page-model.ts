@@ -70,6 +70,12 @@ export interface LineInfo {
   block: number;
   /** 이 줄의 글자(PageModel.chars 인덱스), 줄 안 순서. */
   chars: number[];
+  /**
+   * 합성 공백 위치. 값 k 는 `chars[k]` 뒤에 공백 하나를 넣는다는 뜻(0부터, 오름차순, 중복 없음).
+   * 구조화 텍스트가 TJ 간격 등으로 만든 공백처럼 Device 글리프가 없는 공백만 담는다(실제 공백 글리프는
+   * chars 에 있다). glyphSeq 와 무관하며 읽기 텍스트 조립에만 쓴다(docs/m1-contract.md 4절).
+   */
+  spaceAfter: number[];
 }
 
 export interface BlockInfo {
