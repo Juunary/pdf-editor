@@ -3,11 +3,12 @@
  *
  * 순서 번호(seq) 규칙 — SourceMap 매칭 키(docs/m1-contract.md 3절):
  * - `runPageContents`(주석 제외)를 항등 행렬로 실행할 때 Device 콜백이 오는 순서로 센다.
- * - glyphSeq: 텍스트 콜백(fillText·strokeText·clipText·clipStrokeText·ignoreText)의 글리프마다 1씩.
- *   같은 텍스트 객체(포인터 동일)를 연속으로 받은 fill/stroke/clip 콜백은 한 번의 표시로 센다
- *   (Tr 2·4·5·6 은 MuPDF 가 같은 글리프를 여러 콜백으로 보낸다).
+ * - glyphSeq: 표시 글리프마다 1. 처음 Device 에 도착한 텍스트 콜백(fillText·strokeText·clipText·
+ *   clipStrokeText·ignoreText)에서 센다. fill→stroke(Tr 2·6, 포인터 동일 연속)는 1회, Tr 4–7 클립의
+ *   ET 재전송은 세지 않는다. 판정 규칙: docs/m1-contract.md 3.1.
  * - paintSeq: 텍스트 외 그리기 콜백(fillPath·strokePath·clipPath·clipStrokePath·fillShade·
  *   fillImage·fillImageMask·clipImageMask)마다 1씩. 채움+선(B 등)은 콜백 2개 = 번호 2개다.
+ *   Form `Do` 의 BBox clipPath 도 1. beginMask~endMask 사이 콜백은 세지 않는다(계약 3절 세부 표).
  */
 import type { Matrix, Point, Quad, RGB, Rect } from './geometry.js';
 
@@ -40,10 +41,11 @@ export interface CharInfo {
   origin: Point;
   /** 글자 사각형, 페이지 공간. 구조화 텍스트 값이며, 없으면 core 가 폰트 크기로 근사한다. */
   quad: Quad;
-  /** 채움(stroke 전용이면 선) 색. 알 수 없으면 null. */
+  /** 채움(stroke 전용이면 선) 색. 패턴 색이거나 알 수 없으면 null. */
   color: RGB | null;
+  /** Tr 7·꺼진 /OC 재전송 글리프는 invisible, 패턴 색 텍스트는 fill(계약 3.1 표기 표). */
   render: TextRender;
-  /** 클립 텍스트(Tr 4–7) 여부. */
+  /** 클립 텍스트(Tr 4–7) 여부. core 판정은 계약 3.1 표기 표를 따른다. */
   clip: boolean;
   /** 0 가로, 1 세로. */
   wmode: 0 | 1;
