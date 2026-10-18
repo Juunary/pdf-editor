@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "spike": "node dist/cli.js",
-    "fixtures": "node dist/cli.js --write-fixtures"
+    "fixtures": "node dist/cli.js --write-fixtures",
+    "spike:xobject": "node dist/cli.js --xobject"
   },
   "dependencies": {
     "@pdf-editor/core": "workspace:*",

@@ -13,13 +13,19 @@ export interface TextOverlay {
   font: mupdf.Font;
   fontSize: number;
   glyphs: PlacedGlyph[];
+  /** 글리프 좌표 공간 → PDF 사용자 공간(Form 공간에 배치한 글리프). 기본 단위 행렬 */
+  matrix?: mupdf.Matrix;
 }
 
 /**
  * 페이지를 RGB 로 렌더한다. overlay 가 있으면 같은 장치에 fz Text 로 글리프를 직접 그린다.
  * overlay 는 PDF 를 거치지 않고 폰트 파일에서 바로 그린 "참조 렌더" 를 만드는 데 쓴다.
  */
-export function renderPage(page: mupdf.Page, scale: number, overlay?: TextOverlay): Raster {
+export function renderPage(
+  page: mupdf.Page,
+  scale: number,
+  overlay?: TextOverlay | readonly TextOverlay[],
+): Raster {
   const matrix = mupdf.Matrix.scale(scale, scale);
   const b = mupdf.Rect.transform(page.getBounds(), matrix);
   const pix = new mupdf.Pixmap(
@@ -31,12 +37,14 @@ export function renderPage(page: mupdf.Page, scale: number, overlay?: TextOverla
     pix.clear(255);
     const device = new mupdf.DrawDevice(matrix, pix);
     page.run(device, mupdf.Matrix.identity);
-    if (overlay) {
+    const overlays = overlay === undefined ? [] : Array.isArray(overlay) ? overlay : [overlay];
+    for (const o of overlays as TextOverlay[]) {
       const text = new mupdf.Text();
-      for (const g of overlay.glyphs) {
+      const m = o.matrix ?? mupdf.Matrix.identity;
+      for (const g of o.glyphs) {
         text.showGlyph(
-          overlay.font,
-          [overlay.fontSize, 0, 0, overlay.fontSize, g.x, g.y],
+          o.font,
+          mupdf.Matrix.concat([o.fontSize, 0, 0, o.fontSize, g.x, g.y], m),
           g.gid,
           g.unicode,
           0,

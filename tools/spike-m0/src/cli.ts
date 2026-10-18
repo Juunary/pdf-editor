@@ -2,7 +2,8 @@
 //
 //   pnpm spike                      # 전체 실행 → out/m0-day1/spike-result.json, summary.md
 //   pnpm spike -- --bench-pages 50  # 합성 벤치마크 쪽수 변경
-//   pnpm --filter @pdf-editor/spike-m0 fixtures   # fixtures/m0/m0-sample.pdf 갱신
+//   pnpm --filter @pdf-editor/spike-m0 fixtures   # fixtures/m0/*.pdf 갱신
+//   pnpm --filter @pdf-editor/spike-m0 spike:xobject  # 공유 Form XObject → out/m0-dod/xobject-result.json
 //
 // 피크 메모리를 섞지 않기 위해 측정 대상(스파이크 변형·벤치마크)은 각각 별도 Node 프로세스로
 // 실행한다. WASM 선형 메모리는 줄지 않으므로 프로세스 종료 시점 값이 그 작업의 최대치다.
@@ -16,6 +17,7 @@ import os from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runBenchFull, runBenchIncremental } from './bench.js';
+import { runXObjectCli, writeDodFixtures } from './dod-cli.js';
 import { buildSamplePdf, buildSyntheticPdf } from './fixture.js';
 import { runIncrementalControls, runSpike, SEARCH_TERMS, REPLACEMENT_TEXT } from './spike.js';
 
@@ -278,9 +280,21 @@ function writeFixtures(): void {
     copyFileSync(join(dir, name), join(diag, name));
     console.log(`${name}: ${bytes.byteLength} B, sha256 ${sha256(bytes)}`);
   }
+  // M0 DoD 잔여 항목 픽스처(fixtures/m0 에만 둔다)
+  for (const { name, bytes } of writeDodFixtures(ROOT, FONTS.ttf)) {
+    writeFileSync(join(dir, name), bytes);
+    console.log(`${name}: ${bytes.byteLength} B, sha256 ${sha256(bytes)}`);
+  }
 }
+
+const dodPaths = () => ({
+  root: ROOT,
+  out: join(ROOT, arg('--out') ?? 'out/m0-dod'),
+  ttf: FONTS.ttf,
+});
 
 const child = arg('--child');
 if (child) runChild(child, arg('--out')!);
 else if (process.argv.includes('--write-fixtures')) writeFixtures();
+else if (process.argv.includes('--xobject')) runXObjectCli(dodPaths());
 else runParent();
