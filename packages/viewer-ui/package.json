@@ -8,10 +8,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./style.css": "./src/style.css"
   },
   "files": [
-    "dist"
+    "dist",
+    "src/style.css"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
