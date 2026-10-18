@@ -130,6 +130,47 @@ export function pageToCss(p: Point, layout: PageLayout): Point {
   return [(p[0] - layout.origin[0]) * layout.cssScale, (p[1] - layout.origin[1]) * layout.cssScale];
 }
 
+/** quad 의 좌표축: 원점(ul), u(ul→ur 방향 단위), v(ul→ll 방향 단위), 그리고 각 길이. */
+export interface QuadFrame {
+  ox: number;
+  oy: number;
+  ux: number;
+  uy: number;
+  vx: number;
+  vy: number;
+  lu: number;
+  lv: number;
+}
+
+/** 폭·높이가 0 인 quad 는 다른 축에 수직인 방향으로 축을 정한다(둘 다 0 이면 기본 가로·세로). */
+export function quadFrame(q: Quad): QuadFrame {
+  const ux = q[2] - q[0];
+  const uy = q[3] - q[1];
+  const vx = q[4] - q[0];
+  const vy = q[5] - q[1];
+  const lu = Math.hypot(ux, uy);
+  const lv = Math.hypot(vx, vy);
+  let unx = 1;
+  let uny = 0;
+  let vnx = 0;
+  let vny = 1;
+  if (lu > 0) {
+    unx = ux / lu;
+    uny = uy / lu;
+  } else if (lv > 0) {
+    unx = vy / lv;
+    uny = 0 - vx / lv; // -0 을 피한다
+  }
+  if (lv > 0) {
+    vnx = vx / lv;
+    vny = vy / lv;
+  } else if (lu > 0) {
+    vnx = 0 - uy / lu;
+    vny = ux / lu;
+  }
+  return { ox: q[0], oy: q[1], ux: unx, uy: uny, vx: vnx, vy: vny, lu, lv };
+}
+
 /** quad 의 축 정렬 경계 사각형(페이지 공간). */
 export function quadBounds(quad: Quad): Rect {
   const xs = [quad[0], quad[2], quad[4], quad[6]];

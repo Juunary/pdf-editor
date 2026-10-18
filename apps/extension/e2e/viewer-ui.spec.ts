@@ -340,12 +340,29 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
 
   test('드래그 선택 → Ctrl+C: 줄 사이를 가로지르는 텍스트가 읽기 순서로 복사된다', async ({
     page,
-  }) => {
+  }, testInfo) => {
     await openHarness(page, baseConfig());
     const g = await geo(page);
     // 1줄 'W'(6번) 왼쪽 절반 → 2줄 'd'(5번) 오른쪽 절반
     await drag(page, charAt(g, 0, 6, 0.2), charAt(g, 1, 5, 0.8));
     expect(await copied(page)).toBe('World\nSecond');
+    // 하이라이트: 줄마다 상자 하나, 선택된 글자 범위의 quad × 배율(줄바꿈 표식과 겹친 줄무늬 없음)
+    const rects = page.locator('#pe-selection .pe-sel');
+    await expect(rects).toHaveCount(2);
+    expectBox(
+      await boxOf(rects.nth(0)),
+      { x: g.x + 80 * 1.5, y: g.y + 20 * 1.5, width: 50 * 1.5, height: 14 * 1.5 },
+      '선택 1줄',
+    );
+    expectBox(
+      await boxOf(rects.nth(1)),
+      { x: g.x + 20 * 1.5, y: g.y + 40 * 1.5, width: 60 * 1.5, height: 14 * 1.5 },
+      '선택 2줄',
+    );
+    await page.screenshot({ path: testInfo.outputPath('selection.png') });
+    // 선택을 지우면 하이라이트도 사라진다
+    await page.mouse.click(g.x + 5, g.y + 5);
+    await expect(rects).toHaveCount(0);
   });
 
   test('블록 경계를 넘으면 빈 줄이 들어간다', async ({ page }) => {
@@ -548,7 +565,9 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     expect(await page.evaluate(() => window.scrollY)).toBeLessThan(100);
   });
 
-  test('디버그 오버레이: 매칭 여부 색 구분·요약·마우스 위치 글자의 SourceOp', async ({ page }) => {
+  test('디버그 오버레이: 매칭 여부 색 구분·요약·마우스 위치 글자의 SourceOp', async ({
+    page,
+  }, testInfo) => {
     // 글자 매칭: 1줄(11자) → 연산 0, 2줄 앞 3글자 → 실패(-1), 2줄 나머지 13자 → 연산 1(편집 제한), 3줄(8자) → 연산 2
     const n = PAGE_0.chars.length;
     const charOp = PAGE_0.chars.map((_, i) => (i < 11 ? 0 : i < 14 ? -1 : i < 11 + 16 ? 1 : 2));
@@ -617,6 +636,8 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await page.mouse.move(g.x + 5, g.y + 5);
     await expect(tip).toHaveCount(0);
     // 텍스트 선택은 디버그 중에도 동작한다
+    await page.mouse.move(hoverLimited.x, hoverLimited.y);
+    await page.screenshot({ path: testInfo.outputPath('debug-overlay.png') });
     await drag(page, charAt(g, 0, 0, 0.2), charAt(g, 0, 4, 0.8));
     expect(await copied(page)).toBe('Hello');
     // 끄면 오버레이가 사라진다

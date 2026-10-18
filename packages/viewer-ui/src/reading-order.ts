@@ -6,6 +6,7 @@
  * 선택은 글자 사이 "캐럿 위치"(0 … items.length)로 다룬다. 선택 구간 = 캐럿 구간 [from, to).
  */
 import type { CharInfo, PageModel, Point } from '@pdf-editor/shared-types';
+import { quadFrame } from './layout.js';
 
 export interface ReadingItem {
   /** PageModel.chars 인덱스. */
@@ -141,39 +142,15 @@ export interface PointLocation {
 
 /** 점이 글자 quad 의 어디에 있는지. 폭·높이가 0 인 quad 도 안전하게 다룬다. */
 export function locatePoint(char: CharInfo, p: Point): PointLocation {
-  const q = char.quad;
-  const ux = q[2] - q[0];
-  const uy = q[3] - q[1];
-  const vx = q[4] - q[0];
-  const vy = q[5] - q[1];
-  const lu = Math.hypot(ux, uy);
-  const lv = Math.hypot(vx, vy);
-  let unx = 1;
-  let uny = 0;
-  let vnx = 0;
-  let vny = 1;
-  if (lu > 0) {
-    unx = ux / lu;
-    uny = uy / lu;
-  } else if (lv > 0) {
-    unx = vy / lv;
-    uny = -vx / lv;
-  }
-  if (lv > 0) {
-    vnx = vx / lv;
-    vny = vy / lv;
-  } else if (lu > 0) {
-    vnx = -uy / lu;
-    vny = ux / lu;
-  }
-  const dx = p[0] - q[0];
-  const dy = p[1] - q[1];
-  const s = dx * unx + dy * uny;
-  const t = dx * vnx + dy * vny;
-  const ds = s < 0 ? -s : s > lu ? s - lu : 0;
-  const dt = t < 0 ? -t : t > lv ? t - lv : 0;
+  const f = quadFrame(char.quad);
+  const dx = p[0] - f.ox;
+  const dy = p[1] - f.oy;
+  const s = dx * f.ux + dy * f.uy;
+  const t = dx * f.vx + dy * f.vy;
+  const ds = s < 0 ? -s : s > f.lu ? s - f.lu : 0;
+  const dt = t < 0 ? -t : t > f.lv ? t - f.lv : 0;
   const vertical = char.wmode === 1;
-  const progress = vertical ? (lv > 0 ? t / lv : 0) : lu > 0 ? s / lu : 0;
+  const progress = vertical ? (f.lv > 0 ? t / f.lv : 0) : f.lu > 0 ? s / f.lu : 0;
   // 가로 쓰기는 u(ds)가 줄 진행 방향, 세로 쓰기는 v(dt)가 줄 진행 방향이다.
   const distance = vertical
     ? Math.hypot(ds, ALONG_LINE_WEIGHT * dt)
