@@ -67,6 +67,15 @@ interface ClipEntry {
 
 const unitRect: Rect = [0, 0, 1, 1];
 
+/**
+ * 재전송 판정 키(계약 3.1 단계 2): 폰트 동일성, gid, 글리프 trm 6값, 콜백 ctm 6값. 숫자 문자열은 비트 단위로 같은
+ * 값에서만 같다. ctm 을 넣는 이유: 같은 Form 을 다른 위치에 그리면 trm 은 같고 ctm 만 다르다. BT 안에서는
+ * cm 을 쓸 수 없으므로 ET 재전송의 ctm 은 표시 시점 ctm 과 같다.
+ */
+function glyphKey(fontId: number, gid: number, trm: Matrix, ctm: Matrix): string {
+  return `${fontId}|${gid}|${trm.join(',')}|${ctm.join(',')}`;
+}
+
 export class DeviceCollector {
   readonly glyphs: RawGlyph[] = [];
   readonly fonts: FontInfo[] = [];
@@ -172,7 +181,7 @@ export class DeviceCollector {
           if (gid < 0) return this.#appendExtra(first, unicode);
           // 단계 2: 번호를 주고 센 목록에 넣는다.
           const index = this.#push(font, trm, gid, unicode, wmode, kind, false, rgb, ctm);
-          this.#remember(index, trm);
+          this.#remember(index, trm, ctm);
         },
       });
     } catch (e) {
@@ -206,7 +215,7 @@ export class DeviceCollector {
             return;
           }
           auxSeen = 0;
-          const hit = this.#consume(`${this.#fontId(font)}|${gid}|${trm.join(',')}`);
+          const hit = this.#consume(glyphKey(this.#fontId(font), gid, trm, ctm));
           if (hit !== undefined) {
             consumed++;
             this.retransmitted++;
@@ -220,7 +229,7 @@ export class DeviceCollector {
           target = index;
           if (isClip) {
             this.clipCounted++;
-            this.#remember(index, trm);
+            this.#remember(index, trm, ctm);
           }
         },
       });
@@ -270,10 +279,10 @@ export class DeviceCollector {
     if (this.glyphs.length > first) this.glyphs[this.glyphs.length - 1]!.extra.push(unicode);
   }
 
-  /** 글리프 키: 폰트 동일성, gid, trm 6값(숫자 문자열은 비트 단위로 같은 값에서만 같다). */
-  #remember(index: number, trm: Matrix): void {
+  /** 센 목록에 글리프를 넣는다. 같은 키가 여러 번 들어오면 각각 별도 항목이다. */
+  #remember(index: number, trm: Matrix, ctm: Matrix): void {
     const g = this.glyphs[index]!;
-    const key = `${g.fontId}|${g.gid}|${trm.join(',')}`;
+    const key = glyphKey(g.fontId, g.gid, trm, ctm);
     const list = this.#counted.get(key);
     if (list) list.push(index);
     else this.#counted.set(key, [index]);

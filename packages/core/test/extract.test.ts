@@ -435,6 +435,48 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     expect(model.chars.every((c) => c.clip)).toBe(true);
   });
 
+  // 같은 Form 을 두 위치에 그리면 글리프 trm 은 같고 콜백 ctm 만 다르다(계약 수정 4).
+  const formA: Pick<PageSpec, 'resources'> = {
+    resources: (doc, res) => {
+      const font = (res.Font as Record<string, unknown>).F1;
+      res.XObject = {
+        Fm1: doc.addStream('BT /F1 12 Tf 5 5 Td (A) Tj ET', {
+          Type: 'XObject',
+          Subtype: 'Form',
+          BBox: [0, 0, 100, 100],
+          Resources: { Font: { F1: font } },
+        }),
+      };
+    },
+  };
+  const twoForms = 'q 1 0 0 1 10 10 cm /Fm1 Do Q q 1 0 0 1 10 100 cm /Fm1 Do Q';
+
+  it('같은 Form 을 두 위치에 그린 뒤 제3의 위치에 Tr 7 로 같은 trm 의 글자를 쓰면 새 글자로 센다', () => {
+    const { model, stats } = run({
+      content: `${twoForms} q 1 0 0 1 100 150 cm BT /F1 12 Tf 7 Tr 5 5 Td (A) Tj ET Q`,
+      ...formA,
+    });
+    expect(text(model)).toBe('AAA');
+    expect(seqs(model)).toEqual([0, 1, 2]);
+    expect(stats.retransmitted).toBe(0);
+    expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
+      ['fill', false],
+      ['fill', false],
+      ['invisible', true],
+    ]);
+  });
+
+  it('같은 위치(trm 과 ctm 이 모두 같음)에 Tr 7 로 다시 쓰면 재전송으로 본다(알려진 한계)', () => {
+    const { model, stats } = run({
+      content: `${twoForms} q 1 0 0 1 10 100 cm BT /F1 12 Tf 7 Tr 5 5 Td (A) Tj ET Q`,
+      ...formA,
+    });
+    expect(text(model)).toBe('AA');
+    expect(stats.retransmitted).toBe(1);
+    // 소비는 항목 하나씩이므로 두 번째 Form 인스턴스(같은 위치)의 글리프에만 clip 이 붙는다.
+    expect(model.chars.map((c) => c.clip)).toEqual([false, true]);
+  });
+
   it('다른 위치의 같은 글자는 재전송이 아니다', () => {
     const { model } = run(
       'BT /F1 12 Tf 10 150 Td (AB) Tj ET BT /F1 12 Tf 7 Tr 10 100 Td (AB) Tj ET',
