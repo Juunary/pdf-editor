@@ -179,6 +179,7 @@ function enableSave(): void {
 }
 
 let saveEnabled = false;
+let firstPaintAnnounced = false;
 let unmountViewer: (() => void) | null = null;
 
 /** 첫 페이지가 캔버스에 그려진 뒤: 상태 표시와 저장 활성화. 이후 페이지는 진단 기록만 남긴다. */
@@ -190,11 +191,13 @@ function onPagePainted(e: PagePaintedEvent): void {
     scale: e.renderScale,
     renderMs: e.renderMs,
   });
+  if (firstPaintAnnounced) return;
+  firstPaintAnnounced = true;
   if (!saveEnabled) {
     saveEnabled = true;
     enableSave();
-    setStatus('rendered', `${e.pageCount} 페이지 · ${e.pageIndex + 1}페이지 렌더 완료`);
   }
+  setStatus('rendered', `${e.pageCount} 페이지 · ${e.pageIndex + 1}페이지 렌더 완료`);
 }
 
 async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
@@ -206,6 +209,7 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
 
   // 이전에 연 문서의 뷰어를 정리하고 새 문서로 다시 마운트한다.
   unmountViewer?.();
+  firstPaintAnnounced = false;
   const controller = new ViewerController({
     host: {
       getPageInfo: (i) => pdf.getPageInfo(i),
