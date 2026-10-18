@@ -20,6 +20,7 @@ import type {
   SourceMap,
   SourceOp,
 } from '@pdf-editor/shared-types';
+import { now } from './clock.js';
 
 export interface LinkConfig {
   originTolerance: number;
@@ -141,7 +142,7 @@ function align(
 }
 
 export function link(model: PageModel, map: SourceMap, config: LinkConfig): PageLinkage {
-  const t0 = performance.now();
+  const t0 = now();
   const tol = config.originTolerance;
 
   // 글자
@@ -246,7 +247,7 @@ export function link(model: PageModel, map: SourceMap, config: LinkConfig): Page
     imageOp,
     shadeOp,
     stats,
-    linkMs: performance.now() - t0,
+    linkMs: now() - t0,
   };
 }
 
