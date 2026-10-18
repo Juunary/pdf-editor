@@ -54,7 +54,7 @@ export interface RawGlyph {
 interface PrevText {
   ptr: unknown;
   text: mupdf.Text;
-  kind: 'fill' | 'stroke' | 'fill-stroke';
+  kind: 'fill' | 'stroke' | 'fill-stroke' | 'invisible' | 'clip';
   first: number;
   end: number;
 }
@@ -127,40 +127,44 @@ export class DeviceCollector {
   // --- 텍스트 -------------------------------------------------------------------------
 
   fillText(text: mupdf.Text, ctm: Matrix, cs: mupdf.ColorSpace, color: number[]): void {
-    this.#showPainted('fill', text, ctm, cs, color);
+    this.#text('fill', text, ctm, cs, color);
   }
 
   strokeText(text: mupdf.Text, ctm: Matrix, cs: mupdf.ColorSpace, color: number[]): void {
-    this.#showPainted('stroke', text, ctm, cs, color);
+    this.#text('stroke', text, ctm, cs, color);
   }
 
   /** ignoreText: 처음 도착한 글리프만 센다(Tr 3). Tr 4–7 의 ET 재전송이면 소비한다. */
   ignoreText(text: mupdf.Text, ctm: Matrix): void {
-    this.#releasePrev();
-    this.#showUnpainted(text, ctm, false);
+    this.#text('invisible', text, ctm, null, null);
   }
 
   /** clipText·clipStrokeText: 센 목록과 같은 글리프는 ET 재전송으로 소비하고, 아니면 새로 센다. */
   clipText(text: mupdf.Text, ctm: Matrix): void {
-    this.#releasePrev();
-    this.#showUnpainted(text, ctm, true);
+    this.#text('clip', text, ctm, null, null);
   }
 
-  /** fillText·strokeText (계약 3.1 단계 1·2). */
-  #showPainted(
-    kind: 'fill' | 'stroke',
+  /**
+   * 모든 텍스트 콜백의 진입부(계약 3.1 단계 1).
+   * 직전 텍스트 콜백과 텍스트 객체 포인터가 같으면 종류와 무관하게 통째로 건너뛴다(같은 실행 단위의
+   * fill→stroke, 패턴 색 clip→clipStroke, fill→clipStroke). 사이에 비텍스트 콜백(패턴 칠하기, popClip)이
+   * 끼어도 같다. 직전 래퍼는 다음 텍스트 콜백의 비교가 끝날 때까지 잡고 있으므로 같은 포인터는 같은
+   * 객체다(즉시 destroy 하면 해제된 주소가 재사용된다). ET 재전송은 항상 새 텍스트 객체다.
+   */
+  #text(
+    kind: PrevText['kind'],
     text: mupdf.Text,
     ctm: Matrix,
-    cs: mupdf.ColorSpace,
-    color: number[],
+    cs: mupdf.ColorSpace | null,
+    color: number[] | null,
   ): void {
     const prev = this.#prev;
     if (prev && prev.ptr === text.pointer) {
-      // 단계 1: 직전 콜백과 같은 텍스트 객체(Tr 2·6 의 fill→stroke)는 통째로 건너뛴다.
       text.destroy();
       if (
-        (prev.kind === 'fill' && kind === 'stroke') ||
-        (prev.kind === 'stroke' && kind === 'fill')
+        cs &&
+        color &&
+        ((prev.kind === 'fill' && kind === 'stroke') || (prev.kind === 'stroke' && kind === 'fill'))
       ) {
         const fillRgb = kind === 'fill' ? this.colors.paint(cs, color).rgb : null;
         for (let i = prev.first; i < prev.end; i++) {
@@ -170,25 +174,33 @@ export class DeviceCollector {
         }
         prev.kind = 'fill-stroke';
       }
+      // 건너뛴 콜백이 클립이면 popClip 짝을 맞추려고 클립 스택에는 올린다(글리프는 이미 처음 콜백이 셌다).
+      if (kind === 'clip') this.#clipStack.push({ bbox: this.top(), textGlyphs: null });
       return;
     }
     this.#releasePrev();
-    const rgb = this.colors.paint(cs, color).rgb;
     const first = this.glyphs.length;
-    try {
-      text.walk({
-        showGlyph: (font, trm, gid, unicode, wmode) => {
-          if (gid < 0) return this.#appendExtra(first, unicode);
-          // 단계 2: 번호를 주고 센 목록에 넣는다.
-          const index = this.#push(font, trm, gid, unicode, wmode, kind, false, rgb, ctm);
-          this.#remember(index, trm, ctm);
-        },
-      });
-    } catch (e) {
-      text.destroy();
-      throw e;
+    const entry: PrevText = { ptr: text.pointer, text, kind, first, end: first };
+    this.#prev = entry;
+    if (kind === 'fill' || kind === 'stroke') {
+      this.#showPainted(kind, text, ctm, this.colors.paint(cs!, color!).rgb);
+    } else {
+      this.#showUnpainted(text, ctm, kind === 'clip');
     }
-    this.#prev = { ptr: text.pointer, text, kind, first, end: this.glyphs.length };
+    entry.end = this.glyphs.length;
+  }
+
+  /** fillText·strokeText 의 새 텍스트 객체 (계약 3.1 단계 2). */
+  #showPainted(kind: 'fill' | 'stroke', text: mupdf.Text, ctm: Matrix, rgb: RGB | null): void {
+    const first = this.glyphs.length;
+    text.walk({
+      showGlyph: (font, trm, gid, unicode, wmode) => {
+        if (gid < 0) return this.#appendExtra(first, unicode);
+        // 단계 2: 번호를 주고 센 목록에 넣는다.
+        const index = this.#push(font, trm, gid, unicode, wmode, kind, false, rgb, ctm);
+        this.#remember(index, trm, ctm);
+      },
+    });
   }
 
   /**
@@ -201,41 +213,37 @@ export class DeviceCollector {
     // 직전 글리프(새로 센 것이든 소비한 것이든)의 인덱스와, 그 글리프에 붙은 보조 글리프 수.
     let target: number | null = null;
     let auxSeen = 0;
-    try {
-      text.walk({
-        showGlyph: (font, trm, gid, unicode, wmode) => {
-          if (gid < 0) {
-            // 계약 3.1 단계 0: 직전 글리프의 CharInfo 에 유니코드를 붙인다. 소비한 재전송 글리프는 fill/stroke 에서
-            // 이미 받았으면 다시 붙이지 않는다(재전송에는 보통 보조 글리프가 없다).
-            if (target !== null) {
-              const g = this.glyphs[target]!;
-              if (auxSeen >= g.extra.length) g.extra.push(unicode);
-              auxSeen++;
-            }
-            return;
+    text.walk({
+      showGlyph: (font, trm, gid, unicode, wmode) => {
+        if (gid < 0) {
+          // 계약 3.1 단계 0: 직전 글리프의 CharInfo 에 유니코드를 붙인다. 소비한 재전송 글리프는 fill/stroke 에서
+          // 이미 받았으면 다시 붙이지 않는다(재전송에는 보통 보조 글리프가 없다).
+          if (target !== null) {
+            const g = this.glyphs[target]!;
+            if (auxSeen >= g.extra.length) g.extra.push(unicode);
+            auxSeen++;
           }
-          auxSeen = 0;
-          const hit = this.#consume(glyphKey(this.#fontId(font), gid, trm, ctm));
-          if (hit !== undefined) {
-            consumed++;
-            this.retransmitted++;
-            this.glyphs[hit]!.clip = true;
-            target = hit;
-            return;
-          }
-          // 처음 센 글리프. 클립 콜백이면 Tr 7 처럼 보이는 글리프로 표기하고(패턴 색 텍스트는 뒤에 고친다),
-          // ignoreText 면 Tr 3 으로 표기한다.
-          const index = this.#push(font, trm, gid, unicode, wmode, 'invisible', isClip, null, ctm);
-          target = index;
-          if (isClip) {
-            this.clipCounted++;
-            this.#remember(index, trm, ctm);
-          }
-        },
-      });
-    } finally {
-      text.destroy();
-    }
+          return;
+        }
+        auxSeen = 0;
+        const hit = this.#consume(glyphKey(this.#fontId(font), gid, trm, ctm));
+        if (hit !== undefined) {
+          consumed++;
+          this.retransmitted++;
+          this.glyphs[hit]!.clip = true;
+          target = hit;
+          return;
+        }
+        // 처음 센 글리프. 클립 콜백이면 Tr 7 처럼 보이는 글리프로 표기하고(패턴 색 텍스트는 뒤에 고친다),
+        // ignoreText 면 Tr 3 으로 표기한다.
+        const index = this.#push(font, trm, gid, unicode, wmode, 'invisible', isClip, null, ctm);
+        target = index;
+        if (isClip) {
+          this.clipCounted++;
+          this.#remember(index, trm, ctm);
+        }
+      },
+    });
     // 단계 4: 소비가 있었으면 센 목록을 비운다.
     if (consumed > 0) this.#counted.clear();
     if (isClip) {
@@ -321,11 +329,6 @@ export class DeviceCollector {
     }
   }
 
-  /** 텍스트가 아닌 콜백이 왔다: 직전 텍스트 래퍼를 놓아 fill→stroke 연속 판정을 끊는다. */
-  #boundary(): void {
-    this.#releasePrev();
-  }
-
   /**
    * 같은 클립의 popClip 전에 fillShade·beginTile 이 오면 그 클립이 처음 센 글리프는 패턴 색 텍스트다
    * (render fill, clip false, color null).
@@ -342,7 +345,6 @@ export class DeviceCollector {
   }
 
   beginTile(): void {
-    this.#boundary();
     this.#patternPaint();
   }
 
@@ -356,7 +358,6 @@ export class DeviceCollector {
     color: number[],
     alpha: number,
   ): void {
-    this.#boundary();
     this.#path('fill', path, null, evenOdd, ctm, this.colors.paint(cs, color), alpha);
   }
 
@@ -368,17 +369,14 @@ export class DeviceCollector {
     color: number[],
     alpha: number,
   ): void {
-    this.#boundary();
     this.#path('stroke', path, stroke, false, ctm, this.colors.paint(cs, color), alpha);
   }
 
   clipPath(path: mupdf.Path, evenOdd: boolean, ctm: Matrix): void {
-    this.#boundary();
     this.#path('clip', path, null, evenOdd, ctm, null, 1);
   }
 
   clipStrokePath(path: mupdf.Path, stroke: mupdf.StrokeState, ctm: Matrix): void {
-    this.#boundary();
     this.#path('clip-stroke', path, stroke, false, ctm, null, 1);
   }
 
@@ -412,17 +410,14 @@ export class DeviceCollector {
   // --- 이미지·셰이드 -------------------------------------------------------------------
 
   fillImage(image: mupdf.Image, ctm: Matrix, alpha: number): void {
-    this.#boundary();
     this.#image('image', image, ctm, alpha);
   }
 
   fillImageMask(image: mupdf.Image, ctm: Matrix, alpha: number): void {
-    this.#boundary();
     this.#image('image-mask', image, ctm, alpha);
   }
 
   clipImageMask(image: mupdf.Image, ctm: Matrix): void {
-    this.#boundary();
     const bbox = this.#image('clip-image-mask', image, ctm, 1);
     this.pushClip(intersectRect(bbox, this.top()));
   }
@@ -442,7 +437,6 @@ export class DeviceCollector {
   }
 
   fillShade(shade: mupdf.Shade, ctm: Matrix, alpha: number): void {
-    this.#boundary();
     this.#patternPaint();
     const bounds = shade.getBounds() as Rect;
     // `sh` 의 셰이드는 경계가 무한(±2^31 근처)일 수 있다. 그때는 현재 클립 경계를 쓴다.
@@ -452,6 +446,11 @@ export class DeviceCollector {
   }
 
   // --- 클립 스택 ----------------------------------------------------------------------
+
+  /** 실행이 끝났을 때 클립 스택에 남은 항목 수(균형이 맞으면 0). */
+  get clipDepth(): number {
+    return this.#clipStack.length - 1;
+  }
 
   /** 현재 클립 경계(페이지 공간). 셰이드 경계를 접는 데 쓴다. */
   top(): Rect {
@@ -463,18 +462,15 @@ export class DeviceCollector {
   }
 
   popClip(): void {
-    this.#boundary();
     if (this.#clipStack.length > 1) this.#clipStack.pop();
   }
 
   beginMask(): void {
-    this.#boundary();
     this.#maskDepth++;
   }
 
   /** `endMask` 는 마스크를 클립으로 올린다(이후 popClip 으로 내려간다). */
   endMask(): void {
-    this.#boundary();
     if (this.#maskDepth > 0) this.#maskDepth--;
     if (this.#maskDepth === 0) this.pushClip(this.top());
   }
