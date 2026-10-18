@@ -4,13 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 버전 | v2.2 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
+| 버전 | v2.3 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
 | 작성일 | 2026-10-18 |
 | 작성 환경 | Mustree 서버(호스트명 `sailab01`) `/mnt/nas4/kjune/pdf-editor`, Claude Code 세션에서 작성. Windows PC(`C:\Users\harry\pdf-editor\PLAN.md`)에는 scp 복사본만 둔다 |
 | 리서치 근거 | MuPDF 1.28.x 공식 JavaScript/WASM 레퍼런스, Chrome 확장(MV3) 공식 문서, Claude Code 공식 문서 |
 | 수치 표기 규칙 | 용량·버전은 "원본 / 압축 / 배포 번들" 기준과 측정 버전을 함께 적는다. 실측 전 값은 **문서 기준** 으로 표시하고, 실측 값에는 **실측 YYYY-MM-DD** 를 붙인다 |
-| 상태 | 계획 문서. M0 Day 1(12절)과 M0 잔여 DoD(공유 Form XObject·기존 Redact 주석·대형 문서 저장 상한) 서버 검증 완료(2026-10-18, 커밋 8개). 결과·Action Items 는 `docs/m0-day1-log.md`, `docs/m0-dod-xobject-redact-save.md`. 미완: Windows Chrome 검증, Chrome 128–150 DNR 실측, 실제 코퍼스 재실행, v1 범위·일정 재산정 |
-| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 그 외 절은 v2 와 동일 |
+| 상태 | 계획 문서. M0 Day 1(12절)과 M0 잔여 DoD(공유 Form XObject·기존 Redact 주석·대형 문서 저장 상한) 서버 검증 완료(2026-10-18, 커밋 8개). 결과·Action Items 는 `docs/m0-day1-log.md`, `docs/m0-dod-xobject-redact-save.md`. Windows Chrome 1차 검증 완료(2026-10-19, Chrome 155, `docs/m0-day1-log.md` 9절·9.5 미확인 목록). 미완: Chrome 128–150 DNR 실측, Acrobat·pdf.js 표시 확인, 대형 문서 브라우저 측정, 실제 코퍼스 재실행, v1 범위·일정 재산정 |
+| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 2026-10-19 v2.3: 11절 "Chrome 버전 / 검증한 가로채기 경로"(이 PC 열) 실측 기입, 0절 상태·변경 이력 갱신. 그 외 절은 변경 없음 |
 
 확정된 결정
 - 주력 형태: Chrome 확장 우선. 코어는 TypeScript + MuPDF WebAssembly(npm `mupdf`). 데스크톱(Tauri)은 후속.
@@ -276,7 +276,7 @@ Claude Code 버전 조건(공식 문서 기준): Opus 5.5 v2.1.280+, Sonnet 5.5 
 | git | 2.54 (실측 2026-10-18) | 2.34.1 (실측 2026-10-18) |
 | npm | — | 10.9.3 (실측 2026-10-18) |
 | npm `mupdf` 최신 버전 | — | 1.28.1 (실측 2026-10-18, `npm view mupdf version`) |
-| Chrome 버전 / 검증한 가로채기 경로 | 사용자 기입(`chrome://version`) | 해당 없음 |
+| Chrome 버전 / 검증한 가로채기 경로 | 155.0.8059.82 공식 빌드 64비트 (측정 2026-10-19, 뷰어 진단 JSON). 가로채기 경로 MIME handler(`interceptionMode` "mime-handler", DNR 동적 규칙 0개): 최상위 https·file://, 임베디드(embed·iframe·object), 뷰어 페이지 통과. Chrome 128–150 DNR 경로는 미확인(이 PC 에 해당 환경 없음). 상세 `docs/m0-day1-log.md` 9절 | 해당 없음 |
 | Claude Code 버전 / 사용 가능 모델 | 사용자 기입 | 사용자 기입 |
 
 서버 관찰 사항
