@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { featureDisabledReason, type FeatureName, type ViewerController } from '../controller.js';
 import { useViewerState } from '../hooks.js';
 import { canStep } from '../page-nav.js';
@@ -19,6 +19,8 @@ interface Props {
 export function Controls({ controller }: Props) {
   const state = useViewerState(controller);
   const [draft, setDraft] = useState<string | null>(null);
+  /** Esc 로 취소할 때 뒤따르는 blur 가 입력을 확정하지 않게 한다. */
+  const cancelled = useRef(false);
   const shown = draft ?? String(state.pageIndex + 1);
 
   // Ctrl+F 가로채기. 검색이 비활성화되면 브라우저 기본 찾기에 맡긴다.
@@ -33,10 +35,13 @@ export function Controls({ controller }: Props) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [controller]);
 
+  /** 입력 확정. 유효하지 않으면 이동하지 않고 현재 페이지 번호로 되돌린다. */
   const commit = () => {
-    if (draft !== null && !controller.goToPageInput(draft)) {
-      // 유효하지 않은 입력은 현재 페이지 번호로 되돌린다.
+    if (cancelled.current) {
+      cancelled.current = false;
+      return;
     }
+    if (draft !== null) controller.goToPageInput(draft);
     setDraft(null);
   };
 
@@ -76,6 +81,7 @@ export function Controls({ controller }: Props) {
             e.preventDefault();
             commit();
           } else if (e.key === 'Escape') {
+            cancelled.current = true;
             setDraft(null);
             e.currentTarget.blur();
           }

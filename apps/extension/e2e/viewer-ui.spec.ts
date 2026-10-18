@@ -529,6 +529,25 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     );
   });
 
+  test('Ctrl+F: 현재 결과가 화면 밖(스크롤 아래)이면 화면 안으로 스크롤한다', async ({ page }) => {
+    const tall = makePageModel([
+      { text: 'Top line', y: 20 },
+      { text: 'Bottom target', y: 740 },
+    ]);
+    await openHarness(page, { pages: [tall], cssScale: 1.5 });
+    await page.keyboard.press('Control+F');
+    await expect(page.locator('#pe-page-input')).toHaveValue('1');
+    await page.locator('#pe-find-input').fill('target');
+    const current = page.locator('#pe-highlights .pe-hl[data-current="true"]');
+    await expect(current).toHaveCount(1);
+    await expect(current).toBeInViewport();
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
+    // 첫 줄 결과로 돌아가면 위로 스크롤한다
+    await page.locator('#pe-find-input').fill('top');
+    await expect(current).toBeInViewport();
+    expect(await page.evaluate(() => window.scrollY)).toBeLessThan(100);
+  });
+
   test('디버그 오버레이: 매칭 여부 색 구분·요약·마우스 위치 글자의 SourceOp', async ({ page }) => {
     // 글자 매칭: 1줄(11자) → 연산 0, 2줄 앞 3글자 → 실패(-1), 2줄 나머지 13자 → 연산 1(편집 제한), 3줄(8자) → 연산 2
     const n = PAGE_0.chars.length;
@@ -603,6 +622,49 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     // 끄면 오버레이가 사라진다
     await page.locator('#pe-debug-toggle').click();
     await expect(canvas).toHaveCount(0);
+  });
+
+  test('조밀한 페이지(11,000자): 텍스트 층 준비·전체 선택 복사·드래그 선택이 허용 시간 안에 끝난다', async ({
+    page,
+  }, testInfo) => {
+    // 5×6pt 글자 100자 × 110줄. 실제 문서의 조밀한 페이지(소형 활자)보다 많은 글자 수다.
+    const text = Array.from({ length: 100 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+    const dense = makePageModel(
+      Array.from({ length: 110 }, () => ({ text, block: 1 })),
+      { charWidth: 5, charHeight: 6, lineGap: 1 },
+    );
+    expect(dense.chars.length).toBe(11_000);
+    const t0 = Date.now();
+    await openHarness(page, { pages: [dense], cssScale: 1.5 });
+    await page.locator('#pe-text-layer span[data-i="10999"]').waitFor();
+    const readyMs = Date.now() - t0;
+
+    const t1 = Date.now();
+    await page.keyboard.press('Control+A');
+    const all = await copied(page);
+    const selectAllMs = Date.now() - t1;
+    expect(all?.split('\n')).toHaveLength(110);
+
+    const g = await geo(page);
+    const t2 = Date.now();
+    await drag(
+      page,
+      { x: g.x + 20 * g.scale, y: g.y + 20 * g.scale },
+      { x: g.x + 400 * g.scale, y: g.y + 700 * g.scale },
+    );
+    const dragged = await copied(page);
+    const dragMs = Date.now() - t2;
+    expect((dragged ?? '').length).toBeGreaterThan(5000);
+
+    const timings = { chars: dense.chars.length, readyMs, selectAllMs, dragMs };
+    console.log(`[perf] ${JSON.stringify(timings)}`);
+    await testInfo.attach('dense-page-timings', {
+      body: JSON.stringify(timings),
+      contentType: 'application/json',
+    });
+    expect(readyMs).toBeLessThan(8000);
+    expect(selectAllMs).toBeLessThan(3000);
+    expect(dragMs).toBeLessThan(5000);
   });
 
   test('M1 미구현: 텍스트·검색·디버그만 비활성화되고 렌더·페이지 이동은 유지된다', async ({
