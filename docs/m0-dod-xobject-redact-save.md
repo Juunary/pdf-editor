@@ -213,7 +213,7 @@ PLAN.md 반영 필요:
 | A2-1 | 편집 영역과 겹쳐 제거되는 링크의 처리(새 문단 영역으로 재생성 / 사용자 확인) 결정 | M3 |
 | A2-2 | 뷰어 UI: 문서 열기 시 `listRedactAnnots` 결과(쪽·개수) 표시, 편집 전 `assessRedactionImpact` 메시지 표시 | M3(viewer-ui) |
 | A2-3 | F3 회피 규칙을 코드 규칙으로 고정: 저장할 작업 문서에서 이미지 XObject 를 `resolve()` 하지 않는다(사전 값은 간접 참조 `get()`). M1 `PageModel`·`SourceMap` 구현 리뷰 항목에 포함. 또는 전체 저장 옵션을 `garbage=yes,compress` 로 바꾸는 안을 3절 측정과 함께 결정 | M1 |
-| A2-4 | F3 을 MuPDF 이슈 트래커에 재현 절차와 함께 보고할지 결정(외부 게시이므로 사용자 판단) | 사용자 |
+| A2-4 | F3 을 MuPDF 이슈 트래커에 재현 절차와 함께 보고할지 결정(외부 게시이므로 사용자 판단). **게시됨 2026-10-19**(사용자 지시, Juunary 계정): [ArtifexSoftware/mupdf.js#201](https://github.com/ArtifexSoftware/mupdf.js/issues/201). 1.26.4·1.27.0 미재현·1.28.1 재현(회귀), 원인 분석(코어 커밋 19c3d109ac + mupdf.js `PDFObject` 이중 keep)·수정 제안 포함. 게시 문안·재현 스크립트 `docs/upstream/`. 이후 업스트림 응답·수정 버전 확인은 MuPDF 갱신 시 대조 테스트(`tools/spike-m0/test/mupdf-pitfalls.test.ts`)로 판정 | 사용자(완료) |
 | A2-5 | Windows 다른 뷰어에서 `fixtures/m0/m0-preexisting-redact-edited.pdf` 의 Redact 표시 유지·텍스트 확인(Acrobat 은 Redact 주석을 "적용 대기" 로 표시하는지 포함) | 사용자 |
 
 PLAN.md 반영 필요:

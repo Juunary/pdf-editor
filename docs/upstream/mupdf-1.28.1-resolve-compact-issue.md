@@ -1,21 +1,22 @@
-# Upstream issue draft — MuPDF 1.28.1 (npm `mupdf`, WASM)
+# Upstream issue — MuPDF 1.28.1 (npm `mupdf`, WASM)
 
-Status: DRAFT, not posted. Prepared 2026-10-19 from `docs/m0-dod-xobject-redact-save.md` §2.5 F3 (MuPDF defect F3).
-Where to post (user decides): GitHub <https://github.com/ArtifexSoftware/mupdf.js/issues> (listed in the mupdf.js README as the issue tracker; covers both the wrapper and the core part) or MuPDF Bugzilla <https://bugs.ghostscript.com/> (Product: MuPDF; reference Bug 709169 for the core part).
-Attachments to upload with the issue (all in `docs/upstream/`): `repro-mupdf-resolve-compact.mjs` (GitHub does not accept `.mjs`; rename to `.txt` or zip), `out/input-jpeg.pdf`, `out/output-jpeg-resolve-garbage_compact_compress.pdf` (broken), `out/output-jpeg-get-garbage_compact_compress.pdf` (good).
-Everything below the line is the proposed issue text.
+Status: POSTED 2026-10-19 as [ArtifexSoftware/mupdf.js#201](https://github.com/ArtifexSoftware/mupdf.js/issues/201) (account Juunary). Prepared from `docs/m0-dod-xobject-redact-save.md` §2.5 F3 (MuPDF defect F3).
+Not posted to MuPDF Bugzilla (requires an account; core part references Bug 709169 in the issue text).
+No files were attached; the reproduction script below writes the compared PDFs to `./out/`.
+Everything below the line is the text as posted (title + body). The live issue is the reference for any later edits or replies.
 
 ---
 
 ## Title
 
-1.28.x regression: saving with `garbage=compact` (or `deduplicate`) drops an image stream after `PDFObject.resolve()` — shared-object fix in `renumberobj` + two references per `PDFObject` wrapper
+1.28.x regression: saving with `garbage=compact` (or `deduplicate`) drops an image stream after `PDFObject.resolve()`
 
 ## Environment
 
 - `mupdf` npm package 1.28.1 (WASM build), Node.js v22.18.0, Linux x64.
 - Reproduces on 1.28.1. Does **not** reproduce on 1.27.0 or 1.26.4 (same script, same Node).
 - Tested only through the npm/WASM package; I did not run `mutool` or the C library directly.
+- The code paths described below are unchanged on current master (`source/pdf/pdf-write.c` last changed in b77def0ef5, `platform/wasm/lib/mupdf.ts` at 1d821cf41). I have not built master to re-test.
 
 ## Summary
 
@@ -209,7 +210,7 @@ export class PDFObject extends Userdata<"pdf_obj"> {
 	}
 ```
 
-`destroy()` / the `FinalizationRegistry` drop once, so one reference per wrapper leaks for the lifetime of the document. `resolve()` returns the xref-cached dictionary through `_fromPDFObjectKeep` (`wasm_pdf_resolve_indirect` is a plain `POINTER(pdf_resolve_indirect, obj)`, i.e. borrowed), so after `resolve()` that dictionary has `refs >= 2` and is no longer a singleton for `renumberobj()`. `get()` on the indirect reference resolves inside `pdf_dict_gets()` and never wraps the dictionary, which is why it is unaffected. The same double keep exists in 1.27.0; it was harmless until the `renumberobj` change.
+`destroy()` / the `FinalizationRegistry` drop once, so one reference per wrapper leaks for the lifetime of the document. `resolve()` returns the xref-cached dictionary through `_fromPDFObjectKeep` (`wasm_pdf_resolve_indirect` is a plain `POINTER(pdf_resolve_indirect, obj)`, i.e. borrowed), so after `resolve()` that dictionary has `refs >= 2` and is no longer a singleton for `renumberobj()`. `get()` on the indirect reference resolves inside `pdf_dict_gets()` and never wraps the dictionary, which is why it is unaffected. The same double keep exists in 1.27.0; it was harmless until the `renumberobj` change. On its own it also means every `PDFObject` returned by the bindings pins its `pdf_obj` until the document is dropped; I have not checked whether that is related to #200.
 
 **3. Confirmation by cancelling the extra references.** Using the exported `PDFObject._drop` (= `_wasm_pdf_drop_obj`) on the pointer returned by `resolve()`:
 
@@ -231,9 +232,6 @@ export class PDFObject extends Userdata<"pdf_obj"> {
 
 In a document that will be saved with `garbage=compact`/`deduplicate`, do not call `resolve()` on stream objects; read dictionary values through `get()` on the indirect reference and load images with `loadImage(ref)`. Alternatively save with `garbage=yes` or without garbage collection (both verified unaffected, same peak WASM heap in my measurements).
 
-## Attachments
+## Files
 
-- `repro-mupdf-resolve-compact.mjs` (the script above)
-- `input-jpeg.pdf` (3,790 bytes, input)
-- `output-jpeg-resolve-garbage_compact_compress.pdf` (3,253 bytes, broken output)
-- `output-jpeg-get-garbage_compact_compress.pdf` (3,790 bytes, good output for comparison)
+Running the script writes the PDFs it compares to `./out/` next to the script, e.g. `input-jpeg.pdf` (3,790 bytes), `output-jpeg-resolve-garbage_compact_compress.pdf` (3,253 bytes, broken) and `output-jpeg-get-garbage_compact_compress.pdf` (3,790 bytes, good). I can attach them here if that helps.
