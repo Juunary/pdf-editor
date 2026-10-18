@@ -247,9 +247,20 @@ function assemble(
   for (let l = 0; l < stext.lines.length; l++) {
     const line = stext.lines[l]!;
     const kept: number[] = [];
+    // 글리프와 짝이 없는 구조화 텍스트 공백(MuPDF 가 글자 간격으로 합성)은 앞뒤 글자 사이에 있을 때만
+    // 앞 글자 위치를 spaceAfter 에 담는다(줄 처음·끝의 공백은 읽기 텍스트에 필요 없다).
+    const spaceAfter: number[] = [];
+    let pendingSpace = false;
     for (const ch of line.chars) {
+      if (ch.owner === -1) {
+        if (ch.rune === 0x20 || ch.rune === 0xa0) pendingSpace = kept.length > 0;
+        continue;
+      }
       // 합자의 뒷부분(owner 만 같고 primary 가 아닌 글자)은 글리프당 한 번만 넣는다.
-      if (ch.owner !== -1 && matches[ch.owner] === ch) kept.push(ch.owner);
+      if (matches[ch.owner] !== ch) continue;
+      if (pendingSpace) spaceAfter.push(kept.length - 1);
+      pendingSpace = false;
+      kept.push(ch.owner);
     }
     if (kept.length === 0) continue;
     let block = blockMap.get(line.block);
@@ -260,7 +271,14 @@ function assemble(
     }
     lineMap.set(l, lines.length);
     blocks[block]!.lines.push(lines.length);
-    lines.push({ bbox: line.bbox, wmode: line.wmode, dir: line.dir, block, chars: kept });
+    lines.push({
+      bbox: line.bbox,
+      wmode: line.wmode,
+      dir: line.dir,
+      block,
+      chars: kept,
+      spaceAfter,
+    });
   }
 
   const approximated: number[] = [];
