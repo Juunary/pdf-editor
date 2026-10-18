@@ -56,6 +56,8 @@ export interface FormEditResult {
   save: { ok: boolean; error: string | null; ms: number; bytes: number };
   reopen: {
     newTextFound: boolean;
+    /** newTextFound 가 false 일 때 추출 텍스트에서 '공유' 주변(원인 확인용) */
+    textAround: string | null;
     searchHits: number;
     selectedPageOutsidePx: number;
     otherPages: { pageIndex: number; diffPx: number }[];
@@ -297,10 +299,12 @@ export function runFormUsageEdit(
         });
         op.destroy();
       }
+      const extracted = rp.toStructuredText('preserve-whitespace').asText();
+      const found = squash(extracted).includes(squash(text));
+      const at = extracted.indexOf('공유');
       result.reopen = {
-        newTextFound: squash(rp.toStructuredText('preserve-whitespace').asText()).includes(
-          squash(text),
-        ),
+        newTextFound: found,
+        textAround: found || at < 0 ? null : extracted.slice(Math.max(0, at - 40), at + 60),
         searchHits: rp.search(text, '').length,
         selectedPageOutsidePx: diffRasters(before, renderPage(rp, scale), boxPx).differing,
         otherPages: others2,
