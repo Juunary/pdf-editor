@@ -13,19 +13,37 @@ export interface ObjectDiff {
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
+/**
+ * 객체 번호를 유지한 사본(garbage 없는 전체 저장 → 재열기).
+ * MuPDF 1.28.1 은 압축 필터가 있는 이미지 XObject 를 `resolve()` 한 문서를 `garbage=compact` 로 저장하면
+ * 그 이미지의 스트림을 빼고 쓴다(docs/m0-dod-xobject-redact-save.md 2.5). 저장할 문서는 직접 해석하지 않는다.
+ */
+export function snapshot(doc: mupdf.PDFDocument): mupdf.PDFDocument {
+  const buf = doc.saveToBuffer('');
+  const bytes = buf.asUint8Array().slice();
+  buf.destroy();
+  return mupdf.Document.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument;
+}
+
+/** after 는 저장 전 작업 문서여도 된다(사본으로 비교). */
 export function diffObjects(before: mupdf.PDFDocument, after: mupdf.PDFDocument): ObjectDiff {
-  const changed: number[] = [];
-  const n = before.countObjects();
-  for (let i = 1; i < n; i++) {
-    const a = before.newIndirect(i);
-    const b = after.newIndirect(i);
-    let same = a.resolve().toString() === b.resolve().toString() && a.isStream() === b.isStream();
-    if (same && a.isStream()) {
-      same = sha(a.readRawStream().asUint8Array()) === sha(b.readRawStream().asUint8Array());
+  const snap = snapshot(after);
+  try {
+    const changed: number[] = [];
+    const n = before.countObjects();
+    for (let i = 1; i < n; i++) {
+      const a = before.newIndirect(i);
+      const b = snap.newIndirect(i);
+      let same = a.resolve().toString() === b.resolve().toString() && a.isStream() === b.isStream();
+      if (same && a.isStream()) {
+        same = sha(a.readRawStream().asUint8Array()) === sha(b.readRawStream().asUint8Array());
+      }
+      if (!same) changed.push(i);
     }
-    if (!same) changed.push(i);
+    return { changed, added: snap.countObjects() - n };
+  } finally {
+    snap.destroy();
   }
-  return { changed, added: after.countObjects() - n };
 }
 
 /**

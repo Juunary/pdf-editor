@@ -13,6 +13,7 @@
 | # | 항목 | 판정 | 근거 수치 |
 |---|---|---|---|
 | 1 | 공유 Form XObject: 선택 사용 위치만 복제 후 수정(중첩 1단계 포함) | **통과**(v1 제한 조건 7가지, 1.6) | 3가지 편집 모두 비선택 위치·2쪽 렌더 diff 0 px(MuPDF·Poppler), 원본 객체 중 변경은 1쪽 페이지 사전 1개, 2쪽 객체 트리 저장 후 원시 바이트 동일 |
+| 2 | 기존 Redact 주석이 있는 문서: 새 편집 redaction 만 적용, 기존 주석 유지 | **통과**(정책 초안: 기본 경고, 페이지 단위 작업 시 임시 분리) | 기존 주석 3개 객체 불변·저장 후 위치·OverlayText 동일, 그 아래 텍스트 유지(MuPDF·Poppler), 편집 영역 밖·2쪽 0 px. 대조: 페이지 단위 적용은 기존 2개를 적용해 인접 문단 삭제(9,874 px) |
 
 ## 1. 공유 Form XObject 복제 정책
 
@@ -132,3 +133,88 @@ Day 1 고정 파일(`m0-sample.pdf` `913c521a…`, `m0-spike-saved.pdf` `58b19a5
 PLAN.md 반영 필요:
 - 3.4 "공유 Form XObject … M0 에서 검증 후 확정" → "확정: 편집 사용 위치만 새 인스턴스로 교체(임시 페이지 redaction), 중첩이면 상위 체인 인스턴스화, 1.6 L1–L7 은 편집 제한".
 - 1.3 표 "공유 객체·클립·투명도" 행의 Form XObject 문구를 위와 같이 갱신.
+
+## 2. 기존 Redact 주석이 있는 문서
+
+### 2.1 픽스처
+
+`fixtures/m0/m0-preexisting-redact.pdf` (14,428 B, sha256 `5231fc5a…49ba`). 생성: `tools/spike-m0/src/fixture-redact.ts`. 두 쪽 모두 Day 1 샘플 페이지.
+
+| 주석 | 쪽 | 위치(MuPDF 좌표) | 의미 |
+|---|---|---|---|
+| R1 Redact | 1 | [56, 206, 400, 238] 인접 문단 | 적용 대기 가림 표시, `/OverlayText (REDACTED (R1))`, `/Contents` |
+| R2 Redact | 1 | [56, 130, 300, 148] | 교체 대상 문단 첫 줄 일부와 겹침 |
+| 메모 Text(+Popup) | 1 | [440, 152, 460, 172] | 교체 대상 영역 안 |
+| Link | 1 | [60, 140, 200, 150] | 교체 대상 첫 줄 위, URI |
+| R3 Redact | 2 | [50, 302, 300, 322] 꼬리말 | 다른 쪽 가림 표시 |
+
+편집: Day 1 과 같은 교체 대상 영역 `[56, 128, 540, 192]` 의 문단을 한글 문단으로 교체.
+
+### 2.2 구현(`packages/pdf-ops/src/redact-existing.ts`)
+
+| API | 내용 |
+|---|---|
+| `listRedactAnnots(doc, pageIndices?)` | 문서(또는 지정 쪽)의 Redact 주석 수·쪽 목록·주석별 쪽·`/Annots` 순번·객체 번호·위치(MuPDF 좌표)·QuadPoints 수·OverlayText·Contents |
+| `assessRedactionImpact(doc, pageIndex, editRects)` | 편집 전 판정: 그 쪽의 기존 Redact 주석, 편집 영역과 겹치는 것, 함께 지워질 링크, 수준(`none`/`info`/`warn`)과 사용자 메시지 |
+| `detachRedactAnnots` / `reattachRedactAnnots` / `withRedactAnnotsDetached` | 임시 분리: `/Annots` 에서 Redact 주석만 빼 두고 원래 순서 자리에 되돌림(주석 객체는 수정하지 않음). 분리가 반영되지 않으면 즉시 되돌리고 예외(2.5 F2) |
+| `redactRegions`(기존) | 새 주석만 주석 단위 `applyRedaction` 으로 적용. 기존 주석 수 반환 |
+
+### 2.3 처리 정책 초안
+
+| 상황 | 처리 |
+|---|---|
+| 편집하는 쪽에 기존 Redact 주석 없음 | `none` |
+| 기존 Redact 주석 있음, 편집 영역과 겹치지 않음 | `info`: "적용되지 않은 Redact 표시 N개 있음, 편집은 이 표시를 적용하지 않으며 저장 후에도 표시로 남음" |
+| 편집 영역과 겹치는 기존 Redact 주석 | `warn`: "나중에 그 표시를 적용하면 새 텍스트도 지워짐". 편집은 진행(기존 표시를 지우거나 옮기지 않음) |
+| 편집 영역과 겹치는 링크 | `warn`: "링크 N개가 함께 제거됨"(2.5 F1) |
+| 페이지의 모든 Redact 주석을 적용하는 동작이 필요할 때(페이지 단위 `applyRedactions`, 향후 일괄 처리) | 임시 분리(`withRedactAnnotsDetached`) 후 실행. 기본 편집 경로는 주석 단위 적용이라 분리가 필요 없다 |
+
+- 기존 주석을 사용자 동의 없이 적용·삭제·이동하지 않는다. 기존 주석 적용은 별도 명시 기능(v1 범위 밖)으로 둔다.
+
+### 2.4 결과
+
+실행: `pnpm --filter @pdf-editor/spike-m0 spike:redact` → `out/m0-dod/redact-result.json`(git 제외). 렌더 MuPDF scale 2, 비교 제외 영역 = 교체 대상 영역(+2 px).
+
+편집 전 보고(`assessRedactionImpact`, 1쪽): 기존 2개(R1·R2), 겹침 R2, 링크 제거 예정 1개(`https://example.com/m0-link`), 수준 `warn`, 메시지 3개. 문서 전체 `listRedactAnnots`: 3개, 쪽 [0, 1].
+
+| 측정 | 편집 경로(주석 단위) | 대조: 페이지 단위 `applyRedactions` | 정책: 임시 분리 + 페이지 단위 |
+|---|---|---|---|
+| 편집 후 Redact 주석(1쪽, 2쪽) | 2, 1 | **0**, 1 | 2, 1 |
+| R1·R2·R3 주석 객체(사전 문자열) | 불변 | 불변(1쪽 `/Annots` 에서 빠짐) | 불변 |
+| 원본 객체 중 변경 | 1쪽 페이지 사전 1개 | 동일 | 동일 |
+| 인접 문단(R1 아래) 텍스트 | 유지 | **삭제** | 유지 |
+| 교체 대상 문단 | 삭제, 새 한글 문단 있음 | 삭제 | 삭제 |
+| 메모 주석 / 링크 | 유지 / 제거 | 유지 / 제거 | 유지 / 제거 |
+| 1쪽 교체 영역 밖 vs 원본 | 0 px | 9,874 px | 0 px |
+| 2쪽 vs 원본 | 0 px | 0 px | 0 px |
+| 저장 | 전체, 23,342 B, 1.4 ms | 전체, 13,129 B | 전체, 14,060 B |
+| 재열기: Redact 주석 쪽·위치·OverlayText·Contents | 3개 모두 동일 | 1쪽 2개 없음 | 3개 모두 동일 |
+| 재열기: R1·R2·R3 객체 트리(번호 무관, /P 제외) | 동일 ×3 | R3 만 동일 | 동일 ×3 |
+| 재열기: 교체 영역 밖 / 2쪽 | 0 / 0 px | 9,874 / 0 px | 0 / 0 px |
+| Poppler: 인접 문단·새 문단 텍스트, 2쪽 | 검출·검출, 0 px | 미검출·해당 없음, 0 px | 검출·해당 없음, 0 px |
+| MuPDF 경고·오류 | 0 | 0 | 0 |
+
+- 고정 결과 파일: `fixtures/m0/m0-preexisting-redact-edited.pdf`(편집 경로, 23,342 B, sha256 `1ad05bc8…67b6`). 재생성 시 같은 해시.
+- 자동 테스트: `packages/pdf-ops/test/redact-existing.test.ts`(7건), `tools/spike-m0/test/redact-existing.test.ts`(4건).
+
+### 2.5 발견
+
+| # | 내용 | 근거(실측) | 처리 |
+|---|---|---|---|
+| F1 | MuPDF redaction(주석 단위·페이지 단위 모두)은 영역과 겹치는 **링크 주석을 지운다**. 메모(Text)·Popup 은 남긴다(주석 단위 적용이면 다른 Redact 주석도 남는다) | 링크 1 → 0, `/Annots` 에서 링크 객체만 빠짐 | `assessRedactionImpact` 가 미리 보고(`warn`). 링크를 새 문단 위치로 복원할지는 M3 결정(A2-1) |
+| F2 | MuPDF 는 열려 있는 페이지 객체를 캐시하고 `/Annots` 변경을 다시 읽지 않는다. `PDFPage.update()` 로도 재동기화되지 않는다 | 그 쪽 `PDFPage` 를 유지한 채 분리하면 다음 `loadPage` 가 같은 객체를 돌려주고, 페이지 단위 redaction 이 분리한 R1 을 적용해 인접 문단 삭제. 해제 후에는 정상 | `detachRedactAnnots` 가 분리 직후 새로 연 페이지에 분리한 주석이 보이면 되돌리고 예외. 호출자는 그 쪽 `PDFPage` 를 모두 `destroy()` 해야 한다 |
+| F3 | **MuPDF 1.28.1 결함**: 압축 필터가 있는 이미지 XObject(JPEG `DCTDecode`, `addImage` Flate)를 `PDFObject.resolve()` 한 문서를 `garbage=compact`(또는 `deduplicate`)로 저장하면 그 이미지가 스트림 없는 사전으로 기록된다. 재열기 시 `format error: object is not a stream`, 이미지 미표시 | 결과 핸들을 `destroy()` 해도 같음. `garbage=yes`·garbage 없음은 정상. 간접 참조에서 `get()` 만 쓰거나 `loadImage(ref)` 는 정상. Form·ICC·콘텐츠 스트림·필터 없는 이미지는 정상. Day 1 단일 페이지 샘플에서도 재현 | 이번 스파이크의 객체 diff 도구가 이 결함을 밟아 2쪽 공유 이미지가 사라짐(12,544 px = 56 pt 이미지 × scale 2)을 발견. 도구는 garbage 없는 저장 사본으로 비교하도록 수정. 제품 코드 점검: `pdf-ops` 의 `resolve()` 는 Contents·Annots 배열과 Resources 사전에만 쓰여 해당 없음. 대조 테스트 `tools/spike-m0/test/mupdf-pitfalls.test.ts`(MuPDF 동작이 바뀌면 실패) |
+
+### 2.6 Action Items(2번 항목)
+
+| # | 내용 | 시점 |
+|---|---|---|
+| A2-1 | 편집 영역과 겹쳐 제거되는 링크의 처리(새 문단 영역으로 재생성 / 사용자 확인) 결정 | M3 |
+| A2-2 | 뷰어 UI: 문서 열기 시 `listRedactAnnots` 결과(쪽·개수) 표시, 편집 전 `assessRedactionImpact` 메시지 표시 | M3(viewer-ui) |
+| A2-3 | F3 회피 규칙을 코드 규칙으로 고정: 저장할 작업 문서에서 이미지 XObject 를 `resolve()` 하지 않는다(사전 값은 간접 참조 `get()`). M1 `PageModel`·`SourceMap` 구현 리뷰 항목에 포함. 또는 전체 저장 옵션을 `garbage=yes,compress` 로 바꾸는 안을 3절 측정과 함께 결정 | M1 |
+| A2-4 | F3 을 MuPDF 이슈 트래커에 재현 절차와 함께 보고할지 결정(외부 게시이므로 사용자 판단) | 사용자 |
+| A2-5 | Windows 다른 뷰어에서 `fixtures/m0/m0-preexisting-redact-edited.pdf` 의 Redact 표시 유지·텍스트 확인(Acrobat 은 Redact 주석을 "적용 대기" 로 표시하는지 포함) | 사용자 |
+
+PLAN.md 반영 필요:
+- 3.1 "기존 Redact 주석 … 사전 감지해 구분 처리한다(사용자 경고 또는 임시 분리)" → "감지·보고(`listRedactAnnots`), 편집은 주석 단위 적용으로 기존 주석을 적용하지 않음, 겹침·링크 제거는 경고, 페이지 단위 적용이 필요한 작업만 임시 분리" 로 확정.
+- 7절 리스크에 F3(이미지 `resolve()` + compact 저장 결함)과 회피 규칙 추가.
