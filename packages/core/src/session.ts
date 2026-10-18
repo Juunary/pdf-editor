@@ -24,6 +24,7 @@ import type {
 } from '@pdf-editor/shared-types';
 import { openPdf } from './open.js';
 import { renderPageRgba } from './render.js';
+import { searchDocument } from './search.js';
 import { wasmHeapBytes } from './wasm-module.js';
 
 /**
@@ -111,10 +112,8 @@ export class PdfSession {
     return linkPage(this.extractPage({ pageIndex }), this.getSourceMap(pageIndex));
   }
 
-  /** M1 core 작업이 구현한다(docs/m1-contract.md 5.2). */
   searchText(request: SearchRequest): SearchResult {
-    void request;
-    throw new Error('M1 미구현: core searchText');
+    return searchDocument(this.document, request);
   }
 
   planSave({ changes }: SaveRequest): SavePlan {
