@@ -4,12 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 버전 | v2 (1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
+| 버전 | v2.1 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
 | 작성일 | 2026-10-18 |
 | 작성 환경 | Mustree 서버(호스트명 `sailab01`) `/mnt/nas4/kjune/pdf-editor`, Claude Code 세션에서 작성. Windows PC(`C:\Users\harry\pdf-editor\PLAN.md`)에는 scp 복사본만 둔다 |
 | 리서치 근거 | MuPDF 1.28.x 공식 JavaScript/WASM 레퍼런스, Chrome 확장(MV3) 공식 문서, Claude Code 공식 문서 |
 | 수치 표기 규칙 | 용량·버전은 "원본 / 압축 / 배포 번들" 기준과 측정 버전을 함께 적는다. 실측 전 값은 **문서 기준** 으로 표시하고, 실측 값에는 **실측 YYYY-MM-DD** 를 붙인다 |
-| 상태 | 계획 문서. 코드 없음. 모노레포 초기화는 M0 Day 1 작업(12절)으로 명시만 한다 |
+| 상태 | 계획 문서. M0 Day 1(12절) 완료(2026-10-18, 커밋 5개). 결과·Action Items 는 `docs/m0-day1-log.md` |
+| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 그 외 절은 v2 와 동일 |
 
 확정된 결정
 - 주력 형태: Chrome 확장 우선. 코어는 TypeScript + MuPDF WebAssembly(npm `mupdf`). 데스크톱(Tauri)은 후속.
@@ -62,7 +63,7 @@
 | 언어/런타임 | TypeScript, ESM, Node 22+ | 확장 내부 Python 불가. 단일 코어로 확장/데스크톱 공유 |
 | PDF 엔진 | `mupdf` npm. 개발 시작 시 정확한 패치 버전으로 lockfile 고정. npm 최신 **1.28.1 (실측 2026-10-18)**. wasm 약 10.4MB 원본 / 3.6MB brotli (문서 기준) | 글리프·폰트·벡터 추출, redaction, 폰트 임베드, 스트림 읽기/쓰기 제공. `mupdfjs` 래퍼는 폐기됨 → 코어 API 만 사용 |
 | 셰이핑 | 1차 `Font.advanceGlyph`, M3 에서 `harfbuzzjs`(MIT, 약 0.4MB wasm, 문서 기준) | 라틴 커닝/리거처. 한글 완성형은 단순 배치 가능 |
-| 한글 폴백 폰트 | Noto Sans KR 서브셋 OTF 번들(문서 기준 약 1.8MB) | 실제 임베딩은 FontManager 가 수행(3.3절) |
+| 한글 폴백 폰트 | Noto Sans KR **glyf(TrueType) 서브셋 TTF** 번들, **2,556,960 B (실측 2026-10-18, 원본 기준, brotli 미측정)**. Google Fonts 가변 TTF → `wght=400` 정적 인스턴스 → 한글 음절 11,172자·호환 자모·라틴·기본 기호 서브셋(12,267 글리프). 위치 `assets/fonts/`, 생성 스크립트 `scripts/fonts/build-noto-sans-kr-subset.sh`(재생성 해시 동일) | 실제 임베딩은 FontManager 가 수행(3.3절). **P1(M0 Day 1, 2026-10-18): CFF 기반 OTF 사용 금지.** 같은 `new Font` + `addFont` 절차에서 CFF OTF(notofonts SubsetOTF/KR)는 MuPDF 1.28.1 이 2바이트 코드를 glyph id 가 아닌 CID 로 재매핑해 한글 대부분이 미표시 또는 다른 글리프로 렌더(`FT_Load_Glyph invalid argument` 250건)되고 `subsetFonts()` 도 적용되지 않았다(`Index bounds` 오류, FontFile3 4.6MB 그대로). glyf TTF 서브셋은 표시·서브셋·검색·복사 모두 통과. 근거 `docs/m0-day1-log.md` 6.2~6.3, 대조 테스트 `tools/spike-m0/test/spike.test.ts` |
 | 레이아웃 복원 | MuPDF stext 옵션(`segment`, `paragraph-break`, `table-hunt`, `structured`) 출력을 **자체 복원 로직의 입력** 으로 사용 | 옵션만으로 완성된 셀/병합 구조가 나온다고 전제하지 않음 |
 | ML | 선택 기능. 표·문단 후보 영역 탐지 보조. **채택 모델·체크포인트·라이선스·ONNX 변환물·입출력 스키마·다운로드 크기는 코퍼스 평가 후 확정** | 추론 런타임(onnxruntime-web)은 확장에 번들. 원격 다운로드는 모델 데이터만(Web Store 원격 코드 금지) |
 | UI | Preact + Canvas 오버레이 | |
