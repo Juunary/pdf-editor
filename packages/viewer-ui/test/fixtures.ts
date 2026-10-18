@@ -20,6 +20,8 @@ export interface FixtureLine {
   y?: number;
   /** 같은 번호면 같은 블록. 기본은 줄마다 다른 블록. */
   block?: number;
+  /** 합성 공백 위치(`LineInfo.spaceAfter`): k = text 의 k번째 글자 뒤. 기본 없음. */
+  spaceAfter?: number[];
 }
 
 export interface FixtureOptions {
@@ -79,6 +81,7 @@ export function makePageModel(
       dir: [1, 0],
       block: 0, // 아래에서 블록 번호를 매긴다.
       chars: indices,
+      spaceAfter: spec.spaceAfter ?? [],
     });
     const group = blocks.get(blockKey) ?? [];
     group.push(i);

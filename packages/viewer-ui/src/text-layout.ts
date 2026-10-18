@@ -13,6 +13,11 @@ export interface TextLayerChar {
   charIndex: number;
   text: string;
   style: Record<string, string>;
+  /**
+   * 이 글자 뒤 합성 공백(`LineInfo.spaceAfter`)을 DOM 에 넣을 때의 스타일. 없으면 null.
+   * 브라우저 기본 복사·드래그에서도 단어가 붙지 않게 하는 보조 요소이며, 선택 구간·캐럿 판정에는 쓰지 않는다.
+   */
+  space: Record<string, string> | null;
 }
 
 export interface TextLayerLine {
@@ -57,7 +62,20 @@ export function layoutTextLayer(
         lineHeight: `${box.height}px`,
       };
       if (transforms.length > 0) style.transform = transforms.join(' ');
-      chars.push({ item: k, charIndex, text: char.text, style });
+      let space: Record<string, string> | null = null;
+      if (order.items[k]!.spaceAfter) {
+        // 글자 오른쪽 끝(quad 의 ur)에 폭 없이 둔다.
+        const rad = (box.rotation * Math.PI) / 180;
+        const spaceStyle: Record<string, string> = {
+          left: `${round3(box.left + box.width * Math.cos(rad))}px`,
+          top: `${round3(box.top + box.width * Math.sin(rad))}px`,
+          fontSize: style.fontSize!,
+          lineHeight: style.lineHeight!,
+        };
+        if (box.rotation !== 0) spaceStyle.transform = `rotate(${box.rotation}deg)`;
+        space = spaceStyle;
+      }
+      chars.push({ item: k, charIndex, text: char.text, style, space });
     }
     lines.push({ block: line.block, orphan: line.orphan, chars });
   }

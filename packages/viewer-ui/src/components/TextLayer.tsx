@@ -203,11 +203,21 @@ export function TextLayer({ model, order, layout }: Props) {
       <SelectionOverlay store={rectsStore} />
       {lines.map((line, li) => (
         <div key={li} class="pe-line" data-block={line.block}>
-          {line.chars.map((c) => (
-            <span key={c.item} data-i={c.item} style={c.style}>
-              {c.text}
-            </span>
-          ))}
+          {line.chars.flatMap((c) => {
+            const char = (
+              <span key={c.item} data-i={c.item} style={c.style}>
+                {c.text}
+              </span>
+            );
+            return c.space
+              ? [
+                  char,
+                  <span key={`s${c.item}`} data-space="" style={c.space}>
+                    {' '}
+                  </span>,
+                ]
+              : [char];
+          })}
         </div>
       ))}
     </div>

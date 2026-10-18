@@ -410,6 +410,49 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     expect(await page.evaluate(() => document.getSelection()?.isCollapsed ?? true)).toBe(true);
   });
 
+  test('합성 공백(spaceAfter): 복사에 공백이 들어가고 DOM 줄 텍스트·단어 경계도 맞다', async ({
+    page,
+  }) => {
+    // TJ 간격으로 단어를 나눈 문서처럼 공백 글리프가 없고 구조화 텍스트의 합성 공백만 있는 줄
+    const latex = makePageModel([
+      { text: 'foobarbaz', block: 1, spaceAfter: [2, 5] },
+      { text: 'tail', block: 1 },
+    ]);
+    await openHarness(page, { pages: [latex], cssScale: 1.5 });
+    const g = await geo(page);
+
+    // DOM: 합성 공백은 글자 span 과 구분되는 별도 요소이고, 줄 텍스트에 공백이 들어간다.
+    await expect(page.locator('#pe-text-layer span[data-i]')).toHaveCount(13);
+    await expect(page.locator('#pe-text-layer span[data-space]')).toHaveCount(2);
+    expect(
+      await page
+        .locator('#pe-text-layer .pe-line')
+        .evaluateAll((lines) => lines.map((l) => l.textContent)),
+    ).toEqual(['foo bar baz', 'tail']);
+
+    // 전체 선택: 줄 끝 공백 없이 "foo bar baz\ntail"
+    await page.keyboard.press('Control+A');
+    expect(await copied(page)).toBe('foo bar baz\ntail');
+    // 드래그: 양옆 글자가 모두 선택에 든 공백만 들어간다
+    await drag(page, charAt(g, 0, 1, 0.2), charAt(g, 0, 7, 0.8));
+    expect(await copied(page)).toBe('oo bar ba');
+    await drag(page, charAt(g, 0, 3, 0.2), charAt(g, 0, 5, 0.8));
+    expect(await copied(page)).toBe('bar');
+    // 더블클릭: 합성 공백이 단어 경계
+    const inBar = charAt(g, 0, 4);
+    await page.mouse.dblclick(inBar.x, inBar.y);
+    expect(await copied(page)).toBe('bar');
+    // 하이라이트는 공백 자리를 포함해 이어진다(첫 줄 9자 = 90pt)
+    await page.keyboard.press('Control+A');
+    const rects = page.locator('#pe-selection .pe-sel');
+    await expect(rects).toHaveCount(2);
+    expectBox(
+      await boxOf(rects.nth(0)),
+      { x: g.x + 20 * 1.5, y: g.y + 20 * 1.5, width: 90 * 1.5, height: 14 * 1.5 },
+      '합성 공백 줄 선택',
+    );
+  });
+
   test('선택 영역 밖(툴바)의 복사는 가로채지 않는다', async ({ page }) => {
     await openHarness(page, baseConfig());
     await page.locator('#pe-page-input').fill('1');
