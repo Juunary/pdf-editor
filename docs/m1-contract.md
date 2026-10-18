@@ -7,6 +7,7 @@
 | 기준 | `m1` 브랜치의 계약 커밋(이 문서와 `packages/shared-types/src` 를 포함한 커밋). 모든 M1 작업은 이 커밋에서 시작한다 |
 | 변경 권한 | `packages/shared-types`, 루트 설정(eslint·tsconfig.base·turbo·pnpm-workspace), `pnpm-lock.yaml` 은 메인 세션만 바꾼다(PLAN.md 10절) |
 | 제외 | DocumentModel(M2), EditOp·EditPlan(M3)은 각 마일스톤 시작 시 같은 방식으로 추가한다 |
+| 변경 이력 | 수정 1(956c57b): V5 정정, paintSeq 세부(Form BBox·패턴·SMask), V3 결정 대기. 수정 2(2026-10-19): V3 계수 규칙 확정 — 사용자 결정으로 "첫 등장 계수"(3.1). 수정 3(2026-10-19): 합자 보조 글리프(gid -1) 미계수, 타일링 패턴 직접 실행 경로, 마스크 있는 이미지 콜백 2개. 수정 4(2026-10-19): 재전송 판정 키에 콜백 ctm 포함, 센 목록은 항목 단위 소비. 수정 5(2026-10-19): LineInfo.spaceAfter(합성 공백 위치) 추가, 읽기 텍스트 조립 규칙 |
 
 ## 1. M1 완료 기준(PLAN.md 6절)
 
@@ -30,10 +31,21 @@
 
 | 번호 | 세는 대상 | 규칙 |
 |---|---|---|
-| glyphSeq | 텍스트 콜백(fillText·strokeText·clipText·clipStrokeText·ignoreText)의 글리프 | 글리프마다 1. 같은 텍스트 객체(포인터 동일)를 연속으로 받은 fill/stroke/clip 콜백은 한 번으로 센다(Tr 2·4·5·6) |
-| paintSeq | 텍스트 외 그리기 콜백(fillPath·strokePath·clipPath·clipStrokePath·fillShade·fillImage·fillImageMask·clipImageMask) | 콜백마다 1. 채움+선(B·B*·b·b*)은 2 |
+| glyphSeq | 텍스트 콜백(fillText·strokeText·clipText·clipStrokeText·ignoreText)의 글리프 | 표시 글리프마다 1. 처음 Device 에 도착한 콜백에서 센다. fill→stroke(Tr 2·6, 포인터 동일 연속)는 1회, Tr 4–7 클립의 ET 재전송은 세지 않는다. gid -1 보조 글리프(ToUnicode 1코드→여러 코드포인트)는 세지 않고 직전 글리프의 text 에 붙인다. 판정 규칙은 3.1(확정) |
+| paintSeq | 텍스트 외 그리기 콜백(fillPath·strokePath·clipPath·clipStrokePath·fillShade·fillImage·fillImageMask·clipImageMask) | 콜백마다 1. 채움+선(B·B*·b·b*)은 2. 경로가 비어도 칠하기 연산은 콜백을 보낸다. 세부는 아래 표 |
 
 - core 는 `runPageContents`(주석 제외)를 항등 행렬로 실행해 센다. pdf-ops 인터프리터는 같은 규칙으로 센다.
+
+paintSeq 세부(실측 2026-10-19, `docs/m1-pdf-ops.md` 2·5절, `docs/m1-core.md` 2절)
+
+| 상황 | Device 콜백 | 계수 |
+|---|---|---|
+| Form XObject `Do` | 내용보다 먼저 BBox `clipPath` 1개(+ 끝에 popClip) | 1. SourceMap 에서는 그 `Do` 연산의 `paintSeq` |
+| 셰이딩 패턴 색 f / S / B | clipPath+fillShade / clipStrokePath+fillShade / 4개 | 콜백 수만큼 |
+| 타일링 패턴 색 칠하기 | (칠할 영역/XStep > 1 또는 영역/YStep > 1, 블렌드 없음) clipPath + beginTile. 그 밖은 beginTile 없이 clipPath + 셀 내용 콜백을 타일 수만큼 직접 실행 | clipPath 1. beginTile 경로: core 는 `beginTile` 이 1(캐시됨)을 돌려 셀 내용을 실행시키지 않고, pdf-ops 는 셀 스트림을 해석하지 않는다. 직접 실행 경로: core 는 받은 대로 세고, pdf-ops 는 실행 조건과 타일 수를 계산해 셀 내용 번호를 소비한다. 셀 내용의 paintSeq 는 그 패턴 칠하기 연산의 `paintSeq` 에 포함하고 그 연산에 `outside-page-content` 제한을 단다. 셀 내용 글리프는 소유 연산 없이 번호만 소비한다(해당 글자는 `unmatched`) |
+| 소프트 마스크(SMask) | beginMask ~ endMask 사이 마스크 내용 콜백 | `beginMask`~`endMask` 사이 콜백은 glyphSeq·paintSeq 모두 세지 않는다. pdf-ops 는 SMask 그룹 스트림을 해석하지 않는다. 그 구간 밖의 콜백(예: 마스크 앞의 clipPath)은 센다 — pdf-ops 가 실측으로 확인 |
+| 이미지 XObject / 인라인 이미지 / `/IM true` 인라인 | 마스크 없음: fillImage / fillImage / fillImageMask. `/SMask` 또는 스트림 `/Mask`(스텐실): clipImageMask → fillImage(+popClip). 색 키 `/Mask` 배열: fillImage | 마스크 없음 1, `/SMask`·스트림 `/Mask` 2, 색 키 마스크 1 |
+| `ca`·블렌드 | beginGroup/endGroup | 세지 않음 |
 - 매칭(`linkPage`): 같은 번호끼리 짝짓고, 원점 오차가 `originTolerance`(기본 1pt) 이하인지 확인한다. 번호가 어긋난 구간은 원점으로 재동기화를 시도하고, 실패한 글자·도형은 -1 과 `unmatched` 제한으로 남긴다. 총수 차이는 `LinkStats` 에 기록한다.
 
 검증 전제(어긋나면 해당 작업이 즉시 메인 세션에 보고한다. 계약을 임의로 바꾸지 않는다)
@@ -42,20 +54,72 @@
 |---|---|---|
 | V1 | `runPageContents` 의 Device 콜백은 Form XObject 재귀를 포함해 콘텐츠 실행 순서로 온다 | pdf-ops, core |
 | V2 | MuPDF 는 여러 Tj/TJ 를 한 텍스트 콜백으로 묶을 수 있으나 글리프 순서는 보존한다 | pdf-ops |
-| V3 | 모든 표시 글리프가 위 규칙으로 정확히 한 번 센다(Tr 3 은 ignoreText, Tr 7 은 clipText). 포인터 동일 판정이 Tr 2·4–6 중복을 제거한다 | core, pdf-ops |
+| V3 | **정정(2026-10-19)**. MuPDF 는 BT 안의 Tr 4–7 글리프를 ET 에서 새 텍스트 객체로 다시 보내고(ET 재전송, 포인터 다름), 패턴 색 텍스트는 Tr 0 이어도 표시 시점 clipText 로 온다. 3.1 규칙으로 각 표시 글리프를 정확히 한 번 센다 | core, pdf-ops |
 | V4 | 채움+선 연산은 fillPath → strokePath 콜백 2개다 | pdf-ops |
-| V5 | 꺼진 선택적 콘텐츠(/OC)는 Device 에 오지 않는다. pdf-ops 는 해당 글리프 `seq` 를 null 로 두고 `optional-content` 제한을 단다 | pdf-ops |
+| V5 | **정정(2026-10-19)**. 꺼진 /OC 안의 fill/stroke 경로·이미지·셰이드·Tr 0–2 텍스트(Tr 4–6 의 표시 부분 포함)와 `/OC` 가 꺼진 Form·이미지 XObject 는 Device 에 오지 않는다. 클립(`W n`, Form BBox), Tr 3 텍스트, Tr 4–7 의 ET 재전송은 온다. pdf-ops 는 Device 에 오지 않는 글리프만 `seq` 를 null 로 두고, 꺼진 /OC 안의 연산 전부에 `optional-content` 제한을 단다 | pdf-ops |
+
+### 3.1 클립 텍스트 계수 규칙(확정 2026-10-19, 사용자 결정: "첫 등장 계수")
+
+원칙: 표시 글리프 1개 = glyphSeq 1개. 글리프는 처음 Device 에 도착한 콜백에서 번호를 받는다. MuPDF 가 BT 안의 Tr 4–7 글리프를 ET 에서 다시 보내는 것(ET 재전송)은 세지 않는다.
+
+core 판정(콜백 순서대로)
+
+| 단계 | 규칙 |
+|---|---|
+| 0 | gid -1 보조 글리프(ToUnicode 가 1코드를 여러 코드포인트로 매핑할 때 MuPDF 가 같은 trm 으로 덧붙이는 글리프)는 번호·센 목록 대상이 아니다. 같은 텍스트 객체에서 직전 글리프가 대응하는 CharInfo 의 text 에 유니코드를 붙인다(직전 글리프가 건너뛴 Tr 2·6 stroke 이거나 소비한 재전송이면 그 글리프의 CharInfo). 클립 재전송에는 보조 글리프가 들어가지 않는다 |
+| 1 | 직전 텍스트 콜백과 텍스트 객체 포인터가 같은 fillText·strokeText(Tr 2·6 의 fill→stroke)는 통째로 건너뛴다. 포인터 비교가 끝날 때까지 직전 콜백의 래퍼를 유지한다(즉시 destroy 하면 주소가 재사용된다) |
+| 2 | fillText·strokeText: 글리프마다 번호를 주고 키(폰트 동일성, gid, 글리프 trm 6값, 콜백 ctm 6값 — 모두 비트 단위)를 "센 목록" 에 넣는다. 같은 키가 여러 번 들어오면 각각 별도 항목이다 |
+| 3 | clipText·clipStrokeText·ignoreText: 글리프 키가 센 목록의 미소비 항목과 같으면 그 항목을 소비하고 세지 않는다(ET 재전송). 아니면 번호를 준다. clipText·clipStrokeText 에서 새로 센 글리프는 센 목록에 넣는다 |
+| 4 | 3단계에서 1개 이상 소비한 콜백이 끝나면 센 목록을 비운다 |
+| 5 | beginMask~endMask 사이 콜백은 세지 않고 센 목록도 건드리지 않는다 |
+
+- 폰트 동일성은 core 재량(폰트 포인터·이름 등)이되 한 페이지 실행 동안 같은 PDF 폰트에 대해 안정적이어야 한다.
+- 키에 ctm 을 넣는 이유: MuPDF 는 같은 Form 을 다른 위치에 그려도 글리프 trm 이 같고 콜백 ctm 만 다르다(메인 세션 재현 2026-10-19). trm 만으로는 다른 위치의 같은 글자를 재전송으로 오판한다. BT 안에서는 cm 을 쓸 수 없으므로 ET 재전송의 ctm 은 표시 시점 ctm 과 같다.
+- 3단계의 "소비" 는 같은 키 항목 하나를 지우는 것이다(집합이 아니라 항목 목록).
+
+CharInfo 표기(core)
+
+| 글리프 | render | clip | color |
+|---|---|---|---|
+| fill·stroke 콜백에서 센 글리프 | fill / stroke / fill-stroke | false. 이후 ET 재전송을 소비하면 true(Tr 4–6) | 색 |
+| ignoreText 에서 처음 센 글리프 | invisible | false | null |
+| 클립 콜백에서 처음 센 글리프, 같은 클립의 popClip 전에 fillShade·beginTile 이 옴(패턴 색 텍스트) | fill | false | null |
+| 그 밖에 클립 콜백에서 처음 센 글리프(Tr 7, 꺼진 /OC 의 Tr 4–6 재전송) | invisible | true | null |
+
+pdf-ops 에뮬레이션
+
+- MuPDF 전달 시점 표(`docs/m1-pdf-ops.md` 3.1)대로 글리프마다 첫 도착 시점을 계산해 번호를 준다.
+  - 표시 시점: 보이는 콘텐츠의 Tr 0–6, 모든 Tr 3, 패턴 색 텍스트.
+  - ET 재전송 시점: Tr 7 과 꺼진 /OC 의 Tr 4–6. 그 BT 의 마지막 글리프 Tr 이 4–7(clipText) 또는 3(ignoreText)일 때만 오며, 표시 순서대로 번호를 받는다.
+  - Device 에 오지 않음: BT 마지막 글리프가 Tr 0–2 인 경우의 Tr 7, 꺼진 /OC 의 Tr 0–2·Tr 4–6 표시분 등 → `seq` null, 제한 `clip-text` 또는 `optional-content`.
+- 패턴 색 텍스트·Tr 4–6 혼합도 같은 "첫 도착" 규칙이다. core 3단계가 실제 재전송을 소비하므로 양쪽 번호가 같다.
+- `SourceOp.glyphSeq` 는 그 연산 글리프 번호의 [최솟값, 최댓값 + 1) 이며, ET 시점 번호 때문에 연속이 아닐 수 있다. 글자별 값은 `text.glyphs[].seq` 를 쓴다.
+
+알려진 한계
+
+- 같은 폰트·gid·trm·ctm 이 비트 단위까지 같은 글리프(같은 위치에 같은 글자)를 다른 BT 에서 그린 뒤 클립·숨김 콜백으로 다시 오면 core 가 재전송으로 오판한다. 양쪽 총수가 어긋나며 `linkPage` 원점 재동기화로 국소 복구하고, 해당 글자는 `unmatched` 다.
+- 센 목록은 소비가 있을 때만 비우므로 재전송이 없는 BT 의 항목이 남는다. 오판 조건은 위와 같다.
+- ignoreText 형태의 ET 재전송에서 처음 센 Tr 4–7 글리프는 core 가 Tr 3 과 구분하지 못해 clip false 로 표기한다. 정확한 렌더 방식은 pdf-ops `TextShowInfo.renderMode` 다.
+
+채택하지 않은 안: core 안 A(클립 콜백 미계수 — 보이는 패턴 색 텍스트가 텍스트 층에서 빠짐), core 안 B'(BT 안 경로 칠하기·ignoreText 재전송·Tr 7 순서에서 어긋남).
 
 ## 4. 타입(packages/shared-types/src)
 
 | 파일 | 내용 |
 |---|---|
 | `geometry.ts` | Rect·Point·Quad(MuPDF 순서 ul, ur, ll, lr)·Matrix·RGB·ByteRange |
-| `page-model.ts` | PageModel(fonts·chars·lines·blocks·paths·images·shades·glyphCount·paintCount·warnings), CharInfo(glyphSeq·text·gid·fontId·size·origin·quad·color·render·clip·wmode·line), PaintColor(원래 색공간 + sRGB 근사), PathSegment, ExtractRequest |
+| `page-model.ts` | PageModel(fonts·chars·lines·blocks·paths·images·shades·glyphCount·paintCount·warnings), CharInfo(glyphSeq·text·gid·fontId·size·origin·quad·color·render·clip·wmode·line), LineInfo(bbox·wmode·dir·block·chars·spaceAfter), PaintColor(원래 색공간 + sRGB 근사), PathSegment, ExtractRequest |
 | `source-map.ts` | SourceMap·SourceOp(kind·stream·range·formPath·ctm·clipDepth·mcids·optionalContent·text·glyphSeq·paintSeq·limits)·TextShowInfo·SourceGlyph(code·byteRange·origin·seq)·FormStep·ContentStreamRef/Info·EDIT_LIMIT_REASONS·PageLinkage·LinkStats |
 | `search.ts` | SearchRequest(query·caseSensitive·startPage·pageLimit·maxHits)·SearchHit(pageIndex·quads)·SearchResult |
 | `save.ts` | SaveMethod·ChangeKind·HeapLevel·SaveHeapEstimate(pdf-ops HeapEstimate 와 같은 모양)·SavePlan·SaveRequest·SaveResult(+heap) |
 | `rpc.ts` | OpenResult(+inputMode)·PageInfo·RenderRequest·RenderedPage·PdfWorkerApi(open·getPageInfo·renderPage·extractPage·getSourceMap·linkPage·searchText·planSave·save·close) |
+
+읽기 텍스트 조립 규칙(수정 5, 2026-10-19). 텍스트 선택 층 복사와 M1 완료 기준 "복사 = 추출 텍스트" 의 기준이다.
+
+- 줄은 `PageModel.lines` 순서, 줄 안은 `LineInfo.chars` 순서로 각 `CharInfo.text` 를 잇는다.
+- `LineInfo.spaceAfter` 의 각 k 위치(`chars[k]` 뒤)에 공백 하나를 넣는다. core 는 구조화 텍스트의 공백 중 Device 글리프와 짝이 없는 것을 여기에 담는다(TJ 간격으로 단어를 나눈 LaTeX 등 문서에서 공백이 빠지지 않게 하기 위함, `docs/m1-core.md` 7.1).
+- 같은 블록의 줄 사이 "\n", 블록 사이 "\n\n". 줄에 속하지 않은 글자(`line` -1)는 뷰어 재량으로 뒤에 붙인다.
+- 완료 기준 비교는 공백류를 접어서 한다(연속 공백·줄바꿈 → 공백 하나).
 
 계약 커밋에 같이 넣은 연결부
 
