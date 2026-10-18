@@ -114,6 +114,8 @@ export class ViewerController {
   private loadToken = 0;
   private searchToken = 0;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private searchRunning = false;
+  private searchPending = false;
   private disposed = false;
   private readonly loggedKinds = new Set<string>();
 
@@ -369,6 +371,7 @@ export class ViewerController {
 
   closeFind(): void {
     this.clearDebounce();
+    this.searchPending = false;
     this.searchToken++;
     this.patchFind({ ...clearResults(this.state.find), open: false });
   }
@@ -379,6 +382,7 @@ export class ViewerController {
     this.clearDebounce();
     this.searchToken++;
     this.patchFind({ ...clearResults(find), query });
+    if (query === '') this.searchPending = false;
     if (query === '' || this.state.disabled.search) return;
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
@@ -421,9 +425,31 @@ export class ViewerController {
     }
   }
 
+  /**
+   * 검색 실행. Worker 는 요청을 순서대로 처리하므로, 이전 검색이 끝나기 전에 온 요청은 최신 질의 하나만
+   * 대기시키고 끝난 뒤 이어서 실행한다(입력이 이어질 때 검색이 Worker 에 쌓이지 않게).
+   */
   private async runSearch(): Promise<void> {
+    if (this.state.find.query === '' || this.state.disabled.search) return;
+    if (this.searchRunning) {
+      this.searchPending = true;
+      this.patchFind({ ...this.state.find, status: 'searching', message: null });
+      return;
+    }
+    this.searchRunning = true;
+    try {
+      await this.searchOnce();
+    } finally {
+      this.searchRunning = false;
+    }
+    if (this.searchPending && !this.disposed) {
+      this.searchPending = false;
+      void this.runSearch();
+    }
+  }
+
+  private async searchOnce(): Promise<void> {
     const { query, caseSensitive } = this.state.find;
-    if (query === '' || this.state.disabled.search) return;
     const token = ++this.searchToken;
     const startPage = this.state.pageIndex;
     this.patchFind({ ...this.state.find, status: 'searching', message: null });
