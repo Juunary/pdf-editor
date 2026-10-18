@@ -7,7 +7,7 @@
 | 기준 | `m1` 브랜치의 계약 커밋(이 문서와 `packages/shared-types/src` 를 포함한 커밋). 모든 M1 작업은 이 커밋에서 시작한다 |
 | 변경 권한 | `packages/shared-types`, 루트 설정(eslint·tsconfig.base·turbo·pnpm-workspace), `pnpm-lock.yaml` 은 메인 세션만 바꾼다(PLAN.md 10절) |
 | 제외 | DocumentModel(M2), EditOp·EditPlan(M3)은 각 마일스톤 시작 시 같은 방식으로 추가한다 |
-| 변경 이력 | 수정 1(956c57b): V5 정정, paintSeq 세부(Form BBox·패턴·SMask), V3 결정 대기. 수정 2(2026-10-19): V3 계수 규칙 확정 — 사용자 결정으로 "첫 등장 계수"(3.1). 수정 3(2026-10-19): 합자 보조 글리프(gid -1) 미계수, 타일링 패턴 직접 실행 경로, 마스크 있는 이미지 콜백 2개. 수정 4(2026-10-19): 재전송 판정 키에 콜백 ctm 포함, 센 목록은 항목 단위 소비 |
+| 변경 이력 | 수정 1(956c57b): V5 정정, paintSeq 세부(Form BBox·패턴·SMask), V3 결정 대기. 수정 2(2026-10-19): V3 계수 규칙 확정 — 사용자 결정으로 "첫 등장 계수"(3.1). 수정 3(2026-10-19): 합자 보조 글리프(gid -1) 미계수, 타일링 패턴 직접 실행 경로, 마스크 있는 이미지 콜백 2개. 수정 4(2026-10-19): 재전송 판정 키에 콜백 ctm 포함, 센 목록은 항목 단위 소비. 수정 5(2026-10-19): LineInfo.spaceAfter(합성 공백 위치) 추가, 읽기 텍스트 조립 규칙 |
 
 ## 1. M1 완료 기준(PLAN.md 6절)
 
@@ -108,11 +108,18 @@ pdf-ops 에뮬레이션
 | 파일 | 내용 |
 |---|---|
 | `geometry.ts` | Rect·Point·Quad(MuPDF 순서 ul, ur, ll, lr)·Matrix·RGB·ByteRange |
-| `page-model.ts` | PageModel(fonts·chars·lines·blocks·paths·images·shades·glyphCount·paintCount·warnings), CharInfo(glyphSeq·text·gid·fontId·size·origin·quad·color·render·clip·wmode·line), PaintColor(원래 색공간 + sRGB 근사), PathSegment, ExtractRequest |
+| `page-model.ts` | PageModel(fonts·chars·lines·blocks·paths·images·shades·glyphCount·paintCount·warnings), CharInfo(glyphSeq·text·gid·fontId·size·origin·quad·color·render·clip·wmode·line), LineInfo(bbox·wmode·dir·block·chars·spaceAfter), PaintColor(원래 색공간 + sRGB 근사), PathSegment, ExtractRequest |
 | `source-map.ts` | SourceMap·SourceOp(kind·stream·range·formPath·ctm·clipDepth·mcids·optionalContent·text·glyphSeq·paintSeq·limits)·TextShowInfo·SourceGlyph(code·byteRange·origin·seq)·FormStep·ContentStreamRef/Info·EDIT_LIMIT_REASONS·PageLinkage·LinkStats |
 | `search.ts` | SearchRequest(query·caseSensitive·startPage·pageLimit·maxHits)·SearchHit(pageIndex·quads)·SearchResult |
 | `save.ts` | SaveMethod·ChangeKind·HeapLevel·SaveHeapEstimate(pdf-ops HeapEstimate 와 같은 모양)·SavePlan·SaveRequest·SaveResult(+heap) |
 | `rpc.ts` | OpenResult(+inputMode)·PageInfo·RenderRequest·RenderedPage·PdfWorkerApi(open·getPageInfo·renderPage·extractPage·getSourceMap·linkPage·searchText·planSave·save·close) |
+
+읽기 텍스트 조립 규칙(수정 5, 2026-10-19). 텍스트 선택 층 복사와 M1 완료 기준 "복사 = 추출 텍스트" 의 기준이다.
+
+- 줄은 `PageModel.lines` 순서, 줄 안은 `LineInfo.chars` 순서로 각 `CharInfo.text` 를 잇는다.
+- `LineInfo.spaceAfter` 의 각 k 위치(`chars[k]` 뒤)에 공백 하나를 넣는다. core 는 구조화 텍스트의 공백 중 Device 글리프와 짝이 없는 것을 여기에 담는다(TJ 간격으로 단어를 나눈 LaTeX 등 문서에서 공백이 빠지지 않게 하기 위함, `docs/m1-core.md` 7.1).
+- 같은 블록의 줄 사이 "\n", 블록 사이 "\n\n". 줄에 속하지 않은 글자(`line` -1)는 뷰어 재량으로 뒤에 붙인다.
+- 완료 기준 비교는 공백류를 접어서 한다(연속 공백·줄바꿈 → 공백 하나).
 
 계약 커밋에 같이 넣은 연결부
 
