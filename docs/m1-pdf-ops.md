@@ -182,7 +182,15 @@ Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`t
 | R9 | 주석 외관·SMask 그룹·패턴 셀·Type3 글리프 프로시저 스트림은 SourceOp 를 만들지 않는다(L4) | 편집 대상 아님 | — |
 | R10 | MuPDF 는 클립 텍스트 누적 중 `cm` 에서 예외로 페이지 해석을 끝낸다(core `runPageContents` 도 예외) | 그 페이지는 PageModel 이 없다 | 인터프리터도 같은 지점에서 멈추고 오류를 기록한다. core 쪽 예외 처리는 통합 시 확인 |
 
-## 8. Action Items
+## 8. 검증(실측 2026-10-19)
+
+| 명령 | 결과 |
+|---|---|
+| `pnpm exec turbo run build typecheck test --force --continue` | 18개 중 17개 통과. 실패 1개 = `@pdf-editor/core#test` 의 계약 시점 단언(P6). pdf-ops 테스트 11개 파일 269건 통과 |
+| `pnpm lint` | 통과 |
+| 추적 파일 Prettier | 통과 |
+
+## 9. Action Items
 
 | # | 내용 | 담당 |
 |---|---|---|
@@ -191,3 +199,4 @@ Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`t
 | P3 | 통합 시 core PageModel 로 fixtures/m0·코퍼스 매칭률 재측정(테스트 헬퍼와 core 판정이 같은지 확인) | 메인 세션(통합) |
 | P4 | 코퍼스에서 R1·R2·R4 빈도 확인 후 에뮬레이션 추가 여부 결정 | M1 통합 후 |
 | P5 | core 에 R10(페이지 해석 예외) 전달, 정책 결정 시 4절 퍼징 수치 참고 | 메인 세션 |
+| P6 | `packages/core/test/session.test.ts:74` 의 계약 시점 단언 `getSourceMap` → "M1 미구현" 예외는 pdf-ops 구현으로 실패한다(허용 파일 밖이라 수정하지 않음). 통합 시 그 줄을 지우거나 실제 결과 검증으로 바꾼다 | 메인 세션(통합) |
