@@ -7,7 +7,7 @@
 | 기준 | `m1` 브랜치의 계약 커밋(이 문서와 `packages/shared-types/src` 를 포함한 커밋). 모든 M1 작업은 이 커밋에서 시작한다 |
 | 변경 권한 | `packages/shared-types`, 루트 설정(eslint·tsconfig.base·turbo·pnpm-workspace), `pnpm-lock.yaml` 은 메인 세션만 바꾼다(PLAN.md 10절) |
 | 제외 | DocumentModel(M2), EditOp·EditPlan(M3)은 각 마일스톤 시작 시 같은 방식으로 추가한다 |
-| 변경 이력 | 수정 1(956c57b): V5 정정, paintSeq 세부(Form BBox·패턴·SMask), V3 결정 대기. 수정 2(2026-10-19): V3 계수 규칙 확정 — 사용자 결정으로 "첫 등장 계수"(3.1) |
+| 변경 이력 | 수정 1(956c57b): V5 정정, paintSeq 세부(Form BBox·패턴·SMask), V3 결정 대기. 수정 2(2026-10-19): V3 계수 규칙 확정 — 사용자 결정으로 "첫 등장 계수"(3.1). 수정 3(2026-10-19): 합자 보조 글리프(gid -1) 미계수, 타일링 패턴 직접 실행 경로, 마스크 있는 이미지 콜백 2개 |
 
 ## 1. M1 완료 기준(PLAN.md 6절)
 
@@ -31,7 +31,7 @@
 
 | 번호 | 세는 대상 | 규칙 |
 |---|---|---|
-| glyphSeq | 텍스트 콜백(fillText·strokeText·clipText·clipStrokeText·ignoreText)의 글리프 | 표시 글리프마다 1. 처음 Device 에 도착한 콜백에서 센다. fill→stroke(Tr 2·6, 포인터 동일 연속)는 1회, Tr 4–7 클립의 ET 재전송은 세지 않는다. 판정 규칙은 3.1(확정) |
+| glyphSeq | 텍스트 콜백(fillText·strokeText·clipText·clipStrokeText·ignoreText)의 글리프 | 표시 글리프마다 1. 처음 Device 에 도착한 콜백에서 센다. fill→stroke(Tr 2·6, 포인터 동일 연속)는 1회, Tr 4–7 클립의 ET 재전송은 세지 않는다. gid -1 보조 글리프(ToUnicode 1코드→여러 코드포인트)는 세지 않고 직전 글리프의 text 에 붙인다. 판정 규칙은 3.1(확정) |
 | paintSeq | 텍스트 외 그리기 콜백(fillPath·strokePath·clipPath·clipStrokePath·fillShade·fillImage·fillImageMask·clipImageMask) | 콜백마다 1. 채움+선(B·B*·b·b*)은 2. 경로가 비어도 칠하기 연산은 콜백을 보낸다. 세부는 아래 표 |
 
 - core 는 `runPageContents`(주석 제외)를 항등 행렬로 실행해 센다. pdf-ops 인터프리터는 같은 규칙으로 센다.
@@ -42,9 +42,9 @@ paintSeq 세부(실측 2026-10-19, `docs/m1-pdf-ops.md` 2·5절, `docs/m1-core.m
 |---|---|---|
 | Form XObject `Do` | 내용보다 먼저 BBox `clipPath` 1개(+ 끝에 popClip) | 1. SourceMap 에서는 그 `Do` 연산의 `paintSeq` |
 | 셰이딩 패턴 색 f / S / B | clipPath+fillShade / clipStrokePath+fillShade / 4개 | 콜백 수만큼 |
-| 타일링 패턴 색 칠하기 | clipPath + beginTile | clipPath 1. core 는 `beginTile` 이 1(캐시됨)을 돌려 MuPDF 가 셀 내용을 실행하지 않게 한다. pdf-ops 는 패턴 셀 스트림을 해석하지 않는다 |
+| 타일링 패턴 색 칠하기 | (칠할 영역/XStep > 1 또는 영역/YStep > 1, 블렌드 없음) clipPath + beginTile. 그 밖은 beginTile 없이 clipPath + 셀 내용 콜백을 타일 수만큼 직접 실행 | clipPath 1. beginTile 경로: core 는 `beginTile` 이 1(캐시됨)을 돌려 셀 내용을 실행시키지 않고, pdf-ops 는 셀 스트림을 해석하지 않는다. 직접 실행 경로: core 는 받은 대로 세고, pdf-ops 는 실행 조건과 타일 수를 계산해 셀 내용 번호를 소비한다. 셀 내용의 paintSeq 는 그 패턴 칠하기 연산의 `paintSeq` 에 포함하고 그 연산에 `outside-page-content` 제한을 단다. 셀 내용 글리프는 소유 연산 없이 번호만 소비한다(해당 글자는 `unmatched`) |
 | 소프트 마스크(SMask) | beginMask ~ endMask 사이 마스크 내용 콜백 | `beginMask`~`endMask` 사이 콜백은 glyphSeq·paintSeq 모두 세지 않는다. pdf-ops 는 SMask 그룹 스트림을 해석하지 않는다. 그 구간 밖의 콜백(예: 마스크 앞의 clipPath)은 센다 — pdf-ops 가 실측으로 확인 |
-| 이미지 XObject / 인라인 이미지 / `/IM true` 인라인 | fillImage / fillImage / fillImageMask | 1 |
+| 이미지 XObject / 인라인 이미지 / `/IM true` 인라인 | 마스크 없음: fillImage / fillImage / fillImageMask. `/SMask` 또는 스트림 `/Mask`(스텐실): clipImageMask → fillImage(+popClip). 색 키 `/Mask` 배열: fillImage | 마스크 없음 1, `/SMask`·스트림 `/Mask` 2, 색 키 마스크 1 |
 | `ca`·블렌드 | beginGroup/endGroup | 세지 않음 |
 - 매칭(`linkPage`): 같은 번호끼리 짝짓고, 원점 오차가 `originTolerance`(기본 1pt) 이하인지 확인한다. 번호가 어긋난 구간은 원점으로 재동기화를 시도하고, 실패한 글자·도형은 -1 과 `unmatched` 제한으로 남긴다. 총수 차이는 `LinkStats` 에 기록한다.
 
@@ -66,6 +66,7 @@ core 판정(콜백 순서대로)
 
 | 단계 | 규칙 |
 |---|---|
+| 0 | gid -1 보조 글리프(ToUnicode 가 1코드를 여러 코드포인트로 매핑할 때 MuPDF 가 같은 trm 으로 덧붙이는 글리프)는 번호·센 목록 대상이 아니다. 같은 텍스트 객체에서 직전 글리프가 대응하는 CharInfo 의 text 에 유니코드를 붙인다(직전 글리프가 건너뛴 Tr 2·6 stroke 이거나 소비한 재전송이면 그 글리프의 CharInfo). 클립 재전송에는 보조 글리프가 들어가지 않는다 |
 | 1 | 직전 텍스트 콜백과 텍스트 객체 포인터가 같은 fillText·strokeText(Tr 2·6 의 fill→stroke)는 통째로 건너뛴다. 포인터 비교가 끝날 때까지 직전 콜백의 래퍼를 유지한다(즉시 destroy 하면 주소가 재사용된다) |
 | 2 | fillText·strokeText: 글리프마다 번호를 주고 키(폰트 동일성, gid, trm 6값 비트 단위)를 "센 목록" 에 넣는다 |
 | 3 | clipText·clipStrokeText·ignoreText: 글리프 키가 센 목록의 미소비 항목과 같으면 그 항목을 소비하고 세지 않는다(ET 재전송). 아니면 번호를 준다. clipText·clipStrokeText 에서 새로 센 글리프는 센 목록에 넣는다 |

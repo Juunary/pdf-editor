@@ -131,7 +131,10 @@ export interface SourceOp {
    * 글자별 값은 text.glyphs[].seq 를 쓴다. 번호를 받은 글리프가 없으면 생략.
    */
   glyphSeq?: [number, number];
-  /** path-paint·inline-image·xobject(이미지·Form BBox 클립)·shading 이 만든 paintSeq 들. */
+  /**
+   * path-paint·inline-image·xobject(이미지·Form BBox 클립)·shading 이 만든 paintSeq 들.
+   * 타일링 패턴 직접 실행 경로의 셀 내용 번호는 그 패턴 칠하기 연산에 포함한다(계약 3절 세부 표).
+   */
   paintSeq?: number[];
   /** 이 연산을 편집할 때의 제한 사유. 없으면 빈 배열. */
   limits: EditLimitReason[];
