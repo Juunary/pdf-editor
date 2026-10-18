@@ -22,10 +22,15 @@ import type {
   SearchResult,
   SourceMap,
 } from '@pdf-editor/shared-types';
+import { extractPageModel } from './extract.js';
 import { openPdf } from './open.js';
+import { pageRotation } from './page-geometry.js';
 import { renderPageRgba } from './render.js';
 import { searchDocument } from './search.js';
 import { wasmHeapBytes } from './wasm-module.js';
+
+/** 추출 모델을 캐시하는 최대 쪽 수(요청 종류별로 센다). */
+const PAGE_CACHE_LIMIT = 16;
 
 /**
  * 문서 1개의 상태. 뷰어 소유 Worker 안에서만 생성한다(PLAN.md 5.2).
@@ -35,6 +40,7 @@ export class PdfSession {
   #original: Uint8Array | null = null;
   #doc: mupdf.PDFDocument | null = null;
   #inputMode: InputMode = 'buffer';
+  #pageCache = new Map<string, PageModel>();
 
   get document(): mupdf.PDFDocument {
     if (!this.#doc) throw new Error('열린 문서 없음');
@@ -74,13 +80,11 @@ export class PdfSession {
     const page = this.document.loadPage(pageIndex);
     try {
       const bounds = page.getBounds() as Rect;
-      const rotate = page.getObject().getInheritable('Rotate');
-      const rotation = rotate.isNumber() ? ((rotate.asNumber() % 360) + 360) % 360 : 0;
       return {
         pageIndex,
         bounds,
         size: { width: bounds[2] - bounds[0], height: bounds[3] - bounds[1] },
-        rotation,
+        rotation: pageRotation(page),
       };
     } finally {
       page.destroy();
@@ -98,10 +102,43 @@ export class PdfSession {
     }
   }
 
-  /** M1 core 작업이 구현한다(docs/m1-contract.md 5.2). */
+  /**
+   * 페이지 추출 모델. 같은 요청은 문서가 바뀌기 전까지 캐시하고(최근 사용 순 최대 PAGE_CACHE_LIMIT 쪽),
+   * 같은 객체를 돌려준다. 호출자는 바꾸지 않는다. 문서를 편집하면 `invalidatePageCache` 를 부른다.
+   */
   extractPage(request: ExtractRequest): PageModel {
-    void request;
-    throw new Error('M1 미구현: core extractPage');
+    const key = `${request.pageIndex}:${request.includePathSegments === true ? 1 : 0}`;
+    const cached = this.#pageCache.get(key);
+    if (cached) {
+      // 최근 사용 순으로 올린다.
+      this.#pageCache.delete(key);
+      this.#pageCache.set(key, cached);
+      return cached;
+    }
+    const page = this.document.loadPage(request.pageIndex);
+    let model: PageModel;
+    try {
+      model = extractPageModel(page, request);
+    } finally {
+      page.destroy();
+    }
+    this.#pageCache.set(key, model);
+    if (this.#pageCache.size > PAGE_CACHE_LIMIT) {
+      const oldest = this.#pageCache.keys().next();
+      if (!oldest.done) this.#pageCache.delete(oldest.value);
+    }
+    return model;
+  }
+
+  /** 추출 캐시를 비운다. 쪽을 지정하면 그 쪽만. 문서 내용(콘텐츠·리소스·쪽 순서)이 바뀐 뒤에 부른다. */
+  invalidatePageCache(pageIndex?: number): void {
+    if (pageIndex === undefined) {
+      this.#pageCache.clear();
+      return;
+    }
+    for (const key of [...this.#pageCache.keys()]) {
+      if (key.startsWith(`${pageIndex}:`)) this.#pageCache.delete(key);
+    }
   }
 
   getSourceMap(pageIndex: number): SourceMap {
@@ -152,6 +189,7 @@ export class PdfSession {
   }
 
   close(): void {
+    this.#pageCache.clear();
     this.#doc?.destroy();
     this.#doc = null;
     this.#original = null;
