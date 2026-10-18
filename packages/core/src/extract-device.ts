@@ -27,6 +27,12 @@ import { intersectRect, transformPoint, transformRect } from './page-geometry.js
 export interface RawGlyph {
   gid: number;
   unicode: number;
+  /**
+   * 같은 글리프에 딸린 추가 유니코드. ToUnicode 가 글리프 하나를 여러 글자("Th", "fi", 점선 …)로
+   * 대응시키면 MuPDF 는 글리프를 gid 로 한 번 보내고, 나머지 글자를 gid -1(폭 0) 항목으로 잇는다.
+   * 그 항목은 글리프가 아니므로 세지 않고 여기에 모은다.
+   */
+  extra: number[];
   fontId: number;
   /** 글리프 공간(em, y 위) → 페이지 공간. e·f 가 기준선 원점. */
   m: Matrix;
@@ -130,9 +136,16 @@ export class DeviceCollector {
   clipText(text: mupdf.Text, ctm: Matrix): void {
     this.#releasePrev();
     let cursor = Math.max(this.#clipScan, this.#windowStart);
+    let pushed: RawGlyph | null = null;
     try {
       text.walk({
         showGlyph: (font, trm, gid, unicode, wmode) => {
+          if (gid < 0) {
+            // 앞 글리프의 추가 유니코드. 새로 센 글리프에만 붙인다(이미 센 글리프는 fill/stroke 에서 받았다).
+            pushed?.extra.push(unicode);
+            return;
+          }
+          pushed = null;
           const known = this.#fontIds.get(font.pointer);
           const m = mupdf.Matrix.concat(trm, ctm) as Matrix;
           for (let i = cursor; known !== undefined && i < this.glyphs.length; i++) {
@@ -151,9 +164,10 @@ export class DeviceCollector {
           }
           this.clipOnlyGlyphs++;
           if (this.clipPolicy === 'count-new') {
-            this.glyphs.push({
+            pushed = {
               gid,
               unicode,
+              extra: [],
               fontId: this.#fontId(font),
               m,
               size: Math.hypot(m[2], m[3]),
@@ -162,7 +176,8 @@ export class DeviceCollector {
               clip: true,
               rgb: null,
               advance: font.advanceGlyph(gid, wmode),
-            });
+            };
+            this.glyphs.push(pushed);
           }
         },
       });
@@ -205,11 +220,18 @@ export class DeviceCollector {
     try {
       text.walk({
         showGlyph: (font, trm, gid, unicode, wmode) => {
+          if (gid < 0) {
+            // 앞 글리프의 추가 유니코드(ToUnicode 가 여러 글자인 글리프). 글리프가 아니므로 세지 않는다.
+            if (this.glyphs.length > first)
+              this.glyphs[this.glyphs.length - 1]!.extra.push(unicode);
+            return;
+          }
           const fontId = this.#fontId(font);
           const m = mupdf.Matrix.concat(trm, ctm) as Matrix;
           this.glyphs.push({
             gid,
             unicode,
+            extra: [],
             fontId,
             m,
             size: Math.hypot(m[2], m[3]),

@@ -39,6 +39,17 @@ export interface ExtractResult {
   stats: ExtractStats;
 }
 
+/**
+ * mupdf.js 는 fillShade 콜백의 Shade 래퍼를 참조를 늘리지 않고 만든다(Path·Text·ColorSpace·
+ * StrokeState·Image 는 늘린다). 그 래퍼가 GC 되면 소유하지 않은 참조를 놓아 셰이드가 해제되고
+ * 이후 같은 문서를 실행할 때 힙이 손상된 것처럼 실패한다("Unexpected mesh type …", 실측: 실제
+ * 코퍼스 문서, 합성 셰이딩+GC 재현). 종료자 등록을 해제해 빌린 참조를 놓지 않게 한다.
+ */
+function releaseBorrowed(shade: mupdf.Shade): void {
+  const ctor = shade.constructor as unknown as { _finalizer?: FinalizationRegistry<unknown> };
+  ctor._finalizer?.unregister(shade);
+}
+
 export interface ExtractOptions {
   /** clipText·clipStrokeText 글리프 처리(기본 `DEFAULT_CLIP_TEXT_POLICY`). */
   clipText?: ClipTextPolicy;
@@ -135,7 +146,7 @@ function build(
     },
     fillShade: (shade, ctm, alpha) => {
       collector.guard(() => collector.fillShade(shade, ctm, alpha));
-      shade.destroy();
+      releaseBorrowed(shade);
     },
     fillImage: (image, ctm, alpha) => {
       collector.guard(() => collector.fillImage(image, ctm, alpha));
@@ -168,7 +179,16 @@ function build(
   }
   if (collector.error !== null) throw collector.error;
 
-  const stext = readStructuredText(page);
+  let stext: StextData;
+  try {
+    stext = readStructuredText(page);
+  } catch (e) {
+    // 구조화 텍스트가 실패해도(손상된 셰이딩 메시 등) Device 에서 얻은 정보로 모델을 만든다.
+    // 모든 글자는 quad 근사·line -1 이 된다.
+    const reason = e instanceof Error ? e.message : String(e);
+    messages.push(`구조화 텍스트 생성 실패: ${reason}`);
+    stext = { chars: [], lines: [], blocks: [] };
+  }
   const matches = matchGlyphs(collector.glyphs, stext);
   const { chars, lines, blocks, approximated } = assemble(collector.glyphs, matches, stext);
 
@@ -264,7 +284,7 @@ function assemble(
     if (!match) approximated.push(glyphSeq);
     return {
       glyphSeq,
-      text: glyphText(g.unicode),
+      text: glyphText(g.unicode, g.extra),
       gid: g.gid,
       fontId: g.fontId,
       size: g.size,
