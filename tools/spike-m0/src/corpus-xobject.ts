@@ -35,9 +35,13 @@ export interface FormEditResult {
   usages: number;
   pages: number[];
   textShowOps: number;
+  /** /BBox 가 [x0 y0 x1 y1](x0≤x1, y0≤y1) 형태였는지 */
+  bboxNormalized: boolean;
   selected: { pageIndex: number; path: string; depth: number; pageBox: Rect };
   /** v1 제한 조건(PLAN.md 3.4 L1·L2·L7)과 L3(새 텍스트가 BBox 밖) */
   limits: { L1: boolean; L2: boolean; L3: boolean; L7: boolean };
+  /** 같은 줄 상자에 대한 pdf-ops `outsideFormBBox` 결과(정규화 안 된 /BBox 에서 오판 여부 확인용) */
+  pdfOpsOutsideFormBBox: boolean | null;
   redact: { ok: boolean; error: string | null; ms: number; newForms: number };
   /** 선택 사용 위치 박스 안 글자 수(공백 제외): 편집 전 → redaction 후 */
   charsInBox: { before: number; after: number };
@@ -142,6 +146,7 @@ export function runFormUsageEdit(
       usages: usages.length,
       pages: pages.slice(0, 20),
       textShowOps,
+      bboxNormalized: true,
       selected: {
         pageIndex: sel.pageIndex,
         path: pathKey(sel),
@@ -154,6 +159,7 @@ export function runFormUsageEdit(
         L3: false,
         L7: !form.get('OC').isNull(),
       },
+      pdfOpsOutsideFormBBox: null,
       redact: { ok: false, error: null, ms: 0, newForms: 0 },
       charsInBox: { before: 0, after: 0 },
       outsideTextSame: null,
@@ -181,7 +187,15 @@ export function runFormUsageEdit(
     }
 
     // 1. 선택 사용 위치만 인스턴스화 + Form BBox 전체 텍스트 제거(선화·이미지 보존)
-    const bbox = [0, 1, 2, 3].map((i) => form.get('BBox').get(i).asNumber()) as Rect;
+    // /BBox 는 정규화되지 않은 사각형일 수 있다(실측: nasa-eo Form [0 792 612 0]).
+    const raw = [0, 1, 2, 3].map((i) => form.get('BBox').get(i).asNumber());
+    const bbox: Rect = [
+      Math.min(raw[0]!, raw[2]!),
+      Math.min(raw[1]!, raw[3]!),
+      Math.max(raw[0]!, raw[2]!),
+      Math.max(raw[1]!, raw[3]!),
+    ];
+    result.bboxNormalized = raw[0]! <= raw[2]! && raw[1]! <= raw[3]!;
     let edit: ReturnType<typeof redactFormUsage>;
     try {
       const t0 = performance.now();
@@ -216,8 +230,18 @@ export function runFormUsageEdit(
       ascent: 0.88,
       box,
     });
-    const lineBox: Rect = [box[0], box[3] - 1.2 * fontSize, box[0] + 1, box[3]];
-    result.limits.L3 = layout.overflow || outsideFormBBox(edit.target, lineBox);
+    const line = layout.lines[0];
+    const lineBox: Rect = line
+      ? [line.x, line.y - 0.25 * fontSize, line.x + 1, line.y + 0.88 * fontSize]
+      : box;
+    // pdf-ops outsideFormBBox 는 /BBox 를 정규화하지 않으므로 여기서는 정규화한 bbox 로 판정한다.
+    result.limits.L3 =
+      layout.overflow ||
+      lineBox[0] < bbox[0] ||
+      lineBox[1] < bbox[1] ||
+      lineBox[2] > bbox[2] ||
+      lineBox[3] > bbox[3];
+    result.pdfOpsOutsideFormBBox = outsideFormBBox(edit.target, lineBox);
     const name = addFontResource(doc, edit.target, embedded.ref);
     appendFormContent(
       edit.target,

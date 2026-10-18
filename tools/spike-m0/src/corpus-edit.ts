@@ -129,7 +129,10 @@ export interface ParagraphResult {
     targetLinesRemaining: number;
     neighborLinesTotal: number;
     neighborLinesLost: number;
+    /** 편집 영역 밖 다른 픽셀 수(엄격)·GLYPH_DELTA 초과 수(판정 기준)·최대 채널 차이 */
     outsidePx: number;
+    outsideStrongPx: number;
+    outsideMaxDelta: number;
     outsideBbox: [number, number, number, number] | null;
   };
   layout: {
@@ -148,6 +151,7 @@ export interface ParagraphResult {
     vsReferenceMaxDelta: number;
     referenceInkPx: number;
     outsidePx: number;
+    outsideStrongPx: number;
   } | null;
   reopen: {
     textFound: boolean;
@@ -156,6 +160,7 @@ export interface ParagraphResult {
     searchHits: Record<string, number>;
     vsPreSavePx: number;
     outsidePx: number;
+    outsideStrongPx: number;
   } | null;
   /** Poppler 판정용(픽셀 변환은 호출자) */
   exclusion: Rect;
@@ -195,11 +200,22 @@ const squash = (s: string) => s.replace(/\s+/g, '');
  */
 export const GLYPH_DELTA = 96;
 
-function diffStats(a: Raster, b: Raster): { differing: number; strong: number; maxDelta: number } {
+/** 다른 픽셀 수·GLYPH_DELTA 초과 수·최대 채널 차이. exclude(픽셀 좌표) 안은 세지 않는다. */
+function diffStats(
+  a: Raster,
+  b: Raster,
+  exclude?: Rect,
+): { differing: number; strong: number; maxDelta: number } {
   let differing = 0;
   let strong = 0;
   let maxDelta = 0;
   for (let i = 0; i < a.pixels.length; i += 3) {
+    if (exclude) {
+      const p = i / 3;
+      const x = p % a.width;
+      const y = (p - x) / a.width;
+      if (x >= exclude[0] && x < exclude[2] && y >= exclude[1] && y < exclude[3]) continue;
+    }
     const d = Math.max(
       Math.abs(a.pixels[i]! - b.pixels[i]!),
       Math.abs(a.pixels[i + 1]! - b.pixels[i + 1]!),
@@ -315,6 +331,11 @@ export interface CorpusEditInput {
   bytes: Uint8Array;
   paragraphs: ParagraphContext[];
   fontBytes: Uint8Array;
+  /**
+   * 저장 전 `doc.subsetFonts()` 호출(기본 true). MuPDF 1.28.1 은 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트의
+   * /Widths 를 정수로 반올림·미사용 글리프 0 으로 바꾼다(실측). 그 영향을 분리하는 대조 실행에서 false.
+   */
+  subsetFonts?: boolean;
   onPhase?: (phase: string) => void;
 }
 
@@ -416,6 +437,8 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
           neighborLinesTotal: neighborLines.length,
           neighborLinesLost: 0,
           outsidePx: -1,
+          outsideStrongPx: -1,
+          outsideMaxDelta: -1,
           outsideBbox: null,
         },
         layout: null,
@@ -466,7 +489,10 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         textAfter,
       );
       const outside = diffRasters(before, redacted, exclusionPx);
+      const outsideStats = diffStats(before, redacted, exclusionPx);
       result.redaction.outsidePx = outside.differing;
+      result.redaction.outsideStrongPx = outsideStats.strong;
+      result.redaction.outsideMaxDelta = outsideStats.maxDelta;
       result.redaction.outsideBbox = outside.bbox;
       phase(`redact:${k}`);
 
@@ -526,7 +552,10 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         vsReferenceStrongPx: glyph.strong,
         vsReferenceMaxDelta: glyph.maxDelta,
         referenceInkPx: inkPixels(reference, exclusionPx),
-        outsidePx: diffRasters(before, preSave, exclusionPx).differing,
+        ...(() => {
+          const o = diffStats(before, preSave, exclusionPx);
+          return { outsidePx: o.differing, outsideStrongPx: o.strong };
+        })(),
       };
       page.destroy();
       phase(`content:${k}`);
@@ -552,7 +581,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
     if (embedded !== null) {
       try {
         const ts = performance.now();
-        doc.subsetFonts();
+        if (input.subsetFonts !== false) doc.subsetFonts();
         save.subsetMs = performance.now() - ts;
         phase('subset-fonts');
         const decision = decideSaveMethod(changes, beforeSave, {
@@ -598,7 +627,10 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
             r.searchTerms.map((t) => [t, page.search(t, '').length] as const),
           ),
           vsPreSavePx: diffRasters(raster, s.preSave).differing,
-          outsidePx: diffRasters(s.before, raster, s.exclusionPx).differing,
+          ...(() => {
+            const o = diffStats(s.before, raster, s.exclusionPx);
+            return { outsidePx: o.differing, outsideStrongPx: o.strong };
+          })(),
         };
         if (font === null && resourceName) font = inspectFont(page as mupdf.PDFPage, resourceName);
         page.destroy();
@@ -621,10 +653,11 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       if (!r.redaction.ok) continue;
       if (r.redaction.targetLinesRemaining > 0) f.push('target-text-remains');
       if (r.redaction.neighborLinesLost > 0) f.push('neighbor-text-lost');
-      if (r.redaction.outsidePx !== 0) f.push('outside-diff-after-redaction');
+      // 편집 영역 밖: 96단계 초과 차이만 실패(1/4 px 원점 양자화 수준 차이는 호출자가 관찰로 기록)
+      if (r.redaction.outsideStrongPx !== 0) f.push('outside-diff-after-redaction');
       if (r.layout?.missing.length) f.push('glyph-missing');
       if (r.preSave && r.preSave.vsReferenceStrongPx !== 0) f.push('glyph-render-mismatch');
-      if (r.preSave && r.preSave.outsidePx !== 0) f.push('outside-diff-after-content');
+      if (r.preSave && r.preSave.outsideStrongPx !== 0) f.push('outside-diff-after-content');
       if (!save.ok) f.push('save-failed');
       if (r.reopen) {
         if (!r.reopen.textFound) f.push('reopen-text-missing');
@@ -632,6 +665,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         if (r.reopen.neighborLinesLost > 0) f.push('reopen-neighbor-text-lost');
         if (Object.values(r.reopen.searchHits).some((n) => n < 1)) f.push('reopen-search-miss');
         if (r.reopen.vsPreSavePx !== 0) f.push('reopen-render-changed');
+        if (r.reopen.outsideStrongPx !== 0) f.push('reopen-outside-diff');
       }
     }
     return {

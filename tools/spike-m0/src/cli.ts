@@ -7,6 +7,7 @@
 //   pnpm --filter @pdf-editor/spike-m0 spike:redact   # 기존 Redact 주석 → out/m0-dod/redact-result.json
 //   pnpm --filter @pdf-editor/spike-m0 spike:save-bench  # 대형 문서 저장 상한 → out/m0-dod/save-bench-result.json
 //   pnpm --filter @pdf-editor/spike-m0 spike:corpus   # 실제 코퍼스 재실행 → out/m0-corpus/corpus-result.json
+//     (-- --no-subset --out out/m0-corpus-nosubset: 저장 전 subsetFonts() 생략 대조 실행)
 //   pnpm --filter @pdf-editor/spike-m0 spike:pdfjs    # pdf.js(pdfjs-dist) 확인 → out/m0-corpus/pdfjs-result.json
 //
 // 피크 메모리를 섞지 않기 위해 측정 대상(스파이크 변형·벤치마크)은 각각 별도 Node 프로세스로
@@ -308,7 +309,14 @@ const dodPaths = () => ({
 const child = arg('--child');
 if (child?.startsWith('save:')) runSaveChild(child, arg('--input')!, arg('--out')!, FONTS.ttf);
 else if (child?.startsWith('corpus-'))
-  runCorpusChild(child, arg('--input')!, arg('--plan'), arg('--out')!, FONTS.ttf);
+  runCorpusChild(
+    child,
+    arg('--input')!,
+    arg('--plan'),
+    arg('--out')!,
+    FONTS.ttf,
+    !process.argv.includes('--no-subset'),
+  );
 else if (child) runChild(child, arg('--out')!);
 else if (process.argv.includes('--write-fixtures')) writeFixtures();
 else if (process.argv.includes('--xobject')) runXObjectCli(dodPaths());
@@ -318,6 +326,7 @@ else if (process.argv.includes('--corpus')) {
     root: ROOT,
     out: join(ROOT, arg('--out') ?? 'out/m0-corpus'),
     only: arg('--only')?.split(',') ?? null,
+    subsetFonts: !process.argv.includes('--no-subset'),
   });
 } else if (process.argv.includes('--pdfjs')) {
   runPdfjsCli({ root: ROOT, corpusOut: join(ROOT, arg('--out') ?? 'out/m0-corpus') }).catch(
