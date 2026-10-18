@@ -435,7 +435,7 @@ describe('ViewerController · 검색', () => {
     expect(host.searchText.mock.calls[0]![0].query).toBe('abc');
   });
 
-  it('질의를 바꾸면 이전 질의의 늦은 응답을 버린다', async () => {
+  it('질의를 바꾸면 이전 질의의 늦은 응답을 버리고 새 질의 결과만 반영한다', async () => {
     const slow = deferred<SearchResult>();
     const host = fakeHost({
       searchText: vi.fn((req: SearchRequest) =>
@@ -448,11 +448,58 @@ describe('ViewerController · 검색', () => {
     expect(c.getState().find.status).toBe('searching');
     c.setFindQuery('b');
     await vi.advanceTimersByTimeAsync(250);
-    expect(c.getState().find).toMatchObject({ query: 'b', status: 'done' });
+    // 'a' 응답이 오기 전: 아직 'b' 결과가 없다
+    expect(c.getState().find).toMatchObject({ query: 'b', status: 'searching', hits: [] });
     slow.resolve(searchResult('a', [4, 4, 4]));
     await vi.advanceTimersByTimeAsync(0);
+    expect(c.getState().find).toMatchObject({ query: 'b', status: 'done' });
     expect(c.getState().find.hits).toHaveLength(1);
     expect(c.getState().view?.pageIndex).toBe(1);
+  });
+
+  it('검색이 진행 중일 때 입력이 이어져도 요청이 쌓이지 않고 최신 질의 하나만 이어서 실행한다', async () => {
+    const first = deferred<SearchResult>();
+    const host = fakeHost({
+      searchText: vi.fn((req: SearchRequest) =>
+        req.query === 'a' ? first.promise : Promise.resolve(searchResult(req.query, [2])),
+      ),
+    });
+    const { c } = await started(host);
+    c.setFindQuery('a');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(host.searchText).toHaveBeenCalledTimes(1);
+    c.setFindQuery('ab');
+    await vi.advanceTimersByTimeAsync(250);
+    c.setFindQuery('abc');
+    await vi.advanceTimersByTimeAsync(250);
+    // 첫 검색이 끝나기 전에는 새 요청을 보내지 않고 "검색 중"으로 표시한다.
+    expect(host.searchText).toHaveBeenCalledTimes(1);
+    expect(c.getState().find.status).toBe('searching');
+    first.resolve(searchResult('a', [4]));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(host.searchText).toHaveBeenCalledTimes(2);
+    expect(host.searchText.mock.calls[1]![0].query).toBe('abc');
+    expect(c.getState().find).toMatchObject({ query: 'abc', status: 'done' });
+    expect(c.getState().view?.pageIndex).toBe(2);
+  });
+
+  it('진행 중 검색이 있는 동안 창을 닫거나 질의를 지우면 대기 중이던 검색은 실행하지 않는다', async () => {
+    const first = deferred<SearchResult>();
+    const host = fakeHost({
+      searchText: vi.fn((req: SearchRequest) =>
+        req.query === 'a' ? first.promise : Promise.resolve(searchResult(req.query, [1])),
+      ),
+    });
+    const { c } = await started(host);
+    c.setFindQuery('a');
+    await vi.advanceTimersByTimeAsync(250);
+    c.setFindQuery('ab');
+    await vi.advanceTimersByTimeAsync(250);
+    c.closeFind();
+    first.resolve(searchResult('a', [4]));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(host.searchText).toHaveBeenCalledTimes(1);
+    expect(c.getState().find).toMatchObject({ open: false, status: 'idle', hits: [] });
   });
 
   it('Enter: 결과 없으면 즉시 검색, 있으면 다음 결과로(다른 페이지면 이동), Shift+Enter 는 이전', async () => {
