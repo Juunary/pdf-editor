@@ -97,7 +97,7 @@ describe('extractPage: 글자·좌표·읽기 순서', () => {
   });
 });
 
-describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3절 수정안 A)', () => {
+describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)', () => {
   const cases: Array<[number, string, boolean, string]> = [
     [0, 'fill', false, 'AB'],
     [1, 'stroke', false, 'AB'],
@@ -106,6 +106,7 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3절 수정안 A)', () =
     [4, 'fill', true, 'AB'],
     [5, 'stroke', true, 'AB'],
     [6, 'fill-stroke', true, 'AB'],
+    [7, 'invisible', true, 'AB'],
   ];
   for (const [tr, render, clip, expected] of cases) {
     it(`Tr ${tr}: 글리프를 정확히 한 번 센다(render ${render}, clip ${clip})`, () => {
@@ -127,19 +128,27 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3절 수정안 A)', () =
     expect(m.chars.every((c) => c.line === 0)).toBe(true);
   });
 
-  it('Tr 7 은 세지 않고 경고한다(클립 전용 글리프)', () => {
+  it('Tr 7: 클립 콜백에서 처음 센다(invisible, clip true, 색 null). 구조화 텍스트와 결합된다', () => {
     const s = open([show(7, '(AB) Tj')]);
     const page = s.document.loadPage(0);
     const { model, stats } = extractPageDetailed(page, { pageIndex: 0 });
     page.destroy();
-    expect(model.glyphCount).toBe(0);
-    expect(model.chars).toEqual([]);
-    expect(stats.clipOnlyGlyphs).toBe(2);
-    expect(model.warnings).toEqual(['클립 전용 텍스트(Tr 7·패턴 칠 텍스트) 글리프 2개: 세지 않음']);
-    // 구조화 텍스트에는 있지만 짝이 없어 줄·블록에서 빠진다.
-    expect(model.lines).toEqual([]);
-    expect(model.blocks).toEqual([]);
-    expect(stats.stextOnly).toBe(2);
+    expect(text(model)).toBe('AB');
+    expect(model.chars.map((c) => [c.render, c.clip, c.color, c.line])).toEqual([
+      ['invisible', true, null, 0],
+      ['invisible', true, null, 0],
+    ]);
+    expect(stats).toMatchObject({ clipCounted: 2, retransmitted: 0, approximated: 0 });
+    expect(model.warnings).toEqual([]);
+    s.close();
+  });
+
+  it('Tr 4–6: ET 재전송을 소비해 세지 않고 stats 에 남긴다', () => {
+    const s = open([show(6, '(AB) Tj')]);
+    const page = s.document.loadPage(0);
+    const { stats } = extractPageDetailed(page, { pageIndex: 0 });
+    page.destroy();
+    expect(stats).toMatchObject({ glyphs: 2, retransmitted: 2, clipCounted: 0 });
     s.close();
   });
 
@@ -305,68 +314,89 @@ describe('extractPage: 쪽 콘텐츠 밖 콜백 제외(패턴 셀·소프트 마
   });
 });
 
-describe("extractPage: clipText 정책(계약 3절 수정안 A·B')", () => {
-  const run = (content: string | PageSpec, clipText: 'ignore' | 'count-new') => {
+describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)', () => {
+  const run = (content: string | PageSpec) => {
     const s = open([content]);
     const page = s.document.loadPage(0);
-    const result = extractPageDetailed(page, { pageIndex: 0 }, { clipText });
+    const result = extractPageDetailed(page, { pageIndex: 0 });
     page.destroy();
     s.close();
     return result;
   };
-  const patternText: PageSpec = {
-    content: '/Pattern cs /P1 scn BT /F1 12 Tf 10 150 Td (after) Tj ET',
-    resources: patternResources,
+  const shadingResources = (_doc: mupdf.PDFDocument, res: Record<string, unknown>) => {
+    const shading = {
+      ShadingType: 2,
+      ColorSpace: 'DeviceRGB',
+      Coords: [0, 0, 100, 0],
+      Function: { FunctionType: 2, Domain: [0, 1], C0: [1, 0, 0], C1: [0, 0, 1], N: 1 },
+      Extend: [true, true],
+    };
+    res.Shading = { Sh1: shading };
+    res.Pattern = { P2: { PatternType: 2, Shading: shading } };
   };
 
-  it("패턴으로 칠한 텍스트: A 는 세지 않고, B' 는 클립 전용 글리프로 센다", () => {
-    const a = run(patternText, 'ignore');
-    expect(a.model.glyphCount).toBe(0);
-    expect(a.stats.clipOnlyGlyphs).toBe(5);
-    const b = run(patternText, 'count-new');
-    expect(text(b.model)).toBe('after');
-    expect(seqs(b.model)).toEqual([0, 1, 2, 3, 4]);
-    expect(b.model.chars.every((c) => c.clip && c.render === 'invisible' && c.color === null)).toBe(
-      true,
-    );
-    // 구조화 텍스트와 결합되어 quad·줄을 갖는다.
-    expect(b.model.chars.every((c) => c.line === 0)).toBe(true);
-    expect(b.stats.approximated).toBe(0);
+  it('타일링 패턴 색 텍스트: 클립 콜백에서 처음 세고 beginTile 이 오면 fill·clip false·색 null', () => {
+    const { model, stats } = run({
+      content: '/Pattern cs /P1 scn BT /F1 12 Tf 10 150 Td (after) Tj ET',
+      resources: patternResources,
+    });
+    expect(text(model)).toBe('after');
+    expect(seqs(model)).toEqual([0, 1, 2, 3, 4]);
+    expect(model.chars.every((c) => c.render === 'fill' && !c.clip && c.color === null)).toBe(true);
+    expect(model.chars.every((c) => c.line === 0)).toBe(true);
+    expect(stats).toMatchObject({ clipCounted: 5, retransmitted: 0, approximated: 0 });
+    expect(model.paintCount).toBe(0);
   });
 
-  it("Tr 7: B' 는 센다(render invisible, clip true)", () => {
-    const b = run(show(7, '(AB) Tj'), 'count-new');
-    expect(text(b.model)).toBe('AB');
-    expect(b.model.chars.map((c) => [c.render, c.clip])).toEqual([
-      ['invisible', true],
-      ['invisible', true],
-    ]);
+  it('셰이딩 패턴 색 텍스트: fillShade 가 오면 fill·clip false, 셰이드는 paintSeq 0', () => {
+    const { model } = run({
+      content: '/Pattern cs /P2 scn BT /F1 12 Tf 10 150 Td (grad) Tj ET',
+      resources: shadingResources,
+    });
+    expect(text(model)).toBe('grad');
+    expect(model.chars.every((c) => c.render === 'fill' && !c.clip && c.color === null)).toBe(true);
+    expect(model.shades.map((x) => x.paintSeq)).toEqual([0]);
   });
 
-  it('Tr 0–6 은 두 정책 모두 글리프를 정확히 한 번 센다', () => {
-    for (const tr of [0, 1, 2, 3, 4, 5, 6]) {
-      for (const policy of ['ignore', 'count-new'] as const) {
-        const { model } = run(show(tr, '(ABCD) Tj'), policy);
-        expect(seqs(model), `Tr ${tr} ${policy}`).toEqual([0, 1, 2, 3]);
-      }
-    }
+  it('Tr 7 로 클립한 뒤 sh: 같은 클립의 popClip 전에 셰이드가 오므로 패턴 색 텍스트로 본다', () => {
+    const { model } = run({
+      content: 'q BT /F1 24 Tf 7 Tr 10 100 Td (AB) Tj ET /Sh1 sh Q',
+      resources: shadingResources,
+    });
+    expect(text(model)).toBe('AB');
+    expect(model.chars.every((c) => c.render === 'fill' && !c.clip)).toBe(true);
+    expect(model.shades).toHaveLength(1);
   });
 
-  it("B': Tr 4 와 Tr 7 이 한 BT 에 섞이면 Tr 7 글리프만 새로 센다", () => {
-    const { model } = run(show(4, '(AB) Tj 7 Tr (CD) Tj'), 'count-new');
+  it('Tr 4 와 Tr 7 이 한 BT 에 섞이면 Tr 7 글리프만 새로 센다(번호는 표시 순서)', () => {
+    const { model, stats } = run(show(4, '(AB) Tj 7 Tr (CD) Tj'));
     expect(text(model)).toBe('ABCD');
+    expect(seqs(model)).toEqual([0, 1, 2, 3]);
     expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
       ['fill', true],
       ['fill', true],
       ['invisible', true],
       ['invisible', true],
     ]);
+    expect(stats).toMatchObject({ retransmitted: 2, clipCounted: 2 });
   });
 
-  it("B': 비텍스트 콜백 이전의 같은 글리프는 중복 후보가 아니다", () => {
-    // 같은 위치에 먼저 일반 글자를 그리고, 도형을 한 번 그린 뒤 Tr 7 로 같은 글자를 클립으로 쓴다.
-    const content = `${show(0, '(AB) Tj')} 0 0 5 5 re f ${show(7, '(AB) Tj')}`;
-    const { model } = run(content, 'count-new');
+  it('BT 마지막 글리프가 Tr 0 이면 앞의 Tr 7 글리프는 Device 에 오지 않는다', () => {
+    const { model } = run(show(0, '(AB) Tj 7 Tr (CD) Tj 0 Tr (EF) Tj'));
+    expect(text(model)).toBe('ABEF');
+  });
+
+  it('알려진 한계: 같은 위치에 일반 글자를 그린 뒤 다른 BT 의 Tr 7 로 같은 글자를 쓰면 재전송으로 오판', () => {
+    const { model, stats } = run(`${show(0, '(AB) Tj')} 0 0 5 5 re f ${show(7, '(AB) Tj')}`);
+    expect(text(model)).toBe('AB');
+    expect(stats.retransmitted).toBe(2);
+    expect(model.chars.every((c) => c.clip)).toBe(true);
+  });
+
+  it('다른 위치의 같은 글자는 재전송이 아니다', () => {
+    const { model } = run(
+      'BT /F1 12 Tf 10 150 Td (AB) Tj ET BT /F1 12 Tf 7 Tr 10 100 Td (AB) Tj ET',
+    );
     expect(text(model)).toBe('ABAB');
     expect(seqs(model)).toEqual([0, 1, 2, 3]);
   });

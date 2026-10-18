@@ -10,7 +10,7 @@ import type {
   Rect,
 } from '@pdf-editor/shared-types';
 import { ColorConverter } from './color.js';
-import { DeviceCollector, type ClipTextPolicy, type RawGlyph } from './extract-device.js';
+import { DeviceCollector, type RawGlyph } from './extract-device.js';
 import { glyphText, matchGlyphs, readStructuredText, type StextData } from './extract-stext.js';
 import { pageRotation, transformPoint } from './page-geometry.js';
 
@@ -28,8 +28,10 @@ export interface ExtractStats {
   stextOnly: number;
   /** 그중 공백(MuPDF 가 간격으로 합성한 공백 포함). */
   stextOnlySpaces: number;
-  /** clipText 에만 있고 이미 센 글리프와 겹치지 않은 글리프 수(Tr 7, 패턴·셰이딩 텍스트). 정책이 count-new 면 센 수, ignore 면 뺀 수. */
-  clipOnlyGlyphs: number;
+  /** ET 재전송(Tr 4–7 클립 콜백)으로 소비해 세지 않은 글리프 수. */
+  retransmitted: number;
+  /** clipText·clipStrokeText 가 처음 센 글리프 수(Tr 7, 패턴 색 텍스트, 꺼진 /OC 의 재전송 …). */
+  clipCounted: number;
   /** 색 변환에 실패해 rgb 를 null 로 둔 횟수. */
   colorFailures: number;
 }
@@ -50,14 +52,6 @@ function releaseBorrowed(shade: mupdf.Shade): void {
   ctor._finalizer?.unregister(shade);
 }
 
-export interface ExtractOptions {
-  /** clipText·clipStrokeText 글리프 처리(기본 `DEFAULT_CLIP_TEXT_POLICY`). */
-  clipText?: ClipTextPolicy;
-}
-
-/** 계약 3절 수정안 A(사용자 승인 2026-10-19). 수정안 B' 는 docs/m1-core.md 2.4. */
-export const DEFAULT_CLIP_TEXT_POLICY: ClipTextPolicy = 'ignore';
-
 /** quad 근사에 쓰는 글자 위·아래 높이(글자 크기 대비). 구조화 텍스트 값이 없을 때만 쓴다. */
 const APPROX_ASCENT = 0.95;
 const APPROX_DESCENT = 0.25;
@@ -66,11 +60,7 @@ const APPROX_DESCENT = 0.25;
  * 페이지 하나의 추출 모델과 계측값을 만든다. 주석·위젯은 제외한다(`runPageContents`).
  * MuPDF 경고는 실행 중에만 가로채 `warnings` 에 담고, 끝나면 로그 콜백을 해제한다.
  */
-export function extractPageDetailed(
-  page: mupdf.PDFPage,
-  request: ExtractRequest,
-  options: ExtractOptions = {},
-): ExtractResult {
+export function extractPageDetailed(page: mupdf.PDFPage, request: ExtractRequest): ExtractResult {
   const t0 = performance.now();
   const messages: string[] = [];
   mupdf.setLog((message: string) => {
@@ -78,35 +68,25 @@ export function extractPageDetailed(
     if (text) messages.push(text);
   });
   try {
-    return build(page, request, options.clipText ?? DEFAULT_CLIP_TEXT_POLICY, messages, t0);
+    return build(page, request, messages, t0);
   } finally {
     mupdf.setLog(null);
   }
 }
 
-export function extractPageModel(
-  page: mupdf.PDFPage,
-  request: ExtractRequest,
-  options: ExtractOptions = {},
-): PageModel {
-  return extractPageDetailed(page, request, options).model;
+export function extractPageModel(page: mupdf.PDFPage, request: ExtractRequest): PageModel {
+  return extractPageDetailed(page, request).model;
 }
 
 function build(
   page: mupdf.PDFPage,
   request: ExtractRequest,
-  clipPolicy: ClipTextPolicy,
   messages: string[],
   t0: number,
 ): ExtractResult {
   const bounds = page.getBounds() as Rect;
   const colors = new ColorConverter();
-  const collector = new DeviceCollector(
-    bounds,
-    colors,
-    request.includePathSegments === true,
-    clipPolicy,
-  );
+  const collector = new DeviceCollector(bounds, colors, request.includePathSegments === true);
 
   const device = new mupdf.Device({
     fillText: (text, ctm, cs, color) => {
@@ -168,7 +148,10 @@ function build(
     },
     endMask: () => collector.guard(() => collector.endMask(), true),
     // 0 이 아닌 값: 타일링 패턴 셀 내용을 MuPDF 가 실행하지 않는다(쪽 콘텐츠 순서 밖).
-    beginTile: () => 1,
+    beginTile: () => {
+      collector.guard(() => collector.beginTile());
+      return 1;
+    },
   });
   try {
     page.runPageContents(device, mupdf.Matrix.identity);
@@ -199,7 +182,8 @@ function build(
     approximated: approximated.length,
     stextOnly: 0,
     stextOnlySpaces: 0,
-    clipOnlyGlyphs: collector.clipOnlyGlyphs,
+    retransmitted: collector.retransmitted,
+    clipCounted: collector.clipCounted,
     colorFailures: colors.failures,
   };
   for (const ch of stext.chars) {
@@ -213,11 +197,6 @@ function build(
     const sample = approximated.slice(0, 5).join(', ');
     warnings.push(
       `구조화 텍스트에 없는 글자 ${approximated.length}개: quad 근사, line -1 (glyphSeq ${sample}${approximated.length > 5 ? ' …' : ''})`,
-    );
-  }
-  if (collector.clipOnlyGlyphs > 0 && clipPolicy === 'ignore') {
-    warnings.push(
-      `클립 전용 텍스트(Tr 7·패턴 칠 텍스트) 글리프 ${collector.clipOnlyGlyphs}개: 세지 않음`,
     );
   }
   if (colors.failures > 0) {
@@ -290,7 +269,7 @@ function assemble(
       size: g.size,
       origin: [g.m[4], g.m[5]],
       quad: match ? match.quad : approximateQuad(g),
-      color: g.render === 'invisible' ? null : match ? match.rgb : g.rgb,
+      color: g.noColor ? null : match ? match.rgb : g.rgb,
       render: g.render,
       clip: g.clip,
       wmode: g.wmode,
