@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 // core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(src/wasm-module.ts).
 import { PdfSession } from '../src/index.js';
 import * as mupdf from 'mupdf';
+import { buildPdf } from './pdf-fixtures.js';
 
 /** 200x100pt, 왼쪽 절반 파란 사각형. */
 function bluePdf(): Uint8Array {
@@ -43,7 +44,7 @@ describe('PdfSession', () => {
 
   it('열기 결과의 입력 방식, 페이지 정보', () => {
     const s = new PdfSession();
-    expect(s.open(bluePdf()).inputMode).toBe('buffer');
+    expect(s.open(bluePdf()).inputMode).toBe('stream');
     expect(s.getPageInfo(0)).toEqual({
       pageIndex: 0,
       bounds: [0, 0, 200, 100],
@@ -67,12 +68,18 @@ describe('PdfSession', () => {
     s.close();
   });
 
-  it('M1 미구현 RPC 는 명시적 오류를 낸다(계약 커밋 시점)', () => {
+  it('추출·검색 RPC 구현이 세션에 연결되어 있다', () => {
     const s = new PdfSession();
-    s.open(bluePdf());
-    expect(() => s.extractPage({ pageIndex: 0 })).toThrow(/M1 미구현/);
-    expect(() => s.getSourceMap(0)).toThrow(/M1 미구현/);
-    expect(() => s.searchText({ query: 'a' })).toThrow(/M1 미구현/);
+    s.open(
+      buildPdf(['BT /F1 12 Tf 10 150 Td (find me) Tj ET', 'BT /F1 12 Tf 10 150 Td (other) Tj ET']),
+    );
+    expect(
+      s
+        .extractPage({ pageIndex: 0 })
+        .chars.map((c) => c.text)
+        .join(''),
+    ).toBe('find me');
+    expect(s.searchText({ query: 'other' }).hits.map((h) => h.pageIndex)).toEqual([1]);
     s.close();
   });
 });
