@@ -4,13 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 버전 | v2.1 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
+| 버전 | v2.2 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
 | 작성일 | 2026-10-18 |
 | 작성 환경 | Mustree 서버(호스트명 `sailab01`) `/mnt/nas4/kjune/pdf-editor`, Claude Code 세션에서 작성. Windows PC(`C:\Users\harry\pdf-editor\PLAN.md`)에는 scp 복사본만 둔다 |
 | 리서치 근거 | MuPDF 1.28.x 공식 JavaScript/WASM 레퍼런스, Chrome 확장(MV3) 공식 문서, Claude Code 공식 문서 |
 | 수치 표기 규칙 | 용량·버전은 "원본 / 압축 / 배포 번들" 기준과 측정 버전을 함께 적는다. 실측 전 값은 **문서 기준** 으로 표시하고, 실측 값에는 **실측 YYYY-MM-DD** 를 붙인다 |
-| 상태 | 계획 문서. M0 Day 1(12절) 완료(2026-10-18, 커밋 5개). 결과·Action Items 는 `docs/m0-day1-log.md` |
-| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 그 외 절은 v2 와 동일 |
+| 상태 | 계획 문서. M0 Day 1(12절)과 M0 잔여 DoD(공유 Form XObject·기존 Redact 주석·대형 문서 저장 상한) 서버 검증 완료(2026-10-18, 커밋 8개). 결과·Action Items 는 `docs/m0-day1-log.md`, `docs/m0-dod-xobject-redact-save.md`. 미완: Windows Chrome 검증, Chrome 128–150 DNR 실측, 실제 코퍼스 재실행, v1 범위·일정 재산정 |
+| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 그 외 절은 v2 와 동일 |
 
 확정된 결정
 - 주력 형태: Chrome 확장 우선. 코어는 TypeScript + MuPDF WebAssembly(npm `mupdf`). 데스크톱(Tauri)은 후속.
@@ -44,7 +44,7 @@
 | 영역 초과 | **자동 클립 금지.** 초과 상태를 표시하고 사용자가 (a) 영역 확장 (b) 글자 크기 축소(최소 크기 설정, 기본 원본의 80%) (c) 그대로 두기 중 선택 | 자동 재배치 |
 | 표 편집 | 기존 셀의 텍스트 수정. 초과 시 위와 같은 선택 UI | 행·열 추가, 병합·분할 |
 | 벡터 편집 | 편집 가능 판정을 통과한 패스의 좌표·선 두께·선/채움 색 수정 | 차트 의미 단위 편집 |
-| 공유 객체·클립·투명도 | 지원 조건 통과 객체만 편집. Form XObject 는 "선택 위치만 복제 후 수정" 또는 v1 편집 제한 중 M0 결과로 확정 | 전체 지원 |
+| 공유 객체·클립·투명도 | 지원 조건 통과 객체만 편집. Form XObject 는 **확정(M0, 2026-10-18)**: 편집하는 사용 위치만 새 인스턴스로 교체(임시 페이지 redaction), 중첩이면 상위 체인도 인스턴스화. 3.4절 제한 조건 L1–L7 에 해당하는 사용 위치는 v1 편집 제한 + 사유 표시 | 전체 지원(L1–L7 해소) |
 | 태그(구조) PDF | 아래 1.4 "태그 정책" 참조 | |
 
 ### 1.4 태그 정책(v1 에서 확정할 세 가지)
@@ -76,10 +76,14 @@
 
 ### 3.1 저장 정책
 - `applyRedactions()` 적용 문서는 `canBeSavedIncrementally()` 가 false 가 되므로 **전체 저장(full save)이 기본 경로** 다.
-- 규칙: 저장 방식은 변경 유형과 `canBeSavedIncrementally()` 결과로 결정한다. 증분 저장은 적용 가능한 변경(주석·메타 등 redaction 없는 변경)에 한정한다.
+- 규칙: 저장 방식은 변경 유형과 `canBeSavedIncrementally()` 결과로 결정한다. 증분 저장은 적용 가능한 변경(주석·메타 등 redaction 없는 변경)에 한정한다. `canBeSavedIncrementally()` 는 권고값이며 MuPDF 는 false 여도 증분 저장을 막지 않고 제거한 원문이 이전 리비전에 남는다(M0 Day 1 실측) → 텍스트·스트림 교체는 redaction 유무와 무관하게 **항상 전체 저장** 으로 앱(`pdf-ops.decideSaveMethod`)이 강제한다.
 - 전체 저장의 **최대 메모리·저장 시간을 M0 부터 벤치마크** 한다(기준 문서·PC 조건 명시). WASM 배포 파일 크기는 실행 메모리 예산으로 쓰지 않는다.
+  - M0 결과(실측 2026-10-18, 서버 Node, 합성 문서, `docs/m0-dod-xobject-redact-save.md` 3절): npm `mupdf` 1.28.1 의 편집 문서 저장 경로는 `saveToBuffer`(출력 전체를 WASM 힙 버퍼 1개로 생성) 뿐이며 **출력 스트리밍은 불가**(출력 콜백 export 없음, 사용자 정의 WASM 빌드 필요 → v1 범위 밖). 전체 저장 피크 WASM 힙은 파일 크기의 약 1.7~4.5배(작은 문서에서 배율이 크다).
+  - 입력을 `Stream` 으로 열면(`openDocument(new Stream({fileSize, read, close}))`) 열기 시 힙 증가가 없어 피크가 파일 크기 약 1배만큼 줄고, 저장 결과는 Buffer 입력과 바이트 동일 → core 열기 경로를 Stream 입력으로 전환한다(M1, A3-1).
+  - 저장 전 **예상 피크 힙 경고**(구현): `pdf-ops.decideSaveMethod(changes, canBeSavedIncrementally, { inputBytes })` 가 파일 크기 × 실측 배율로 `ok`(상한의 75% 이하) / `warn` / `over-limit` 을 돌려준다. 저장 방식은 바꾸지 않고 호출자(뷰어)가 경고·중단한다(shared-types 계약 추가는 M1, UI 는 M3). 저장 실패 시 같은 문서 재저장도 실패하므로 복구는 Worker 재시작 → 원본 재열기 → 편집 로그 재적용(3.2, M3).
+  - `garbage=yes` 와 `garbage=compact` 의 피크 힙은 같다(출력은 `yes` 가 46~70 B 크다). `emptyStore()` 는 선형 메모리를 줄이지 못해 상한 대책이 아니다.
 - redaction 은 "선택 글자만 지우는 함수" 가 아니다. `applyRedactions(blackBoxes=false, imageMethod, lineArtMethod, textMethod)` 의 이미지·선화·텍스트 옵션을 **텍스트 교체 용도로 명시 지정** 한다(기본: 텍스트 제거, 선화·이미지 보존).
-- 페이지에 기존 Redact 주석이 있는 문서는 사전 감지해 구분 처리한다(사용자 경고 또는 임시 분리).
+- 기존 Redact 주석이 있는 문서 **확정(M0, 2026-10-18, `docs/m0-dod-xobject-redact-save.md` 2절)**: 열기 시 감지·보고(`pdf-ops.listRedactAnnots`, 쪽·개수). 편집용 redaction 은 **새로 만든 주석만 주석 단위 `applyRedaction()`** 으로 적용해 기존 Redact 주석을 적용·삭제·이동하지 않는다(페이지 단위 `applyRedactions()` 는 기존 주석까지 적용해 인접 문단을 지웠다). 편집 전 `assessRedactionImpact` 가 편집 영역과 겹치는 기존 Redact 주석(`warn`: 나중에 그 표시를 적용하면 새 텍스트도 지워짐)과 함께 제거되는 링크 주석(`warn`: MuPDF redaction 은 겹치는 링크를 지움, 복원 여부는 M3 A2-1)을 보고한다. 페이지 단위 적용이 꼭 필요한 작업만 Redact 주석을 임시 분리(`withRedactAnnotsDetached`) 후 실행하며, 분리 전 그 쪽의 `PDFPage` 를 모두 `destroy()` 한다(MuPDF 는 열려 있는 페이지의 `/Annots` 변경을 다시 읽지 않음). 기존 주석 적용 기능은 v1 범위 밖.
 
 ### 3.2 undo/redo
 - 모델: **원본 바이트 + 편집 로그(EditOp 리스트) 를 진실 원천** 으로 유지한다. 작업용 문서는 "원본 + 로그 재적용" 으로 재구성 가능해야 한다.
@@ -113,7 +117,9 @@
 
 - SourceMap 생성 방법: `pdf-ops` 의 콘텐츠 스트림 **인터프리터**(토크나이저 + 그래픽 상태 머신 + Form XObject 재귀)가 각 텍스트/패스 연산자의 바이트 범위와 상태를 기록하고, 좌표·폰트·글리프 ID 로 `PageModel` 의 chars/paths 와 매칭한다. 매칭 실패 객체는 편집 불가로 판정한다.
 - MuPDF `PDFProcessor` / `PDFPage.process` 는 `mutool run` 전용이라 npm WASM 에서 쓸 수 없다 → 자체 구현 범위는 단순 토큰 분리보다 넓다.
-- 공유 Form XObject: 여러 페이지/위치에서 재사용되면 원본 수정 시 선택하지 않은 위치까지 바뀐다. 정책은 "선택 사용 위치만 복제(새 XObject) 후 수정" 을 기본안으로 하고, M0 에서 검증 후 확정한다. 불가 시 v1 편집 제한.
+- 공유 Form XObject **확정(M0, 2026-10-18, `docs/m0-dod-xobject-redact-save.md` 1절)**: 여러 페이지/위치에서 재사용되면 원본 수정 시 선택하지 않은 위치까지 바뀌므로, 편집하는 사용 위치는 공유 여부와 무관하게 **항상 새 인스턴스로 교체** 한다. 방식: 원 페이지와 같은 MediaBox·CropBox·Rotate 의 임시 페이지에 선택 위치의 최상위 Form 을 같은 CTM 으로 그리고 주석 단위 redaction(텍스트 제거, 선화·이미지 보존)으로 필터된 인스턴스를 얻은 뒤, 페이지 Resources 를 페이지 전용 사본으로 바꿔 새 이름을 등록하고 페이지 콘텐츠에서 해당 `Do` 의 이름 피연산자 바이트만 교체한다(임시 페이지는 삭제, 잔여 객체는 전체 저장에서 제거). 중첩 사용 위치를 편집하면 상위 체인도 인스턴스화한다. 합성 픽스처 실측: 비선택 위치·다른 쪽 렌더 diff 0 px(MuPDF·Poppler), 원본 객체 변경은 페이지 사전 1개. 실제 코퍼스 재실행은 M0 후속(A1-2).
+  - v1 **편집 제한**(사유 표시)으로 판정하는 사용 위치: L1 Form 에 자체 `/Resources` 없음(페이지 리소스 상속), L2 `/StructParents`·MCID 포함(태그 PDF, 1.4 태그 정책으로 처리), L3 새 텍스트가 Form BBox 초과(자동 클립 금지와 충돌, BBox 확장 미구현), L4 페이지 콘텐츠 밖 사용(주석 외관 AP·타일링 패턴·Type3 글리프·SMask), L5 재귀 깊이 > 8 또는 순환 참조, L6 토크나이저 실패 또는 이름 피연산자가 Contents 배열 스트림 경계에 걸침, L7 `/OC` 선택적 콘텐츠(경고만).
+  - 주의(A1-1): Form 이 있는 페이지에서 페이지 콘텐츠 텍스트를 직접 redaction 하면(Day 1 경로) MuPDF 가 그 쪽의 모든 Form 사용 위치를 인스턴스화·재직렬화한다. 비편집 위치를 원본 객체로 되돌리는 후처리 또는 임시 페이지 방식으로 통일할지 M1 에서 결정.
 
 ---
 
@@ -163,7 +169,8 @@
 - M0 에서 **일반 뷰어 페이지 / 최상위 MIME handler / 임베디드 MIME handler** 세 문맥을 나눠 FSA 가용성을 확인한다.
 
 ### 5.4 메모리
-- 페이지 단위 지연 추출, 렌더 캐시 LRU, 전체 저장 시 피크 메모리 측정. WASM 힙 상한 2GiB.
+- 페이지 단위 지연 추출, 렌더 캐시 LRU, 전체 저장 시 피크 메모리 측정. WASM 힙 상한 2GiB(2,147,483,648 B, memory64 빌드 아님. 선형 메모리는 계단식으로 늘고 줄지 않는다).
+- 실측 상한(2026-10-18, 서버 Node, 합성 문서, 1쪽 문단 교체 후 전체 저장): Buffer 입력 525.5 MiB 성공 · 675.7 MiB **실패**(`realloc` 예외, 같은 문서 재저장도 실패) / Stream 입력 675.7 MiB 성공(피크 1,681 MiB, 상한의 82%). 브라우저 탭은 JS 쪽 입력·출력 사본이 더해지므로 Windows Chrome Worker 에서 재측정한다(A3-4). `decideSaveMethod` 경고 경계(전체 저장): Buffer 배율 4.48 → `warn` > 342.9 MiB, `over-limit` > 457.1 MiB; Stream 배율 3.48 → `warn` > 441.4 MiB, `over-limit` > 588.5 MiB(보수적 판정, 이번 측정에서 미탐 0건, 배율 모델 재산정은 M5 A3-5).
 
 ---
 
@@ -177,6 +184,8 @@
 | M3 텍스트 재작성 | 4주 | 문단 편집 → 리플로우(영역 내) → 초과 UI → 저장. 라틴 후 한글. harfbuzz. undo(체크포인트). **IME 조합 시나리오**. 태그 정책 구현 |
 | M4 표/도표 편집 | 3주 | 셀 텍스트 수정(초과 선택 UI), 벡터 좌표·선·채움 편집, 편집 가능 판정 UI |
 | M5 안정화/배포 | 3주 | 대용량 벤치마크 목표 달성, 폰트 서브셋, Web Store 패키징, 문서화 |
+
+재산정 메모(2026-10-18, M0 서버 검증 결과 반영 예정 작업량): M1 에 A3-1(core Stream 입력 전환), A1-1(Form 페이지 직접 편집 후처리 결정), A2-3(F3 회피 규칙), A1-3(L1 Resources 상속 Form 해소 여부); M3 에 A3-3(저장 실패 복구), A2-1(제거 링크 복원), A2-2(Redact 보고 UI). 정식 재산정은 Windows 검증(Day 1 로그 9절)과 실제 코퍼스 재실행(A7) 후 수행한다.
 
 ### M0 DoD
 끝까지 한 번 통과해야 하는 흐름: 기존 PDF 열기 → 짧은 문단 교체 → 원본에 없던 한글 추가 → 배경·테두리 유지 → 저장 → 재열기 → 검색·복사 확인
@@ -199,10 +208,12 @@
 
 1. 리플로우 충실도(커닝/힌팅, Form XObject·클립·공유 스트림) → "편집 블록만 교체, 나머지 원본 유지" + 편집 가능 판정 + 시각/텍스트/객체 3축 검증.
 2. 폰트 임베딩·매핑(서브셋, non-Identity CMap, ToUnicode) → FontManager 표(3.3절) + M0 검증.
-3. 전체 저장 메모리/시간 → M0 벤치마크, 체크포인트 상한, 지연 로딩.
+3. 전체 저장 메모리/시간 → M0 벤치마크(결과 3.1·5.4절), 체크포인트 상한, 지연 로딩.
 4. 레이아웃 휴리스틱 한계 → 정확도 하네스로 실패 유형 수집 후 ML 옵트인 판단.
 5. Chrome 구버전 호환 → v1 범위 밖으로 관리, 안내 UI.
 6. `mupdfjs` 폐기, `PDFProcessor` 불가 → pdf-ops 인터프리터 자체 구현(Opus 설계).
+7. **MuPDF 1.28.1 결함 F3**(실측 2026-10-18): 압축 필터가 있는 이미지 XObject(JPEG `DCTDecode`, Flate)를 `PDFObject.resolve()` 한 문서를 `garbage=compact`(또는 `deduplicate`)로 저장하면 그 이미지가 스트림 없는 사전으로 기록되어 재열기 시 `object is not a stream` 오류와 이미지 소실이 난다(`destroy()` 해도 같음, `garbage=yes`·garbage 없음은 정상) → **회피 규칙**: 저장할 작업 문서에서 이미지 XObject 를 `resolve()` 하지 않는다(사전 값은 간접 참조 `get()`, 렌더는 `loadImage(ref)`). M1 `PageModel`·`SourceMap` 구현 리뷰 항목으로 고정(A2-3). 대안인 전체 저장 옵션 `garbage=yes` 전환(피크 힙 동일, 출력 46~70 B 증가, Day 1 고정 해시 변경)은 M1 에서 결정(A3-6). 대조 테스트 `tools/spike-m0/test/mupdf-pitfalls.test.ts` 가 MuPDF 동작 변화를 감지한다. 업스트림 보고 여부는 사용자 판단(A2-4).
+8. 대형 문서 전체 저장 실패(WASM 힙 상한, 출력 스트리밍 불가) → 저장 전 예상 피크 힙 경고(3.1), 입력 Stream 열기(M1), 실패 시 Worker 재시작·원본 재열기·편집 로그 재적용 복구(M3), Windows Chrome 실측 후 지원 문서 크기 상한 안내 UI.
 
 ---
 
