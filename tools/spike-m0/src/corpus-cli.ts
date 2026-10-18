@@ -30,6 +30,7 @@ import {
 } from './corpus-analyze.js';
 import { runCorpusEdit, type CorpusEditResult, type ParagraphContext } from './corpus-edit.js';
 import { rectsIntersect, selectParagraphs, type SelectionReport } from './corpus-select.js';
+import { pickSharedTextForms, runFormUsageEdit, type FormEditResult } from './corpus-xobject.js';
 import { popplerRaster, popplerText, popplerVersion, ppmDiff } from './poppler.js';
 
 const sha256 = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -191,6 +192,15 @@ export function runCorpusChild(
     );
     return;
   }
+  if (task === 'corpus-xobject') {
+    const doc = openPdf(bytes);
+    const picks = pickSharedTextForms(doc);
+    doc.destroy();
+    const fontBytes = new Uint8Array(readFileSync(ttf));
+    const forms = picks.map((f, i) => runFormUsageEdit(bytes, fontBytes, f.objectNumber, i + 1));
+    writeFileSync(out, JSON.stringify({ forms }, null, 2));
+    return;
+  }
   throw new Error(`알 수 없는 작업: ${task}`);
 }
 
@@ -274,6 +284,9 @@ export interface CorpusDocResult {
     actualRatio: number;
   };
   paragraphVerdicts?: { index: number; pageIndex: number; success: boolean; failures: string[] }[];
+  /** 텍스트가 있는 공유 Form 의 사용 위치 1곳만 복제·수정(M0 정책, A1-2). 해당 Form 이 있는 문서만 */
+  formEdits?: FormEditResult[];
+  formEditError?: string;
 }
 
 function spawnTask(cli: string, args: string[]): { ok: boolean; stderr: string } {
@@ -373,6 +386,16 @@ export function runCorpusCli(opts: { root: string; out: string; only: string[] |
       }
       return { index: p.index, pageIndex: p.pageIndex, success: failures.length === 0, failures };
     });
+    let formEdits: FormEditResult[] | undefined;
+    let formEditError: string | undefined;
+    if (analyze.analysis.forms.sharedWithText > 0) {
+      const xFile = join(out, `${d.id}.xobject.json`);
+      rmSync(xFile, { force: true });
+      const x = spawnTask(cli, ['--child', 'corpus-xobject', '--input', pdf, '--out', xFile]);
+      if (x.ok && existsSync(xFile))
+        formEdits = (JSON.parse(readFileSync(xFile, 'utf8')) as { forms: FormEditResult[] }).forms;
+      else formEditError = x.stderr;
+    }
     results.push({
       ...base,
       status: 'ok',
@@ -381,6 +404,8 @@ export function runCorpusCli(opts: { root: string; out: string; only: string[] |
       poppler: pop,
       heapCheck,
       paragraphVerdicts,
+      formEdits,
+      formEditError,
     });
     console.log(
       `${d.id}: 문단 ${edit.paragraphs.length}개, 성공 ${paragraphVerdicts.filter((v) => v.success).length}, ` +
@@ -424,6 +449,12 @@ export function summarize(results: CorpusDocResult[]) {
         if (p.restrictions.some((x) => x.level === 'limit')) agg.paragraphsLimited++;
       }
       if (r.edit?.save.ok) agg.savesOk++;
+      for (const f of r.formEdits ?? []) {
+        agg.formEdits++;
+        if (f.failures.length === 0) agg.formEditsOk++;
+        for (const x of f.failures) agg.formEditFailures[x] = (agg.formEditFailures[x] ?? 0) + 1;
+      }
+      if (r.formEditError) agg.formEditErrors++;
       if (r.heapCheck) {
         agg.heap.checked++;
         if (r.heapCheck.noMiss) agg.heap.noMiss++;
@@ -446,5 +477,9 @@ function emptyAgg() {
     restrictions: {} as Record<string, number>,
     savesOk: 0,
     heap: { checked: 0, noMiss: 0, exact: 0 },
+    formEdits: 0,
+    formEditsOk: 0,
+    formEditErrors: 0,
+    formEditFailures: {} as Record<string, number>,
   };
 }

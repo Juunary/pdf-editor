@@ -313,7 +313,9 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       const blocks = readTextBlocks(page);
       const targetLines = meaningful(para.lines.map((l) => l.text));
       const neighborLines = meaningful(
-        blocks.filter((_b, i) => i !== para.blockIndex).flatMap((b) => b.lines.map(lineText)),
+        blocks
+          .filter((_b, i) => !para.memberBlocks.includes(i))
+          .flatMap((b) => b.lines.map(lineText)),
       );
       const before = renderPage(page, scale);
       const target = squash(para.lines.map((l) => l.text).join(''));
