@@ -381,6 +381,48 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     expect(stats).toMatchObject({ retransmitted: 2, clipCounted: 2 });
   });
 
+  // pdf-ops `docs/m1-pdf-ops.md` 3.1 실측 표의 사례(첫 등장 순서로 번호를 받는다).
+  it('pdf-ops 표: `7 Tr (A) 4 Tr (B)` → B 가 먼저(표시 시점), A 는 ET 재전송에서 새로 센다', () => {
+    const { model } = run(show(7, '(A) Tj 4 Tr (B) Tj'));
+    expect(text(model)).toBe('BA');
+    expect(seqs(model)).toEqual([0, 1]);
+    expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
+      ['fill', true], // B: Tr 4, 재전송을 소비
+      ['invisible', true], // A: Tr 7, 클립 콜백에서 처음 센다
+    ]);
+  });
+
+  it('pdf-ops 표: `4 Tr (Ab) 0 Tr (Xy) 7 Tr (Cd) 3 Tr (In)` → 8개, Ab·Xy·In·Cd 순', () => {
+    const { model, stats } = run(show(4, '(Ab) Tj 0 Tr (Xy) Tj 7 Tr (Cd) Tj 3 Tr (In) Tj'));
+    expect(text(model)).toBe('AbXyInCd');
+    expect(seqs(model)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
+      ['fill', true],
+      ['fill', true], // Ab: Tr 4, ignoreText 재전송을 소비
+      ['fill', false],
+      ['fill', false], // Xy: Tr 0
+      ['invisible', false],
+      ['invisible', false], // In: Tr 3, ignoreText 에서 처음 센다
+      ['invisible', false],
+      ['invisible', false], // Cd: Tr 7 이 ignoreText 형태의 재전송에서 처음 센다(Tr 3 과 구분 못함)
+    ]);
+    expect(stats).toMatchObject({ retransmitted: 2, clipCounted: 0 });
+  });
+
+  it('pdf-ops 표: `7 Tr (A) 0 Tr (B)` → B 만(A 는 Device 에 오지 않는다)', () => {
+    const { model } = run(show(7, '(A) Tj 0 Tr (B) Tj'));
+    expect(text(model)).toBe('B');
+  });
+
+  it('pdf-ops 표: `4 Tr (A) 1 Tr (B)` → A·B 각 1(A 의 클립은 없다)', () => {
+    const { model } = run(show(4, '(A) Tj 1 Tr (B) Tj'));
+    expect(text(model)).toBe('AB');
+    expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
+      ['fill', false],
+      ['stroke', false],
+    ]);
+  });
+
   it('BT 마지막 글리프가 Tr 0 이면 앞의 Tr 7 글리프는 Device 에 오지 않는다', () => {
     const { model } = run(show(0, '(AB) Tj 7 Tr (CD) Tj 0 Tr (EF) Tj'));
     expect(text(model)).toBe('ABEF');

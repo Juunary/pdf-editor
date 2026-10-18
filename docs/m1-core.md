@@ -14,7 +14,7 @@
 |---|---|
 | V1 (Form 재귀 순서) | 확인됨(2.1) |
 | V3 (글리프 정확히 한 번) | 포인터 규칙 불일치를 보고했고, 사용자 결정 "첫 등장 계수"(계약 3.1)로 구현·검증 완료(2.2–2.4) |
-| `extractPage` | 구현. 합성 PDF 55건 + 실제 코퍼스 1,647쪽 무예외(4절) |
+| `extractPage` | 구현. 합성 PDF 59건 + 실제 코퍼스 1,647쪽 무예외(4절) |
 | `searchText` | 구현. 대소문자·순환·pageLimit·maxHits·truncated 테스트 10건 |
 | Stream 입력(A3-1) | 구현. 저장 바이트 동일·열기 힙 +0(5절) |
 | 쪽 캐시 | `PdfSession.extractPage` 최근 사용 순 16쪽, `invalidatePageCache(pageIndex?)` |
@@ -209,12 +209,12 @@ PageModel 채우기 규칙
 
 ## 6. 테스트
 
-`pnpm --filter @pdf-editor/core test`: 6 파일 87건(계약 커밋 기준 7건).
+`pnpm --filter @pdf-editor/core test`: 6 파일 91건(계약 커밋 기준 7건).
 
 | 파일 | 내용 |
 |---|---|
 | `mupdf-text-callbacks.test.ts` | MuPDF 콜백 관측(V1, Tr 별 콜백·포인터, 래퍼 해제 시 주소 재사용) 9건 |
-| `extract.test.ts` | 글자·좌표·읽기 순서·회전·MediaBox 오프셋, glyphSeq 규칙(Tr 0–7, Form 재귀), 클립 텍스트 첫 등장 계수(타일링·셰이딩 패턴 색 텍스트, Tr 7 + `sh`, Tr 4/7 혼합, 알려진 한계), 패턴 셀·소프트 마스크 제외, quad 근사·합성 공백, 색공간(Gray·RGB·CMYK·Separation·Lab·Indexed), 도형(B 연산 번호 2개·짝홀·곡선·세그먼트·알파·클립), 이미지·인라인·마스크·셰이드, 주석 제외, MuPDF 경고, 캐시(LRU 16쪽·무효화), 합자·다중 글자 ToUnicode·DejaVu 합자 글리프, Shade 래퍼 GC 55건 |
+| `extract.test.ts` | 글자·좌표·읽기 순서·회전·MediaBox 오프셋, glyphSeq 규칙(Tr 0–7, Form 재귀), 클립 텍스트 첫 등장 계수(타일링·셰이딩 패턴 색 텍스트, Tr 7 + `sh`, Tr 4/7 혼합, pdf-ops 3.1 표 4사례, 알려진 한계), 패턴 셀·소프트 마스크 제외, quad 근사·합성 공백, 색공간(Gray·RGB·CMYK·Separation·Lab·Indexed), 도형(B 연산 번호 2개·짝홀·곡선·세그먼트·알파·클립), 이미지·인라인·마스크·셰이드, 주석 제외, MuPDF 경고, 캐시(LRU 16쪽·무효화), 합자·다중 글자 ToUnicode·DejaVu 합자 글리프, Shade 래퍼 GC 59건 |
 | `search.test.ts` | 대소문자·순환·pageLimit·maxHits·truncated·다줄 결과·한글·빈 검색어·500 quad 상한·인자 오류 10건 |
 | `stream-input.test.ts` | 저장 바이트 동일(전체·증분), 읽기량, 래퍼 해제, 배율 6건 |
 | `session.test.ts` | 기존 4건 + 계약 커밋의 "M1 미구현" 테스트를 추출·검색 연결 테스트로 교체(5건). `open.test.ts` 2건은 그대로 |
