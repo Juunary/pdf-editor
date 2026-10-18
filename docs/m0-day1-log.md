@@ -12,10 +12,10 @@
 | # | 체크리스트 | 서버 상태 | Windows 확인 |
 |---|---|---|---|
 | 1 | 모노레포·mupdf 고정·wasm 복사 | 완료 | 해당 없음 |
-| 2 | manifest·viewer·Worker, 세 문맥 가로채기 | 완료. 헤드리스 Chromium 156 에서 MIME handler 세 문맥 동작 확인. DNR(128–150) 경로는 미실측 | 필요(9.1) |
-| 3 | Worker 1페이지 렌더 → 캔버스 | 완료 | 필요(9.2) |
-| 4 | 스파이크(redaction → 한글 임베딩 → 전체 저장 → 재열기·검색) | 완료, 통과(MuPDF·Poppler) | 다른 뷰어 표시 확인 필요(9.3) |
-| 5 | FSA 세 문맥·downloads 폴백·Playwright | 완료. downloads 는 세 문맥 동작, FSA 실제 쓰기·재저장은 헤드리스 한계로 미확인 | 필요(9.4) |
+| 2 | manifest·viewer·Worker, 세 문맥 가로채기 | 완료. 헤드리스 Chromium 156 에서 MIME handler 세 문맥 동작 확인. DNR(128–150) 경로는 미실측 | 1차 완료 2026-10-19(Chrome 155, 9.1). 미확인: I4(로컬 http 임베드), I7(128–150 DNR) |
+| 3 | Worker 1페이지 렌더 → 캔버스 | 완료 | 완료 2026-10-19(9.2) |
+| 4 | 스파이크(redaction → 한글 임베딩 → 전체 저장 → 재열기·검색) | 완료, 통과(MuPDF·Poppler) | Chrome 기본 뷰어 표시·검색·복사 통과 2026-10-19(9.3 V1). 미확인: V2 Acrobat, V3 pdf.js, V4 대형 문서 측정 |
+| 5 | FSA 세 문맥·downloads 폴백·Playwright | 완료. downloads 는 세 문맥 동작, FSA 실제 쓰기·재저장은 헤드리스 한계로 미확인 | 세 문맥 FSA 선택기·downloads 동작 2026-10-19(9.4). 미확인: 임베디드 문맥 F3 의 Ctrl+S 재저장 |
 
 완료 기준: `pnpm build`, `pnpm test`(Vitest 45건 — OTF 대조 1건 포함, OTF 원본이 없으면 건너뜀 — + Playwright 1건) 서버 통과(2026-10-18).
 
@@ -161,13 +161,13 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 
 | # | 내용 | 처리 |
 |---|---|---|
-| P1 | CFF OTF 폴백 폰트가 MuPDF 1.28.1 `addFont` 경로에서 표시 실패·서브셋 실패(6.3) | glyf TTF 서브셋으로 교체. PLAN.md 의 결정("Noto Sans KR 서브셋을 `new Font` + `addFont` 로 실제 임베딩, `addCJKFont` 미사용")은 유지. PLAN.md 2절 "서브셋 OTF" 표기와 용량(문서 기준 1.8MB → 실측 2.56MB) 갱신 필요 — 이번 작업에서 PLAN.md 는 수정하지 않음 |
+| P1 | CFF OTF 폴백 폰트가 MuPDF 1.28.1 `addFont` 경로에서 표시 실패·서브셋 실패(6.3) | glyf TTF 서브셋으로 교체. PLAN.md 의 결정("Noto Sans KR 서브셋을 `new Font` + `addFont` 로 실제 임베딩, `addCJKFont` 미사용")은 유지. PLAN.md 2절 "서브셋 OTF" 표기와 용량(문서 기준 1.8MB → 실측 2.56MB) 갱신 필요 — 이번 작업에서 PLAN.md 는 수정하지 않음 → 2026-10-18 PLAN.md v2.1 2절에 반영 완료 |
 | P2 | `canBeSavedIncrementally()=false` 여도 증분 저장이 실행되고 원문이 남음(6.4) | `decideSaveMethod` 로 강제. 텍스트·스트림 교체는 항상 전체 저장 |
-| P3 | 전체 저장 피크 WASM 힙이 파일 크기의 2.9–4.5배(6.5) | 대형 문서 상한·저장 경로(스트리밍 쓰기 가능 여부) M0 후속 검토 |
+| P3 | 전체 저장 피크 WASM 힙이 파일 크기의 2.9–4.5배(6.5) | 대형 문서 상한·저장 경로(스트리밍 쓰기 가능 여부) M0 후속 검토 → 조사 완료 2026-10-18(`docs/m0-dod-xobject-redact-save.md` 3절): 출력 스트리밍 불가, 입력 Stream 열기 채택(M1, A3-1), 예상 피크 힙 경고 구현. PLAN.md v2.2 3.1·5.4 반영 |
 | P4 | module Worker 첫 메시지 유실(4절) | 수정 완료 |
 | P5 | WASM 힙 측정은 `$libmupdf_wasm_Module` 설정 객체로 emscripten `HEAPU8` 를 읽는다. core 보다 먼저 `mupdf` 를 import 하면 측정값 `null` | 진입점·테스트 import 순서 고정, 주석 명시 |
 | P6 | 페이지 단위 `applyRedactions()` 는 문서에 원래 있던 Redact 주석까지 적용 | 새 주석만 주석 단위 `applyRedaction()` 으로 적용, 기존 Redact 주석 수 보고 |
-| P7 | 최상위 MIME handler 도 하위 프레임(`window.top !== window`)이다(5.2) | 문맥 구분은 `StreamInfo.embedded` 로 한다. FSA 교차 출처 제한 여부는 Windows 9.4 결과로 확정 |
+| P7 | 최상위 MIME handler 도 하위 프레임(`window.top !== window`)이다(5.2) | 문맥 구분은 `StreamInfo.embedded` 로 한다. FSA 교차 출처 제한 여부는 Windows 9.4 결과로 확정 → 2026-10-19 Windows Chrome 155: 세 문맥 모두 FSA 선택기 동작, 임베디드 문맥 교차 출처 SecurityError 는 사용자 보고상 없음(진단 JSON 미수신, 9.4) |
 | P8 | `@types/chrome` DNR 열거형은 ambient enum 이라 Chrome 밖에서 값이 없다 | 규칙은 문자열 리터럴로 만들고 타입만 맞춤 |
 
 ## 8. Action Items
@@ -175,11 +175,11 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 | # | 내용 | 담당 | 근거 |
 |---|---|---|---|
 | A1 | 9절 Windows 체크리스트 수행, 결과 칸 기입(Chrome 버전 포함, PLAN.md 11절 "사용자 기입" 칸 동시 갱신). **2026-10-19 1차 완료**(Chrome 155): G1·G2, I1·I2·I3·I5·I6, R1·R2, V1, F1·F2 기입, PLAN.md 11절 갱신(v2.3). 미확인 잔여: 임베디드 문맥 F3 의 Ctrl+S 재저장·fsaError, F1·F3 진단 JSON, I2 파일 URL 접근 설정 상태, F2 권한 재요청 여부, I4, I7(→A5), V2, V3, V4(→A3-4) | 사용자 | 2·3·5번 Windows 검증. 결과 9.5 |
-| A2 | PLAN.md 2절 폴백 폰트 표기 갱신: "서브셋 OTF, 문서 기준 1.8MB" → "glyf TTF 서브셋, 실측 2,556,960 B" | 승인 후 메인 세션 | P1 |
-| A3 | 브라우저(Windows Chrome Worker) 전체 저장 피크 메모리·시간 측정, 벤치마크 문서 세트·기준 PC 조건 확정 | M0 후속 | PLAN.md 3.1, 8절 |
-| A4 | 대형 문서 저장 정책: 저장 전 예상 WASM 힙(파일 크기 × 실측 배율) 계산·경고, 출력 스트리밍 쓰기 가능 여부 조사 | M0 후속 | P3 |
+| A2 | PLAN.md 2절 폴백 폰트 표기 갱신: "서브셋 OTF, 문서 기준 1.8MB" → "glyf TTF 서브셋, 실측 2,556,960 B" **완료 2026-10-18**(PLAN.md v2.1, P1 사유 포함) | 메인 세션(완료) | P1 |
+| A3 | 브라우저(Windows Chrome Worker) 전체 저장 피크 메모리·시간 측정, 벤치마크 문서 세트·기준 PC 조건 확정 — 서버 측정 완료(Node·헤드리스 Chromium 156, `docs/m0-dod-xobject-redact-save.md` 3.3). Windows Chrome 측정은 미확인(9.3 V4, A3-4) | M0 후속 | PLAN.md 3.1, 8절 |
+| A4 | 대형 문서 저장 정책: 저장 전 예상 WASM 힙(파일 크기 × 실측 배율) 계산·경고, 출력 스트리밍 쓰기 가능 여부 조사 **완료 2026-10-18**(`docs/m0-dod-xobject-redact-save.md` 3절: 스트리밍 불가, 예상 피크 힙 경고 구현. PLAN.md v2.2 3.1·5.4) | M0 후속(완료) | P3 |
 | A5 | Chrome 128–150 DNR 경로 실측 수단 확보(구버전 Chrome for Testing 설치 후 Playwright 자동화 또는 별도 PC) | M0 후속 | PLAN.md 5.1 |
-| A6 | M0 DoD 중 Day 1 범위 밖 항목: 공유 Form XObject 복제 정책, 기존 Redact 주석 문서 처리 UI, 표 셀 교체 | M0 후속 | PLAN.md 6절 |
+| A6 | M0 DoD 중 Day 1 범위 밖 항목: 공유 Form XObject 복제 정책, 기존 Redact 주석 문서 처리 UI, 표 셀 교체 **부분 완료 2026-10-18**: 공유 Form XObject 복제 정책·기존 Redact 주석 처리 정책 통과(`docs/m0-dod-xobject-redact-save.md` 1·2절, PLAN.md v2.2 1.3·3.1·3.4). Redact 처리 UI 는 M3(A2-2). 표 셀 교체는 M0 DoD 항목이 아니며 PLAN.md 6절 M4 범위 | M0 후속 | PLAN.md 6절 |
 | A7 | 코퍼스 `fixtures/` 수집(한글 논문·표 중심 재무 문서 등)과 실제 문서 스파이크 재실행 | M0 후속 | PLAN.md 8절 |
 | A8 | 폴백 폰트 배포 용량 검토(현재 2.56 MB 원본, brotli 미측정). 축소안(KS X 1001 2,350자) 비교는 선택 | M5 전 | P1 |
 
