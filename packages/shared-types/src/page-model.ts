@@ -5,7 +5,8 @@
  * - `runPageContents`(주석 제외)를 항등 행렬로 실행할 때 Device 콜백이 오는 순서로 센다.
  * - glyphSeq: 표시 글리프마다 1. 처음 Device 에 도착한 텍스트 콜백(fillText·strokeText·clipText·
  *   clipStrokeText·ignoreText)에서 센다. fill→stroke(Tr 2·6, 포인터 동일 연속)는 1회, Tr 4–7 클립의
- *   ET 재전송은 세지 않는다. 판정 규칙: docs/m1-contract.md 3.1.
+ *   ET 재전송은 세지 않는다. gid -1 보조 글리프(ToUnicode 1코드→여러 코드포인트)는 세지 않고 직전
+ *   글리프의 text 에 붙인다. 재전송 판정 키는 (폰트, gid, trm, ctm) 비트 동일. 판정 규칙: docs/m1-contract.md 3.1.
  * - paintSeq: 텍스트 외 그리기 콜백(fillPath·strokePath·clipPath·clipStrokePath·fillShade·
  *   fillImage·fillImageMask·clipImageMask)마다 1씩. 채움+선(B 등)은 콜백 2개 = 번호 2개다.
  *   Form `Do` 의 BBox clipPath 도 1. beginMask~endMask 사이 콜백은 세지 않는다(계약 3절 세부 표).
@@ -29,9 +30,12 @@ export type TextRender = 'fill' | 'stroke' | 'fill-stroke' | 'invisible';
 export interface CharInfo {
   /** 콘텐츠 실행 순서의 글리프 번호(0부터, 위 규칙). SourceMap 매칭 키. */
   glyphSeq: number;
-  /** 유니코드. 합자는 여러 코드포인트일 수 있다. 매핑이 없으면 "�". */
+  /**
+   * 유니코드. 합자·ToUnicode 다중 매핑은 여러 코드포인트(gid -1 보조 글리프를 붙인 결과)일 수 있다.
+   * 매핑이 없으면 U+FFFD.
+   */
   text: string;
-  /** 폰트 글리프 ID(Device showGlyph). */
+  /** 폰트 글리프 ID(Device showGlyph). gid -1 보조 글리프는 별도 CharInfo 가 되지 않는다. */
   gid: number;
   /** PageModel.fonts 인덱스. */
   fontId: number;
@@ -39,7 +43,10 @@ export interface CharInfo {
   size: number;
   /** 기준선 원점, 페이지 공간. */
   origin: Point;
-  /** 글자 사각형, 페이지 공간. 구조화 텍스트 값이며, 없으면 core 가 폰트 크기로 근사한다. */
+  /**
+   * 글자 사각형, 페이지 공간. 구조화 텍스트 값이며, 없으면 core 가 폰트 크기로 근사한다.
+   * 보조 글리프가 붙은 글자는 구조화 텍스트의 해당 글자들을 합친 사각형.
+   */
   quad: Quad;
   /** 채움(stroke 전용이면 선) 색. 패턴 색이거나 알 수 없으면 null. */
   color: RGB | null;
