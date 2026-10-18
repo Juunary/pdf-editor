@@ -126,8 +126,14 @@ export function assembleText(
   return out;
 }
 
+/**
+ * 글자 quad 까지의 거리에서 줄 진행 방향 거리의 가중치. 줄 사이 방향 거리를 더 크게 쳐서, 텍스트 아래·옆을 끌 때
+ * 긴 앞줄의 끝 글자보다 세로로 가까운 줄을 고르게 한다(0 이면 줄 높이 범위만 본다).
+ */
+export const ALONG_LINE_WEIGHT = 0.25;
+
 export interface PointLocation {
-  /** 글자 quad 까지의 거리(pt). 안쪽이면 0. */
+  /** 글자 quad 까지의 가중 거리(pt). 안쪽이면 0. */
   distance: number;
   /** 읽기 진행 방향(가로 쓰기는 ul→ur, 세로 쓰기는 ul→ll)으로 본 위치 비율. 안쪽이면 0–1. */
   progress: number;
@@ -166,8 +172,13 @@ export function locatePoint(char: CharInfo, p: Point): PointLocation {
   const t = dx * vnx + dy * vny;
   const ds = s < 0 ? -s : s > lu ? s - lu : 0;
   const dt = t < 0 ? -t : t > lv ? t - lv : 0;
-  const progress = char.wmode === 1 ? (lv > 0 ? t / lv : 0) : lu > 0 ? s / lu : 0;
-  return { distance: Math.hypot(ds, dt), progress };
+  const vertical = char.wmode === 1;
+  const progress = vertical ? (lv > 0 ? t / lv : 0) : lu > 0 ? s / lu : 0;
+  // 가로 쓰기는 u(ds)가 줄 진행 방향, 세로 쓰기는 v(dt)가 줄 진행 방향이다.
+  const distance = vertical
+    ? Math.hypot(ds, ALONG_LINE_WEIGHT * dt)
+    : Math.hypot(ALONG_LINE_WEIGHT * ds, dt);
+  return { distance, progress };
 }
 
 export interface CaretHit {
@@ -180,7 +191,8 @@ export interface CaretHit {
 
 /**
  * 점(페이지 공간)에서 가장 가까운 글자와 캐럿 위치. 글자 안이면 절반 앞쪽은 글자 앞, 뒤쪽은 글자 뒤.
- * 줄 끝 바깥·줄 사이·글자가 없는 곳에서도 가장 가까운 글자로 정해지므로 드래그가 튀지 않는다.
+ * 줄 끝 바깥·줄 사이·글자가 없는 곳에서도 가장 가까운 글자(가중 거리, `ALONG_LINE_WEIGHT`)로 정해지므로
+ * 드래그가 튀지 않는다.
  * 거리가 같으면 읽기 순서가 앞선 글자.
  */
 export function caretAt(model: PageModel, order: ReadingOrder, p: Point): CaretHit | null {
