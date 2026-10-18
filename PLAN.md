@@ -4,13 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 버전 | v2.3 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
+| 버전 | v2.4 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
 | 작성일 | 2026-10-18 |
 | 작성 환경 | Mustree 서버(호스트명 `sailab01`) `/mnt/nas4/kjune/pdf-editor`, Claude Code 세션에서 작성. Windows PC(`C:\Users\harry\pdf-editor\PLAN.md`)에는 scp 복사본만 둔다 |
 | 리서치 근거 | MuPDF 1.28.x 공식 JavaScript/WASM 레퍼런스, Chrome 확장(MV3) 공식 문서, Claude Code 공식 문서 |
 | 수치 표기 규칙 | 용량·버전은 "원본 / 압축 / 배포 번들" 기준과 측정 버전을 함께 적는다. 실측 전 값은 **문서 기준** 으로 표시하고, 실측 값에는 **실측 YYYY-MM-DD** 를 붙인다 |
 | 상태 | 계획 문서. M0 Day 1(12절)과 M0 잔여 DoD(공유 Form XObject·기존 Redact 주석·대형 문서 저장 상한) 서버 검증 완료(2026-10-18, 커밋 8개). 결과·Action Items 는 `docs/m0-day1-log.md`, `docs/m0-dod-xobject-redact-save.md`. Windows Chrome 1차 검증 완료(2026-10-19, Chrome 155, `docs/m0-day1-log.md` 9절·9.5 미확인 목록). 미완: Chrome 128–150 DNR 실측, Acrobat·pdf.js 표시 확인, 대형 문서 브라우저 측정, 실제 코퍼스 재실행, v1 범위·일정 재산정 |
-| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 2026-10-19 v2.3: 11절 "Chrome 버전 / 검증한 가로채기 경로"(이 PC 열) 실측 기입, 0절 상태·변경 이력 갱신. 그 외 절은 변경 없음 |
+| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 2026-10-19 v2.3: 11절 "Chrome 버전 / 검증한 가로채기 경로"(이 PC 열) 실측 기입, 0절 상태·변경 이력 갱신. 2026-10-19 v2.4: 6절 M1 에 텍스트 선택 층·Ctrl+F 작업 추가(Windows 검증 알려진 한계 반영), 4절 `viewer-ui` 책임·6절 재산정 메모·8절 "편집 동작" 축에 같은 항목 추가. 그 외 절은 변경 없음 |
 
 확정된 결정
 - 주력 형태: Chrome 확장 우선. 코어는 TypeScript + MuPDF WebAssembly(npm `mupdf`). 데스크톱(Tauri)은 후속.
@@ -132,7 +132,7 @@
 | `packages/pdf-ops` | 콘텐츠 스트림 인터프리터(SourceMap 생성), redaction 래퍼, 배치 결과 → PDF 연산자 직렬화, 원본 객체 반영(스트림 교체/추가, XObject 복제), 저장 방식 결정 |
 | `packages/layout-recon` | `PageModel → DocumentModel`. MuPDF 플래그 + 열/표 휴리스틱(PyMuPDF `find_tables` lines/text 전략 포팅). ML 플러그인 슬롯 |
 | `packages/reflow` | 텍스트 셰이핑(`advanceGlyph` → harfbuzz)과 줄·글리프 배치 결정(`layoutParagraph → Line[]/Glyph[]`). 직렬화는 하지 않음 |
-| `packages/viewer-ui` | Preact 캔버스 + 오버레이 에디터(문단, 셀, 벡터 핸들), 초과 상태 UI, 편집 가능 표시, undo/redo UI |
+| `packages/viewer-ui` | Preact 캔버스 + 오버레이 에디터(문단, 셀, 벡터 핸들), 초과 상태 UI, 편집 가능 표시, undo/redo UI, **텍스트 선택 층·검색 UI**(`PageModel` 기반 선택·복사, Ctrl+F 가로채기·하이라이트, M1) |
 | `apps/extension` | MV3 셸(manifest, mimeHandler, DNR 폴백, viewer.html, 저장 어댑터) |
 | `apps/desktop`(후속) | 같은 코어를 Tauri 로 포장 |
 
@@ -179,13 +179,13 @@
 | 단계 | 기간 | 완료 기준(DoD) |
 |---|---|---|
 | **M0 핵심 편집 가능성 검증** | 3주 | 모노레포 초기화 + 최소 확장 셸 + 아래 "M0 DoD" 전부 통과. 결과로 v1 범위·일정 재산정 문서 작성 |
-| M1 추출·원본 연결 | 3주 | `PageModel` + `SourceMap` 생성, Form XObject 재귀, 매칭 실패율 측정. 디버그 오버레이. 코퍼스 회귀 테스트 |
+| M1 추출·원본 연결 | 3주 | `PageModel` + `SourceMap` 생성, Form XObject 재귀, 매칭 실패율 측정. 디버그 오버레이. 코퍼스 회귀 테스트. **텍스트 선택 층·Ctrl+F**(2026-10-19 추가, 근거 `docs/m0-day1-log.md` 9.5): 캔버스 위에 `PageModel` chars 의 quad·유니코드로 투명 텍스트 선택 층을 두어 드래그 선택·Ctrl+C 복사(클립보드 텍스트 = 추출 유니코드), 뷰어가 Ctrl+F 를 가로채 문서 전체 검색(현재 쪽 우선, 결과 수·이전/다음·quad 하이라이트). DoD: Playwright 로 선택→복사 결과가 추출 텍스트와 일치, 검색 하이라이트 위치가 quad 와 일치, 확장이 켜진 상태에서 Chrome 기본 뷰어와 같은 검색·복사 가능 |
 | M2 레이아웃 복원 | 4주 | 문단/열/표 복원, 읽기 순서. **정답 라벨 기반 정확도** 하네스 |
 | M3 텍스트 재작성 | 4주 | 문단 편집 → 리플로우(영역 내) → 초과 UI → 저장. 라틴 후 한글. harfbuzz. undo(체크포인트). **IME 조합 시나리오**. 태그 정책 구현 |
 | M4 표/도표 편집 | 3주 | 셀 텍스트 수정(초과 선택 UI), 벡터 좌표·선·채움 편집, 편집 가능 판정 UI |
 | M5 안정화/배포 | 3주 | 대용량 벤치마크 목표 달성, 폰트 서브셋, Web Store 패키징, 문서화 |
 
-재산정 메모(2026-10-18, M0 서버 검증 결과 반영 예정 작업량): M1 에 A3-1(core Stream 입력 전환), A1-1(Form 페이지 직접 편집 후처리 결정), A2-3(F3 회피 규칙), A1-3(L1 Resources 상속 Form 해소 여부); M3 에 A3-3(저장 실패 복구), A2-1(제거 링크 복원), A2-2(Redact 보고 UI). 정식 재산정은 Windows 검증(Day 1 로그 9절)과 실제 코퍼스 재실행(A7) 후 수행한다.
+재산정 메모(2026-10-18, M0 서버 검증 결과 반영 예정 작업량): M1 에 A3-1(core Stream 입력 전환), 텍스트 선택 층·Ctrl+F(2026-10-19 추가, Windows 검증 알려진 한계), A1-1(Form 페이지 직접 편집 후처리 결정), A2-3(F3 회피 규칙), A1-3(L1 Resources 상속 Form 해소 여부); M3 에 A3-3(저장 실패 복구), A2-1(제거 링크 복원), A2-2(Redact 보고 UI). 정식 재산정은 Windows 검증(Day 1 로그 9절)과 실제 코퍼스 재실행(A7) 후 수행한다.
 
 ### M0 DoD
 끝까지 한 번 통과해야 하는 흐름: 기존 PDF 열기 → 짧은 문단 교체 → 원본에 없던 한글 추가 → 배경·테두리 유지 → 저장 → 재열기 → 검색·복사 확인
@@ -228,7 +228,7 @@
 | 시각 | 편집 영역 밖 변화, 잘림, 중복, 배경·선 손상(픽셀 diff 는 이 축의 일부) |
 | 텍스트 | 검색·복사·재추출, Unicode 매핑 |
 | 객체 | 다른 페이지·공유 객체의 의도치 않은 변경(객체 diff) |
-| 편집 동작 | undo/redo, 연속 수정, 저장 후 재편집, IME |
+| 편집 동작 | undo/redo, 연속 수정, 저장 후 재편집, IME, 뷰어 텍스트 선택·복사·Ctrl+F(M1) |
 | 성능 | 첫 렌더, 편집 반응, 저장 시간, 피크 메모리. 벤치마크 문서 세트와 PC 조건을 먼저 정한 뒤 목표 수치 설정 |
 
 - 코퍼스 `fixtures/`: 한글 논문, 영문 보고서, 다단 뉴스레터, 표 중심 재무 문서, 벡터 차트 문서, 태그 PDF, 공유 XObject 문서 각 2~3개 + 수백 페이지 벤치마크 1~2개.
