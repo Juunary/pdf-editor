@@ -51,9 +51,7 @@ function build(
 function match(b: Built, policy: HelperPolicy = 'first-arrival') {
   const model = buildTestPageModel(b.doc, 0, policy);
   const map =
-    policy === 'first-arrival'
-      ? buildSourceMap(b.doc, 0)
-      : buildSourceMapImpl(b.doc, 0, 8, 'no-clip');
+    policy === 'no-clip' ? buildSourceMapImpl(b.doc, 0, 8, 'no-clip') : buildSourceMap(b.doc, 0);
   const link = linkPage(model, map);
   return { model, map, link };
 }
@@ -531,9 +529,10 @@ describe('도형·이미지·패턴', () => {
     expectFull(r);
   });
 
-  it('셰이딩 패턴 색 Tr 6: 전달 순서열은 MuPDF 와 같고, core 쪽 판정은 ET 재전송을 놓친다(R6)', () => {
+  it('계약 3.1 판정 불일치 재현: 채움·선 패턴 색 Tr 6(clipText → 같은 객체 clipStrokeText 가 소비·비움 → ET 재전송 놓침)', () => {
     const b = build(
-      '/Pattern cs /SP scn /Pattern CS /SP SCN BT /F1 20 Tf 50 700 Td 6 Tr (Ef) Tj ET 0 Tr',
+      '/Pattern cs /SP scn /Pattern CS /SP SCN BT /F1 20 Tf 50 700 Td 6 Tr (Ef) Tj ET 0 Tr ' +
+        '0 g /Pattern CS /SP SCN BT /F1 20 Tf 50 650 Td 6 Tr (Gh) Tj ET 0 Tr',
       (doc) => ({
         Pattern: { SP: doc.addObject({ Type: 'Pattern', PatternType: 2, Shading: shading }) },
       }),
@@ -541,10 +540,23 @@ describe('도형·이미지·패턴', () => {
     const trace: string[] = [];
     const map = buildSourceMapImpl(b.doc, 0, 8, 'first-arrival', trace);
     expect(trace.map((t) => t.replace(/:[NR]+$/, ''))).toEqual(deliveryTrace(b.doc.loadPage(0)));
-    expect(trace).toEqual(['clip:2:NN', 'P', 'clip-stroke:2:RR', 'P', 'clip:2:RR']);
-    expect(map.glyphCount).toBe(2);
-    // 헬퍼(core 쪽 판정)는 clip 재전송을 fill·stroke 집합에서 찾지 못해 2개를 더 센다.
-    expect(buildTestPageModel(b.doc, 0).glyphCount).toBe(4);
+    // (Ef) 채움·선 모두 패턴, (Gh) 채움 색·선 패턴. 표시 글리프 4개.
+    expect(trace).toEqual([
+      'clip:2:NN',
+      'P',
+      'clip-stroke:2:RR',
+      'P',
+      'clip:2:RR',
+      'fill:2:NN',
+      'clip-stroke:2:RR',
+      'P',
+      'clip:2:RR',
+    ]);
+    expect(map.glyphCount).toBe(4);
+    // 확정 규칙: 같은 객체의 clipStrokeText 가 항목을 소비해 목록을 비우므로 ET 재전송 2+2개를 새로 센다.
+    expect(buildTestPageModel(b.doc, 0, 'first-arrival').glyphCount).toBe(8);
+    // 1단계를 모든 텍스트 콜백에 적용하면 일치한다.
+    expectFull(match(b, 'first-arrival-all'));
   });
 
   it('타일링 패턴: 직접 실행(작은 영역, 셀 글리프 포함)과 beginTile 경로(큰 영역)', () => {
@@ -567,8 +579,17 @@ describe('도형·이미지·패턴', () => {
         }),
       ),
     );
-    // 직접 실행 셀(10×10 → 1, 9×9 → 1, 선 5×5 → 4 타일)의 fillPath·글리프는 소유 연산 없이 번호만 소비한다.
-    expect(expectOwned(r)).toEqual({ unownedChars: 6, unownedPaints: 6 });
+    // 직접 실행 셀(10×10 → 1, 9×9 → 1, 선 5×5 → 4 타일): 셀 fillPath 는 패턴 칠하기 연산이 소유하고
+    // outside-page-content 를 단다(계약 3절). 셀 글리프는 소유 연산 없이 번호만 소비한다.
+    expect(expectOwned(r)).toEqual({ unownedChars: 6, unownedPaints: 0 });
+    const painted = r.map.ops.filter((o) => o.op === 'f' || o.op === 'S');
+    expect(painted.map((o) => o.paintSeq?.length)).toEqual([2, 2, 1, 5]);
+    expect(painted.map((o) => o.limits.includes('outside-page-content'))).toEqual([
+      true,
+      true,
+      false,
+      true,
+    ]);
     expect(r.map.errors).toEqual([]);
   });
 

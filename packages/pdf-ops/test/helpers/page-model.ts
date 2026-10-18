@@ -4,17 +4,13 @@
  * (quad·lines·blocks·색은 자리 채움).
  *
  * glyphSeq 정책
- * - first-arrival(pdf-ops 안 A의 core 쪽 판정):
- *   1) 직전 텍스트 콜백과 포인터가 같은 텍스트 콜백은 세지 않는다(Tr 2·6, 패턴 색 fill→stroke).
- *   2) clipText·clipStrokeText·ignoreText 글리프 중 (폰트 포인터, gid, trm 6값)이 집합 K 에 있으면
- *      ET 재전송으로 보고 세지 않는다. K 에는 fillText·strokeText 로 센 글리프만 넣는다.
- *      재전송을 1개 이상 찾은 콜백 뒤 K 를 비운다.
- *   3) gid -1 보조 글리프(ToUnicode 1:N)는 세지 않는다.
- * - no-clip(core 안 A): clipText·clipStrokeText 글리프는 세지 않는다. 직전 텍스트 콜백과 포인터가 같고
- *   그 콜백을 셌으면 세지 않는다.
+ * - first-arrival: 계약 3.1 core 판정(`first-arrival.ts`). gid −1 보조 글리프는 직전 글리프 글자에 붙인다.
+ * - no-clip(채택하지 않은 core 안 A, 비교용): clipText·clipStrokeText 글리프는 세지 않는다. 직전 텍스트 콜백과
+ *   포인터가 같고 그 콜백을 셌으면 세지 않는다.
  * paintSeq: 칠하기 콜백마다 1. beginMask~endMask 사이는 세지 않는다. beginTile 은 1(캐시됨)을 돌려준다.
  */
 import * as mupdf from 'mupdf';
+import { FirstArrivalJudge, glyphKey, type TextCallbackKind } from './first-arrival.js';
 import type {
   CharInfo,
   ImageInfo,
@@ -25,7 +21,8 @@ import type {
   ShadeInfo,
 } from '@pdf-editor/shared-types';
 
-export type HelperPolicy = 'first-arrival' | 'no-clip';
+/** first-arrival = 계약 3.1 확정 판정, first-arrival-all = 1단계를 모든 텍스트 콜백에 적용(수정 제안). */
+export type HelperPolicy = 'first-arrival' | 'first-arrival-all' | 'no-clip';
 
 const apply = (m: Matrix, x: number, y: number): Point => [
   x * m[0] + y * m[2] + m[4],
@@ -55,80 +52,104 @@ export function buildTestPageModel(
   const fontIds = new Map<number, number>();
   let lastPointer: number | null = null;
   let lastCounted = false;
-  let known = new Set<string>();
+  const judge = new FirstArrivalJudge({ skipSamePointerAllKinds: policy === 'first-arrival-all' });
+
+  const pushChar = (
+    kind: TextCallbackKind,
+    font: mupdf.Font,
+    trm: Matrix,
+    ctm: Matrix,
+    gid: number,
+    unicode: number,
+  ) => {
+    let fontId = fontIds.get(font.pointer);
+    if (fontId === undefined) {
+      fontId = fontIds.size;
+      fontIds.set(font.pointer, fontId);
+    }
+    const origin = apply(ctm, trm[4], trm[5]);
+    chars.push({
+      glyphSeq: glyphSeq++,
+      text: String.fromCodePoint(unicode),
+      gid,
+      fontId,
+      size: Math.hypot(trm[2], trm[3]) * Math.hypot(ctm[2], ctm[3]),
+      origin,
+      quad: [
+        origin[0],
+        origin[1],
+        origin[0],
+        origin[1],
+        origin[0],
+        origin[1],
+        origin[0],
+        origin[1],
+      ],
+      color: null,
+      render:
+        kind === 'ignore'
+          ? 'invisible'
+          : kind === 'stroke' || kind === 'clip-stroke'
+            ? 'stroke'
+            : 'fill',
+      clip: kind === 'clip' || kind === 'clip-stroke',
+      wmode: 0,
+      line: -1,
+    });
+  };
 
   const text =
-    (kind: 'fill' | 'stroke' | 'clip' | 'clipStroke' | 'ignore') =>
+    (kind: TextCallbackKind) =>
     (t: mupdf.Text, ...rest: unknown[]) => {
       if (mask > 0) return;
       held.push(t);
       const ctm = rest.find((r) => Array.isArray(r) && r.length === 6) as Matrix;
-      const samePointer = t.pointer === lastPointer;
-      lastPointer = t.pointer;
-      const isClip = kind === 'clip' || kind === 'clipStroke';
-      let counted = false;
-      let resend = false;
+      const glyphs: { font: mupdf.Font; trm: Matrix; gid: number; unicode: number }[] = [];
+      t.walk({
+        showGlyph: (font, trm, gid, unicode) =>
+          void glyphs.push({ font, trm: trm as Matrix, gid, unicode }),
+      });
+      const isClip = kind === 'clip' || kind === 'clip-stroke';
       if (policy === 'no-clip') {
+        const same = t.pointer === lastPointer;
+        lastPointer = t.pointer;
         if (isClip) {
           lastCounted = false;
           return;
         }
-        if (samePointer && lastCounted) return;
-      } else if (samePointer) return;
-      t.walk({
-        showGlyph: (font, trm, gid, unicode) => {
-          if (gid < 0) {
-            const last = chars.at(-1);
-            if (last && counted) last.text += String.fromCodePoint(unicode);
-            return;
+        if (same && lastCounted) return;
+        let last: CharInfo | undefined;
+        for (const g of glyphs) {
+          if (g.gid < 0) {
+            if (last) last.text += String.fromCodePoint(g.unicode);
+            continue;
           }
-          const key = `${font.pointer}:${gid}:${trm.join(',')}`;
-          if (policy === 'first-arrival' && (isClip || kind === 'ignore') && known.has(key)) {
-            resend = true;
-            return;
-          }
-          // ET 재전송은 Tr 4–6 의 fill·stroke 표시 글리프만 다시 보낸다. 그래서 K 에는 fill·stroke 글리프만 넣는다.
-          if (kind === 'fill' || kind === 'stroke') known.add(key);
-          let fontId = fontIds.get(font.pointer);
-          if (fontId === undefined) {
-            fontId = fontIds.size;
-            fontIds.set(font.pointer, fontId);
-          }
-          const origin = apply(ctm, trm[4], trm[5]);
-          const size = Math.hypot(trm[2], trm[3]) * Math.hypot(ctm[2], ctm[3]);
-          chars.push({
-            glyphSeq: glyphSeq++,
-            text: String.fromCodePoint(unicode),
-            gid,
-            fontId,
-            size,
-            origin,
-            quad: [
-              origin[0],
-              origin[1],
-              origin[0],
-              origin[1],
-              origin[0],
-              origin[1],
-              origin[0],
-              origin[1],
-            ],
-            color: null,
-            render:
-              kind === 'ignore'
-                ? 'invisible'
-                : kind === 'stroke' || kind === 'clipStroke'
-                  ? 'stroke'
-                  : 'fill',
-            clip: isClip,
-            wmode: 0,
-            line: -1,
-          });
-          counted = true;
-        },
-      });
-      if (resend) known = new Set();
-      lastCounted = counted;
+          pushChar(kind, g.font, g.trm, ctm, g.gid, g.unicode);
+          last = chars.at(-1);
+        }
+        lastCounted = true;
+        return;
+      }
+      // first-arrival: 계약 3.1 core 판정(0단계: gid −1 보조 글리프는 직전 글리프 글자에 붙인다).
+      const real = glyphs.filter((g) => g.gid >= 0);
+      const decisions = judge.judge(
+        kind,
+        t.pointer,
+        real.map((g) => glyphKey(g.font.pointer, g.gid, g.trm, ctm)),
+      );
+      if (!decisions) return;
+      let k = 0;
+      let last: CharInfo | undefined;
+      for (const g of glyphs) {
+        if (g.gid < 0) {
+          if (last) last.text += String.fromCodePoint(g.unicode);
+          continue;
+        }
+        if (decisions[k++]) {
+          pushChar(kind, g.font, g.trm, ctm, g.gid, g.unicode);
+          last = chars.at(-1);
+        } else last = undefined;
+      }
     };
 
   const path =
@@ -165,7 +186,7 @@ export function buildTestPageModel(
     fillText: text('fill'),
     strokeText: text('stroke'),
     clipText: text('clip'),
-    clipStrokeText: text('clipStroke'),
+    clipStrokeText: text('clip-stroke'),
     ignoreText: text('ignore'),
     fillPath: path('fill'),
     strokePath: path('stroke'),

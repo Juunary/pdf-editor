@@ -334,6 +334,8 @@ export class ContentInterpreter {
   private readonly userToPage: Matrix;
   private aborted = false;
   private patternDepth = 0;
+  /** 직접 실행 중인 패턴 셀의 소유 연산(바깥 패턴 기준). */
+  private cellOwner: SourceOp | null = null;
   /** 실행 중인 콘텐츠(지연 플러시의 패턴 리소스 체인용). */
   private cur: ExecCtx | null = null;
 
@@ -888,14 +890,16 @@ export class ContentInterpreter {
       // MuPDF: 패턴 칠하기는 알파 0 이면 건너뛴다(경로만).
       if ((what === 'fill' ? this.gs.fillAlpha : this.gs.strokeAlpha) === 0) return;
       this.paint(rec);
-      this.showPattern(m, bbox, what);
+      this.showPattern(m, bbox, what, rec);
     }
   }
 
   private paint(owner: SourceOp | null): void {
     this.options.trace?.push('P');
     const seq = this.paintCounter++;
-    if (owner) (owner.paintSeq ??= []).push(seq);
+    // 직접 실행한 패턴 셀 안의 칠하기는 그 패턴 칠하기 연산이 소유한다(계약 수정 3).
+    const o = owner ?? this.cellOwner;
+    if (o) (o.paintSeq ??= []).push(seq);
   }
 
   // ---- 패턴 ----
@@ -940,7 +944,13 @@ export class ContentInterpreter {
   }
 
   /** MuPDF pdf_show_pattern 의 타일 판정. 직접 실행 경로면 셀 내용을 타일 수만큼 계수 전용으로 실행한다. */
-  private showPattern(m: Material, area: Rect4, what: 'fill' | 'stroke'): void {
+  /** owner: 패턴으로 칠하는 연산(경로 칠하기·텍스트 실행 단위 첫 연산·이미지 마스크). */
+  private showPattern(
+    m: Material,
+    area: Rect4,
+    what: 'fill' | 'stroke',
+    owner: SourceOp | null,
+  ): void {
     const pat = m.pattern!;
     if (pat.xstep === 0 || pat.ystep === 0) return;
     const ptm = concat(pat.matrix, this.deviceCtm(m.base));
@@ -963,6 +973,11 @@ export class ContentInterpreter {
     if (tiles > 4096 || this.patternDepth >= 4) return;
     const bytes = pat.stream.readStream().asUint8Array().slice();
     const invU = invert(this.userToPage);
+    if (tiles === 0) return;
+    // 셀 내용은 페이지 콘텐츠 밖(L4). 칠하기 번호는 owner 가 갖고, 셀 글리프는 소유 없이 번호만 소비한다.
+    const outer = this.cellOwner;
+    if (!outer && owner) this.addLimit(owner, 'outside-page-content');
+    this.cellOwner = outer ?? owner;
     this.patternDepth++;
     for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
@@ -971,6 +986,7 @@ export class ContentInterpreter {
       }
     }
     this.patternDepth--;
+    this.cellOwner = outer;
   }
 
   /** 소유 연산 없이 번호만 소비하는 하위 실행(패턴 셀). */
@@ -1237,7 +1253,7 @@ export class ContentInterpreter {
       this.paint(run.owner);
     } else if (m.pattern) {
       this.arrive(viaClip, run.glyphs);
-      this.showPattern(m, box, what);
+      this.showPattern(m, box, what, run.owner);
     }
   }
 
@@ -1289,7 +1305,7 @@ export class ContentInterpreter {
         this.paint(rec);
       } else if (m.pattern) {
         this.paint(rec);
-        this.showPattern(m, bbox, 'fill');
+        this.showPattern(m, bbox, 'fill', rec);
       }
       return;
     }
