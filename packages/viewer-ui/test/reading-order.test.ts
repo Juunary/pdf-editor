@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PageModel } from '@pdf-editor/shared-types';
 import {
+  ALONG_LINE_WEIGHT,
   assembleText,
   buildReadingOrder,
   caretAt,
@@ -137,6 +138,13 @@ describe('locatePoint · caretAt', () => {
     expect(caretAt(model, order, [35, 700])?.item).toBe(5);
   });
 
+  it('텍스트 아래 먼 곳은 긴 앞줄의 끝 글자가 아니라 세로로 가까운 마지막 줄로 정해진다', () => {
+    const m = makePageModel(['AAAAAAAAAAAAAAAA', 'B']);
+    const o = buildReadingOrder(m);
+    // 앞줄 끝 글자(x 170–180)가 가로로는 더 가깝지만, 마지막 줄이 세로로 20pt 더 가깝다.
+    expect(caretAt(m, o, [300, 700])).toMatchObject({ item: 16, caret: 17 });
+  });
+
   it('글자가 없으면 null', () => {
     const empty = makePageModel([]);
     expect(caretAt(empty, buildReadingOrder(empty), [10, 10])).toBeNull();
@@ -167,15 +175,18 @@ describe('locatePoint · caretAt', () => {
     expect(locatePoint(m.chars[0]!, [95, 104])).toMatchObject({ distance: 0 });
     expect(locatePoint(m.chars[0]!, [95, 104]).progress).toBeCloseTo(0.2);
     expect(caretAt(m, o, [95, 116])?.caret).toBe(1);
-    expect(locatePoint(m.chars[0]!, [105, 104]).distance).toBeCloseTo(5);
+    expect(locatePoint(m.chars[0]!, [105, 104]).distance).toBeCloseTo(5); // 줄 사이 방향 5pt
   });
 
   it('폭 0 quad(공백 등)도 점 거리로 다룬다', () => {
     const m = makePageModel(['A']);
     m.chars[0]!.quad = [50, 50, 50, 50, 50, 64, 50, 64]; // 폭 0, 높이 14
-    expect(locatePoint(m.chars[0]!, [53, 57]).distance).toBeCloseTo(3);
+    // 줄 진행 방향으로 3pt 떨어짐 → 가중치 적용
+    expect(locatePoint(m.chars[0]!, [53, 57]).distance).toBeCloseTo(3 * ALONG_LINE_WEIGHT);
     m.chars[0]!.quad = [50, 50, 50, 50, 50, 50, 50, 50]; // 점
-    expect(locatePoint(m.chars[0]!, [53, 54]).distance).toBeCloseTo(5);
+    expect(locatePoint(m.chars[0]!, [53, 54]).distance).toBeCloseTo(
+      Math.hypot(3 * ALONG_LINE_WEIGHT, 4),
+    );
   });
 });
 
