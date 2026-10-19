@@ -140,4 +140,21 @@ describe('PdfSession.getPageLayout', () => {
     expect(s.getPageLayout(0)).not.toBe(layout);
     s.close();
   });
+
+  it('레이아웃 캐시는 최근 사용 순 16쪽까지(오래된 쪽은 다시 계산)', () => {
+    const s = new PdfSession();
+    s.open(
+      buildPdf(
+        Array.from({ length: 18 }, () => ({
+          content,
+          mediabox: [0, 0, 612, 792] as [number, number, number, number],
+        })),
+      ),
+    );
+    const first = s.getPageLayout(0);
+    for (let i = 1; i <= 16; i++) s.getPageLayout(i);
+    expect(s.getPageLayout(16)).toBe(s.getPageLayout(16));
+    expect(s.getPageLayout(0)).not.toBe(first);
+    s.close();
+  });
 });

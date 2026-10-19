@@ -165,6 +165,8 @@ describe('kendallTau·summarizeScores', () => {
     const base = {
       pairs: z,
       tau: 1,
+      tauBaseline: 1,
+      tauExcluded: 0,
       tables: z,
       tableShape: { exact: 0, matched: 0 },
       cellLines: { correct: 0, total: 0 },
@@ -194,5 +196,62 @@ describe('xyCut', () => {
     expect(r.group[0]).toBe(-1);
     expect(r.group[1]).toBe(r.group[3]);
     expect(r.group[1]).not.toBe(r.group[2]);
+  });
+});
+
+describe('scoreLayout 경계 사례', () => {
+  it('매칭되지 않은 예측 표·도형은 fp, 라벨 셀은 매칭이 없어도 total 에 든다', () => {
+    const l = label([
+      {
+        type: 'table',
+        bbox: [0, 0, 100, 100],
+        rows: 1,
+        cols: 2,
+        lines: [0, 1],
+        cells: [
+          { row: 0, col: 0, lines: [0] },
+          { row: 0, col: 1, lines: [1] },
+        ],
+      },
+    ]);
+    const layout = layoutOf([], {
+      tables: [
+        {
+          id: 0,
+          bbox: [300, 300, 400, 400],
+          rows: 1,
+          cols: 1,
+          rowBounds: [300, 400],
+          colBounds: [300, 400],
+          cells: [],
+          strategy: 'text',
+        },
+      ],
+      figures: [
+        { id: 0, bbox: [0, 500, 100, 600], kind: 'image', images: [0], paths: [], labels: [] },
+      ],
+      readingOrder: [
+        { kind: 'table', id: 0 },
+        { kind: 'figure', id: 0 },
+      ],
+    });
+    const s = scoreLayout(l, layout);
+    expect(s.tables).toEqual({ tp: 0, fp: 1, fn: 1 });
+    expect(s.figures).toEqual({ tp: 0, fp: 1, fn: 0 });
+    expect(s.cellLines).toEqual({ correct: 0, total: 2 });
+  });
+
+  it('예측에서 빠진 라벨 줄은 문단 불일치이고 τ 에서 뺀 항목으로 센다', () => {
+    const s = scoreLayout(
+      label([
+        { type: 'paragraph', role: 'body', lines: [0, 1] },
+        { type: 'paragraph', role: 'body', lines: [2] },
+      ]),
+      layoutOf([para(0, [0, 1])]),
+    );
+    expect(s.paragraphs).toEqual({ tp: 1, fp: 0, fn: 1 });
+    expect(s.tauExcluded).toBe(1);
+    expect(s.tau).toBeNull();
+    expect(s.tauBaseline).toBe(1);
   });
 });
