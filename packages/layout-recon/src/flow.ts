@@ -41,9 +41,11 @@ export function splitMargins(units: readonly Unit[], bounds: Rect, body: number)
   const minGap = C.marginGapEm * body;
   const inTop = (u: Unit) => u.bbox[3] <= topLimit;
   const inBottom = (u: Unit) => u.bbox[1] >= bottomLimit;
-  // 긴 산문 줄(8단어 이상, 쪽 폭 60% 이상)은 머리·꼬리가 아니다(쪽 위 강조 상자 등).
+  // 긴 산문 줄(본문 크기의 8단어 이상, 쪽 폭 60% 이상)은 머리·꼬리가 아니다(쪽 위 강조 상자 등).
   const prose = (u: Unit) =>
-    u.parts.reduce((n, p) => n + p.words.length, 0) >= 8 && width(u.bbox) >= 0.6 * W;
+    u.size >= 0.8 * body &&
+    u.parts.reduce((n, p) => n + p.words.length, 0) >= 8 &&
+    width(u.bbox) >= 0.6 * W;
   const eligible = (u: Unit) => PAGE_NUMBER.test(u.text) || (u.size <= body * 1.3 && !prose(u));
   const header = new Set<Unit>();
   const footer = new Set<Unit>();
@@ -68,7 +70,11 @@ export function splitMargins(units: readonly Unit[], bounds: Rect, body: number)
     const y = c.bbox[1];
     const belowSet = units.filter((u) => u.bbox[3] > y + 1);
     const ok = belowSet.every(
-      (u) => inBottom(u) && eligible(u) && (width(u.bbox) <= 0.6 * W || PAGE_NUMBER.test(u.text)),
+      (u) =>
+        inBottom(u) &&
+        eligible(u) &&
+        // 넓은 줄은 본문보다 많이 작은 글자(슬라이드 하단 막대 등)일 때만 꼬리로 본다(각주와 구분).
+        (width(u.bbox) <= 0.6 * W || PAGE_NUMBER.test(u.text) || u.size < 0.8 * body),
     );
     if (!ok) continue;
     const top = Math.min(...belowSet.map((u) => u.bbox[1]));
