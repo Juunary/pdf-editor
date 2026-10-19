@@ -51,7 +51,7 @@ describe('buildPdfFallbackRules', () => {
     for (const r of rules) {
       expect(r.action.type).toBe('redirect');
       expect(r.action.redirect?.regexSubstitution).toBe(`${VIEWER}?file=\\0`);
-      expect(r.condition.resourceTypes).toEqual(['main_frame', 'sub_frame']);
+      expect(r.condition.resourceTypes).toEqual(['main_frame', 'sub_frame', 'object']);
     }
   });
 
