@@ -69,6 +69,14 @@ type Arrival = 'fill' | 'stroke' | 'fill+stroke' | 'ignore' | 'clip' | 'clip-str
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
+/** 진행 중 경로 명령과 마지막 이동 명령의 인덱스(-1: 없음). h 의 현재점 복원에 쓴다. */
+interface PathBuf {
+  cmds: number[][];
+  move: number;
+}
+
+const newPath = (): PathBuf => ({ cmds: [], move: -1 });
+
 function concat(a: Matrix, b: Matrix): Matrix {
   return [
     a[0] * b[0] + a[1] * b[2],
@@ -328,7 +336,7 @@ export class ContentInterpreter {
    * 진행 중 경로(콘텐츠 공간): [0,x,y] 이동, [1,x,y] 선, [2,x1,y1,x2,y2,x3,y3] 곡선, [3] 닫기.
    * pathRight = MuPDF only_right_angles(생성 시 판정).
    */
-  private pathCmds: number[][] = [];
+  private pathBuf: PathBuf = newPath();
   private pathRight = true;
   private pathCur: Point = [0, 0];
   private pendingClip: { owner: SourceOp | null } | null = null;
@@ -428,7 +436,15 @@ export class ContentInterpreter {
     for (const op of this.ops) {
       if (!op.text) continue;
       const seqs = op.text.glyphs.map((g) => g.seq).filter((s): s is number => s !== null);
-      if (seqs.length > 0) op.glyphSeq = [Math.min(...seqs), Math.max(...seqs) + 1];
+      if (seqs.length === 0) continue;
+      // 글리프가 많은 연산에서 전개 인자 수 한도를 넘지 않게 반복으로 구한다.
+      let lo = seqs[0]!;
+      let hi = lo;
+      for (const v of seqs) {
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+      op.glyphSeq = [lo, hi + 1];
     }
     return {
       userToPage: this.userToPage,
@@ -779,9 +795,12 @@ export class ContentInterpreter {
 
   private pathCmd(cmd: number[]): void {
     if (cmd[0] === 2) this.pathRight = false;
-    this.pathCmds.push(cmd);
+    const path = this.pathBuf;
+    if (cmd[0] === 0) path.move = path.cmds.length;
+    path.cmds.push(cmd);
     if (cmd[0] === 3) {
-      const move = [...this.pathCmds].reverse().find((c) => c[0] === 0);
+      // 닫기: 현재점을 마지막 이동점으로(인덱스로 찾아 경로 길이와 무관하게 상수 시간).
+      const move = path.move >= 0 ? path.cmds[path.move] : undefined;
       if (move) this.pathCur = [move[1]!, move[2]!];
     } else this.pathCur = [cmd.at(-2)!, cmd.at(-1)!];
   }
@@ -792,9 +811,9 @@ export class ContentInterpreter {
    * (축 정렬 허용치 0.001, 곡선은 직각 아님, 끝의 이동은 무시).
    */
   private takePath(dev: Matrix): { box: Rect4; right: boolean; empty: boolean } {
-    const cmds = this.pathCmds;
+    const cmds = this.pathBuf.cmds;
     const constructionRight = this.pathRight;
-    this.pathCmds = [];
+    this.pathBuf = newPath();
     this.pathRight = true;
     const rectilinear =
       (Math.abs(dev[1]) < 1.2e-7 && Math.abs(dev[2]) < 1.2e-7) ||
@@ -1021,7 +1040,7 @@ export class ContentInterpreter {
     const resources = pat.resources;
     const saved = this.gs;
     const savedStack = this.gstack;
-    const savedPath = this.pathCmds;
+    const savedPath = this.pathBuf;
     const savedRight = this.pathRight;
     const savedClip = this.pendingClip;
     this.gs = cloneGs(saved);
@@ -1035,7 +1054,7 @@ export class ContentInterpreter {
         m.pattern = null;
       }
     }
-    this.pathCmds = [];
+    this.pathBuf = newPath();
     this.pathRight = true;
     this.pendingClip = null;
     this.exec({
@@ -1056,7 +1075,7 @@ export class ContentInterpreter {
     });
     this.gs = saved;
     this.gstack = savedStack;
-    this.pathCmds = savedPath;
+    this.pathBuf = savedPath;
     this.pathRight = savedRight;
     this.pendingClip = savedClip;
   }
@@ -1269,7 +1288,7 @@ export class ContentInterpreter {
       clipAccum: this.clipAccum,
       hidden: this.hidden,
       marked: this.marked,
-      pathCmds: this.pathCmds,
+      pathBuf: this.pathBuf,
       pathRight: this.pathRight,
       pathCur: this.pathCur,
       pendingClip: this.pendingClip,
@@ -1289,7 +1308,7 @@ export class ContentInterpreter {
     this.clipAccum = null;
     this.hidden = 0;
     this.marked = [];
-    this.pathCmds = [];
+    this.pathBuf = newPath();
     this.pathRight = true;
     this.pendingClip = null;
     if (!saved.cellOwner && rec) this.addLimit(rec, 'outside-page-content');
@@ -1321,7 +1340,7 @@ export class ContentInterpreter {
     this.clipAccum = saved.clipAccum;
     this.hidden = saved.hidden;
     this.marked = saved.marked;
-    this.pathCmds = saved.pathCmds;
+    this.pathBuf = saved.pathBuf;
     this.pathRight = saved.pathRight;
     this.pathCur = saved.pathCur;
     this.pendingClip = saved.pendingClip;
@@ -1502,7 +1521,7 @@ export class ContentInterpreter {
     this.gstack = [];
     this.gs.ctm = concat(matrix, this.gs.ctm);
     // BBox 클립: pdf_show_path(clip) 와 같이 진행 중 경로를 소비한다.
-    this.pathCmds = [];
+    this.pathBuf = newPath();
     this.pathRight = true;
     this.pendingClip = null;
     this.gs.clipDepth++;
