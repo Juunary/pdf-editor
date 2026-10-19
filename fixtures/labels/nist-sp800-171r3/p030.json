@@ -1,0 +1,156 @@
+{
+  "doc": "nist-sp800-171r3",
+  "pageIndex": 30,
+  "split": "dev",
+  "extract": {
+    "lineCount": 41,
+    "linesSha256": "13ee7f3b354d519ee0a08cecec4354a731a17376a8f44c26046ef503548d1051"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-d1 (Claude subagent)",
+  "reviewedBy": "reviewer-D (Claude Opus subagent, independent)",
+  "notes": "Whitespace-only lines 1,4,5 omitted. Header block 0, 3, 2 separate paragraphs as in approved p020. Lines 7-12 are the tail of the previous page's paragraph (starts lowercase) and 13-18 is a separate paragraph (extra gap). REFERENCES / DISCUSSION bold stand-alone lines = heading; 'Source Control' (20) and 'Supporting Publications' (21) are separate field lines. '03.02.03 Withdrawn' (22), '3.3. Audit and Accountability' (24) and '03.03.01 Event Logging' (25) are headings; 23 is a one-line body under the withdrawn requirement. a. (26-27) and b. (28-29) are one list-item each (continuation lines indented). DISCUSSION body 31-40 is one paragraph that continues on the next page (ends mid-sentence). review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        19
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        20
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        21
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        22
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        23
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        24
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        25
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        26,
+        27
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        28,
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        30
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        6
+      ]
+    }
+  ],
+  "ignoreLines": []
+}
