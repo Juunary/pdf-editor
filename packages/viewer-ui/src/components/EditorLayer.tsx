@@ -81,6 +81,8 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
   useLayoutEffect(() => {
     document.getSelection()?.removeAllRanges();
     taRef.current?.focus({ preventScroll: true });
+    // 임베디드 문맥(`<embed>`·`<iframe>`)에서는 프레임 자체에 포커스가 없을 수 있다(텍스트 층과 같은 이유, m1 통합 실측).
+    if (!document.hasFocus()) window.focus();
   }, [session.draftId]);
 
   // 모델이 조합을 끝냈는데 IME 는 아직 조합 중이면(저장 전 커밋 등) blur 로 IME 조합을 끝내고 다시 포커스한다.

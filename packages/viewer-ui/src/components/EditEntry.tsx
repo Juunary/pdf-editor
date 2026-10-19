@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
+import { useLayoutEffect, useState } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import type { PageEditability, Rect } from '@pdf-editor/shared-types';
 import type { ViewerController } from '../controller.js';
@@ -71,8 +71,8 @@ export function EditEntry({
     };
   }, [controller, pageRef, layout, pageIndex, paragraphs, busy]);
 
-  // 팝오버: 바깥을 누르거나 Esc 를 누르면 닫는다.
-  useEffect(() => {
+  // 팝오버: 바깥을 누르거나 Esc 를 누르면 닫는다(렌더 직후부터 받도록 레이아웃 효과로 등록한다).
+  useLayoutEffect(() => {
     if (!popover) return;
     const onDown = (e: MouseEvent) => {
       if (!(e.target as Element | null)?.closest?.('#pe-edit-popover')) {
