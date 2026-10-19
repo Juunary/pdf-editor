@@ -27,14 +27,16 @@ export function pdfDate(d: Date): string {
   return `D:${p(d.getUTCFullYear(), 4)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
 }
 
-/** Info 사전(없으면 만든다. 저장 작업 안에서 만들면 버린 뒤 끊긴 참조가 되므로 첫 편집 작업에서 만들어 둔다). */
+/**
+ * Info 사전. core 가 저널을 켜기 전(작업 밖)에 만들어 둔다(계약 D9 수정 1). 작업 안에서 trailer /Info 를 만들면
+ * 저널에 기록되지 않아 작업을 버린 뒤 끊긴 참조가 되므로 여기서는 만들지 않는다.
+ */
 function infoDict(doc: mupdf.PDFDocument): mupdf.PDFObject {
-  const trailer = doc.getTrailer();
-  const info = trailer.get('Info');
-  if (info.isDictionary()) return info;
-  const ref = doc.addObject(doc.newDictionary());
-  trailer.put('Info', ref);
-  return ref;
+  const info = doc.getTrailer().get('Info');
+  if (!info.isDictionary()) {
+    throw new Error('Info 사전 없음: core 가 저널을 켜기 전에 만들어야 한다(계약 D9 수정 1)');
+  }
+  return info;
 }
 
 /** pages 는 0부터. Info 에는 1부터 적고 기존 값과 합집합으로 합친다. */

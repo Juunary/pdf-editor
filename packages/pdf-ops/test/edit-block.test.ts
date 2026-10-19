@@ -4,7 +4,7 @@ import type { TextRun } from '@pdf-editor/shared-types';
 import { FontManager, pdfaDeclared, planParagraphEdit, recordEditMetadata } from '../src/index.js';
 import { parseEditsInfo } from '../src/edit-meta.js';
 import { findParagraph, loadModules, pageContext } from './helpers/edit-context.js';
-import { editParagraph, loadFallback } from './helpers/edit-driver.js';
+import { editParagraph, fallbackFor } from './helpers/edit-driver.js';
 import { inkInside, raster } from './helpers/engines.js';
 import { bytesOf, engines, makeDoc, stextChars, wordOrigins } from './helpers/fixtures-m3.js';
 
@@ -20,7 +20,7 @@ describe('writeEditBlock(5.5)', () => {
   it('텍스트 상태를 모두 명시하고 BT·ET 를 q·Q 로 감싼다', () => {
     const doc = makeDoc(['BT /F1 12 Tf 2 Tc 3 Tw 80 Tz 5 Ts 50 200 Td (State paragraph.) Tj ET']);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const r = editParagraph(ctx, fm, findParagraph(ctx, 'State paragraph').id);
     const s = blockStream(doc, r.prepared.block.objectNumber);
     expect(s.startsWith('q\n0 Tc 0 Tw 100 Tz 0 TL 0 Ts\nBT\n')).toBe(true);
@@ -42,7 +42,7 @@ describe('writeEditBlock(5.5)', () => {
         ColorSpace: { CS0: src.addObject(['CalRGB', { WhitePoint: [0.9505, 1, 1.089] }]) },
       }),
     );
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const r1 = editParagraph(
       pageContext(doc, 0),
       fm,
@@ -67,7 +67,7 @@ describe('writeEditBlock(5.5)', () => {
     }));
     const before = bytesOf(doc);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Halfalpha');
     const r = editParagraph(ctx, fm, p.id);
     expect(r.plan.insertion?.mode).toBe('before-bt');
@@ -90,7 +90,7 @@ describe('writeEditBlock(5.5)', () => {
   it('글리프 위치 = 배치 결과(TJ 숫자 보정), 줄 끝 공백 글리프를 쓴다', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 230 Td (Position check paragraph.) Tj ET']);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Position check');
     // 좁은 영역으로 줄 나눔을 만든다.
     const plan0 = { ...p, bbox: [50, p.bbox[1], 130, p.bbox[3]] as typeof p.bbox };
@@ -118,7 +118,7 @@ describe('writeEditBlock(5.5)', () => {
   it('폴백 폰트 굵게·기울임 구간은 합성(2 Tr·선 두께, Tm 기울기)과 경고', async () => {
     const doc = makeDoc(['BT /F1 14 Tf 50 200 Td (Styled paragraph.) Tj ET']);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Styled');
     const start = planParagraphEdit(ctx, fm, p.id).runs[0]!.style;
     const runs: TextRun[] = [

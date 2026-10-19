@@ -96,15 +96,6 @@ function resolveStyles(
   return out;
 }
 
-function ensureInfo(doc: mupdf.PDFDocument, changed: Set<number>): void {
-  const trailer = doc.getTrailer();
-  const info = trailer.get('Info');
-  if (info.isDictionary()) return;
-  const ref = doc.addObject(doc.newDictionary());
-  trailer.put('Info', ref);
-  changed.add(ref.asIndirect());
-}
-
 /** Do 연산(그 스트림·이름 피연산자 범위)의 SourceOp. */
 function doOpOf(
   ctx: ParagraphEditContext,
@@ -174,7 +165,6 @@ export function prepareEdit(
   const streams = env.streams;
   const styles = resolveStyles(ctx, plan, a, streams);
   const changed = new Set<number>();
-  ensureInfo(doc, changed);
 
   if (a.block && a.blockStep) {
     const step = a.blockStep;

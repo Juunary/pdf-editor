@@ -3,7 +3,7 @@ import * as mupdf from 'mupdf';
 import { FontManager, planPageEditability, planParagraphEdit } from '../src/index.js';
 import type { ParagraphEditContext } from '../src/index.js';
 import { findParagraph, loadModules, pageContext } from './helpers/edit-context.js';
-import { loadFallback } from './helpers/edit-driver.js';
+import { fallbackFor } from './helpers/edit-driver.js';
 import { charsOfText, makeDoc, paragraphOf, withParagraphs } from './helpers/fixtures-m3.js';
 
 /** 계약 5.1 편집 가능 판정(문서를 바꾸지 않는다). */
@@ -12,7 +12,7 @@ beforeAll(async () => {
 });
 
 function plan(ctx: ParagraphEditContext, needle: string) {
-  const fm = new FontManager(ctx.doc, loadFallback);
+  const fm = new FontManager(ctx.doc, fallbackFor(ctx.doc));
   return planParagraphEdit(ctx, fm, findParagraph(ctx, needle).id);
 }
 const reasons = (p: { limits: { reason: string }[] }) => p.limits.map((l) => l.reason);
@@ -36,7 +36,7 @@ describe('편집 제한(5.1)', () => {
     const ocr = withParagraphs(ctx, [
       paragraphOf(ctx, charsOfText(ctx, 'Invisible ocr paragraph.'), 0),
     ]);
-    expect(reasons(planParagraphEdit(ocr, new FontManager(doc, loadFallback), 0))).toContain(
+    expect(reasons(planParagraphEdit(ocr, new FontManager(doc, fallbackFor(doc)), 0))).toContain(
       'invisible-text',
     );
   });
@@ -59,7 +59,7 @@ describe('편집 제한(5.1)', () => {
     });
     const ctx = pageContext(doc, 0);
     const p = ctx.layout.paragraphs[0]!;
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     expect(reasons(planParagraphEdit(ctx, fm, p.id))).toContain('type3-font');
   });
 
@@ -83,7 +83,7 @@ describe('편집 제한(5.1)', () => {
       ...charsOfText(ctx0, 'form line continues it'),
     ];
     const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, chars, 0)]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     expect(reasons(planParagraphEdit(ctx, fm, 0))).toContain('mixed-content-sources');
   });
 
@@ -107,7 +107,7 @@ describe('편집 제한(5.1)', () => {
     const up = charsOfText(ctx0, 'Upper paragraph text.');
     const low = charsOfText(ctx0, 'Lower paragraph text.');
     const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, up, 0), paragraphOf(ctx0, low, 1)]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     expect(reasons(planParagraphEdit(ctx, fm, 0))).toContain('actualtext-partial');
   });
 
@@ -119,7 +119,7 @@ describe('편집 제한(5.1)', () => {
     const c0 = pageContext(doc, 0);
     const p0 = planParagraphEdit(
       withParagraphs(c0, [paragraphOf(c0, charsOfText(c0, 'Target after clip'), 0)]),
-      new FontManager(doc, loadFallback),
+      new FontManager(doc, fallbackFor(doc)),
       0,
     );
     expect(reasons(p0)).toContain('bt-split-unsupported');
@@ -127,7 +127,7 @@ describe('편집 제한(5.1)', () => {
     const c1 = pageContext(doc, 1);
     const p1 = planParagraphEdit(
       withParagraphs(c1, [paragraphOf(c1, charsOfText(c1, 'Target after q'), 0)]),
-      new FontManager(doc, loadFallback),
+      new FontManager(doc, fallbackFor(doc)),
       0,
     );
     expect(p1.limits.find((l) => l.reason === 'bt-split-unsupported')!.detail).toMatch(/q\/Q/);
@@ -154,7 +154,7 @@ describe('편집 제한(5.1)', () => {
     const ctx0 = pageContext(doc, 0);
     const chars = [...charsOfText(ctx0, '1.'), ...charsOfText(ctx0, 'rest of the clipped note.')];
     const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, chars, 0)]);
-    const p = planParagraphEdit(ctx, new FontManager(doc, loadFallback), 0);
+    const p = planParagraphEdit(ctx, new FontManager(doc, fallbackFor(doc)), 0);
     const l = p.limits.find((x) => x.reason === 'insertion-clipped')!;
     expect(l.detail).toMatch(/직사각형 클립/);
     expect(l.chars.length).toBeGreaterThan(10);
@@ -204,9 +204,9 @@ describe('편집 제한(5.1)', () => {
     const ctx0 = pageContext(doc, 0);
     const para = { ...ctx0.layout.paragraphs[0]!, table: 0 };
     const ctx = withParagraphs(ctx0, [para]);
-    expect(reasons(planParagraphEdit(ctx, new FontManager(doc, loadFallback), para.id))).toContain(
-      'not-flow-paragraph',
-    );
+    expect(
+      reasons(planParagraphEdit(ctx, new FontManager(doc, fallbackFor(doc)), para.id)),
+    ).toContain('not-flow-paragraph');
   });
 });
 
@@ -259,7 +259,7 @@ describe('시작 상태(5.3)', () => {
     ]);
     const ctx = pageContext(doc, 0);
     const p = findParagraph(ctx, 'Mixed');
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const pl = planParagraphEdit(ctx, fm, p.id);
     const text = pl.runs.map((r) => r.text).join('');
     expect(text).toBe(p.text);
@@ -290,9 +290,10 @@ describe('판정은 문서를 바꾸지 않는다·판정 시간', () => {
       );
     }
     const doc = makeDoc([{ content: lines.join('\n'), mediabox: [0, 0, 400, 800] }]);
-    doc.enableJournal();
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
+    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
+    doc.enableJournal();
     planPageEditability(ctx, fm); // 첫 호출(폰트 캐시 준비)
     const t0 = performance.now();
     const pe = planPageEditability(ctx, fm);

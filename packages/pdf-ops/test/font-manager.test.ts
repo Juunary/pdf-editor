@@ -2,13 +2,14 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import type { TextRun } from '@pdf-editor/shared-types';
 import {
+  embedFont,
   FontManager,
   FULL_SAVE_OPTIONS,
   subsetFontBytes,
   type ParagraphEditContext,
 } from '../src/index.js';
 import { findParagraph, loadModules, pageContext, reopen } from './helpers/edit-context.js';
-import { editParagraph, loadFallback } from './helpers/edit-driver.js';
+import { editParagraph, loadFallback, fallbackFor } from './helpers/edit-driver.js';
 import { inkInside, pageText, raster, squash } from './helpers/engines.js';
 import { engines, makeDoc } from './helpers/fixtures-m3.js';
 
@@ -82,7 +83,7 @@ describe('원본 폰트 역매핑(i)·형식(iv)', () => {
   it('Type1(단순, WinAnsi): 라틴·악센트는 원본, 한글은 폴백', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Helvetica sample text.) Tj ET']);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     expect(faces(fm, ctx, runsOf(ctx, 'Helvetica', 'Héllo 한'))).toBe('oooooof');
   });
 
@@ -103,13 +104,13 @@ describe('원본 폰트 역매핑(i)·형식(iv)', () => {
     expect(doc.findPage(0).get('Resources').get('Font').get('T').get('Subtype').asName()).toBe(
       'TrueType',
     );
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     expect(faces(fm, ctx, runsOf(ctx, 'Truetype', 'Text 가'))).toBe('ooooof');
     const { doc: d2 } = notoDoc('가나다 abc');
     const c2 = pageContext(d2, 0);
-    expect(faces(new FontManager(d2, loadFallback), c2, runsOf(c2, '가나다', '다나가 cab'))).toBe(
-      'ooooooo',
-    );
+    expect(
+      faces(new FontManager(d2, fallbackFor(d2)), c2, runsOf(c2, '가나다', '다나가 cab')),
+    ).toBe('ooooooo');
   });
 
   it('후보가 여럿이면 이 쪽에서 쓰인 코드를 우선한다', () => {
@@ -124,7 +125,7 @@ describe('원본 폰트 역매핑(i)·형식(iv)', () => {
     enc.put('Differences', diff);
     f1.put('Encoding', enc);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const runs = runsOf(ctx, 'Used', 'A');
     const seg = fm.assign(ctx, 'A', runs).segments[0]!;
     expect(seg.face?.kind).toBe('original');
@@ -138,7 +139,7 @@ describe('외곽선(ii)·폭(iii) 판정과 V4(렌더 결과와 같음)', () => 
     const chars = '가나다라마abcxyz';
     const { doc, font } = notoDoc('가나 ab', '가나다 abc');
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const decided = faces(fm, ctx, runsOf(ctx, '가나', chars));
     // 서브셋에 남긴 글리프(가나다abc)만 원본.
     expect(decided).toBe('oooffooofff');
@@ -181,7 +182,7 @@ describe('외곽선(ii)·폭(iii) 판정과 V4(렌더 결과와 같음)', () => 
     f1.put('LastChar', 126);
     f1.put('Widths', copy);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     expect(faces(fm, ctx, runsOf(ctx, 'Width zero', 'wxy'))).toBe('ofo');
   });
 });
@@ -190,7 +191,7 @@ describe('글자 단위 폴백과 glyph-missing', () => {
   it('폴백 섞인 줄, 두 폰트 모두 없는 글자는 face null·경고, 줄바꿈은 앞 폰트', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Mixed fallback line.) Tj ET']);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const runs = runsOf(ctx, 'Mixed', 'ab 가나\n😀ᄀ漢');
     const { segments, warnings } = fm.assign(ctx, runs[0]!.text, runs);
     expect(faces(fm, ctx, runs)).toBe('ooofff--f');
@@ -210,23 +211,15 @@ describe('폴백 폰트 수명·저장 서브셋(D4·D9)', () => {
     const doc = makeDoc([
       'BT /F1 12 Tf 50 250 Td (Before paragraph.) Tj ET BT /F1 12 Tf 50 200 Td (Target paragraph.) Tj ET',
     ]);
+    const source = fallbackFor(doc);
+    const fm = new FontManager(doc, source);
+    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
     doc.enableJournal();
-    const fm = new FontManager(doc, loadFallback);
     const ctx = pageContext(doc, 0);
     doc.beginOperation('edit');
     const r = editParagraph(ctx, fm, findParagraph(ctx, 'Target').id, '서브셋 저장 확인 문장');
     doc.endOperation();
-    const fontRef = (() => {
-      let ref: mupdf.PDFObject | null = null;
-      doc
-        .newIndirect(r.prepared.block.objectNumber)
-        .get('Resources')
-        .get('Font')
-        .forEach((v) => {
-          if (!v.get('PdfEditorFallback').isNull()) ref = v;
-        });
-      return ref!;
-    })();
+    const fontRef = source.ref()!;
     const file = () => fontRef.get('DescendantFonts').get(0).get('FontDescriptor').get('FontFile2');
     const fullLength = file().readStream().getLength();
     doc.beginOperation('save');
@@ -234,11 +227,9 @@ describe('폴백 폰트 수명·저장 서브셋(D4·D9)', () => {
     const saved = doc.saveToBuffer(FULL_SAVE_OPTIONS).asUint8Array().slice();
     doc.abandonOperation();
     expect(file().readStream().getLength()).toBe(fullLength);
-    expect(fontRef.get('PdfEditorFallback').asBoolean()).toBe(true);
     expect(doc.canUndo()).toBe(true);
     const reopened = mupdf.Document.openDocument(saved, 'application/pdf') as mupdf.PDFDocument;
     let subsetLen = 0;
-    let mark = '';
     reopened
       .findPage(0)
       .get('Resources')
@@ -247,8 +238,7 @@ describe('폴백 폰트 수명·저장 서브셋(D4·D9)', () => {
         x.get('Resources')
           .get('Font')
           .forEach((f) => {
-            if (f.get('PdfEditorFallback').isNull()) return;
-            mark = f.get('PdfEditorFallback').toString();
+            if (!f.get('BaseFont').asName().includes('NotoSansKR')) return;
             subsetLen = f
               .get('DescendantFonts')
               .get(0)
@@ -258,7 +248,6 @@ describe('폴백 폰트 수명·저장 서브셋(D4·D9)', () => {
               .getLength();
           });
       });
-    expect(mark).toBe('/Subset');
     expect(subsetLen).toBeGreaterThan(0);
     expect(subsetLen).toBeLessThan(fullLength / 10);
     for (const e of engines()) {
@@ -280,4 +269,83 @@ describe('폴백 폰트 수명·저장 서브셋(D4·D9)', () => {
     expect(cx).toBeLessThan(x1);
     expect(Math.abs(cy - (g[0]!.y - g[0]!.size * 0.35))).toBeLessThan(g[0]!.size * 0.6);
   });
+});
+
+describe('V4 폴백 ToUnicode 왕복(계약 수정 2)', () => {
+  it('폴백 cmap 의 모든 코드 포인트(공백류 제외): gid 로 그린 글자의 추출 = 그 코드 포인트(불일치 0)', async () => {
+    const bytes = loadFallback();
+    const font = new mupdf.Font('NotoSansKR', bytes);
+    const cps: number[] = [];
+    for (let cp = 0x21; cp <= 0xffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      if (/\s/u.test(String.fromCodePoint(cp))) continue;
+      if (font.encodeCharacter(cp) > 0) cps.push(cp);
+    }
+    // 한 쪽에 60자 × 40줄, gid 를 Identity-H 2바이트로 그린다.
+    const src = new mupdf.PDFDocument();
+    const ref = embedFont(src, 'NotoSansKR', bytes).ref;
+    const PER = 2400;
+    for (let i = 0; i < cps.length; i += PER) {
+      const chunk = cps.slice(i, i + PER);
+      const lines: string[] = [];
+      for (let k = 0; k < chunk.length; k += 60) {
+        const hex = chunk
+          .slice(k, k + 60)
+          .map((cp) => font.encodeCharacter(cp).toString(16).padStart(4, '0'))
+          .join('');
+        lines.push(`1 0 0 1 20 ${820 - (k / 60) * 20} Tm <${hex}> Tj`);
+      }
+      src.insertPage(
+        -1,
+        src.addPage([0, 0, 720, 840], 0, { Font: { F: ref } }, `BT /F 10 Tf ${lines.join(' ')} ET`),
+      );
+    }
+    const out = src.saveToBuffer('compress').asUint8Array().slice();
+    const doc = mupdf.Document.openDocument(out, 'application/pdf');
+    let mismatch = 0;
+    const examples: string[] = [];
+    for (let p = 0; p * PER < cps.length; p++) {
+      const page = doc.loadPage(p);
+      const st = page.toStructuredText('preserve-whitespace');
+      const got: number[] = [];
+      st.walk({ onChar: (c) => void (/\s/u.test(c) || got.push(c.codePointAt(0)!)) });
+      st.destroy();
+      page.destroy();
+      const want = cps.slice(p * PER, p * PER + PER);
+      for (let k = 0; k < want.length; k++) {
+        if (got[k] !== want[k]) {
+          mismatch++;
+          if (examples.length < 5)
+            examples.push(`U+${want[k]!.toString(16)}→${got[k]?.toString(16)}`);
+        }
+      }
+      expect(got.length).toBe(want.length);
+    }
+    console.log(
+      `폴백 ToUnicode 왕복(MuPDF): 코드 포인트 ${cps.length}, 불일치 ${mismatch} ${examples.join(' ')}`,
+    );
+    expect(mismatch).toBe(0);
+    // pdf.js·Poppler: 쪽 텍스트(공백 제거)를 코드 포인트 순서와 비교한다. pdf.js 는 텍스트 내용에서
+    // U+00B5(MICRO SIGN)를 U+03BC 로 바꾼다(엔진 자체 정규화, 실측 2026-10-19). 그 한 쌍은 같다고 본다.
+    const engineNorm: Record<string, Map<number, number>> = { pdfjs: new Map([[0x3bc, 0xb5]]) };
+    for (const e of engines().filter((x) => x !== 'mupdf')) {
+      let bad = 0;
+      const ex: string[] = [];
+      for (let p = 0; p * PER < cps.length; p++) {
+        const norm = engineNorm[e];
+        const got = [...squash(await pageText(e, out, p))]
+          .map((c) => c.codePointAt(0)!)
+          .map((c, k) => (norm?.get(c) === cps[p * PER + k] ? cps[p * PER + k]! : c));
+        const want = cps.slice(p * PER, p * PER + PER);
+        for (let k = 0; k < Math.max(got.length, want.length); k++) {
+          if (got[k] !== want[k]) {
+            bad++;
+            if (ex.length < 5) ex.push(`U+${want[k]?.toString(16)}→${got[k]?.toString(16)}`);
+          }
+        }
+      }
+      console.log(`폴백 ToUnicode 왕복(${e}): 불일치 ${bad} ${ex.join(' ')}`);
+      expect(bad, e).toBe(0);
+    }
+  }, 120_000);
 });
