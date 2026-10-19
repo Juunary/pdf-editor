@@ -191,9 +191,9 @@ describe('클러스터·쓰기 글리프', () => {
   it('확장 자소 단위로 encode 하고 줄 나눔한다', () => {
     const calls: string[] = [];
     const face = pdfFace('o', () => 500, calls);
-    const text = 'éx👨‍👩‍👧';
+    const text = 'e\u0301x👨\u200D👩\u200D👧';
     const r = layoutParagraph(input(text, {}, face));
-    expect(calls).toEqual(['é', 'x', '👨‍👩‍👧']);
+    expect(calls).toEqual(['e\u0301', 'x', '👨\u200D👩\u200D👧']);
     expect(r.summary.glyphs.map((g) => [g.offset, g.length])).toEqual([
       [0, 2],
       [2, 1],

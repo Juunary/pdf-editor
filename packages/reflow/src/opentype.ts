@@ -2,8 +2,9 @@
  * 폴백 폰트 셰이퍼(계약 D5): harfbuzzjs 로 kern 만 켜고 셰이핑한다. liga·clig·dlig·calt·ccmp·locl·rlig 는 끄고 언어 태그는
  * 쓰지 않는다(guessSegmentProperties 를 부르지 않아 기본 언어가 들어가지 않는다). 스크립트는 클러스터 단위로 나눠 정한다.
  *
- * 불변식: 쓰는 gid 는 모두 그 클러스터 자기 코드 포인트의 cmap gid 다(계약의 "cmap 역상" 보다 좁다. 숨긴 기본 무시 문자가
- * 공백 글리프가 되는 경우도 거른다). 어긋나거나 harfbuzz 가 클러스터를 합치면 그 클러스터는 cmap gid + hmtx 폭으로 대신한다.
+ * 불변식: 쓰는 gid 는 모두 그 클러스터 자기 코드 포인트(기본 무시 문자 제외)의 cmap gid 다(계약의 "cmap 역상" 보다 좁다.
+ * harfbuzz 가 숨긴 기본 무시 문자를 공백 글리프로 내는 경우도 거른다). 어긋나거나 harfbuzz 가 클러스터를 합치면 그 클러스터는
+ * cmap gid + hmtx 폭으로 대신한다.
  */
 import * as hb from 'harfbuzzjs';
 import type { ShapeResult, ShapedCluster, ShapedGlyph } from './shaper.js';
@@ -182,7 +183,7 @@ function shapeRun(
     const cps = codePoints(text.slice(s, e));
     const allowed = new Set<number>();
     for (const cp of cps) {
-      const g = nominalGlyph(f, cp);
+      const g = isDefaultIgnorable(cp) ? null : nominalGlyph(f, cp);
       if (g !== null) allowed.add(g);
     }
     const idx = glyphsOf[j] ?? [];
@@ -214,7 +215,10 @@ function shapeRun(
   }
 }
 
-/** cmap gid + hmtx 폭(커닝 없음). 기본 무시 문자는 글리프가 없으면 건너뛴다. 그 밖의 글리프가 없으면 null. */
+/**
+ * cmap gid + hmtx 폭(커닝 없음). 기본 무시 문자(ZWJ·SHY·변이 선택자 등)는 쓰지 않는다(harfbuzz 도 보이지 않게 숨기는
+ * 문자이고, 숨긴 공백 글리프를 쓰면 추출에 공백이 끼어든다). 그 밖의 글리프가 없으면 null.
+ */
 function nominalCluster(
   f: OtFont,
   pdfWidth: (gid: number) => number,
@@ -223,11 +227,9 @@ function nominalCluster(
   const glyphs: ShapedGlyph[] = [];
   let advance = 0;
   for (const cp of cps) {
+    if (isDefaultIgnorable(cp)) continue;
     const gid = nominalGlyph(f, cp);
-    if (gid === null) {
-      if (isDefaultIgnorable(cp)) continue;
-      return null;
-    }
+    if (gid === null) return null;
     const adv = hAdvance(f, gid) * f.scale;
     advance += adv;
     glyphs.push({ gid, code: gidCode(gid), advance: adv, xOffset: 0, pdfWidth: pdfWidth(gid) });
