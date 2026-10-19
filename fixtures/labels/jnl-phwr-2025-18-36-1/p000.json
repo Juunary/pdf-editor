@@ -1,0 +1,183 @@
+{
+ "doc": "jnl-phwr-2025-18-36-1",
+ "pageIndex": 0,
+ "split": "test2",
+ "extract": {
+  "lineCount": 41,
+  "linesSha256": "b121254e919b6d46ad0421914638a679b05808cf044b07dadc6edab76dfada8b"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t2 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "First page of a Korean journal article. Masthead at top-left (article type 35, eISSN 33, DOI 34) labeled header, one paragraph each, read top to bottom; PHWR logo (top-right) and 'Check for updates' badge are decorative vector graphics, not figures. Title 15 heading; author names 16-18 are one row split by ORCID icons -> one paragraph; 19 affiliation. Structured abstract: heading 20, then one paragraph per labeled field (21-22 purpose, 23-24 methods, 25-29 results, 30-31 conclusion; each starts a new row), 32 keywords row body. Two-column intro: heading 2 then left column 3-7 (indent at 3); paragraph ends mid-sentence at the column bottom and continues in right column 8-14 (split at column boundary, adjacent); 8-14 continues onto next page. Bottom band below the columns: 36 (Received/Revised/Accepted on one row = one paragraph, body, like approved jdis p000 dates), 37 corresponding-author note (footnote for the asterisk on the author line), 38 copyright (body), 39-40 Open Access notice (one auto-wrapped paragraph, URL breaks across lines; body). KDCA logo at bottom-right is decorative. Footer: 0 site/volume (left), 1 page number (right). review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    35
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    33
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    34
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    15
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    16,
+    17,
+    18
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    19
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    20
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    21,
+    22
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    23,
+    24
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    25,
+    26,
+    27,
+    28,
+    29
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    30,
+    31
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    32
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    3,
+    4,
+    5,
+    6,
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    36
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    37
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    38
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    39,
+    40
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    1
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

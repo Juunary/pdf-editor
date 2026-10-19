@@ -1,0 +1,164 @@
+{
+ "doc": "kogl-nabo-finstmt2025",
+ "pageIndex": 10,
+ "split": "test2",
+ "extract": {
+  "lineCount": 77,
+  "linesSha256": "bd2568e4f692277a4eeda42e12daca382d71b97ed1d5a1e1b251bb778a03b0de"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t1 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Page with a raster line chart and a ruled table. Chart: raster figure (images box 88,109,446,249) with no extracted text, so labels is empty; its title '[국가재무제표상 ...]' (2) and units '(단위: 조원)' (3) are separate caption paragraphs above it, and the source line '자료: 각 연도별 ...' (1, last-but-one in extraction order, below the chart) is a footnote paragraph right after the figure (same convention as table sources). Body 4-9: one paragraph (4 indented, 9 short last line). Table: title '[2024~2025회계연도 국가 재정상태표]' (76) and units '(단위: 조원, %)' (10) are caption paragraphs above the table; '자료: 대한민국정부 ...' (75) is a footnote right after it. Table grid from the ruling (bbox from rule extents): 11 rows x 6 cols; header is 2 rows because a dotted rule above '(비중)' (20) splits the header only in col 3 ('2025 (B)' = col 2, rows 0-1; the cell above '(비중)' is empty); '구분', '2024 (A)', '증감액 (C=B-A)', '증감률 (C/A)' each span header rows 0-1. Data rows: 자산 합계, Ⅰ-Ⅲ, 부채 합계, Ⅰ-Ⅲ, 순자산. The '-' in line 72 (순자산 비중 column) is a table cell. Cells omitted (66 grid cells > 60). Footer: line 0 ('2 ∙'); the NABO logo image is decorative. review: chart figure bbox widened from the image box (88,109)-(446,249) to the drawn frame around the chart (82,107)-(451,250); table 11x6 and header reading (2025 over cols 2-3 in header row 0, dotted box only around (비중)) checked; everything else unchanged.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    82.0,
+    107.0,
+    451.0,
+    250.0
+   ],
+   "labels": []
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    76
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    10
+   ]
+  },
+  {
+   "type": "table",
+   "bbox": [
+    83.7,
+    454.1,
+    455.0,
+    631.9
+   ],
+   "rows": 11,
+   "cols": 6,
+   "lines": [
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    75
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

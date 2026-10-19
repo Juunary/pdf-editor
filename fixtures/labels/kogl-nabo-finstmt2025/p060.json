@@ -1,0 +1,156 @@
+{
+ "doc": "kogl-nabo-finstmt2025",
+ "pageIndex": 60,
+ "split": "test2",
+ "extract": {
+  "lineCount": 91,
+  "linesSha256": "983d25e927f2ec746ea845f6101dd37d3fecf02b789adc17ddc10742d7638e17"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t1 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Ruled table + body. Caption '[2025년 국가채무와 국가부채 비교]' (80) and units '(단위: 조원)' (81) above the table (they come last in extraction order but first in reading order); '자료: 재정경제부' (79) is a footnote right after the table. Table grid from drawn rules (bbox = rule extents): 13 rows x 6 cols. Header row (shaded) has no interior vertical rules between cols 0-1 ('구분' spans cols 0-1); '국가 채무(B)' (3,4) and '차이 (A-B)' (5,6) are each one two-line header cell. Col 0 = vertical group labels ('중앙 정부 채무' 8-10 spans rows 1-3; '발생 주의 부채' 30-32 spans rows 4-6; '내부 거래' 62-63 spans rows 10-11), col 1 = item names, cols 2-4 = 부채(A), 국가채무(B), 차이, col 5 = 차이 이유 (text, plus '-' in lines 61 and 78). 공채, 기타, 소계, 합계 rows have their label across cols 0-1. Cells omitted (>60 cells). Body: 82-87 one paragraph (82 indented); 88-90 a new indented paragraph. Footer: line 0 ('52 ∙'); NABO logo decorative. review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    80
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    81
+   ]
+  },
+  {
+   "type": "table",
+   "bbox": [
+    82.1,
+    107.0,
+    462.3,
+    429.8
+   ],
+   "rows": 13,
+   "cols": 6,
+   "lines": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    79
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    82,
+    83,
+    84,
+    85,
+    86,
+    87
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    88,
+    89,
+    90
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

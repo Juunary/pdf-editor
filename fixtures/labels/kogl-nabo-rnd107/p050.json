@@ -1,0 +1,93 @@
+{
+ "doc": "kogl-nabo-rnd107",
+ "pageIndex": 50,
+ "split": "test2",
+ "extract": {
+  "lineCount": 29,
+  "linesSha256": "46035d97b7e020290a300cef3c072f9142ecc8f708ec8555b2543718f2da59a5"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t1 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Text page. Lines 1-2 continue a paragraph from the previous page (no first-line indent; paragraph splits at the page boundary, adjacent in reading order); they form one paragraph because line 1 is full width and line 2 is the short last line. Lines 3-6: indented first line = new paragraph. Heading 7 ('다. 국회예산정책처 연구', 12pt). Lines 8-19 are ONE paragraph: line 8 is indented, but line 15 ('「국가 R&D 사업의 과제기획...') starts a new sentence WITHOUT indent after line 14 which ends a sentence exactly at the right edge; line 14 is stretched by justification (natural width about 330pt vs 377pt drawn; the true last line 19 is short), so the paragraph continues and 14->15 is an automatic wrap (a different reading is a forced break, but no indent and a stretched line 14 argue against it). Lines 20-24 indented new paragraph (short last line 24). Lines 25-26 indented new paragraph that continues onto the next page (line 26 is full width); only this page's two lines are listed. Footnote 6) (27-28): line 28 is a hanging continuation line of the same footnote. Footer: line 0 ('∙31'); logo image box decorative. review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    1,
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    3,
+    4,
+    5,
+    6
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    20,
+    21,
+    22,
+    23,
+    24
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    25,
+    26
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    27,
+    28
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  }
+ ],
+ "ignoreLines": []
+}
