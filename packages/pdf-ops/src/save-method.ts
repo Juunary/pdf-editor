@@ -26,8 +26,13 @@ export interface SaveDecision {
   heap?: HeapEstimate;
 }
 
-/** 전체 저장 옵션. 미사용 객체 제거·번호 압축 + 스트림 압축. */
-export const FULL_SAVE_OPTIONS = 'garbage=compact,compress';
+/**
+ * 전체 저장 옵션: 미사용 객체 제거(번호 유지) + 스트림 압축(A3-6, 2026-10-19 결정).
+ * `garbage=compact`(번호 압축)·`deduplicate` 는 쓰지 않는다. MuPDF 1.28.x 는 이미지 XObject 를 `resolve()` 한
+ * 문서를 compact 저장하면 그 이미지 스트림을 잃는다(ArtifexSoftware/mupdf.js#201). `garbage=yes` 는 이 경로를
+ * 타지 않고, 피크 WASM 힙은 compact 와 같으며 출력만 수십 바이트 크다(docs/m0-dod-xobject-redact-save.md 3.3).
+ */
+export const FULL_SAVE_OPTIONS = 'garbage=yes,compress';
 export const INCREMENTAL_SAVE_OPTIONS = 'incremental';
 
 /**
