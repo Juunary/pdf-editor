@@ -34,6 +34,7 @@ import {
   type Token,
 } from './content-stream.js';
 import { now } from './clock.js';
+import { pageTransform, readStreamBytes } from './mupdf-util.js';
 import { OptionalContent } from './optional-content.js';
 import { FontCache, type PdfFont } from './pdf-fonts.js';
 import { loadType3, T3_COLOR, T3_UNCACHEABLE, type Type3Font, type Type3Glyph } from './type3.js';
@@ -357,7 +358,7 @@ export class ContentInterpreter {
   ) {
     this.fonts = new FontCache(doc);
     this.oc = new OptionalContent(doc);
-    this.userToPage = doc.loadPage(pageIndex).getTransform() as Matrix;
+    this.userToPage = pageTransform(doc, pageIndex);
     const material = (): Material => ({ kind: 'color', pattern: null, base: [...IDENTITY] });
     this.gs = {
       ctm: [...IDENTITY],
@@ -394,7 +395,7 @@ export class ContentInterpreter {
     let offset = 0;
     items.forEach((s, i) => {
       if (!s.isStream()) return;
-      const bytes = s.readStream().asUint8Array().slice();
+      const bytes = readStreamBytes(s);
       const ref: ContentStreamRef = { objectNumber: objNum(s) ?? 0, contentsIndex: i };
       this.streams.push({ ...ref, decodedLength: bytes.byteLength, filters: filtersOf(s) });
       segments.push({ start: offset, end: offset + bytes.byteLength, ref });
@@ -991,7 +992,7 @@ export class ContentInterpreter {
     if (fy1 > fy0 && y1 === y0) y1 = y0 + 1;
     const tiles = Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
     if (tiles > 4096 || this.patternDepth >= 4) return;
-    const bytes = pat.stream.readStream().asUint8Array().slice();
+    const bytes = readStreamBytes(pat.stream);
     const invU = invert(this.userToPage);
     if (tiles === 0) return;
     // 셀 내용은 페이지 콘텐츠 밖(L4). 칠하기 번호는 owner 가 갖고, 셀 글리프는 소유 없이 번호만 소비한다.
@@ -1506,7 +1507,7 @@ export class ContentInterpreter {
     this.pendingClip = null;
     this.gs.clipDepth++;
     this.paint(rec);
-    const bytes = xobj.readStream().asUint8Array().slice();
+    const bytes = readStreamBytes(xobj);
     const ref: ContentStreamRef = { objectNumber: number ?? 0, contentsIndex: null };
     if (ctx.owned && number !== null && !this.streamSeen.has(number)) {
       this.streamSeen.add(number);

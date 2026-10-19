@@ -11,6 +11,7 @@ import type * as mupdf from 'mupdf';
 import type { Matrix } from '@pdf-editor/shared-types';
 import { parseContentOpsLenient, type Token } from './content-stream.js';
 import { MAC_ROMAN_ENCODING, STANDARD_ENCODING, WIN_ANSI_ENCODING } from './glyph-names.js';
+import { readStreamBytes } from './mupdf-util.js';
 
 export const T3_COLOR = 1 << 0;
 export const T3_MASK = 1 << 1;
@@ -200,7 +201,7 @@ export function loadType3(
     if (!name) return;
     const s = at(procs, name);
     if (!s.isStream()) return;
-    const bytes = s.readStream().asUint8Array().slice();
+    const bytes = readStreamBytes(s);
     glyphs.set(code, { bytes, flags: type3GlyphFlags(bytes, resources) });
   });
   return { matrix, resources, glyphs };

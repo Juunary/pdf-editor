@@ -10,6 +10,7 @@
  * paintSeq: 칠하기 콜백마다 1. beginMask~endMask 사이는 세지 않는다. beginTile 은 1(캐시됨)을 돌려준다.
  */
 import * as mupdf from 'mupdf';
+import { releaseBorrowedShade } from '../../src/mupdf-util.js';
 import { FirstArrivalJudge, glyphKey, type TextCallbackKind } from './first-arrival.js';
 import type {
   CharInfo,
@@ -195,7 +196,9 @@ export function buildTestPageModel(
     strokePath: path('stroke'),
     clipPath: path('clip'),
     clipStrokePath: path('clip-stroke'),
-    fillShade: () => {
+    fillShade: (shade) => {
+      // 빌린 Shade 래퍼: 종료자를 해제해야 GC 가 셰이드를 놓지 않는다(core extract.ts 와 같음).
+      releaseBorrowedShade(shade);
       if (mask > 0) return;
       shades.push({ paintSeq: paintSeq++, bbox: [0, 0, 0, 0], alpha: 1 });
     },

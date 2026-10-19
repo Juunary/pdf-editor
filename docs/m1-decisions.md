@@ -76,5 +76,5 @@ M0 C2 쪽(zen-ko-report 22·23쪽 6블록): SourceMap 제거 블록 밖 0 px·�
 | # | 내용 | 상태 |
 |---|---|---|
 | 1 | 코퍼스 도형 번호 불일치 11쪽(arXiv Type3 직접 실행, zen-ko-moon 이미지 Do) | pdf-ops 작업 진행 중 |
-| 2 | pdf-ops 정책 퍼징 테스트의 MuPDF WASM "memory access out of bounds" 간헐 중단(1회, 재실행 4회 통과) | 원인 조사 |
+| 2 | pdf-ops 정책 퍼징 테스트의 MuPDF WASM "memory access out of bounds" 간헐 중단(1회, 재실행 4회 통과) | 원인 조사. 후보: 테스트 헬퍼(`device-log.ts`·`page-model.ts`)의 `fillShade` 가 빌린 Shade 래퍼의 종료자를 해제하지 않아, GC 시점에 셰이드 참조를 한 번 더 놓는 경로(core 는 같은 문제를 `extract.ts` 에서 해제로 막았다). M1 리뷰 반영에서 헬퍼도 공용 `releaseBorrowedShade` 로 해제. 인과는 미확인(재현 없음) |
 | 3 | 마일스톤 리뷰(읽기 전용) → `m1` 을 `main` 에 머지(사용자 승인) | 대기 |
