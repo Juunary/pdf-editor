@@ -26,6 +26,8 @@ import {
  * 기본은 dev 만 채점한다(계약 4.4: test 는 마일스톤 끝에 명시적으로 LAYOUT_ACC_SPLIT=test|all 로 한 번).
  * layout-recon 은 vitest.config.ts 별칭으로 소스를 쓴다. 결과에 커밋 SHA·작업 트리 변경 여부를 남긴다.
  * test 요약은 전체(test)와 문서 단위 보류(test-docs-unseen: dev 쪽이 없는 문서의 test 쪽)로 나눠 낸다.
+ * 역할 채점(docs/m2-accuracy.md 7절 W4-1): 요약의 roles(역할별 정밀도·재현율)·roleMatrix(혼동표)·rolePairs,
+ * 쪽별 score.roles·roleMisses(짝지은 쌍 중 역할이 다른 것)를 결과 JSON 에 남긴다. 목표치는 없다.
  */
 /**
  * 최종 측정 전까지 복원 알고리즘을 한 번도 실행하지 않은 문서(A7-10 보강, docs/m2-contract.md 4.4).

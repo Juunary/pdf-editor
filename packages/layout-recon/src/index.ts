@@ -19,6 +19,10 @@ export {
 } from './reconstruct.js';
 export {
   kendallTau,
+  ROLES,
+  ROLE_CONTAINER,
+  ROLE_NONE,
+  ROLE_PAIR_MIN_JACCARD,
   scoreLayout,
   summarizeScores,
   type Counts,
@@ -29,6 +33,8 @@ export {
   type LabelTable,
   type PageLabel,
   type PageScore,
+  type RoleMatrix,
+  type RoleMetrics,
   type ScoreSummary,
 } from './accuracy.js';
 export { validateLayout } from './validate.js';
