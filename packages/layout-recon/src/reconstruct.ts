@@ -17,7 +17,17 @@ import { C } from './constants.js';
 import { lineFeatures, type LineFeature } from './features.js';
 import { detectFigures } from './figures.js';
 import { bodySize, splitMargins, splitParagraphs, stackRegions, type Region } from './flow.js';
-import { center, containsPoint, expand, height, intersect, median, union, width } from './geom.js';
+import {
+  area,
+  center,
+  containsPoint,
+  expand,
+  height,
+  intersect,
+  median,
+  union,
+  width,
+} from './geom.js';
 import { summarizePaths } from './paths.js';
 import { detectTables } from './tables.js';
 import { BULLET, CAPTION, NUMBERED_HEADING, SENTENCE_END } from './text-rules.js';
@@ -103,7 +113,14 @@ export function reconstructPage(model: PageModel, _options: ReconOptions = {}): 
 
   // 4단계: 도형과 라벨.
   const free = (f: LineFeature) => !tableLines.has(f.index);
-  const figs = detectFigures(model, visible.filter(free), pathSummary, excludedPaths);
+  // 표 안에 대부분(60% 이상) 들어가는 도형 후보는 표의 남은 괘선·배경이다.
+  const figs = detectFigures(model, visible.filter(free), pathSummary, excludedPaths).filter(
+    (f) =>
+      !detected.some((t) => {
+        const i = intersect(f.bbox, t.bbox);
+        return i !== null && area(i) >= 0.6 * area(f.bbox);
+      }),
+  );
   const labelOf = new Map<number, number>();
   figs.forEach((fig, k) => {
     for (const f of visible) {
