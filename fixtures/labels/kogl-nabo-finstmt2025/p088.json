@@ -1,0 +1,342 @@
+{
+  "doc": "kogl-nabo-finstmt2025",
+  "pageIndex": 88,
+  "split": "test",
+  "extract": {
+    "lineCount": 154,
+    "linesSha256": "ef9a4017966fe2ab292d4cffed4f7991840ba66116e5cd35945e56c0c6bbc144"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-kogl (Claude subagent)",
+  "reviewedBy": "reviewer-C (Claude Opus subagent, independent)",
+  "notes": "Two tables. Table 1 (lines 2-128): 10 cols (구분, 국가재정상태표(A), 4대 연금 group of 8: 국민연금(a), 사립학교교직원연금(b), 소계(c=a+b), 비중(c/A), 공무원연금(d), 군인연금(e), 합계, 내부거래 제거 후 합계). Header is 3 grid rows (4대 연금 colSpan 8 band on top; 비중(c/A) sits one row lower under a partial rule at y=135) + 10 data rows = 13 rows. Header text is split into several short lines per cell (e.g. 3-6, 10-13). Line 125 ('181.4 △1,113.0') contains two cells (비중 and 공무원연금) merged into one extracted line (extraction defect); kept in the table lines. Cells omitted (>60). Table 2 (142-151) is 2 rows x 5 cols. Each table has its title caption (130, 153) above and a separate '(단위: ...)' caption (1, 141); the '자료:' lines (129, 152) below are footnotes placed right after their table (flow position). Body paragraphs 131-136 and 137-140 are split at the first-line indent (131, 137). Line 0 is the footer (page number; decorative logo image). review: no change (table 1 header rules checked: 4대 연금 band, partial rule at y=135.2 over 비중 only -> 3 header rows, 13x10; table 2 bbox matches rules 82.0-451.0 x 593.8-630.5).",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        130
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "table",
+      "bbox": [
+        82.0,
+        107.5,
+        454.5,
+        310.0
+      ],
+      "rows": 13,
+      "cols": 10,
+      "lines": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        129
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        131,
+        132,
+        133,
+        134,
+        135,
+        136
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        137,
+        138,
+        139,
+        140
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        153
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        141
+      ]
+    },
+    {
+      "type": "table",
+      "bbox": [
+        82.0,
+        594.0,
+        450.5,
+        630.0
+      ],
+      "rows": 2,
+      "cols": 5,
+      "lines": [
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151
+      ],
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            142
+          ]
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            143
+          ]
+        },
+        {
+          "row": 0,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            144
+          ]
+        },
+        {
+          "row": 0,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            145
+          ]
+        },
+        {
+          "row": 0,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            146
+          ]
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            147
+          ]
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            148
+          ]
+        },
+        {
+          "row": 1,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            149
+          ]
+        },
+        {
+          "row": 1,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            150
+          ]
+        },
+        {
+          "row": 1,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            151
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        152
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    }
+  ],
+  "ignoreLines": []
+}
