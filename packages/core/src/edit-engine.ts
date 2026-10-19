@@ -6,6 +6,8 @@
  * - 저널(MuPDF): 문단 편집 하나 = 작업 하나. 초안 = 열린 작업, 커밋 = `endOperation`, 취소 = `abandonOperation`.
  * - 로그: `base`(replayEdits 로 다시 적용한 것, undo 불가) + `undo` 스택 + `redo` 스택. 저널 단계와 1:1 이다.
  * - 작업이 열린 동안 MuPDF 는 `canUndo()`·`getJournal()` 이 예외라서 이력 질의는 모두 이 상태로 답한다.
+ * - MuPDF 는 작업 안에서 객체를 처음 바꾸는 순간 redo 단계를 버리고, 그 작업을 `abandonOperation` 해도 되돌리지 않는다
+ *   (docs/m3-core.md 2.4). 그래서 초안을 시작하는 순간과 객체를 바꾼 판정·저장 작업 뒤에 redo 스택을 저널에 맞춘다.
  */
 import * as mupdf from 'mupdf';
 import type {
@@ -279,6 +281,8 @@ export class EditEngine {
       );
       const region = this.#host.renderRegion(pageIndex, this.#host.renderScale, clip);
       this.#draft = draft;
+      // 제거·삽입으로 문서를 바꾼 순간 MuPDF 가 redo 단계를 버렸다(취소해도 돌아오지 않는다).
+      this.#redo = [];
       return {
         draftId: draft.draftId,
         plan: { ...plan, revision: this.#revision },
@@ -329,8 +333,6 @@ export class EditEngine {
   async commitParagraphEdit(draftId: string): Promise<CommitResult> {
     this.#assertUsable();
     const draft = this.#requireDraft(draftId);
-    this.#doc.endOperation();
-    this.#draft = null;
     const op: EditOp = {
       kind: 'replace-paragraph',
       id: draft.opId,
@@ -338,7 +340,13 @@ export class EditEngine {
       runs: draft.runs,
       format: draft.format,
     };
-    this.#undo.push({ op, warnings: draft.warnings, summary: draft.summary });
+    const entry: LogEntry = { op, warnings: draft.warnings, summary: draft.summary };
+    // Info 기록은 이 편집 작업 안에서 한다: 저널에 기록되어 undo·redo 와 함께 움직이고, 저장 작업은 문서를 바꾸지
+    // 않아도 된다(바꾸면 redo 단계가 사라진다, docs/m3-core.md 2.4).
+    this.#writeMetadata([...this.#active(), entry]);
+    this.#doc.endOperation();
+    this.#draft = null;
+    this.#undo.push(entry);
     this.#redo = [];
     this.#edited = true;
     this.#revision++;
@@ -351,6 +359,7 @@ export class EditEngine {
     const draft = this.#requireDraft(draftId);
     this.#draft = null;
     this.#doc.abandonOperation();
+    this.#reconcileRedo();
     this.#touched([draft.pageIndex]);
     return this.#history();
   }
@@ -427,6 +436,15 @@ export class EditEngine {
       }
       pages.add(op.target.pageIndex);
     }
+    if (this.#base.length > 0) {
+      try {
+        this.#writeMetadata(this.#base);
+      } catch (error) {
+        this.#failure = '재적용 뒤 메타 기록 실패';
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new EditStateError(`${this.#failure}: ${reason}`);
+      }
+    }
     this.#doc.enableJournal();
     this.#journalOn = true;
     this.#edited ||= ops.length > 0;
@@ -473,29 +491,25 @@ export class EditEngine {
   }
 
   /**
-   * 저장을 저널 작업으로 감싼다: `beginOperation('save')` → Info 기록·폴백 서브셋 교체 → `fn`(saveToBuffer) →
+   * 저장을 저널 작업으로 감싼다: `beginOperation('save')` → 폴백 서브셋 교체 → `fn`(saveToBuffer) →
    * `abandonOperation`. 저장은 저널 단계를 만들지 않고 작업 문서는 저장 전 상태로 남는다. 저널이 꺼진 문서
    * (편집 RPC 를 부른 적 없음)는 감싸지 않는다. 초안이 열려 있으면 예외.
+   *
+   * 계약 D9 는 Info 기록(`recordEditMetadata`)도 이 작업 안에서 하라고 하지만, 작업 안에서 객체를 바꾸면 MuPDF 가
+   * redo 단계를 버리고 abandon 해도 돌아오지 않는다. 그래서 Info 는 커밋 작업 안에서 기록하고
+   * (`commitParagraphEdit`), 이 작업은 폴백 폰트를 쓴 활성 편집이 있을 때만(서브셋 교체) 문서를 바꾼다. 그 경우
+   * undo 직후의 저장은 redo 를 잃는다(docs/m3-core.md 2.4).
    */
   runSave<T>(fn: () => T): T {
     this.#assertUsable();
     this.#requireNoDraft('save');
     if (!this.#journalOn) return fn();
     const doc = this.#doc;
-    const entries = this.#active();
+    const usesFallback = this.#active().some((e) => hasWarning(e, 'font-fallback'));
     doc.beginOperation('save');
     let result: T;
     try {
-      if (entries.length > 0) {
-        this.#adapter.recordEditMetadata(doc, {
-          pages: [...new Set(entries.map((e) => e.op.target.pageIndex))].sort((a, b) => a - b),
-          structureNotUpdated: entries.some(
-            (e) =>
-              hasWarning(e, 'tagged-structure-kept') || hasWarning(e, 'tagged-structure-unlinked'),
-          ),
-        });
-        this.#fonts?.finalizeForSave();
-      }
+      if (usesFallback) this.#fonts?.finalizeForSave();
       result = fn();
     } catch (error) {
       try {
@@ -503,9 +517,11 @@ export class EditEngine {
       } catch {
         // 원래 예외를 우선한다.
       }
+      this.#reconcileRedo();
       throw error;
     }
     doc.abandonOperation();
+    this.#reconcileRedo();
     return result;
   }
 
@@ -653,16 +669,37 @@ export class EditEngine {
       } catch {
         // 원래 예외를 우선한다.
       }
+      this.#reconcileRedo();
       throw error;
     }
     doc.abandonOperation();
+    this.#reconcileRedo();
     return result;
+  }
+
+  /**
+   * MuPDF 가 redo 단계를 버렸으면(작업 안에서 객체를 바꾼 뒤 abandon) core 의 redo 스택도 비운다. 작업이 열려 있지
+   * 않을 때만 부른다.
+   */
+  #reconcileRedo(): void {
+    if (this.#redo.length > 0 && !this.#doc.canRedo()) this.#redo = [];
+  }
+
+  /** 활성 편집(재적용 포함)으로 Info `/PdfEditorEdits` 를 기록한다(계약 5.6). 열린 작업 안이나 저널이 꺼진 때 부른다. */
+  #writeMetadata(entries: LogEntry[]): void {
+    this.#adapter.recordEditMetadata(this.#doc, {
+      pages: [...new Set(entries.map((e) => e.op.target.pageIndex))].sort((a, b) => a - b),
+      structureNotUpdated: entries.some(
+        (e) => hasWarning(e, 'tagged-structure-kept') || hasWarning(e, 'tagged-structure-unlinked'),
+      ),
+    });
   }
 
   /** 열린 초안 작업을 버리고 캐시를 되돌린다(begin 실패 경로). */
   #rollback(pageIndex: number): void {
     try {
       this.#doc.abandonOperation();
+      this.#reconcileRedo();
     } catch {
       // 작업이 열리지 않은 상태에서의 실패.
     }

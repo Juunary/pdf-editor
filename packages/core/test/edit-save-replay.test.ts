@@ -130,6 +130,8 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
   it('저장 결과에 편집·Info·서브셋이 반영되고 작업 문서·저널은 저장 전 상태로 남는다', async () => {
     const { s, adapter } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
+    // Info 기록은 커밋 작업 안에서 한다(저널에 기록되어 undo·redo 와 함께 움직인다).
+    expect(adapter.probe.metadataCalls).toEqual([{ pages: [0], structureNotUpdated: false }]);
     const stepsBefore = journal(s);
     const fontFile = (doc: mupdf.PDFDocument) => {
       const font = fallbackFonts(doc)[0]!;
@@ -140,7 +142,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     const saved = s.save({ changes: [] });
     expect(saved.method).toBe('full');
     expect(saved.options).toBe('garbage=yes,compress,objstms');
-    expect(adapter.probe.metadataCalls).toEqual([{ pages: [0], structureNotUpdated: false }]);
+    expect(adapter.probe.metadataCalls).toHaveLength(1);
 
     // 출력: 편집 반영, Info 기록, 폴백 서브셋.
     const out = reopen(saved.bytes);
@@ -151,10 +153,9 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     const outSize = fontFile(out).readStream().asUint8Array().length;
     expect(outSize).toBeLessThan(workingSize / 10);
 
-    // 작업 문서: 저널 단계 불변, 전체 폰트 유지, Info 기록 되돌림.
+    // 작업 문서: 저널 단계 불변, 전체 폰트 유지.
     expect(journal(s)).toEqual(stepsBefore);
     expect(fontFile(s.document).readStream().asUint8Array().length).toBe(workingSize);
-    expect(s.document.getTrailer().get('Info').get('PdfEditorEdits').isNull()).toBe(true);
 
     // 저장 뒤 계속 편집(새 음절이 빈 글리프가 되지 않음)하고 undo/redo.
     await editParagraph(s, 2, '새 음절 곰');
@@ -166,6 +167,28 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     await s.redo();
     expect(text(s)).toContain('새 음절 곰');
     expect(journal(s).steps).toHaveLength(2);
+    s.close();
+  });
+
+  it('Info 기록은 undo·redo 와 함께 움직인다', async () => {
+    const { s } = harness();
+    await s.getPageEditability(0); // 첫 편집 RPC 가 빈 Info 사전을 만든다
+    const info = () => s.document.getTrailer().get('Info').get('PdfEditorEdits');
+    expect(info().isNull()).toBe(true);
+    await editParagraph(s, 1, 'Latin');
+    expect(info().asString()).toBe('pages=1; structure=n/a');
+    await s.undo();
+    expect(info().isNull()).toBe(true);
+    // 저장은 편집이 없는 상태이므로 Info 에 편집 쪽이 없다.
+    expect(
+      reopen(s.save({ changes: [] }).bytes)
+        .getTrailer()
+        .get('Info')
+        .get('PdfEditorEdits')
+        .isNull(),
+    ).toBe(true);
+    await s.redo();
+    expect(info().asString()).toBe('pages=1; structure=n/a');
     s.close();
   });
 
@@ -225,17 +248,72 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
 
   it('저장 중 예외는 작업을 버리고 저널을 유지한다', async () => {
     const { s, adapter } = harness();
-    await editParagraph(s, 1, 'Persisted');
-    const original = adapter.recordEditMetadata;
-    adapter.recordEditMetadata = () => {
-      throw new Error('메타 기록 실패');
-    };
-    expect(() => s.save({ changes: [] })).toThrow('메타 기록 실패');
-    adapter.recordEditMetadata = original;
+    await editParagraph(s, 1, HANGUL_TEXT);
+    adapter.probe.failNext.finalize = true;
+    expect(() => s.save({ changes: [] })).toThrow('fake finalize 실패');
     expect(journal(s)).toEqual({ position: 1, steps: ['paragraph-edit'] });
     expect(s.save({ changes: [] }).bytes.length).toBeGreaterThan(0);
     await s.undo();
     expect(text(s)).toContain('first paragraph');
+    s.close();
+  });
+});
+
+describe('redo 단계 보존(MuPDF: 작업 안 첫 변경이 redo 를 버린다)', () => {
+  it('undo 뒤 저장해도 폴백을 쓰지 않았다면 redo 가 남는다', async () => {
+    const { s } = harness();
+    await editParagraph(s, 1, 'Latin one');
+    await editParagraph(s, 2, 'Latin two');
+    await s.undo();
+    s.save({ changes: [] });
+    s.save({ changes: [] });
+    expect(await s.getEditHistory()).toMatchObject({ canUndo: true, canRedo: true });
+    expect(journal(s)).toEqual({ position: 1, steps: ['paragraph-edit', 'paragraph-edit'] });
+    await s.redo();
+    expect(text(s)).toContain('Latin two');
+    s.close();
+  });
+
+  it('폴백을 쓴 편집이 있으면 undo 뒤 저장이 redo 를 잃고, core 상태도 저널에 맞춰 비운다', async () => {
+    const { s } = harness();
+    await editParagraph(s, 1, HANGUL_TEXT);
+    await editParagraph(s, 2, 'Latin two');
+    await s.undo();
+    const saved = s.save({ changes: [] });
+    expect(reopenedText(saved.bytes)).toContain(HANGUL_TEXT);
+    // 서브셋 교체가 작업 안에서 객체를 바꿔 MuPDF 가 redo 단계를 버렸다.
+    expect(await s.getEditHistory()).toMatchObject({ canUndo: true, canRedo: false, edits: 1 });
+    expect(journal(s)).toEqual({ position: 1, steps: ['paragraph-edit'] });
+    expect(await s.redo()).toMatchObject({ canRedo: false, affectedPages: [] });
+    // undo 는 정상.
+    await s.undo();
+    expect(text(s)).toContain('first paragraph');
+    s.close();
+  });
+
+  it('undo 뒤 초안을 시작하면 redo 가 없어지고 취소해도 돌아오지 않는다', async () => {
+    const { s } = harness();
+    await editParagraph(s, 1, 'Latin one');
+    await s.undo();
+    expect(await s.getEditHistory()).toMatchObject({ canRedo: true });
+    const { started } = await begin(s, 2);
+    expect(await s.getEditHistory()).toMatchObject({ canRedo: false, edits: 0 });
+    const history = await s.cancelParagraphEdit(started.draftId);
+    expect(history).toMatchObject({ canRedo: false, canUndo: false });
+    expect(journal(s)).toEqual({ position: 0, steps: [] });
+    expect(await s.redo()).toMatchObject({ canRedo: false, affectedPages: [] });
+    s.close();
+  });
+
+  it('undo 뒤 판정만 해서는 redo 가 남는다', async () => {
+    const { s } = harness();
+    await editParagraph(s, 1, 'Latin one');
+    await s.undo();
+    await s.getPageEditability(0);
+    await s.planParagraphEdit(0, 1);
+    expect(await s.getEditHistory()).toMatchObject({ canRedo: true });
+    await s.redo();
+    expect(text(s)).toContain('Latin one');
     s.close();
   });
 });

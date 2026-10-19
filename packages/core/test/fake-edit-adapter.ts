@@ -50,7 +50,7 @@ export interface FakeAdapterProbe {
   /** 호출 이력(prepare·write·list 등). */
   calls: string[];
   /** 다음 prepare / write 호출을 실패시킨다. */
-  failNext: { prepare?: boolean; write?: boolean };
+  failNext: { prepare?: boolean; write?: boolean; finalize?: boolean };
 }
 
 export interface FakeAdapter extends EditAdapter {
@@ -123,6 +123,10 @@ class FakeFonts extends FontManager {
 
   /** 저장 작업 안에서: 쓴 글리프만 남긴 서브셋으로 FontFile2 를 바꾼다(작업을 버리면 되돌아간다). */
   override finalizeForSave(): void {
+    if (this.#probe.failNext.finalize) {
+      this.#probe.failNext.finalize = false;
+      throw new Error('fake finalize 실패');
+    }
     const ref = this.fallbackRef;
     if (!ref || !ref.resolve().isDictionary() || this.usedGids.size === 0) return;
     const file = ref.get('DescendantFonts').get(0).get('FontDescriptor').get('FontFile2');
