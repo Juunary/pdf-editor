@@ -334,6 +334,117 @@ describe('상태 규칙', () => {
   });
 });
 
+describe('초안 미리보기·경고', () => {
+  it('변경 영역은 이전·새 배치 상자를 모두 덮고 배율은 마지막 쪽 전체 렌더를 따른다', async () => {
+    const { s } = harness();
+    s.renderPage({ pageIndex: 0, scale: 1.5 });
+    const { plan, started } = await begin(s, 1);
+    // 시작 미리보기는 원 문단 bbox ∪ 배치 상자를 덮는다. 배율 1.5.
+    const [x0, y0, x1, y1] = started.first.region.clip!;
+    expect(started.first.region.width).toBeCloseTo((x1 - x0) * 1.5, 6);
+    expect(started.first.region.height).toBeCloseTo((y1 - y0) * 1.5, 6);
+    const bbox = plan.target.bbox;
+    expect(x0).toBeLessThanOrEqual(bbox[0]);
+    expect(y1).toBeGreaterThanOrEqual(bbox[3]);
+    const box = started.first.reflow.contentBox;
+    expect(x0).toBeLessThanOrEqual(box[0]);
+    expect(x1).toBeGreaterThanOrEqual(box[2]);
+
+    const long = 'word '.repeat(60);
+    const update = await s.updateParagraphDraft(started.draftId, draftInput(plan, long, 3));
+    const next = update.reflow.contentBox;
+    const [a0, b0, a1, b1] = update.region.clip!;
+    expect(a0).toBeLessThanOrEqual(Math.min(box[0], next[0]));
+    expect(b0).toBeLessThanOrEqual(Math.min(box[1], next[1]));
+    expect(a1).toBeGreaterThanOrEqual(Math.max(box[2], next[2]));
+    expect(b1).toBeGreaterThanOrEqual(Math.max(box[3], next[3]));
+    expect(update.region.width).toBeCloseTo((a1 - a0) * 3, 6);
+    await expect(s.updateParagraphDraft(started.draftId, draftInput(plan, 'x', 0))).rejects.toThrow(
+      RangeError,
+    );
+    await s.cancelParagraphEdit(started.draftId);
+    s.close();
+  });
+
+  it('경고는 현재 글자 기준이다: 폴백·없는 글자 경고가 글자를 지우면 사라진다', async () => {
+    const { s } = harness();
+    const { plan, started } = await begin(s, 1);
+    const kinds = async (value: string) =>
+      (await s.updateParagraphDraft(started.draftId, draftInput(plan, value))).warnings.map(
+        (w) => w.kind,
+      );
+    expect(await kinds('Latin only')).toEqual([]);
+    expect(await kinds('Latin 한글')).toEqual(['font-fallback']);
+    expect(await kinds('Latin ☃ 한글')).toEqual(['font-fallback', 'glyph-missing']);
+    expect(await kinds('Latin again')).toEqual([]);
+    await s.cancelParagraphEdit(started.draftId);
+    s.close();
+  });
+
+  it('keep 로 영역 밖까지 넘친 글은 overflow-clipped 경고', async () => {
+    const adapter = createFakeAdapter();
+    const s = new PdfSession({ editAdapter: adapter, loadFallbackFont: async () => FONT_BYTES });
+    s.open(
+      buildPdf([
+        { content: 'BT /F1 10 Tf 72 30 Td (bottom line of the page) Tj ET', mediabox: MEDIABOX },
+      ]),
+    );
+    const { plan, started } = await begin(s, 0);
+    const update = await s.updateParagraphDraft(started.draftId, {
+      ...draftInput(plan, 'keep going and going '.repeat(40)),
+      format: { ...plan.format, overflow: 'keep' },
+    });
+    expect(update.reflow.overflow).toBe(true);
+    expect(update.warnings.map((w) => w.kind)).toContain('overflow-clipped');
+    await s.cancelParagraphEdit(started.draftId);
+    s.close();
+  });
+});
+
+describe('저장 방식·문서 수명', () => {
+  it('판정만 한 문서(저널만 켜짐)의 변경 없는 저장은 증분 그대로다', async () => {
+    const { s } = harness();
+    await s.getPageEditability(0);
+    await s.planParagraphEdit(0, 1);
+    const plan = s.planSave({ changes: [] });
+    expect(plan).toMatchObject({ method: 'incremental', edits: null });
+    const saved = s.save({ changes: ['annotation'] });
+    expect(saved.method).toBe('incremental');
+    expect(journal(s)).toEqual({ position: 0, steps: [] });
+    // 취소한 초안도 문서를 바꾸지 않으므로 마찬가지.
+    const { started } = await begin(s, 1);
+    await s.cancelParagraphEdit(started.draftId);
+    expect(s.planSave({ changes: [] }).method).toBe('incremental');
+    s.close();
+  });
+
+  it('PDF/A 선언(XMP pdfaid)이 있으면 편집 요약에 표시한다', async () => {
+    const adapter = createFakeAdapter();
+    const s = new PdfSession({ editAdapter: adapter, loadFallbackFont: async () => FONT_BYTES });
+    s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
+    const doc = s.document;
+    const xmp = doc.addStream(
+      '<x:xmpmeta xmlns:x="adobe:ns:meta/"><pdfaid:part>1</pdfaid:part></x:xmpmeta>',
+      { Type: doc.newName('Metadata'), Subtype: doc.newName('XML') },
+    );
+    doc.getTrailer().get('Root').put('Metadata', xmp);
+    await editParagraph(s, 1, 'PDF/A edit');
+    expect(s.planSave({ changes: [] }).edits).toMatchObject({ pdfaDeclared: true });
+    s.close();
+  });
+
+  it('초안이 열린 채 닫아도 예외 없이 닫히고, 다시 열면 새 이력으로 시작한다', async () => {
+    const { s } = harness();
+    await begin(s, 1);
+    expect(() => s.close()).not.toThrow();
+    s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
+    expect(await s.getEditHistory()).toMatchObject({ revision: 0, edits: 0, activeEditIds: [] });
+    await editParagraph(s, 1, 'After reopen');
+    expect(text(s)).toContain('After reopen');
+    s.close();
+  });
+});
+
 describe('쪽 캐시 무효화(계약 5.7)', () => {
   it('커밋하면 그 쪽과 ±2쪽 레이아웃 캐시를 비우고 먼 쪽은 둔다', async () => {
     const { s } = harness(7);

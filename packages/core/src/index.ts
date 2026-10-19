@@ -9,6 +9,8 @@ export {
 } from './extract.js';
 export { searchDocument } from './search.js';
 export { assembleReadingText, foldWhitespace } from './reading-text.js';
-export { renderPageRgba, type RgbaImage } from './render.js';
+export { renderPageRegionRgba, renderPageRgba, type RgbaImage, type RgbaRegion } from './render.js';
+export { defaultEditAdapter, type EditAdapter } from './edit-adapter.js';
+export { EditStateError, StaleRevisionError } from './edit-engine.js';
 export { PdfSession, type PdfSessionOptions } from './session.js';
 export { createPdfWorkerApi } from './worker-api.js';

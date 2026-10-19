@@ -125,6 +125,8 @@ export class EditEngine {
   #salt = 0;
 
   #journalOn = false;
+  /** 커밋이나 재적용으로 문서가 한 번이라도 바뀌었다(undo 로 되돌렸어도 true). */
+  #edited = false;
   #disposed = false;
   #failure: string | null = null;
   #revision = 0;
@@ -152,6 +154,14 @@ export class EditEngine {
   /** 편집 RPC 가 저널을 켰다(이후 저장은 D9 감싼 저장). */
   get journalOn(): boolean {
     return this.#journalOn;
+  }
+
+  /**
+   * 편집이 한 번이라도 문서에 반영됐다(되돌린 뒤에도 true). 증분 구간에는 되돌린 객체의 흔적이 남을 수 있어
+   * 이 문서의 저장은 전체 저장이다(D9·A3-9).
+   */
+  get edited(): boolean {
+    return this.#edited;
   }
 
   get revision(): number {
@@ -243,6 +253,7 @@ export class EditEngine {
       throw new EditStateError(`편집할 수 없는 문단입니다: ${reasons || '사유 없음'}`);
     }
     const editId = this.#newId();
+    const t0 = performance.now();
     doc.beginOperation('paragraph-edit');
     try {
       const prepared = this.#adapter.prepareParagraphEdit(ctx, plan, editId);
@@ -276,7 +287,7 @@ export class EditEngine {
           reflow: composed.summary,
           warnings: composed.warnings,
           region,
-          updateMs: composed.summary.reflowMs,
+          updateMs: performance.now() - t0,
         },
       };
     } catch (error) {
@@ -329,6 +340,7 @@ export class EditEngine {
     };
     this.#undo.push({ op, warnings: draft.warnings, summary: draft.summary });
     this.#redo = [];
+    this.#edited = true;
     this.#revision++;
     this.#touched([draft.pageIndex]);
     return { op, history: this.#history() };
@@ -417,6 +429,7 @@ export class EditEngine {
     }
     this.#doc.enableJournal();
     this.#journalOn = true;
+    this.#edited ||= ops.length > 0;
     this.#revision++;
     this.#lastAffected = [...pages].sort((a, b) => a - b);
     return this.#history();
