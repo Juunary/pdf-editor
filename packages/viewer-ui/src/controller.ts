@@ -14,6 +14,8 @@ import type {
   RenderedPage,
   SourceMap,
 } from '@pdf-editor/shared-types';
+import { EditController, initialEditState, type EditState } from './edit-controller.js';
+import { EditLog } from './edit-log.js';
 import { classifyFailure } from './failure.js';
 import { fitWidthScale, pageLayout, renderScale, type PageLayout } from './layout.js';
 import { clampPage, parsePageInput, stepPage } from './page-nav.js';
@@ -26,9 +28,9 @@ import {
   stepHit,
   type FindState,
 } from './search-nav.js';
-import type { ViewerEnvironment, ViewerHost } from './viewer-host.js';
+import { hasEditHost, type ViewerEnvironment, type ViewerHost } from './viewer-host.js';
 
-export type FeatureName = 'text' | 'search' | 'debug' | 'layout';
+export type FeatureName = 'text' | 'search' | 'debug' | 'layout' | 'edit';
 
 /** 렌더가 끝난 현재 페이지. 오버레이 배치의 기준이다. */
 export interface PageView {
@@ -70,6 +72,10 @@ export interface ViewerState {
   /** 영구 비활성화 사유(없으면 null). */
   disabled: Record<FeatureName, string | null>;
   find: FindState;
+  /** 문단 편집(M3) 상태. */
+  edit: EditState;
+  /** 올릴 때마다 쪽 캔버스를 현재 `view` 의 렌더로 다시 그린다(편집 취소 뒤 복원). */
+  repaintToken: number;
 }
 
 export interface PagePaintedEvent {
@@ -95,6 +101,10 @@ export interface ViewerControllerOptions {
   findDebounceMs?: number;
   /** 컴포넌트가 비트맵을 캔버스에 그린 뒤 호출된다. */
   onPagePainted?(event: PagePaintedEvent): void;
+  /** 복구용 편집 로그(D6). 호출자(확장)가 같은 인스턴스를 복구 계층에도 준다. 없으면 내부에서 만든다. */
+  editLog?: EditLog;
+  /** 시각(ms, performance.now). 테스트에서 주입한다. */
+  now?(): number;
 }
 
 export type StateListener = (state: ViewerState) => void;
@@ -122,9 +132,15 @@ export class ViewerController {
   private searchPending = false;
   private disposed = false;
   private readonly loggedKinds = new Set<string>();
+  /** 편집(M3) 코디네이터. 호스트가 편집 RPC 를 주지 않으면 null. */
+  readonly edit: EditController | null;
+  readonly editLog: EditLog;
+  /** 편집 중에 들어온 창 크기 변화(편집이 끝난 뒤 반영). */
+  private envRefreshPending = false;
 
   constructor(private readonly options: ViewerControllerOptions) {
     this.host = options.host;
+    this.editLog = options.editLog ?? new EditLog();
     const pageIndex = clampPage(options.initialPage ?? 0, options.pageCount);
     this.state = {
       pageCount: options.pageCount,
@@ -137,9 +153,49 @@ export class ViewerController {
       debug: { status: 'idle' },
       layoutEnabled: false,
       layout: { status: 'idle' },
-      disabled: { text: null, search: null, debug: null, layout: null },
+      disabled: { text: null, search: null, debug: null, layout: null, edit: null },
       find: initialFindState(),
+      edit: initialEditState(),
+      repaintToken: 0,
     };
+    const host = options.host;
+    if (hasEditHost(host)) {
+      this.edit = new EditController({
+        rpc: host,
+        log: this.editLog,
+        now: options.now ?? (() => performance.now()),
+        getState: () => this.state.edit,
+        patch: (partial) => this.patch({ edit: { ...this.state.edit, ...partial } }),
+        currentView: () => {
+          const view = this.state.view;
+          if (!view) return null;
+          const text = this.state.text;
+          return {
+            pageIndex: view.pageIndex,
+            renderScale: renderScale(view.layout.cssScale, view.layout.devicePixelRatio),
+            text:
+              text.status === 'ready' && text.pageIndex === view.pageIndex
+                ? text.value.model
+                : null,
+          };
+        },
+        isStalePage: (pageIndex) => this.isStalePage(pageIndex),
+        disable: (reason) => this.disable('edit', reason),
+        logEvent: (event, data) => this.host.log(event, data),
+        logOnce: (kind, event, data) => this.logOnce(kind, event, data),
+        invalidatePages: (pages) => this.invalidatePages(pages),
+        repaintPage: () => this.patch({ repaintToken: this.state.repaintToken + 1 }),
+      });
+    } else {
+      this.edit = null;
+      this.state = {
+        ...this.state,
+        disabled: {
+          ...this.state.disabled,
+          edit: '편집 RPC 를 쓸 수 없습니다(호스트가 제공하지 않음)',
+        },
+      };
+    }
   }
 
   getState(): ViewerState {
@@ -204,6 +260,10 @@ export class ViewerController {
 
   async goToPage(index: number): Promise<void> {
     const target = clampPage(index, this.state.pageCount);
+    // 초안이 있으면 먼저 커밋한다(쪽 이동 중 초안을 잃지 않게). 커밋에 실패해 편집이 계속되면 이동하지 않는다.
+    if (this.edit?.active && target !== this.state.pageIndex && !(await this.edit.commitActive())) {
+      return;
+    }
     const { pageIndex, loading, view } = this.state;
     // 이미 보고 있거나 불러오는 중인 페이지는 다시 그리지 않는다.
     if (target === pageIndex && (loading || view?.pageIndex === target)) return;
@@ -214,6 +274,11 @@ export class ViewerController {
   async refreshEnvironment(): Promise<void> {
     const view = this.state.view;
     if (!view || this.state.loading) return;
+    if (this.edit?.active) {
+      // 편집 중에는 쪽 캔버스를 다시 그리지 않는다(변경 영역 합성 기준 배율 유지). 끝난 뒤 반영한다.
+      this.envRefreshPending = true;
+      return;
+    }
     const env = this.options.getEnvironment();
     const cssScale = this.cssScaleFor(view.info.size.width, env);
     const sameDpr = env.devicePixelRatio === view.layout.devicePixelRatio;
@@ -264,6 +329,51 @@ export class ViewerController {
     await this.ensureText(pageIndex);
     if (this.state.debugEnabled) await this.ensureDebug(pageIndex);
     if (this.state.layoutEnabled) await this.ensureLayout(pageIndex);
+    if (this.edit && !this.state.disabled.edit) await this.edit.ensureEditability(pageIndex);
+  }
+
+  /**
+   * 편집·undo·복구로 쪽 내용이 바뀐 뒤: 현재 쪽이 포함되면 쪽 캐시(추출 모델·레이아웃·편집 판정)를 버리고 다시 그린다.
+   * 검색 결과는 옛 위치이므로 지우고, 검색창이 열려 있으면 다시 검색한다.
+   */
+  async invalidatePages(pages: number[]): Promise<void> {
+    const current = this.state.view?.pageIndex ?? this.state.pageIndex;
+    if (!pages.includes(current)) return;
+    this.patch({
+      text: { status: 'idle' },
+      debug: { status: 'idle' },
+      layout: { status: 'idle' },
+      edit: { ...this.state.edit, editability: { status: 'idle' } },
+    });
+    const find = this.state.find;
+    if (find.query !== '') {
+      this.patchFind({ ...clearResults(find) });
+      if (!this.state.disabled.search) void this.runSearch();
+    }
+    await this.loadView(current);
+  }
+
+  /** 편집이 끝났을 때 보류했던 환경 변화를 반영한다. */
+  private async flushPendingEnvironment(): Promise<void> {
+    if (!this.envRefreshPending || this.edit?.active) return;
+    this.envRefreshPending = false;
+    await this.refreshEnvironment();
+  }
+
+  /** 확장이 Worker 를 복구한 뒤 호출한다(편집 코디네이터가 초안 재시작·캐시 정리를 한다). */
+  async handleWorkerRecovered(): Promise<void> {
+    if (!this.edit) {
+      const view = this.state.view;
+      if (view) await this.invalidatePages([view.pageIndex]);
+      return;
+    }
+    const history = await this.host.getEditHistory?.().catch(() => null);
+    await this.edit.handleWorkerRecovered(history ?? null);
+  }
+
+  /** 편집 코디네이터 호출 뒤 보류한 환경 변화를 반영한다(컴포넌트·확장이 편집 종료 뒤 부른다). */
+  async afterEditEnded(): Promise<void> {
+    await this.flushPendingEnvironment();
   }
 
   /** 추출 모델은 배율과 무관하므로, 사용자가 다른 페이지로 옮겼을 때만 응답을 버린다. */
