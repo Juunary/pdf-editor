@@ -1,0 +1,337 @@
+{
+  "doc": "kogl-mods-cpi-202609",
+  "pageIndex": 5,
+  "split": "test",
+  "extract": {
+    "lineCount": 192,
+    "linesSha256": "b54c276b18ff4d567cfd851aa5d6f97abecad4bf954d31b60d2879d7126d997c"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-cpi (Claude subagent)",
+  "reviewedBy": "reviewer-C (Claude Opus subagent, independent)",
+  "notes": "Three ruled tables, each 5 rows (header + index/month-on-month/yoy/cumulative-yoy) x 14 cols (label col + 13 months); 70 cells so no cells given. Row-label '지 수' is split into two single-character lines (20,21) inside the label column; lines 22/84/147 hold several values in one line. Table titles and '(2020=100, %)' unit notes are caption paragraphs outside tables. Line 1 (title in banner image) labeled heading; banner image not a figure. Square/circle outline bullets labeled list-item. The '*' notes under tables 2 and 3 (127-128, 190-191) are footnote paragraphs; 127-128 kept in place below table 2 (reading order follows the page, since the note belongs to the preceding table, not the page bottom). review: no change.",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        5
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        6
+      ]
+    },
+    {
+      "type": "table",
+      "bbox": [
+        58,
+        262,
+        539,
+        362
+      ],
+      "rows": 5,
+      "cols": 14,
+      "lines": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        66
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        67
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        68
+      ]
+    },
+    {
+      "type": "table",
+      "bbox": [
+        58,
+        448,
+        539,
+        548
+      ],
+      "rows": 5,
+      "cols": 14,
+      "lines": [
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        127,
+        128
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        129
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        130
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        131
+      ]
+    },
+    {
+      "type": "table",
+      "bbox": [
+        58,
+        649.5,
+        539,
+        750
+      ],
+      "rows": 5,
+      "cols": 14,
+      "lines": [
+        132,
+        133,
+        134,
+        135,
+        136,
+        137,
+        138,
+        139,
+        140,
+        141,
+        142,
+        143,
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        158,
+        159,
+        160,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        169,
+        170,
+        171,
+        172,
+        173,
+        174,
+        175,
+        176,
+        177,
+        178,
+        179,
+        180,
+        181,
+        182,
+        183,
+        184,
+        185,
+        186,
+        187,
+        188,
+        189
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        190,
+        191
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

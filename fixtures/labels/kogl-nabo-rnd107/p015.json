@@ -1,0 +1,73 @@
+{
+  "doc": "kogl-nabo-rnd107",
+  "pageIndex": 15,
+  "split": "test",
+  "extract": {
+    "lineCount": 11,
+    "linesSha256": "0afaa4e433fd0f5df5e84e2f0773e8e7f586458037d147d565142c3e58aef2c6"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-kogl (Claude subagent)",
+  "reviewedBy": "reviewer-C (Claude Opus subagent, independent)",
+  "notes": "Korean government report (Hangul export). Outline bullets: each bullet item (❑ at line 2, ⚪ at 5 and 8) is one list-item including wrapped lines. Figure is a raster image (images box 91,319,448,547) with no extracted text, so labels is empty; '[분석 개요]' (10) is the caption above it. Line 0 ('4 ∙요 약', page number + section name merged into one line) at the bottom margin is the footer. review: no change (raster figure bbox matches image box, caption above figure, outline bullets as list-items).",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        2,
+        3,
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        8,
+        9
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        10
+      ]
+    },
+    {
+      "type": "figure",
+      "bbox": [
+        91.0,
+        319.0,
+        448.0,
+        547.0
+      ],
+      "labels": []
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

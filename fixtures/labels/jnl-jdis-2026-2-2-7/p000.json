@@ -1,0 +1,280 @@
+{
+  "doc": "jnl-jdis-2026-2-2-7",
+  "pageIndex": 0,
+  "split": "test",
+  "extract": {
+    "lineCount": 54,
+    "linesSha256": "ec979d247950d7c3e65e693fac5e9241068a8d51d6d7cf92c80e35951b66ec45"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-jnl (Claude subagent)",
+  "reviewedBy": "reviewer-C (Claude Opus subagent, independent)",
+  "notes": "First page with journal masthead (lines 18-25, labeled header: journal name, citation, DOI, ISSN), main column (article type, title, authors, affiliations, abstract, keywords, contents) and left sidebar (Open Access notice, dates, copyright, license text) at lower left. Choice: sidebar blocks are placed AFTER the main column in reading order. Label/value pairs on one row (ISSN 23+24; dates 3+4, 5+6, 7+8, 9+10) are one paragraph per row (one field = label + value); 25 is the second ISSN field. Line 26 (article-type kicker) labeled body; 29 authors and 36 corresponding author are body; each affiliation 30-35 is its own paragraph (separate institutions). 46 keyword label is a heading and 47 the keyword line is body. Contents entries 49-52 are one list-item paragraph each. CC license text 11-17 is one auto-wrapped paragraph (wraps mid-word). Copyright line 53 is in the sidebar (body), not the page footer. Footer: 0 journal name (left), 1 page number (right). review: no change.",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        18
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        19
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        20
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        21
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        22
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        23,
+        24
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        25
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        26
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        27,
+        28
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        30
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        31
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        32
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        33
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        34
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        35
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        36
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        37
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        46
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        47
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        48
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        49
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        50
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        51
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        52
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        3,
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        5,
+        6
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        7,
+        8
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        9,
+        10
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        53
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        1
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

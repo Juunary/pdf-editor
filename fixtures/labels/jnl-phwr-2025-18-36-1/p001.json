@@ -1,0 +1,164 @@
+{
+  "doc": "jnl-phwr-2025-18-36-1",
+  "pageIndex": 1,
+  "split": "test",
+  "extract": {
+    "lineCount": 64,
+    "linesSha256": "e08674c08c63d1eeb88aa0a7a4f047988f3029c063e09e0b8401e6e5160060c2"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-jnl (Claude subagent)",
+  "reviewedBy": "reviewer-C (Claude Opus subagent, independent)",
+  "notes": "Key-summary box (lines 46-63, upper-left of left column) is read first, then left column body, then right column. Box title and the three question lines (47, 50, 57) are headings; each answer is one body paragraph. Paragraph 2-15 continues from the previous page and ends mid-sentence at the column boundary; 16-23 continues it in the right column (split at the column boundary per guide). New paragraphs start at the indented lines 24, 31, 43. Footer: page number (1) and site/volume (0) are separate paragraphs, left to right. review: no change (circled-number question lines in the summary box accepted as headings: each is followed by its own answer paragraph).",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        46
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        47
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        48,
+        49
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        50
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        51,
+        52,
+        53,
+        54,
+        55,
+        56
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        57
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        43,
+        44,
+        45
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    }
+  ],
+  "ignoreLines": []
+}
