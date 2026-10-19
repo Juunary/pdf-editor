@@ -363,18 +363,18 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect((await session(page))!.caret).toBe(6);
     });
 
-    test('붙여넣기: 텍스트만, 줄바꿈은 강제 줄바꿈, NFC 정규화', async ({ page }) => {
+    test('붙여넣기: 텍스트만, 줄바꿈은 강제 줄바꿈, NFC 정규화, NBSP → 공백', async ({ page }) => {
       await startEdit(page, 10, 0.8);
       await page.evaluate(() => {
         const ta = document.getElementById('pe-edit-input')!;
         const dt = new DataTransfer();
         dt.setData('text/html', '<b>굵게</b>');
-        dt.setData('text/plain', 'A\r\nB한');
+        dt.setData('text/plain', 'A\r\nB한\u00a0C');
         ta.dispatchEvent(
           new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
         );
       });
-      expect((await settled(page)).text).toBe('Hello WorldA\nB한');
+      expect((await settled(page)).text).toBe('Hello WorldA\nB한 C');
     });
 
     test('복사·잘라내기는 편집기 선택 텍스트를 쓴다', async ({ page }) => {

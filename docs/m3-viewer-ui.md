@@ -8,13 +8,14 @@
 | 상태 | **구현 완료. 가짜 편집 호스트·실제 확장으로 검증했다. 실제 core 편집 RPC(S3)·pdf-ops(S1)·reflow(S2) 연동 검증은 통합 후** |
 | 변경 범위 | 허용 파일만 변경(`packages/viewer-ui/**`, `apps/extension/**`, 이 문서). `shared-types`·`core`·`pdf-ops`·`reflow`·루트 설정·`pnpm-lock.yaml`·manifest 무변경. 새 의존성 없음 |
 | 실측 환경 | 서버 Linux, Node 22.18.0, Playwright 1.64.1 번들 Chromium 156.0.8078.4(headless), 2026-10-19 |
+| 계약 수정 반영 | `m3` 의 수정 1(`2cc9982`)·수정 2(`64f6fcd`)를 머지했다(2026-10-19). 수정 1 은 뷰어 영향 없음. 수정 2: 입력·붙여넣기·조합 확정에서 U+00A0 → U+0020, 폴백 폰트 파일 교체(dist 복사 대상 이름 동일) |
 
 ## 1. 구현 범위
 
 | 기능(계약) | 상태 | 구현 위치 |
 | --- | --- | --- |
 | 진입: `getPageEditability` 문단 테두리(편집 가능 = 실선, 제한 = 점선·다른 색), 더블클릭 시작, 제한 사유 팝오버(5.9) | 완료 | `components/EditEntry.tsx`, `edit-controller.ts`, `edit-labels.ts` |
-| 입력: 숨은 textarea, `beforeinput`·`composition*`, NFC, 텍스트만 붙여넣기, 줄바꿈 = 강제 줄바꿈 | 완료 | `components/EditorLayer.tsx`, `edit-text.ts`, `edit-model.ts` |
+| 입력: 숨은 textarea, `beforeinput`·`composition*`, NFC + U+00A0 → U+0020(계약 수정 2), 텍스트만 붙여넣기, 줄바꿈 = 강제 줄바꿈 | 완료 | `components/EditorLayer.tsx`, `edit-text.ts`, `edit-model.ts` |
 | 편집 모델: 텍스트·모양 구간·캐럿·선택·조합 구간, `charIndexOfOffset` 로 클릭 → 캐럿 | 완료 | `edit-model.ts`, `edit-geometry.ts`(`offsetAtPagePoint`) |
 | 키: 화살표(줄 이동은 리플로우 줄 기준)·Home/End·Shift 선택·Ctrl+A·Backspace/Delete·Enter·Ctrl 단어 이동·삭제 | 완료 | `edit-keys.ts`, `edit-session.ts`, `edit-geometry.ts` |
 | 편집 중 글자 단위 undo/redo(I6 단위) | 완료 | `edit-model.ts`(`TextHistory`) |
@@ -60,7 +61,7 @@ DOM 비의존 계층은 가짜 호스트(`test/fake-edit-host.ts`)로 Node 단�
 | `keydown` | `mapEditKey` 로 이동·삭제·Enter·Ctrl+A·Ctrl+Z·Ctrl+Shift+Z·Ctrl+Y·Esc 를 편집 동작으로 바꾸고 기본 동작을 막는다. Ctrl+S·Ctrl+F·Ctrl+C 등은 가로채지 않는다(저장·찾기·복사는 상위가 처리). 조합 중(`isComposing`·keyCode 229)이면 아무 동작도 하지 않고, Ctrl/Meta 조합은 기본 동작만 막는다(I5) |
 | `beforeinput` | 조합이 아니면 `insertText`·줄바꿈·삭제 종류를 모델로 처리하고 기본 동작을 막는다. `historyUndo`·`historyRedo` 는 조합 여부와 무관하게 막는다 |
 | `compositionstart/update/end` | 조합 구간을 모델 텍스트 안에서 교체하고 캐럿을 조합 끝에 둔다. 확정(`compositionend.data`)은 NFC 로 정규화한다 |
-| `copy`·`cut`·`paste` | 편집기 선택 텍스트를 쓴다. 붙여넣기는 `text/plain` 만, CRLF → 강제 줄바꿈, NFC |
+| `copy`·`cut`·`paste` | 편집기 선택 텍스트를 쓴다. 붙여넣기는 `text/plain` 만, CRLF → 강제 줄바꿈, NFC, U+00A0 → U+0020 |
 
 textarea 는 캐럿 위치에 두어(투명, `opacity: 0.01`) IME 후보창이 캐럿 옆에 뜨게 한다. 이벤트는 Preact 의 이름 규칙(`oncompositionstart` 는 DOM 속성이 아님)과 무관하게 `addEventListener` 로 등록한다. 등록은 렌더 직후(레이아웃 효과)에 한다.
 
@@ -116,7 +117,7 @@ textarea 는 캐럿 위치에 두어(투명, `opacity: 0.01`) IME 후보창이 �
 
 | 항목 | 결과(2026-10-19) |
 | --- | --- |
-| 폴백 폰트 | `new URL('../../../../assets/fonts/NotoSansKR-Regular-subset.ttf', import.meta.url)` 를 Worker 에서 fetch. 번들러가 `dist/assets/NotoSansKR-Regular-subset-<hash>.ttf` 로 내보낸다: 4,083,596 B, sha256 `08857b9f4cc1…`(계약 D12 와 같음) |
+| 폴백 폰트 | `new URL('../../../../assets/fonts/NotoSansKR-Regular-subset.ttf', import.meta.url)` 를 Worker 에서 fetch. 번들러가 `dist/assets/NotoSansKR-Regular-subset-<hash>.ttf` 로 내보낸다. 계약 수정 2 이후 파일: 4,082,236 B, sha256 `e96d7e43…`(수정 전 4,083,596 B·`08857b9f…`). `verify-dist` 는 원본 해시와 비교하므로 파일 교체에 영향이 없다 |
 | `exposePdfWorker(self, { loadFallbackFont })` | `src/worker/pdf-worker.ts` 에서 구현 |
 | harfbuzz wasm | 4.2절 |
 | `verify-dist.mjs` | wasm 은 해시로 식별(MuPDF 항상 1개, harfbuzz 는 reflow 가 `harfbuzzjs` 를 import 할 때 1개, 그 밖은 오류). 폰트 1개 + 해시 일치 + Worker 진입 청크가 그 파일명을 참조. harfbuzz 코드가 `background.js`·`assets/viewer-*` 에 섞이지 않음. reflow 가 `harfbuzzjs` 를 import 하기 전에는 harfbuzz 검사를 건너뛰고 `SKIP` 을 출력한다(import 하는 순간 자동으로 검사한다) |
@@ -153,7 +154,7 @@ textarea 는 캐럿 위치에 두어(투명, `opacity: 0.01`) IME 후보창이 �
 | --- | --- | --- |
 | `typeof chrome` | `undefined` | — |
 | `chrome.runtime`·`storage`·`downloads`·`declarativeNetRequest` | 모두 `undefined` | `runtime` object, `downloads` object, `storage` undefined(manifest 에 권한 없음) |
-| 확장 자산 `fetch`(폴백 폰트 `chrome-extension://…/assets/NotoSansKR-….ttf`) | 200, 4,083,596 B, 앞 4바이트 `00 01 00 00`(TrueType) | — |
+| 확장 자산 `fetch`(폴백 폰트 `chrome-extension://…/assets/NotoSansKR-….ttf`) | 200, 4,082,236 B(계약 수정 2 이후 파일, 최초 실측은 4,083,596 B), 앞 4바이트 `00 01 00 00`(TrueType) | — |
 | `manifest.json` `fetch` | 200 | — |
 
 **결론**: 전용 Worker 에서 `chrome.*` 는 쓸 수 없다. `fetch(new URL(…, import.meta.url))` 로 확장 자산을 받는 방식은 된다. 실제 `pdf-worker` 도 확장 페이지가 만든 전용 module Worker 이므로 같은 환경이다. 그래서 폴백 폰트 로더는 `chrome.runtime.getURL` 없이 상대 URL 만 쓴다(`pdf-worker.ts`). 확장 페이지의 `chrome.*` 는 뷰어(메인 스레드)가 쓴다.
