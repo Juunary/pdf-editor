@@ -158,6 +158,48 @@ describe('저장 메타(5.6)', () => {
     expect(parseEditsInfo('pages=2,5; structure=n/a')).toEqual({ pages: [2, 5], structure: 'n/a' });
   });
 
+  it('계약 수정 4: 활성 편집 쪽 전체로 멱등, 이전 세션 쪽 번호와 합집합', () => {
+    const doc = makeDoc(['', '', '']);
+    const info = doc.addObject(doc.newDictionary());
+    info.put('PdfEditorEdits', doc.newString('pages=5; structure=not-updated'));
+    doc.getTrailer().put('Info', info);
+    const value = () => doc.getTrailer().get('Info').get('PdfEditorEdits').asString();
+    recordEditMetadata(doc, { pages: [0, 2], structureNotUpdated: false });
+    expect(value()).toBe('pages=1,3,5; structure=not-updated');
+    recordEditMetadata(doc, { pages: [2, 0], structureNotUpdated: false });
+    expect(value()).toBe('pages=1,3,5; structure=not-updated');
+    // 활성 편집이 줄면(undo 뒤 다른 편집 커밋) 이번 세션 쪽 번호도 준다. 이전 세션 쪽 번호는 남는다.
+    recordEditMetadata(doc, { pages: [0], structureNotUpdated: false });
+    expect(value()).toBe('pages=1,5; structure=not-updated');
+  });
+
+  it('계약 수정 4: 커밋 작업 안 기록은 저널에 남아 undo·redo 와 함께 움직이고, 변경 없는 감싼 저장은 redo 를 유지한다', () => {
+    const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Meta paragraph.) Tj ET']);
+    const fm = new FontManager(doc, fallbackFor(doc));
+    // core 와 같이 Info·폴백은 저널을 켜기 전에 만든다(계약 수정 1).
+    doc.getTrailer().put('Info', doc.addObject(doc.newDictionary()));
+    doc.enableJournal();
+    const value = () => {
+      const v = doc.getTrailer().get('Info').get('PdfEditorEdits');
+      return v.isString() ? v.asString() : null;
+    };
+    const ctx = pageContext(doc, 0);
+    doc.beginOperation('edit');
+    editParagraph(ctx, fm, findParagraph(ctx, 'Meta paragraph').id, 'Meta edited.');
+    recordEditMetadata(doc, { pages: [0], structureNotUpdated: false });
+    doc.endOperation();
+    expect(value()).toBe('pages=1; structure=n/a');
+    doc.undo();
+    expect(value()).toBeNull();
+    // 폴백을 쓰지 않은 편집: 저장 작업은 서브셋 교체 없이 감싸기만 한다.
+    doc.beginOperation('save');
+    doc.saveToBuffer('garbage=yes,compress,objstms');
+    doc.abandonOperation();
+    expect(doc.canRedo()).toBe(true);
+    doc.redo();
+    expect(value()).toBe('pages=1; structure=n/a');
+  });
+
   it('PDF/A 선언(XMP pdfaid:part) 확인', () => {
     const doc = makeDoc(['']);
     expect(pdfaDeclared(doc)).toBe(false);

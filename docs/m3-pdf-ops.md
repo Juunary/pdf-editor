@@ -2,10 +2,10 @@
 
 | 항목 | 내용 |
 |---|---|
-| 작성일 | 2026-10-19(계약 수정 1–3 반영 2026-10-20) |
-| 브랜치 | `m3-pdf-ops`(기준 `m3` `a7464f1`, `m3` `78a01ce`(계약 수정 1–3) 머지 `87c04bc`, worktree `/mnt/nas4/kjune/pdf-editor-m3-pdf-ops`) |
+| 작성일 | 2026-10-19(계약 수정 1–4 반영 2026-10-20) |
+| 브랜치 | `m3-pdf-ops`(기준 `m3` `a7464f1`, `m3` `78a01ce`(계약 수정 1–3) 머지 `87c04bc`, `m3` `fbbe205`(계약 수정 4) 머지, worktree `/mnt/nas4/kjune/pdf-editor-m3-pdf-ops`) |
 | 범위 | `docs/m3-contract.md` 6.2 작업 S1: 4절 SourceMap 선택 필드, 5.1 판정, D2 제거 확장, D3 삽입, D4 FontManager, 5.5 쓰기, 5.6 메타 |
-| 상태 | 범위 구현 완료. V2–V5 세 엔진 확인 완료(합성). 코퍼스 편집 가능 비율 측정 완료. S1 이 보고한 계약 불일치 2건은 계약 수정 3 으로 확정(8절). 계약 수정 1(FallbackFontSource·Info 는 core 생성)·2(폴백 cmap 일대일) 반영 |
+| 상태 | 범위 구현 완료. V2–V5 세 엔진 확인 완료(합성). 코퍼스 편집 가능 비율 측정 완료. S1 이 보고한 계약 불일치 2건은 계약 수정 3 으로 확정(8절). 계약 수정 1(FallbackFontSource·Info 는 core 생성)·2(폴백 cmap 일대일)·4(Info 기록은 커밋 작업 안, 텍스트 판정에서 기본 무시 문자 제외) 반영 |
 | 측정 환경 | 서버 `sailab01`, Node 22.18.0, npm `mupdf` 1.28.1, `pdfjs-dist` 6.4.299(legacy 빌드, `@napi-rs/canvas` 1.0.11), Poppler 22.02.0(`pdftoppm -cropbox`·`pdftotext`). 렌더 비교는 scale 2, 주석 제외, 채널 차 8 초과 픽셀 수(계약 8.3) |
 
 ## 1. 구현 범위
@@ -67,10 +67,11 @@
 - 합성 굵게: `2 Tr`, 선 두께 크기 × 0.03, `[] 0 d 0 J 0 j`, 선 색은 채움 연산을 CS/SC/SCN/G/RG/K 로 바꾼 것, 선 알파는 gs `CA` = 원 글자 `ca`. 합성 기울임: Tm 의 y 축 = `userToPage` 역행렬 × (0.2, −1).
 - 문자열: 원본 폰트는 `EncodedGlyph.code` 바이트, 폴백은 2바이트 gid. 줄 끝 공백 글리프는 배치 결과에 있으면 그대로 쓴다.
 
-### 2.6 저장 메타(5.6)
+### 2.6 편집 메타(5.6)
 
-- `/PdfEditorEdits` = `pages=<1부터, 합집합 정렬>; structure=not-updated|n/a`(한 번 not-updated 면 유지), `/ModDate` = `D:YYYYMMDDHHmmSSZ`(UTC). `/Producer`·XMP 는 바꾸지 않는다.
-- Info 사전은 core 가 저널을 켜기 전(작업 밖)에 만든다(계약 수정 1). pdf-ops 는 만들지 않는다. `recordEditMetadata` 는 Info 가 없으면 예외다(작업 안에서 trailer /Info 를 만들면 작업을 버린 뒤 끊긴 참조가 되므로).
+- 호출 시점(계약 수정 4): core 가 **커밋 작업 안**에서 커밋마다 부르고, 재적용은 끝에서 한 번 부른다. 기록이 저널에 남아 undo·redo 와 함께 움직인다. 저장 작업에서는 `finalizeForSave` 만 한다.
+- `/PdfEditorEdits` = `pages=<1부터, 정렬>; structure=not-updated|n/a`. `pages` 입력은 활성 편집 전체의 쪽 인덱스(0부터)다. 이전 세션 값(이 문서 객체에서 첫 기록 직전에 한 번 읽어 둔다)의 쪽 번호와 합집합으로 쓰므로 같은 입력이면 같은 문자열이고(멱등), 활성 편집이 줄면 이번 세션 쪽 번호도 빠지며 이전 세션 쪽 번호는 남는다. `structure` 는 입력이 not-updated 이거나 이전 세션 값이 not-updated 면 not-updated. `/ModDate` = 호출 시각 `D:YYYYMMDDHHmmSSZ`(UTC, 마지막 커밋 시각). `/Producer`·XMP 는 바꾸지 않는다.
+- Info 사전은 core 가 저널을 켜기 전(작업 밖)에 만든다(계약 수정 1). pdf-ops 는 만들지 않고, 없으면 예외다. trailer 는 호출마다 `getTrailer()` 로 다시 받는다(객체를 더한 뒤 먼저 받아 둔 trailer 에는 반영되지 않음, S3 실측).
 - `pdfaDeclared(doc)`: `/Metadata` XMP 의 `pdfaid:part`.
 
 ## 3. 검증 전제 V2–V5(실측 2026-10-19)
@@ -153,7 +154,7 @@
 - 표본: 쪽마다 읽기 순서 앞에서부터 편집 가능하고 20자 이상인 흐름 문단 최대 3개 = 113개. 배치는 테스트 전용 단순 배치(`test/helpers/simple-reflow.ts`: 왼쪽 정렬·공백 뒤 줄 나눔·셰이핑 없음)다. 편집 (ii)·(iii) 와 리플로우 결과 측정은 S2 통합 뒤 한다.
 - 삽입 방식: 쪽 before-bt 55, 쪽 split-bt 49, Form 복제 before-bt 4, Form 복제 split-bt 5. 오류 0.
 - 영역 밖 렌더 차이(원 문단 bbox ∪ 배치 상자, 여백 2pt): **113/113 이 세 엔진 모두 0 px**.
-- 상자 안 텍스트(계약 8.3 정의, 공백 제거 비교): 세 엔진 모두 같음 102/113. 다름 11건 중 10건은 단순 배치가 영역을 넘쳐(표본 27건이 넘침) 넘친 줄이 이웃 문단 자리에 겹친 경우로 상자 안 추출에 이웃 글자가 섞인다. 1건(zen-beamer-10545284 4쪽 #12)은 Poppler 단어 상자 판정(글자 크기 4pt)에서 첫 단어가 빠진 측정 도구 문제다.
+- 상자 안 텍스트(계약 8.3 정의, 공백류·기본 무시 문자 제거 비교(수정 4)): 세 엔진 모두 같음 102/113. 다름 11건 중 10건은 단순 배치가 영역을 넘쳐(표본 27건이 넘침) 넘친 줄이 이웃 문단 자리에 겹친 경우로 상자 안 추출에 이웃 글자가 섞인다. 1건(zen-beamer-10545284 4쪽 #12)은 Poppler 단어 상자 판정(글자 크기 4pt)에서 첫 단어가 빠진 측정 도구 문제다.
 - 폰트: 같은 텍스트 교체에서 폴백 사용 1건(nasa-se-handbook 4쪽 #2 의 "."), 쓸 수 없는 글자 1건(arxiv-2609.09268 4쪽 #3 의 U+FFFD, 원본 추출이 이미 U+FFFD).
 - 경고: tagged-structure-kept 20, tagged-structure-unlinked 26, link-overlap 17, reading-order-approximate 7, actualtext-cleared 6.
 - 표본 편집 시간(판정 + 준비 + 배정 + 단순 배치 + 쓰기, 문서마다 새로 연 문서): 머지 전 중앙값 4.9 ms·최대 368 ms, 머지 뒤 중앙값 13.9 ms·최대 96.1 ms(구간 분해는 측정하지 않음). 머지 뒤 표본마다 새 FontManager 가 폴백 지표(임시 문서 addFont, 약 14 ms)를 한 번 계산한다. 세션에서는 문서당 한 번이다.
@@ -194,7 +195,7 @@
 
 ## 9. 다른 작업과의 연결 주의
 
-- S3(core): 호출 순서는 `planParagraphEdit → prepareParagraphEdit → (assign → layoutParagraph → writeEditBlock)*`. `assign` 은 문서의 마지막 `prepareParagraphEdit` 가 보관한 모양 해석을 쓴다. `replayEdits` 도 편집마다 plan → prepare → write 순으로 부른다. `FallbackFontSource.ref()` 는 core 가 저널을 켜기 전에 넣은 폴백 객체이고, 폴백 글자를 쓰는 `writeEditBlock` 은 그것이 null 이면 예외다. Info 사전도 core 가 저널을 켜기 전에 만든다(`recordEditMetadata` 는 없으면 예외). `finalizeForSave` 는 D9 저장 작업 안에서만.
+- S3(core): 호출 순서는 `planParagraphEdit → prepareParagraphEdit → (assign → layoutParagraph → writeEditBlock)*`. `assign` 은 문서의 마지막 `prepareParagraphEdit` 가 보관한 모양 해석을 쓴다. `replayEdits` 도 편집마다 plan → prepare → write 순으로 부른다. `FallbackFontSource.ref()` 는 core 가 저널을 켜기 전에 넣은 폴백 객체이고, 폴백 글자를 쓰는 `writeEditBlock` 은 그것이 null 이면 예외다. Info 사전도 core 가 저널을 켜기 전에 만든다(`recordEditMetadata` 는 없으면 예외). `finalizeForSave` 는 D9 저장 작업 안에서만(폴백을 쓴 활성 편집이 있을 때). `recordEditMetadata` 는 커밋 작업 안에서(수정 4).
 - S3: `planPageEditability` 결과 `revision`·`ms` 는 호출자가 채운다. 판정은 쪽 SourceMap·레이아웃 캐시를 그대로 쓰고 문서를 바꾸지 않는다(저널 켠 문서에서 작업 밖 호출 확인).
 - S2(reflow): 원본 face 의 `encode('\n')` 은 `[]`, 공백류는 `encode(' ')` 가 원 폰트 공백 코드. 폴백 face 키는 `fallback`, `pdfWidth(gid)` 는 임베딩한 /W(명세 폭). 쓰기는 `WritableGlyph.faceKey`·`code`·`gid`·`x`·`y`·`size`·`pdfWidth`·`runIndex`·합성 플래그만 쓴다(`x`·`y` 는 페이지 공간 기준선 원점).
 - 테스트 도구: `vitest.config.ts` 별칭으로 `packages/core/src/extract.ts`·`packages/layout-recon/src` 원본을 테스트에서만 불러 실제 PageModel·PageLayout 을 만든다(패키지 의존성 변경 없음, typecheck 는 동적 import 문자열로 우회).
@@ -206,7 +207,7 @@
 | `test/source-map-m3.test.ts` | 선택 필드(tlm·fillColorOps·extGStateOps·clipRect·Form BBox·markedContent) |
 | `test/paragraph-plan.test.ts` | 편집 제한 사유 전부(not-flow 제외 합성)·경고·시작 상태·판정 시간·저널 켠 문서 |
 | `test/paragraph-edit.test.ts` | V2·V3·V5, Form 복제, 공유 스트림, y 반전·회전, Tr 3, 클립, 저널 undo/redo·취소(폴백 객체 유지), TL 보존, 재편집(같은 세션·재열기·다른 도구 수정) |
-| `test/edit-block.test.ts` | 쓰기 세부(텍스트 상태·색공간·gs·글리프 위치·줄 끝 공백·합성 스타일), 메타·PDF/A |
+| `test/edit-block.test.ts` | 쓰기 세부(텍스트 상태·색공간·gs·글리프 위치·줄 끝 공백·합성 스타일), 메타(멱등·이전 세션 합집합·커밋 작업 안 기록의 undo/redo·감싼 저장 뒤 redo 유지)·PDF/A |
 | `test/font-manager.test.ts` | 역매핑(Type1·TrueType·Type0·쓰인 코드 우선), V4, 폭 0, 폴백·glyph-missing, 저장 서브셋·검색, 폴백 ToUnicode 왕복 16,564자(세 엔진) |
 | `test/edit-corpus.test.ts` | 계약 8.2 코퍼스 측정. 환경 변수가 있을 때만 |
 

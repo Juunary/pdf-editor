@@ -213,7 +213,10 @@ export function listEditBlocks(doc: mupdf.PDFDocument, pageIndex: number): EditB
   return listBlocks(doc, pageIndex);
 }
 
-/** 저장 작업(계약 D9) 안에서 Info /PdfEditorEdits 를 기록한다(계약 5.6·D1). Info 사전은 core 가 저널을 켜기 전에 만들어 둔다(계약 수정 1). */
+/**
+ * 커밋 작업 안에서 Info /PdfEditorEdits 를 기록한다(계약 5.6·D1 수정 4). pages 는 활성 편집 전체의 쪽 인덱스(0부터),
+ * 같은 입력이면 멱등, 이전 세션 쪽 번호와 합집합. Info 사전은 core 가 저널을 켜기 전에 만들어 둔다(계약 수정 1).
+ */
 export function recordEditMetadata(
   doc: mupdf.PDFDocument,
   info: { pages: number[]; structureNotUpdated: boolean },

@@ -333,7 +333,8 @@ describe('V4 폴백 ToUnicode 왕복(계약 수정 2)', () => {
       const ex: string[] = [];
       for (let p = 0; p * PER < cps.length; p++) {
         const norm = engineNorm[e];
-        const got = [...squash(await pageText(e, out, p))]
+        // 왕복 확인은 모든 코드 포인트(기본 무시 문자 포함)를 보므로 공백만 지운다.
+        const got = [...(await pageText(e, out, p)).replace(/\s+/gu, '')]
           .map((c) => c.codePointAt(0)!)
           .map((c, k) => (norm?.get(c) === cps[p * PER + k] ? cps[p * PER + k]! : c));
         const want = cps.slice(p * PER, p * PER + PER);
