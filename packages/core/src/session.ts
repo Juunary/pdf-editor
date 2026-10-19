@@ -5,11 +5,13 @@ import {
   decideSaveMethod,
   linkPage,
 } from '@pdf-editor/pdf-ops';
+import { reconstructPage } from '@pdf-editor/layout-recon';
 import type {
   ExtractRequest,
   InputMode,
   OpenResult,
   PageInfo,
+  PageLayout,
   PageLinkage,
   PageModel,
   Rect,
@@ -41,6 +43,7 @@ export class PdfSession {
   #doc: mupdf.PDFDocument | null = null;
   #inputMode: InputMode = 'buffer';
   #pageCache = new Map<string, PageModel>();
+  #layoutCache = new Map<number, PageLayout>();
 
   get document(): mupdf.PDFDocument {
     if (!this.#doc) throw new Error('열린 문서 없음');
@@ -130,15 +133,37 @@ export class PdfSession {
     return model;
   }
 
-  /** 추출 캐시를 비운다. 쪽을 지정하면 그 쪽만. 문서 내용(콘텐츠·리소스·쪽 순서)이 바뀐 뒤에 부른다. */
+  /** 추출·레이아웃 캐시를 비운다. 쪽을 지정하면 그 쪽만. 문서 내용(콘텐츠·리소스·쪽 순서)이 바뀐 뒤에 부른다. */
   invalidatePageCache(pageIndex?: number): void {
     if (pageIndex === undefined) {
       this.#pageCache.clear();
+      this.#layoutCache.clear();
       return;
     }
+    this.#layoutCache.delete(pageIndex);
     for (const key of [...this.#pageCache.keys()]) {
       if (key.startsWith(`${pageIndex}:`)) this.#pageCache.delete(key);
     }
+  }
+
+  /**
+   * 쪽 레이아웃(M2, docs/m2-contract.md). 경로 세그먼트를 포함한 추출 모델로 복원하고, 추출 캐시와 같은
+   * 규칙(최근 사용 순 최대 PAGE_CACHE_LIMIT 쪽)으로 캐시한다. 호출자는 결과를 바꾸지 않는다.
+   */
+  getPageLayout(pageIndex: number): PageLayout {
+    const cached = this.#layoutCache.get(pageIndex);
+    if (cached) {
+      this.#layoutCache.delete(pageIndex);
+      this.#layoutCache.set(pageIndex, cached);
+      return cached;
+    }
+    const layout = reconstructPage(this.extractPage({ pageIndex, includePathSegments: true }));
+    this.#layoutCache.set(pageIndex, layout);
+    if (this.#layoutCache.size > PAGE_CACHE_LIMIT) {
+      const oldest = this.#layoutCache.keys().next();
+      if (!oldest.done) this.#layoutCache.delete(oldest.value);
+    }
+    return layout;
   }
 
   getSourceMap(pageIndex: number): SourceMap {
@@ -190,6 +215,7 @@ export class PdfSession {
 
   close(): void {
     this.#pageCache.clear();
+    this.#layoutCache.clear();
     this.#doc?.destroy();
     this.#doc = null;
     this.#original = null;
