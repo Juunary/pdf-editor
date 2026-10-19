@@ -159,7 +159,9 @@ describe('removeTextShowOps: 클립 텍스트(Tr 4–7)', () => {
     const blue = bluePixels(doc);
     const r = removeTextShowOps(doc, map, [op.id]);
     expect(r.removed).toEqual([]);
-    expect(r.skipped).toEqual([{ opId: op.id, reason: `클립 텍스트(Tr ${tr})` }]);
+    expect(r.skipped).toEqual([
+      { opId: op.id, code: 'clip-text', detail: `클립 텍스트(Tr ${tr})` },
+    ]);
     expect(r.streams).toEqual([]);
     expect(streamOf(doc, op.stream.objectNumber)).toBe(before);
     expect(bluePixels(doc)).toBe(blue);
@@ -431,7 +433,8 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     expect(r.removed).toEqual([mapped!.id]);
     expect(r.skipped).toHaveLength(1);
     expect(r.skipped[0]!.opId).toBe(mixed!.id);
-    expect(r.skipped[0]!.reason).toMatch(/^CID 매핑 없는 코드/);
+    expect(r.skipped[0]!.code).toBe('cid-unmapped');
+    expect(r.skipped[0]!.detail).toMatch(/^CID 매핑 없는 코드/);
   });
 
   it('MuPDF 가 로드하지 못해 대체(hail-mary)한 폰트는 건너뛴다', () => {
@@ -450,13 +453,18 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     const op = map.ops.find((o) => o.op === 'Tj')!;
     expect(op.limits).toContain('font-encoding-unresolved');
     expect(removeTextShowOps(doc, map, [op.id]).skipped).toEqual([
-      { opId: op.id, reason: '편집 제한: font-encoding-unresolved' },
+      {
+        opId: op.id,
+        code: 'font-encoding-unresolved',
+        detail: '편집 제한: font-encoding-unresolved',
+      },
     ]);
     // 제한 표시가 없어도 폰트 자체의 대체 사유로 건너뛴다.
     op.limits = [];
     const r = removeTextShowOps(doc, map, [op.id]);
     expect(r.removed).toEqual([]);
-    expect(r.skipped[0]!.reason).toMatch(/^MuPDF 대체 폰트/);
+    expect(r.skipped[0]!.code).toBe('fallback-font');
+    expect(r.skipped[0]!.detail).toMatch(/^MuPDF 대체 폰트/);
   });
 
   it('/Font 가 없는 쪽·/Resources 가 없는 쪽: 예외 없이 건너뛴다', () => {
@@ -471,7 +479,9 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
       op.limits = [];
       const r = removeTextShowOps(doc, map, [op.id]);
       expect(r.removed).toEqual([]);
-      expect(r.skipped).toEqual([{ opId: op.id, reason: '폰트 리소스 없음: F1' }]);
+      expect(r.skipped).toEqual([
+        { opId: op.id, code: 'no-font-resource', detail: '폰트 리소스 없음: F1' },
+      ]);
     }
   });
 
@@ -485,8 +495,8 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     );
     expect(r.removed).toEqual([ops[2]!.id]);
     expect(r.skipped).toEqual([
-      { opId: ops[0]!.id, reason: '" 피연산자 부족' },
-      { opId: ops[1]!.id, reason: '" 피연산자 부족' },
+      { opId: ops[0]!.id, code: 'quote-operands', detail: '" 피연산자 부족' },
+      { opId: ops[1]!.id, code: 'quote-operands', detail: '" 피연산자 부족' },
     ]);
   });
 
@@ -494,6 +504,8 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     const doc = onePage('BT /F1 10 Tf 20 100 Td [(A) 5 Tw (B)] TJ ET');
     const op = showOps(doc)[0]!;
     const r = removeTextShowOps(doc, buildSourceMap(doc, 0), [op.id]);
-    expect(r.skipped).toEqual([{ opId: op.id, reason: 'TJ 배열에 문자열·숫자 밖 토큰' }]);
+    expect(r.skipped).toEqual([
+      { opId: op.id, code: 'tj-bad-token', detail: 'TJ 배열에 문자열·숫자 밖 토큰' },
+    ]);
   });
 });

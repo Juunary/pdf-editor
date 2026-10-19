@@ -20,11 +20,13 @@ import type {
   EditLimitReason,
   FormStep,
   Matrix,
+  OpenMarkedContent,
   Point,
   SourceGlyph,
   SourceMapError,
   SourceOp,
   SourceOpKind,
+  SourceOpState,
 } from '@pdf-editor/shared-types';
 import {
   decodeStringToken,
@@ -34,7 +36,7 @@ import {
   type Token,
 } from './content-stream.js';
 import { now } from './clock.js';
-import { pageTransform, readStreamBytes } from './mupdf-util.js';
+import { readStreamBytes } from './mupdf-util.js';
 import { OptionalContent } from './optional-content.js';
 import { FontCache, type PdfFont } from './pdf-fonts.js';
 import { loadType3, T3_COLOR, T3_UNCACHEABLE, type Type3Font, type Type3Glyph } from './type3.js';
@@ -191,7 +193,68 @@ interface GState {
   lineWidth: number;
   lineJoin: number;
   miterLimit: number;
+  /** 효력 있는 채움 색 연산 id(cs 다음 sc/scn, 또는 g/rg/k 하나). 바꿀 때 새 배열로 바꾼다(연산 기록이 공유). */
+  fillColorOps: number[];
+  /** 실행한 gs 연산 id(바깥 → 안). 바꿀 때 새 배열로 바꾼다. */
+  extGStateOps: number[];
+  /** 직사각형 클립의 교집합(페이지 공간). 직사각형이 아닌 클립이 걸리면 null. */
+  clipRect: Rect4 | null;
 }
+
+/** 열린 marked content 1개(스택 항목). */
+interface MarkedEntry {
+  mcid: number | null;
+  oc: boolean;
+  info: OpenMarkedContent;
+}
+
+/** 경로 명령이 장치 공간에서 축 정렬 직사각형 하나면 그 사각형, 아니면 null(빈 경로는 빈 사각형). */
+function rectOfPath(cmds: readonly number[][], dev: Matrix): Rect4 | null {
+  const pts: Point[] = [];
+  let closed = false;
+  for (let i = 0; i < cmds.length; i++) {
+    const c = cmds[i]!;
+    if (c[0] === 0) {
+      if (i !== 0) return null;
+      pts.push(apply(dev, c[1]!, c[2]!));
+    } else if (c[0] === 1) {
+      if (closed) return null;
+      pts.push(apply(dev, c[1]!, c[2]!));
+    } else if (c[0] === 3) closed = true;
+    else return null;
+  }
+  if (pts.length === 0) return [0, 0, 0, 0];
+  // 마지막 점이 첫 점과 같으면(명시적으로 닫은 경로) 뺀다.
+  const eq = (a: Point, b: Point) => Math.abs(a[0] - b[0]) < 1e-3 && Math.abs(a[1] - b[1]) < 1e-3;
+  if (pts.length === 5 && eq(pts[0]!, pts[4]!)) pts.pop();
+  if (pts.length !== 4) return null;
+  for (let i = 0; i < 4; i++) {
+    const a = pts[i]!;
+    const b = pts[(i + 1) % 4]!;
+    if (Math.abs(a[0] - b[0]) > 1e-3 && Math.abs(a[1] - b[1]) > 1e-3) return null;
+  }
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+function intersectRect(a: Rect4 | null, b: Rect4 | null): Rect4 | null {
+  if (!a || !b) return null;
+  const r: Rect4 = [
+    Math.max(a[0], b[0]),
+    Math.max(a[1], b[1]),
+    Math.min(a[2], b[2]),
+    Math.min(a[3], b[3]),
+  ];
+  if (r[2] < r[0]) r[2] = r[0];
+  if (r[3] < r[1]) r[3] = r[1];
+  return r;
+}
+
+/** 장치 공간에서 축 정렬을 유지하는 행렬(회전 0·90·180·270, 뒤집기)인가. */
+const axisAligned = (m: Matrix) =>
+  (Math.abs(m[1]) < 1e-9 && Math.abs(m[2]) < 1e-9) ||
+  (Math.abs(m[0]) < 1e-9 && Math.abs(m[3]) < 1e-9);
 
 const cloneGs = (g: GState): GState => ({
   ...g,
@@ -331,7 +394,11 @@ export class ContentInterpreter {
   private tosMode = 0;
   private clipAccum: GlyphRef[] | null = null;
   private hidden = 0;
-  private marked: { mcid: number | null; oc: boolean }[] = [];
+  private marked: MarkedEntry[] = [];
+  /** record 가 쓰는 marked content 사본. 스택이 바뀌면 null 로 비운다. */
+  private markedSnap: OpenMarkedContent[] | null = null;
+  /** BT 와 ET 사이(현재 콘텐츠 기준). */
+  private inText = false;
   /**
    * 진행 중 경로(콘텐츠 공간): [0,x,y] 이동, [1,x,y] 선, [2,x1,y1,x2,y2,x3,y3] 곡선, [3] 닫기.
    * pathRight = MuPDF only_right_angles(생성 시 판정).
@@ -366,7 +433,14 @@ export class ContentInterpreter {
   ) {
     this.fonts = new FontCache(doc);
     this.oc = new OptionalContent(doc);
-    this.userToPage = pageTransform(doc, pageIndex);
+    const page = doc.loadPage(pageIndex);
+    let bounds: Rect4;
+    try {
+      this.userToPage = page.getTransform() as Matrix;
+      bounds = [...page.getBounds()] as Rect4;
+    } finally {
+      page.destroy();
+    }
     const material = (): Material => ({ kind: 'color', pattern: null, base: [...IDENTITY] });
     this.gs = {
       ctm: [...IDENTITY],
@@ -389,6 +463,9 @@ export class ContentInterpreter {
       lineWidth: 1,
       lineJoin: 0,
       miterLimit: 10,
+      fillColorOps: [],
+      extGStateOps: [],
+      clipRect: bounds,
     };
   }
 
@@ -517,6 +594,8 @@ export class ContentInterpreter {
       mcids: this.marked.map((m) => m.mcid).filter((m): m is number => m !== null),
       optionalContent: ctx.formOC || this.marked.some((m) => m.oc),
       limits: [],
+      state: this.opState(),
+      markedContent: (this.markedSnap ??= this.marked.map((m) => m.info)),
     };
     if (op.end > seg.end) this.addLimit(rec, 'spans-stream-boundary');
     if (ctx.inheritsResources) this.addLimit(rec, 'form-inherits-resources');
@@ -525,6 +604,20 @@ export class ContentInterpreter {
     this.ops.push(rec);
     ctx.opIds.push(rec.id);
     return rec;
+  }
+
+  private opState(): SourceOpState {
+    const g = this.gs;
+    return {
+      fillColorOps: g.fillColorOps,
+      extGStateOps: g.extGStateOps,
+      clipRect: g.clipRect,
+    };
+  }
+
+  private pushMarked(entry: MarkedEntry): void {
+    this.marked.push(entry);
+    this.markedSnap = null;
   }
 
   private resource(ctx: ExecCtx, category: string, name: string): mupdf.PDFObject | null {
@@ -575,7 +668,9 @@ export class ContentInterpreter {
         gs.miterLimit = num(o, 0);
         break;
       case 'gs':
-        this.execGs(ctx, o.names[0]);
+        if (this.execGs(ctx, o.names[0]) && rec) {
+          gs.extGStateOps = [...gs.extGStateOps, rec.id];
+        }
         break;
       // 경로
       case 'm':
@@ -635,10 +730,12 @@ export class ContentInterpreter {
       case 'BT':
         this.tm = [...IDENTITY];
         this.tlm = [...IDENTITY];
+        this.inText = true;
         break;
       case 'ET':
         this.flushText();
         this.flushClipText();
+        this.inText = false;
         break;
       case 'Tc':
         gs.charSpacing = num(o, 0);
@@ -693,12 +790,19 @@ export class ContentInterpreter {
       case 'CS':
       case 'cs':
         this.setColorSpace(ctx, op.op === 'cs' ? gs.fill : gs.stroke, o.names[0] ?? '');
+        if (op.op === 'cs' && rec) gs.fillColorOps = [rec.id];
         break;
       case 'SC':
       case 'sc':
       case 'SCN':
       case 'scn':
         this.setColor(ctx, op.op === 'sc' || op.op === 'scn' ? gs.fill : gs.stroke, o.names[0]);
+        if ((op.op === 'sc' || op.op === 'scn') && rec) {
+          // 색공간 연산(cs)이 앞에 있으면 함께 둔다(값만으로는 색공간을 알 수 없다).
+          const first = gs.fillColorOps[0];
+          const cs = first !== undefined && this.ops[first]?.op === 'cs' ? [first] : [];
+          gs.fillColorOps = [...cs, rec.id];
+        }
         break;
       case 'G':
       case 'RG':
@@ -709,6 +813,7 @@ export class ContentInterpreter {
       case 'rg':
       case 'k':
         this.setColorSpace(ctx, gs.fill, 'DeviceColor');
+        if (rec) gs.fillColorOps = [rec.id];
         break;
       // 이미지·셰이드·XObject
       case 'sh':
@@ -728,14 +833,25 @@ export class ContentInterpreter {
         this.deviceMask = true;
         break;
       case 'BMC':
-        this.marked.push({ mcid: null, oc: false });
+        this.pushMarked({
+          mcid: null,
+          oc: false,
+          info: {
+            opId: rec?.id ?? -1,
+            tag: o.names[0] ?? '',
+            mcid: null,
+            actualText: false,
+            insideText: this.inText,
+          },
+        });
         if (this.hidden > 0) this.hidden++;
         break;
       case 'BDC':
-        this.beginMarked(ctx, o);
+        this.beginMarked(ctx, rec, o);
         break;
       case 'EMC':
         this.marked.pop();
+        this.markedSnap = null;
         if (this.hidden > 0) this.hidden--;
         break;
       default:
@@ -743,10 +859,11 @@ export class ContentInterpreter {
     }
   }
 
-  private execGs(ctx: ExecCtx, name: string | undefined): void {
-    if (!name) return;
+  /** gs 실행. 리소스가 없으면 false. */
+  private execGs(ctx: ExecCtx, name: string | undefined): boolean {
+    if (!name) return false;
     const g = this.resource(ctx, 'ExtGState', name);
-    if (!g || !g.isDictionary()) return;
+    if (!g || !g.isDictionary()) return false;
     const keys: string[] = [];
     g.forEach((_v, k) => void keys.push(String(k)));
     if (keys.some((k) => k !== 'Font' && k !== 'Type')) this.flushText();
@@ -770,20 +887,29 @@ export class ContentInterpreter {
       this.gs.fontResource = '';
       this.gs.fontSize = font.get(1).asNumber();
     }
+    return true;
   }
 
-  private beginMarked(ctx: ExecCtx, o: Operands): void {
+  private beginMarked(ctx: ExecCtx, rec: SourceOp | null, o: Operands): void {
     const tag = o.names[0] ?? '';
     let props: mupdf.PDFObject | null = null;
     if (o.names[1] !== undefined) props = this.resource(ctx, 'Properties', o.names[1]);
     let mcid: number | null = null;
-    if (o.dict) mcid = dictNumber(o.dict, 'MCID');
-    else if (props) {
+    let actualText = false;
+    if (o.dict) {
+      mcid = dictNumber(o.dict, 'MCID');
+      actualText = o.dict.some((t) => t.kind === 'name' && t.value === 'ActualText');
+    } else if (props) {
       const m = props.get('MCID');
       if (m.isNumber()) mcid = m.asNumber();
+      actualText = props.isDictionary() && !props.get('ActualText').isNull();
     }
     const isOC = tag === 'OC';
-    this.marked.push({ mcid, oc: isOC });
+    this.pushMarked({
+      mcid,
+      oc: isOC,
+      info: { opId: rec?.id ?? -1, tag, mcid, actualText, insideText: this.inText },
+    });
     if (this.hidden > 0) {
       this.hidden++;
       return;
@@ -894,6 +1020,7 @@ export class ContentInterpreter {
   private paintPath(rec: SourceOp | null, dofill: boolean, dostroke: boolean): void {
     const gs = this.gs;
     const dev = this.deviceCtm();
+    const clipRect = this.pendingClip ? rectOfPath(this.pathBuf.cmds, dev) : null;
     const path = this.takePath(dev);
     let bbox = path.box;
     if (dostroke && !path.empty) bbox = this.expandForStroke(bbox, dev, path.right);
@@ -902,6 +1029,7 @@ export class ContentInterpreter {
     if (dostroke) this.paintMaterial(rec, 'stroke', bbox);
     if (this.pendingClip) {
       gs.clipDepth++;
+      gs.clipRect = intersectRect(gs.clipRect, clipRect);
       this.paint(this.pendingClip.owner ?? rec);
       this.pendingClip = null;
     }
@@ -1043,6 +1171,11 @@ export class ContentInterpreter {
     const savedPath = this.pathBuf;
     const savedRight = this.pathRight;
     const savedClip = this.pendingClip;
+    const savedInText = this.inText;
+    const savedMarked = this.marked;
+    this.inText = false;
+    this.marked = [...savedMarked];
+    this.markedSnap = null;
     this.gs = cloneGs(saved);
     this.gstack = [];
     this.gs.ctm = ctm;
@@ -1078,6 +1211,9 @@ export class ContentInterpreter {
     this.pathBuf = savedPath;
     this.pathRight = savedRight;
     this.pendingClip = savedClip;
+    this.inText = savedInText;
+    this.marked = savedMarked;
+    this.markedSnap = null;
   }
 
   // ---- 색 ----
@@ -1124,6 +1260,7 @@ export class ContentInterpreter {
   private showText(ctx: ExecCtx, rec: SourceOp | null, op: ContentOp, o: Operands): void {
     const gs = this.gs;
     const tmBefore: Matrix = [...this.tm];
+    const tlmBefore: Matrix = [...this.tlm];
     if (op.op === "'" || op.op === '"') {
       if (op.op === '"') {
         gs.wordSpacing = num(o, 0);
@@ -1146,6 +1283,7 @@ export class ContentInterpreter {
         rise: gs.rise,
         renderMode: gs.render,
         glyphs: [],
+        tlm: tlmBefore,
       };
       if (gs.render === 3) this.addLimit(rec, 'invisible-text');
       if (gs.render >= 4 && gs.render <= 7) this.addLimit(rec, 'clip-text');
@@ -1294,6 +1432,7 @@ export class ContentInterpreter {
       pendingClip: this.pendingClip,
       cellOwner: this.cellOwner,
       deviceMask: this.deviceMask,
+      inText: this.inText,
     };
     this.gs = cloneGs(saved.gs);
     this.gs.font = null;
@@ -1308,6 +1447,8 @@ export class ContentInterpreter {
     this.clipAccum = null;
     this.hidden = 0;
     this.marked = [];
+    this.markedSnap = null;
+    this.inText = false;
     this.pathBuf = newPath();
     this.pathRight = true;
     this.pendingClip = null;
@@ -1340,6 +1481,8 @@ export class ContentInterpreter {
     this.clipAccum = saved.clipAccum;
     this.hidden = saved.hidden;
     this.marked = saved.marked;
+    this.markedSnap = null;
+    this.inText = saved.inText;
     this.pathBuf = saved.pathBuf;
     this.pathRight = saved.pathRight;
     this.pathCur = saved.pathCur;
@@ -1409,6 +1552,7 @@ export class ContentInterpreter {
     if (mode >= 4 && mode <= 7) {
       this.arrive('clip', glyphs);
       this.gs.clipDepth++;
+      this.gs.clipRect = null;
     }
   }
 
@@ -1525,6 +1669,25 @@ export class ContentInterpreter {
     this.pathRight = true;
     this.pendingClip = null;
     this.gs.clipDepth++;
+    const bbox = numberArray(xobj.get('BBox'), 4);
+    const dev = this.deviceCtm();
+    this.gs.clipRect =
+      bbox && axisAligned(dev)
+        ? intersectRect(
+            this.gs.clipRect,
+            transformRect(
+              [
+                Math.min(bbox[0]!, bbox[2]!),
+                Math.min(bbox[1]!, bbox[3]!),
+                Math.max(bbox[0]!, bbox[2]!),
+                Math.max(bbox[1]!, bbox[3]!),
+              ],
+              dev,
+            ),
+          )
+        : null;
+    const savedInText = this.inText;
+    this.inText = false;
     this.paint(rec);
     const bytes = readStreamBytes(xobj);
     const ref: ContentStreamRef = { objectNumber: number ?? 0, contentsIndex: null };
@@ -1553,6 +1716,8 @@ export class ContentInterpreter {
     this.gs = savedGs;
     this.gstack = savedStack;
     this.marked = savedMarked;
+    this.markedSnap = null;
+    this.inText = savedInText;
   }
 }
 
