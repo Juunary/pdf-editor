@@ -1,0 +1,110 @@
+{
+  "doc": "nist-ai-100-1",
+  "pageIndex": 5,
+  "split": "dev",
+  "extract": {
+    "lineCount": 40,
+    "linesSha256": "496ca1598c2b7e9c60e368a867938792c2b581360ad669278ccb53e4601b0aab"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-report (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "Lines 11-15 are a rounded callout box (definition of AI system) with one body paragraph; not a table or figure. Running head split into left (0) and right (1) elements. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        27,
+        28,
+        29,
+        30
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        39
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

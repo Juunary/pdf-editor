@@ -1,0 +1,139 @@
+{
+  "doc": "nist-cswp29",
+  "pageIndex": 10,
+  "split": "dev",
+  "extract": {
+    "lineCount": 34,
+    "linesSha256": "269fec6cca1f96553ce39f07f8d35f6d62db979e12d4e1126bc2f2e0be755851"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-report (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "Whitespace-only lines 1,4,5,24,32 omitted. Figure is a raster image (text inside it is not extracted), so labels is empty. Lines 25-29 are a boxed Community Profile callout, one body paragraph (line 28 ends before the box edge because the next word does not fit, so it is auto-wrapped). Left header block: doc id (0) and date (3) kept as separate paragraphs, right running head (2) separate. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        7
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        8
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        9
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        16
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        17,
+        18,
+        19
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        20,
+        21,
+        22,
+        23
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        25,
+        26,
+        27,
+        28,
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        30,
+        31
+      ]
+    },
+    {
+      "type": "figure",
+      "bbox": [
+        144.0,
+        525.0,
+        468.0,
+        690.0
+      ],
+      "labels": []
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        33
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        6
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

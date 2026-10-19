@@ -1,0 +1,124 @@
+{
+  "doc": "nasa-eo-2024-janfeb",
+  "pageIndex": 3,
+  "split": "dev",
+  "extract": {
+    "lineCount": 44,
+    "linesSha256": "0200185c878537964da5ef8029cc135c7b75864a1f87c149895012f651dfc27e"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-news (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "Paragraph 22-23 (end of left column) continues into 24-43 (right column): two adjacent paragraph items. Lines 5-9 continue a paragraph from the previous page (still one paragraph item here). Bottom picture (WANTED poster) is a raster image with no extracted text lines: figure with empty labels; bbox from the image box in the TXT header. Black end-of-article square after line 43 is not text. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        22,
+        23
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43
+      ]
+    },
+    {
+      "type": "figure",
+      "bbox": [
+        53.0,
+        332.0,
+        505.0,
+        757.0
+      ],
+      "labels": []
+    }
+  ],
+  "ignoreLines": []
+}

@@ -1,0 +1,174 @@
+{
+  "doc": "nist-sp800-171r3",
+  "pageIndex": 20,
+  "split": "dev",
+  "extract": {
+    "lineCount": 41,
+    "linesSha256": "e4a12ca74f2fe660f7efbad46108b3bcd33d951aa8081b8874f7ede02c5b87ad"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-report (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "Whitespace-only lines 1,4,5 omitted. Page starts with the REFERENCES block of the previous control (7-9). REFERENCES / DISCUSSION run-in labels are bold standalone lines, labeled heading. Source Controls and Supporting Publications are separate field lines, one paragraph each. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        7
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        8
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        9
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        10
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        11,
+        12
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        13,
+        14
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        15
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        26
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        27
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        28
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        30
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        31
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        32
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        6
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

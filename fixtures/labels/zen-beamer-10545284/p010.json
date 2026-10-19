@@ -1,0 +1,80 @@
+{
+ "doc": "zen-beamer-10545284",
+ "pageIndex": 10,
+ "split": "dev",
+ "extract": {
+  "lineCount": 23,
+  "linesSha256": "c6c8b76ae23d8841a869f909450a49270e7d1b4ba4dc9baceed7441214dc730d"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-fin2 (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "0 = slide title bar (heading); 1 = beamer block title 'Que es' (heading); 2-6 = block text, no bullets, uniform line pitch and every line filled to right edge so one auto-wrapped body paragraph. 7-20 = timeline diagram labels (figure; labels are line-by-line as extracted, e.g. 7/8 'Amanecer'/'invernal' are two separate lines). 21 = bottom credit bar text, 22 = slide number (footer). review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    2,
+    3,
+    4,
+    5,
+    6
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    36.0,
+    156.0,
+    368.0,
+    238.0
+   ],
+   "labels": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    21
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    22
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

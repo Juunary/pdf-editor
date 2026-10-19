@@ -1,0 +1,255 @@
+{
+ "doc": "arxiv-2609.09268",
+ "pageIndex": 5,
+ "split": "dev",
+ "extract": {
+  "lineCount": 145,
+  "linesSha256": "54f3f3f3d65fdc00dcefe7fd41616f4714a4b5a6de94978fabe85acba8ab7482"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-arxiv (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Page number in top margin = header. Fig. 2 and Fig. 3 each labeled as ONE figure (multi-panel (a)(b)(c) share one caption). Inline math fragments (sum symbols, sub/superscripts as separate lines) kept inside their paragraph/caption in visual reading order. Paragraphs interrupted by display eq (17) are split before/after the equation. Paragraph 61-62 continues in right column at line 121 (split per column; 121-133 starts after Fig. 3 caption). Lines 34 and 35 are one visual row (paragraph 32-43). review: no change (Fig. 3 and its caption stay between paragraph 61-62 and its right-column continuation 121-133: the figure sits at the top of the right column in flow, and the two text pieces are consecutive among flow paragraphs, matching contract step 7 continuesTo).",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    57,
+    54,
+    297,
+    164
+   ],
+   "labels": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    23,
+    24,
+    25,
+    26
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "other",
+   "lines": [
+    27,
+    28
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    29,
+    30,
+    31
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    44,
+    45
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    61,
+    62
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    318,
+    56,
+    563,
+    393
+   ],
+   "labels": [
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    127,
+    128,
+    129,
+    130,
+    131,
+    132,
+    133
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    134,
+    135,
+    136,
+    137,
+    138,
+    139,
+    140,
+    141,
+    142,
+    143,
+    144
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

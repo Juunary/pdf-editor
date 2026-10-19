@@ -1,0 +1,77 @@
+{
+  "doc": "zen-ko-kimtw-23386644",
+  "pageIndex": 8,
+  "split": "test",
+  "extract": {
+    "lineCount": 31,
+    "linesSha256": "fe1d2868a2fd55ea2672e3c15ba9b2c9e31315c8039695902b97c40c38b637b3"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-ko (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "문단 시작은 들여쓰기(x=85.0). 위첨자 참조 번호 줄([15] 등)은 직전 줄과 같은 문단. 23-30 은 줄 25 가 끝까지 찼고 26 이 들여쓰기 없이 이어져 한 문단. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

@@ -1,0 +1,213 @@
+{
+  "doc": "nasa-eo-2023-sepoct",
+  "pageIndex": 10,
+  "split": "dev",
+  "extract": {
+    "lineCount": 119,
+    "linesSha256": "03ee05052b7e66ef09f2fae20ceb295adbac5a3e6059919477eae88d397af926"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-news (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "Bottom timeline (arrow, year labels 54-58, rotated event texts 59-118) = one figure; whitespace-only rotated lines (empty text) omitted. Line 52 (** note about Sun-Earth Division) = footnote, line 53 (Timeline credit) = caption, both below the figure. Line 51 ('e still operational today.', x<0, partly off-page, same row as line 53) is a clipped fragment of unknown origin: ignoreLines. Lines 46-50 right-margin pull quote (italic, repeats body text): body paragraph after the main column, before the figure. Line 22 subsection heading; its text is gray, still body. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        12,
+        13,
+        14,
+        15,
+        16
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        17,
+        18,
+        19,
+        20,
+        21
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        22
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        23,
+        24,
+        25,
+        26,
+        27
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        28,
+        29,
+        30,
+        31,
+        32
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        46,
+        47,
+        48,
+        49,
+        50
+      ]
+    },
+    {
+      "type": "figure",
+      "bbox": [
+        0.0,
+        637.0,
+        508.0,
+        738.0
+      ],
+      "labels": [
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        61,
+        63,
+        65,
+        66,
+        68,
+        70,
+        71,
+        73,
+        74,
+        76,
+        78,
+        79,
+        81,
+        83,
+        84,
+        86,
+        88,
+        89,
+        91,
+        92,
+        94,
+        96,
+        97,
+        99,
+        101,
+        102,
+        104,
+        105,
+        107,
+        109,
+        111,
+        112,
+        114,
+        116,
+        118
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        52
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        53
+      ]
+    }
+  ],
+  "ignoreLines": [
+    51
+  ]
+}
