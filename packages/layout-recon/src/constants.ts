@@ -34,7 +34,7 @@ export const C = {
   /** 도형: 벡터 군집 최소 면적(쪽 면적 대비). */
   vectorMinArea: 0.01,
   /** 도형: 벡터 군집 이음 거리. */
-  vectorJoin: 5,
+  vectorJoin: 8,
   /** 도형: 이미지가 이 비율 이상의 글자를 덮으면 배경·스캔으로 본다. */
   backgroundCharRatio: 0.5,
 } as const;

@@ -17,3 +17,17 @@ export {
   type ReconOptions,
   type RegionProposal,
 } from './reconstruct.js';
+export {
+  kendallTau,
+  scoreLayout,
+  summarizeScores,
+  type Counts,
+  type LabelCell,
+  type LabelFigure,
+  type LabelItem,
+  type LabelParagraph,
+  type LabelTable,
+  type PageLabel,
+  type PageScore,
+  type ScoreSummary,
+} from './accuracy.js';
