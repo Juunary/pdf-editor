@@ -1,0 +1,29 @@
+{
+  "name": "@pdf-editor/viewer-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./style.css": "./src/style.css"
+  },
+  "files": [
+    "dist",
+    "src/style.css"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@pdf-editor/core": "workspace:*",
+    "@pdf-editor/shared-types": "workspace:*",
+    "preact": "10.29.8"
+  },
+  "devDependencies": {}
+}

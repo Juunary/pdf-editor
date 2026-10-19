@@ -1,4 +1,6 @@
 import { transferBytes, wrapPdfWorker } from '@pdf-editor/core/client';
+import { ViewerController, mountViewer, type PagePaintedEvent } from '@pdf-editor/viewer-ui';
+import '@pdf-editor/viewer-ui/style.css';
 import { decideInterceptionMode, parseChromeMajor } from '../interception.js';
 import { DiagLog } from './diag.js';
 import { SaveTarget, type SaveOutcome, type WritableFileHandle } from './save-target.js';
@@ -15,7 +17,6 @@ const badgeEl = byId<HTMLSpanElement>('context-badge');
 const openLabel = byId<HTMLLabelElement>('open-label');
 const openInput = byId<HTMLInputElement>('open-file');
 const diagLogEl = byId<HTMLPreElement>('diag-log');
-const canvas = byId<HTMLCanvasElement>('page-canvas');
 const saveButtons = {
   saveAs: byId<HTMLButtonElement>('save-as'),
   save: byId<HTMLButtonElement>('save'),
@@ -77,32 +78,6 @@ async function environmentInfo(): Promise<Record<string, unknown>> {
     hasShowSaveFilePicker: 'showSaveFilePicker' in window,
     hasDownloadsApi: typeof chrome.downloads?.download === 'function',
   };
-}
-
-/** CSS 기준 배율. 폭이 좁으면 화면 폭에 맞춘다. */
-function cssScaleFor(pageWidthPt: number): number {
-  const available = Math.max(320, document.documentElement.clientWidth - 32);
-  return Math.min(1.5, available / pageWidthPt);
-}
-
-async function renderFirstPage(pageWidthPt: number): Promise<void> {
-  const dpr = window.devicePixelRatio || 1;
-  const cssScale = cssScaleFor(pageWidthPt);
-  const page = await pdf.renderPage({ pageIndex: 0, scale: cssScale * dpr });
-  canvas.width = page.width;
-  canvas.height = page.height;
-  canvas.style.width = `${page.width / dpr}px`;
-  canvas.style.height = `${page.height / dpr}px`;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('2d 컨텍스트 없음');
-  ctx.putImageData(new ImageData(page.rgba, page.width, page.height), 0, 0);
-  diag.add('render', {
-    pageIndex: page.pageIndex,
-    width: page.width,
-    height: page.height,
-    scale: cssScale * dpr,
-    renderMs: page.renderMs,
-  });
 }
 
 let contextKind: ViewerContextKind = 'viewer-page';
@@ -203,15 +178,68 @@ function enableSave(): void {
   });
 }
 
+let saveEnabled = false;
+let firstPaintAnnounced = false;
+let unmountViewer: (() => void) | null = null;
+
+/** 첫 페이지가 캔버스에 그려진 뒤: 상태 표시와 저장 활성화. 이후 페이지는 진단 기록만 남긴다. */
+function onPagePainted(e: PagePaintedEvent): void {
+  diag.add('render', {
+    pageIndex: e.pageIndex,
+    width: e.width,
+    height: e.height,
+    scale: e.renderScale,
+    renderMs: e.renderMs,
+  });
+  if (firstPaintAnnounced) return;
+  firstPaintAnnounced = true;
+  if (!saveEnabled) {
+    saveEnabled = true;
+    enableSave();
+  }
+  setStatus('rendered', `${e.pageCount} 페이지 · ${e.pageIndex + 1}페이지 렌더 완료`);
+}
+
 async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   setStatus('opening', `여는 중: ${label}`);
+  // 이전에 연 문서의 뷰어를 먼저 정리한다. Worker 세션은 open 에서 이전 문서를 닫으므로, 그 사이 이전 뷰어가
+  // 렌더·추출을 요청하면 새 문서(또는 닫힌 문서)에 대한 호출이 된다.
+  if (unmountViewer) {
+    unmountViewer();
+    unmountViewer = null;
+    diag.add('viewer-unmount', { reason: 'open' });
+  }
+  firstPaintAnnounced = false;
   const info = await pdf.open(transferBytes(bytes));
   diag.add('open', info);
   documentName = label;
   document.title = `${label} - PDF Editor`;
-  await renderFirstPage(info.firstPage.width);
-  enableSave();
-  setStatus('rendered', `${info.pageCount} 페이지 · 1페이지 렌더 완료`);
+
+  const controller = new ViewerController({
+    host: {
+      getPageInfo: (i) => pdf.getPageInfo(i),
+      renderPage: (r) => pdf.renderPage(r),
+      extractPage: (r) => pdf.extractPage(r),
+      getSourceMap: (i) => pdf.getSourceMap(i),
+      linkPage: (i) => pdf.linkPage(i),
+      searchText: (r) => pdf.searchText(r),
+      log: (event, data) => diag.add(event, data),
+    },
+    pageCount: info.pageCount,
+    getEnvironment: () => ({
+      devicePixelRatio: window.devicePixelRatio || 1,
+      availableWidth: document.documentElement.clientWidth,
+    }),
+    onPagePainted,
+  });
+  unmountViewer = mountViewer(
+    { controls: byId('viewer-controls'), pages: byId('page-container') },
+    controller,
+  );
+  await controller.start();
+  const { view, renderError } = controller.getState();
+  // 첫 페이지를 그리지 못하면 열기 실패로 본다(MIME handler 에서는 Chrome 기본 뷰어로 넘긴다).
+  if (!view) throw new Error(renderError ?? '첫 페이지 렌더 실패');
 }
 
 function describeSource(source: ViewerSource): Record<string, unknown> {
@@ -257,6 +285,9 @@ async function main(): Promise<void> {
   if (source.bytes) {
     try {
       await openBytes(source.bytes, fileLabel(source.displayUrl));
+      // Chrome 기본 PDF 뷰어처럼 열자마자 Ctrl+A·C·F 가 뷰어로 오게 한다. MIME handler 뷰어는 PDF URL
+      // 페이지의 하위 프레임이라 포커스를 직접 가져와야 한다. 임베디드 문맥은 바깥 페이지 포커스를 빼앗지 않는다.
+      if (source.kind === 'mime-handler-top') window.focus();
     } catch (e) {
       diag.add('open-error', String(e));
       if (source.streamInfo) {

@@ -1,6 +1,7 @@
 import * as mupdf from 'mupdf';
 import type { Rect } from '@pdf-editor/shared-types';
 import { concatBytes, parseContentOps, spliceBytes } from './content-stream.js';
+import { readStreamBytes } from './mupdf-util.js';
 import { ownResources, ownSubdict, putUniqueResource } from './page-content.js';
 import { TEXT_REPLACE_REDACTION, type RedactionOptions } from './redact.js';
 import { formatNumber } from './text-ops.js';
@@ -44,8 +45,14 @@ function toMatrix(obj: mupdf.PDFObject): Matrix {
   return [0, 1, 2, 3, 4, 5].map((i) => obj.get(i).asNumber()) as Matrix;
 }
 
-function toRect(obj: mupdf.PDFObject): Rect {
-  return [0, 1, 2, 3].map((i) => obj.get(i).asNumber()) as Rect;
+/**
+ * PDF 사각형 배열 → 정규화한 Rect(x0 ≤ x1, y0 ≤ y1). 실제 문서의 /BBox·/MediaBox 는 `[0 792 612 0]` 처럼
+ * 뒤집힌 경우가 있다(docs/m0-corpus-recheck.md C3, 시험한 Form 9개 중 4개). MuPDF Rect.transform 은 뒤집힌
+ * 사각형을 빈 사각형으로 다루므로 변환·비교 전에 정규화한다(PDF 32000-1 7.9.5).
+ */
+export function toRect(obj: mupdf.PDFObject): Rect {
+  const [a, b, c, d] = [0, 1, 2, 3].map((i) => obj.get(i).asNumber()) as Rect;
+  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
 }
 
 function transformRect(r: Rect, m: Matrix): Rect {
@@ -66,7 +73,7 @@ function readPageContent(pageObj: mupdf.PDFObject): PageContent {
   const streams: mupdf.PDFObject[] = [];
   if (contents.isArray()) contents.resolve().forEach((s) => void streams.push(s));
   else if (!contents.isNull()) streams.push(contents);
-  const parts = streams.map((s) => s.readStream().asUint8Array().slice());
+  const parts = streams.map((s) => readStreamBytes(s));
   const segments: PageContent['segments'] = [];
   let o = 0;
   for (const p of parts) {
@@ -123,7 +130,7 @@ function walk(
           if (objectNumber) active.add(objectNumber);
           const formRes = xobj.get('Resources');
           walk(
-            xobj.readStream().asUint8Array().slice(),
+            readStreamBytes(xobj),
             formRes.isNull() ? resources : formRes,
             toPage,
             path,
@@ -247,8 +254,9 @@ export function redactFormUsage(
   doc.insertPage(-1, temp);
   const tempIndex = doc.countPages() - 1;
   const instances: mupdf.PDFObject[] = [];
+  let tempPage: mupdf.PDFPage | null = null;
   try {
-    const tempPage = doc.loadPage(tempIndex);
+    tempPage = doc.loadPage(tempIndex);
     const toFz = tempPage.getTransform();
     for (const r of formRects) {
       const annot = tempPage.createAnnotation('Redact');
@@ -259,10 +267,13 @@ export function redactFormUsage(
         options.lineArtMethod,
         options.textMethod,
       );
+      annot.destroy();
     }
     const xobjects = doc.findPage(tempIndex).get('Resources').get('XObject');
     xobjects.forEach((v) => void instances.push(v));
   } finally {
+    // 쪽 래퍼를 먼저 놓고 임시 쪽을 지운다.
+    tempPage?.destroy();
     doc.deletePage(tempIndex);
   }
   const topInstance = instances[0];
@@ -282,9 +293,7 @@ export function redactFormUsage(
   // 3. 중첩 경로를 새 인스턴스 체인에서 따라간다.
   let target = topInstance;
   for (const step of usage.path.slice(1)) {
-    const ops = parseContentOps(target.readStream().asUint8Array().slice()).filter(
-      (o) => o.op === 'Do',
-    );
+    const ops = parseContentOps(readStreamBytes(target)).filter((o) => o.op === 'Do');
     const name = ops[step.doOrdinal]?.operands.at(-1)?.value;
     if (typeof name !== 'string') throw new Error(`인스턴스에서 Do #${step.doOrdinal} 없음`);
     target = target.get('Resources').get('XObject').get(name);

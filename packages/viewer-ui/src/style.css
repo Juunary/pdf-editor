@@ -1,0 +1,212 @@
+/* 뷰어 UI 스타일(접두사 pe-). apps/extension 뷰어가 `@pdf-editor/viewer-ui/style.css` 로 가져온다. */
+
+/* ── 툴바 컨트롤 ─────────────────────────────────────────────── */
+.pe-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.pe-btn {
+  padding: 2px 8px;
+  border: 1px solid #6a6f74;
+  border-radius: 3px;
+  background: #4a4f54;
+  color: #eee;
+  font: inherit;
+  cursor: pointer;
+}
+.pe-btn:hover:not(:disabled) {
+  background: #5a6066;
+}
+.pe-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.pe-btn[aria-pressed='true'] {
+  border-color: #8ab4f8;
+  background: #1a73e8;
+}
+.pe-page-input {
+  width: 3.4em;
+  padding: 2px 4px;
+  text-align: center;
+  font: inherit;
+}
+.pe-page-count {
+  white-space: nowrap;
+}
+.pe-notice {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #5c4a1f;
+  color: #ffd98a;
+  font-size: 11px;
+  cursor: help;
+}
+
+/* ── 검색창 ─────────────────────────────────────────────────── */
+.pe-find {
+  position: fixed;
+  top: var(--pe-find-top, 44px);
+  right: 12px;
+  z-index: 40;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #2b2f33;
+  color: #eee;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 50%);
+}
+.pe-find-input {
+  width: 220px;
+  padding: 3px 6px;
+  font: inherit;
+}
+.pe-find-count {
+  min-width: 5.5em;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pe-find-count[data-status='unavailable'],
+.pe-find-count[data-status='error'] {
+  color: #ffb4a8;
+  white-space: normal;
+  max-width: 260px;
+}
+.pe-find-case {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  font-size: 12px;
+}
+
+/* ── 페이지 표면 ─────────────────────────────────────────────── */
+.pe-page {
+  position: relative;
+}
+.pe-page.pe-loading {
+  opacity: 0.7;
+}
+.pe-canvas {
+  display: block;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 50%);
+}
+.pe-render-error {
+  padding: 12px;
+  color: #ffb4a8;
+}
+
+/* 검색 하이라이트: 글자 위에 겹쳐도 글자가 보이도록 multiply 로 섞는다. */
+.pe-hl-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pe-hl {
+  position: absolute;
+  transform-origin: 0 0;
+  background: rgb(255 235 59 / 55%);
+  mix-blend-mode: multiply;
+}
+.pe-hl-current {
+  background: rgb(255 152 0 / 70%);
+  outline: 2px solid rgb(230 81 0 / 90%);
+}
+
+/* 텍스트 선택 층: 글자는 투명, 선택 영역만 보인다. */
+.pe-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: text;
+  line-height: 1;
+}
+.pe-text-layer:focus {
+  outline: none;
+}
+
+.pe-text-layer .pe-line {
+  display: block;
+}
+.pe-text-layer span {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  transform-origin: 0 0;
+  color: transparent;
+  white-space: pre;
+}
+/* 글자마다 블록이라 기본 선택 표시가 줄바꿈 표식과 겹쳐 줄무늬가 진다. 하이라이트는 .pe-sel 로 직접 그린다. */
+.pe-text-layer span::selection {
+  background: transparent;
+  color: transparent;
+}
+.pe-sel-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pe-sel {
+  position: absolute;
+  transform-origin: 0 0;
+  background: rgb(0 100 220 / 35%);
+}
+
+/* ── 디버그 오버레이 ─────────────────────────────────────────── */
+.pe-debug-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.pe-debug-hud {
+  /* 페이지 글자를 가리지 않도록 화면 왼쪽 아래에 고정한다. */
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  z-index: 30;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 92%);
+  color: #111;
+  font-size: 11px;
+  pointer-events: none;
+}
+.pe-debug-legend {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+}
+.pe-debug-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 3px;
+  border: 1px solid rgb(0 0 0 / 40%);
+  vertical-align: -1px;
+}
+.pe-debug-box {
+  position: absolute;
+  z-index: 6;
+  transform-origin: 0 0;
+  outline: 1px solid #0050ff;
+  pointer-events: none;
+}
+.pe-debug-tip {
+  position: absolute;
+  z-index: 7;
+  max-width: 380px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: #111;
+  color: #eee;
+  font:
+    11px/1.45 ui-monospace,
+    'Cascadia Mono',
+    monospace;
+  white-space: pre-wrap;
+  pointer-events: none;
+}

@@ -13,6 +13,7 @@
   "dependencies": {
     "@pdf-editor/core": "workspace:*",
     "@pdf-editor/shared-types": "workspace:*",
+    "@pdf-editor/viewer-ui": "workspace:*",
     "mupdf": "1.28.1"
   },
   "devDependencies": {

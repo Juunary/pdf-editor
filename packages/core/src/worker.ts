@@ -11,7 +11,13 @@ export function exposePdfWorker(endpoint: Comlink.Endpoint): void {
     (api ??= import('./worker-api.js').then((m) => m.createPdfWorkerApi()));
   const lazy: PdfWorkerApi = {
     open: async (bytes) => (await load()).open(bytes),
+    getPageInfo: async (pageIndex) => (await load()).getPageInfo(pageIndex),
     renderPage: async (request) => (await load()).renderPage(request),
+    extractPage: async (request) => (await load()).extractPage(request),
+    getSourceMap: async (pageIndex) => (await load()).getSourceMap(pageIndex),
+    linkPage: async (pageIndex) => (await load()).linkPage(pageIndex),
+    searchText: async (request) => (await load()).searchText(request),
+    planSave: async (request) => (await load()).planSave(request),
     save: async (request) => (await load()).save(request),
     close: async () => (await load()).close(),
   };

@@ -106,7 +106,7 @@ test('확장 로드: 서비스 워커, MIME handler 세 문맥 렌더, 저장 �
       userAgent: navigator.userAgent,
       dynamicRules: (await chrome.declarativeNetRequest.getDynamicRules()).length,
     }));
-    // 번들 Chromium(151+)은 MIME handler 경로 → DNR 폴백 규칙이 없어야 한다.
+    // 번들 Chromium(150+)은 MIME handler 경로 → DNR 폴백 규칙이 없어야 한다.
     expect(swInfo.hasMimeHandlerApi).toBe(true);
     expect(swInfo.dynamicRules).toBe(0);
 
