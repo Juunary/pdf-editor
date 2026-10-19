@@ -51,6 +51,7 @@ function rendered(req: RenderRequest): RenderedPage {
     height,
     rgba: new Uint8ClampedArray(4),
     renderMs: 3,
+    clip: null,
   };
 }
 

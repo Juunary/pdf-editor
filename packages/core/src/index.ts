@@ -10,5 +10,5 @@ export {
 export { searchDocument } from './search.js';
 export { assembleReadingText, foldWhitespace } from './reading-text.js';
 export { renderPageRgba, type RgbaImage } from './render.js';
-export { PdfSession } from './session.js';
+export { PdfSession, type PdfSessionOptions } from './session.js';
 export { createPdfWorkerApi } from './worker-api.js';

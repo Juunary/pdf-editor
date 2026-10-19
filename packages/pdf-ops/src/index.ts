@@ -8,4 +8,5 @@ export * from './content-stream.js';
 export * from './xobject.js';
 export * from './source-map.js';
 export * from './text-remove.js';
+export * from './paragraph-edit.js';
 export { releaseBorrowedShade } from './mupdf-util.js';

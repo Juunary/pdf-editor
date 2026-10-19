@@ -7,6 +7,12 @@ import {
 } from '@pdf-editor/pdf-ops';
 import { reconstructPage } from '@pdf-editor/layout-recon';
 import type {
+  BeginEditResult,
+  CommitResult,
+  DraftInput,
+  DraftUpdate,
+  EditHistoryState,
+  EditOp,
   ExtractRequest,
   InputMode,
   OpenResult,
@@ -14,6 +20,9 @@ import type {
   PageLayout,
   PageLinkage,
   PageModel,
+  PageEditInfo,
+  PageEditability,
+  ParagraphEditPlan,
   Rect,
   RenderRequest,
   RenderedPage,
@@ -53,17 +62,35 @@ function remember<K, V>(cache: Map<K, V>, key: K, value: V): void {
   }
 }
 
+export interface PdfSessionOptions {
+  /**
+   * 한글 폴백 폰트(Noto Sans KR glyf 서브셋 TTF) 바이트. 문단 편집에서 처음 필요할 때 한 번 부른다
+   * (docs/m3-contract.md 5.7). 확장은 번들 파일을, Node 테스트는 assets/fonts 파일을 읽는다.
+   */
+  loadFallbackFont?: () => Promise<Uint8Array>;
+}
+
+/** 계약 커밋의 연결부: M3 편집 RPC 는 S3(core) 작업이 구현한다. */
+function m3Unimplemented(name: string): never {
+  throw new Error(`M3 미구현: core.${name}`);
+}
+
 /**
  * 문서 1개의 상태. 뷰어 소유 Worker 안에서만 생성한다(PLAN.md 5.2).
  * 원본 바이트는 편집 로그 재적용(PLAN.md 3.2)을 위해 보관한다.
  */
 export class PdfSession {
+  readonly #options: PdfSessionOptions;
   #original: Uint8Array | null = null;
   #doc: mupdf.PDFDocument | null = null;
   #inputMode: InputMode = 'buffer';
   #pageCache = new Map<string, PageModel>();
   #sourceMapCache = new Map<number, SourceMap>();
   #layoutCache = new Map<number, PageLayout>();
+
+  constructor(options: PdfSessionOptions = {}) {
+    this.#options = options;
+  }
 
   get document(): mupdf.PDFDocument {
     if (!this.#doc) throw new Error('열린 문서 없음');
@@ -114,12 +141,13 @@ export class PdfSession {
     }
   }
 
-  renderPage({ pageIndex, scale }: RenderRequest): RenderedPage {
+  renderPage({ pageIndex, scale, clip }: RenderRequest): RenderedPage {
+    if (clip) m3Unimplemented('renderPage(clip)');
     const page = this.document.loadPage(pageIndex);
     try {
       const t0 = performance.now();
       const { width, height, rgba } = renderPageRgba(page, scale);
-      return { pageIndex, width, height, rgba, renderMs: performance.now() - t0 };
+      return { pageIndex, width, height, rgba, renderMs: performance.now() - t0, clip: null };
     } finally {
       page.destroy();
     }
@@ -217,6 +245,8 @@ export class PdfSession {
       reason: decision.reason,
       canBeSavedIncrementally,
       heap: decision.heap,
+      // M3 편집 요약은 S3(core) 작업이 로그에서 채운다(docs/m3-contract.md 5.8).
+      edits: null,
     };
   }
 
@@ -236,6 +266,57 @@ export class PdfSession {
       wasmHeapBytes: wasmHeapBytes(),
       heap: plan.heap,
     };
+  }
+
+  // M3 문단 편집(docs/m3-contract.md 4절·5.7). 계약 커밋에서는 연결부만 둔다.
+
+  async getPageEditability(_pageIndex: number): Promise<PageEditability> {
+    void this.#options;
+    return m3Unimplemented('getPageEditability');
+  }
+
+  async planParagraphEdit(_pageIndex: number, _paragraphId: number): Promise<ParagraphEditPlan> {
+    return m3Unimplemented('planParagraphEdit');
+  }
+
+  async getPageEdits(_pageIndex: number): Promise<PageEditInfo> {
+    return m3Unimplemented('getPageEdits');
+  }
+
+  async beginParagraphEdit(
+    _pageIndex: number,
+    _paragraphId: number,
+    _revision: number,
+  ): Promise<BeginEditResult> {
+    return m3Unimplemented('beginParagraphEdit');
+  }
+
+  async updateParagraphDraft(_draftId: string, _input: DraftInput): Promise<DraftUpdate> {
+    return m3Unimplemented('updateParagraphDraft');
+  }
+
+  async commitParagraphEdit(_draftId: string): Promise<CommitResult> {
+    return m3Unimplemented('commitParagraphEdit');
+  }
+
+  async cancelParagraphEdit(_draftId: string): Promise<EditHistoryState> {
+    return m3Unimplemented('cancelParagraphEdit');
+  }
+
+  async undo(): Promise<EditHistoryState> {
+    return m3Unimplemented('undo');
+  }
+
+  async redo(): Promise<EditHistoryState> {
+    return m3Unimplemented('redo');
+  }
+
+  async getEditHistory(): Promise<EditHistoryState> {
+    return m3Unimplemented('getEditHistory');
+  }
+
+  async replayEdits(_ops: EditOp[]): Promise<EditHistoryState> {
+    return m3Unimplemented('replayEdits');
   }
 
   close(): void {

@@ -42,5 +42,23 @@ export function createPdfWorkerApi(session = new PdfSession()): PdfWorkerApi {
     async close() {
       session.close();
     },
+    getPageEditability: (pageIndex) => session.getPageEditability(pageIndex),
+    planParagraphEdit: (pageIndex, paragraphId) =>
+      session.planParagraphEdit(pageIndex, paragraphId),
+    getPageEdits: (pageIndex) => session.getPageEdits(pageIndex),
+    async beginParagraphEdit(pageIndex, paragraphId, revision) {
+      const result = await session.beginParagraphEdit(pageIndex, paragraphId, revision);
+      return Comlink.transfer(result, [result.first.region.rgba.buffer]);
+    },
+    async updateParagraphDraft(draftId, input) {
+      const update = await session.updateParagraphDraft(draftId, input);
+      return Comlink.transfer(update, [update.region.rgba.buffer]);
+    },
+    commitParagraphEdit: (draftId) => session.commitParagraphEdit(draftId),
+    cancelParagraphEdit: (draftId) => session.cancelParagraphEdit(draftId),
+    undo: () => session.undo(),
+    redo: () => session.redo(),
+    getEditHistory: () => session.getEditHistory(),
+    replayEdits: (ops) => session.replayEdits(ops),
   };
 }
