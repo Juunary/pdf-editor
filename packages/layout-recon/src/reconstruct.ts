@@ -241,7 +241,7 @@ export function reconstructPage(model: PageModel, _options: ReconOptions = {}): 
       const tableId = tables.length;
       const cells = t.cells.map((c) => {
         const cellFeats = c.lines.map((li) => feats[li]!);
-        const cellUnits = buildUnits(model, cellFeats, fillers);
+        const cellUnits = buildUnits(model, cellFeats, fillers, true);
         const paragraphs: number[] = [];
         if (cellUnits.length) {
           const region: Region = { units: cellUnits, bbox: c.bbox };

@@ -6,6 +6,10 @@
  *   pnpm build
  *   node scripts/layout-labels/make-packets.mjs <코퍼스 디렉터리> <출력 디렉터리> <문서 id>:<쪽,쪽,...> ...
  *   node scripts/layout-labels/make-packets.mjs --stats <코퍼스 디렉터리> <문서 id>:<쪽,...> ...
+ *   node scripts/layout-labels/make-packets.mjs --layout <코퍼스 디렉터리> <출력 디렉터리> <문서 id>:<쪽,...> ...
+ *
+ * --layout: 줄 대신 복원 결과(reconstructPage)를 그린다. 흐름 문단 상자(역할별 색)와 최상위 읽기 순서 번호,
+ * 표(청록, 격자), 도형(노랑). 출력 <문서 id>-p<쪽>-layout.png. 실패 분석용(정답 아님).
  *
  * 쪽 번호는 0부터. 출력: <출력>/<문서 id>-p<쪽 3자리>.png / .txt
  */
@@ -17,6 +21,7 @@ import { extractPageModel, openPdf, renderPageRgba } from '../../packages/core/d
 import {
   fingerprintText,
   lineFeatures,
+  reconstructPage,
   summarizePaths,
 } from '../../packages/layout-recon/dist/index.js';
 
@@ -140,6 +145,18 @@ function parseTargets(args) {
 const argv = process.argv.slice(2);
 const stats = argv[0] === '--stats';
 if (stats) argv.shift();
+const layoutMode = argv[0] === '--layout';
+if (layoutMode) argv.shift();
+const ROLE_RGB = {
+  body: [30, 136, 229],
+  heading: [216, 27, 96],
+  'list-item': [46, 125, 50],
+  caption: [239, 108, 0],
+  header: [142, 36, 170],
+  footer: [142, 36, 170],
+  footnote: [109, 76, 65],
+  other: [84, 110, 122],
+};
 const corpus = argv.shift();
 const out = stats ? null : argv.shift();
 if (out) fs.mkdirSync(out, { recursive: true });
@@ -165,6 +182,43 @@ for (const { doc: id, pages } of parseTargets(argv)) {
     page.destroy();
     const d = drawer(img);
     const [bx0, by0] = model.bounds;
+    const px = (r) => r.map((v, k) => Math.round((v - (k % 2 ? by0 : bx0)) * SCALE));
+    if (layoutMode) {
+      const layout = reconstructPage(model);
+      for (const p of layout.paragraphs) {
+        const [x0, y0, x1, y1] = px(p.bbox);
+        d.rect(x0, y0, x1, y1, ROLE_RGB[p.role]);
+        if (p.table === null && p.figure === null)
+          d.rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, ROLE_RGB[p.role]);
+      }
+      for (const t of layout.tables) {
+        const [x0, y0, x1, y1] = px(t.bbox);
+        for (const k of [0, 1, 2]) d.rect(x0 - k, y0 - k, x1 + k, y1 + k, [0, 137, 123]);
+        for (const y of t.rowBounds) d.rect(x0, px([0, y])[1], x1, px([0, y])[1], [0, 137, 123]);
+        for (const x of t.colBounds) d.rect(px([x, 0])[0], y0, px([x, 0])[0], y1, [0, 137, 123]);
+      }
+      for (const f of layout.figures) {
+        const [x0, y0, x1, y1] = px(f.bbox);
+        for (const k of [0, 1, 2]) d.rect(x0 - k, y0 - k, x1 + k, y1 + k, [249, 168, 37]);
+      }
+      layout.readingOrder.forEach((ref, k) => {
+        const box =
+          ref.kind === 'paragraph'
+            ? layout.paragraphs[ref.id].bbox
+            : ref.kind === 'table'
+              ? layout.tables[ref.id].bbox
+              : layout.figures[ref.id].bbox;
+        const [x0, y0] = px(box);
+        const w = String(k + 1).length * 8 + 2;
+        d.number(k + 1, x0 - w - 3 >= 0 ? x0 - w - 3 : x0 + 1, y0, [33, 33, 33]);
+      });
+      const name = `${id}-p${String(pageIndex).padStart(3, '0')}-layout`;
+      fs.writeFileSync(path.join(out, `${name}.png`), png(img.width, img.height, img.rgba));
+      console.log(
+        `${name}: paragraphs=${layout.paragraphs.length} tables=${layout.tables.length} figures=${layout.figures.length} ${layout.reconMs.toFixed(1)}ms`,
+      );
+      continue;
+    }
     const rows = [];
     feats.forEach((f, i) => {
       const color = COLORS[i % COLORS.length];
