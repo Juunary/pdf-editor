@@ -15,7 +15,8 @@
     "spike:redact": "node dist/cli.js --redact-existing",
     "spike:save-bench": "node dist/cli.js --save-bench",
     "spike:corpus": "node dist/cli.js --corpus",
-    "spike:pdfjs": "node dist/cli.js --pdfjs"
+    "spike:pdfjs": "node dist/cli.js --pdfjs",
+    "spike:objstms": "node dist/cli.js --objstms"
   },
   "dependencies": {
     "@pdf-editor/core": "workspace:*",

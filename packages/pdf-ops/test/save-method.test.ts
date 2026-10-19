@@ -80,7 +80,7 @@ describe('decideSaveMethod: 예상 피크 힙(파일 크기 × 실측 배율)', 
   });
 });
 
-describe('FULL_SAVE_OPTIONS(A3-6): 이미지 XObject resolve() 후에도 스트림이 남는다', () => {
+describe('FULL_SAVE_OPTIONS(A3-6·A3-7): 이미지 XObject resolve() 후에도 스트림이 남는다', () => {
   it('garbage=yes 전체 저장은 MuPDF 1.28.x compact 결함(mupdf.js#201) 경로를 타지 않는다', () => {
     const src = new mupdf.PDFDocument();
     const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 16, 16], false);
@@ -100,5 +100,126 @@ describe('FULL_SAVE_OPTIONS(A3-6): 이미지 XObject resolve() 후에도 스트�
       'application/pdf',
     ) as mupdf.PDFDocument;
     expect(re.findPage(0).get('Resources').get('XObject').get('Im').isStream()).toBe(true);
+  });
+});
+
+describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
+  const open = (bytes: Uint8Array) =>
+    mupdf.Document.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument;
+  const save = (bytes: Uint8Array, options: string) => {
+    const doc = open(bytes);
+    const out = doc.saveToBuffer(options).asUint8Array().slice();
+    doc.destroy();
+    return out;
+  };
+  const pageTexts = (bytes: Uint8Array) => {
+    const doc = open(bytes);
+    const texts = Array.from({ length: doc.countPages() }, (_, i) =>
+      doc.loadPage(i).toStructuredText('preserve-whitespace').asText(),
+    );
+    doc.destroy();
+    return texts;
+  };
+  const latin1 = (b: Uint8Array) => Buffer.from(b).toString('latin1');
+
+  /** 쪽마다 작은 사전 객체 40개를 단 20쪽 문서를 objstms 로 저장한 객체 스트림 구조 원본. */
+  function objstmSource(): Uint8Array {
+    const doc = new mupdf.PDFDocument();
+    const font = doc.addSimpleFont(new mupdf.Font('Helvetica'));
+    for (let i = 0; i < 20; i++) {
+      const page = doc.addPage(
+        [0, 0, 200, 200],
+        0,
+        { Font: { F1: font } },
+        `BT /F1 12 Tf 20 100 Td (Page ${i + 1}) Tj ET`,
+      );
+      const data = doc.newArray();
+      for (let k = 0; k < 40; k++) data.push(doc.addObject({ Page: i, Index: k }));
+      page.put('A37Data', data);
+      doc.insertPage(-1, page);
+    }
+    const out = doc.saveToBuffer('garbage=yes,compress,objstms').asUint8Array().slice();
+    doc.destroy();
+    return out;
+  }
+
+  it('객체 스트림 원본을 풀지 않는다(objstms 없는 저장은 입력의 1.5배 이상)', () => {
+    const src = objstmSource();
+    const out = save(src, FULL_SAVE_OPTIONS);
+    expect(out.length).toBeLessThan(src.length * 1.1);
+    expect(save(src, 'garbage=yes,compress').length).toBeGreaterThan(src.length * 1.5);
+    expect(latin1(out)).toMatch(/\/Type\s*\/XRef/);
+    expect(pageTexts(out)).toEqual(pageTexts(src));
+  });
+
+  it('PDF-1.4 xref 표 원본은 헤더를 1.5 로 올리고, 세대 번호가 0 이 아닌 객체는 번호·세대를 유지한다', () => {
+    const content = 'BT /F1 24 Tf 20 40 Td (Generation test) Tj ET';
+    const objs: [number, number, string][] = [
+      [1, 0, '<</Type/Catalog/Pages 2 0 R>>'],
+      [2, 0, '<</Type/Pages/Kids[3 0 R]/Count 1>>'],
+      [
+        3,
+        0,
+        '<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 100]/Contents 5 1 R/Resources<</Font<</F1 6 2 R>>>>>>',
+      ],
+      [5, 1, `<</Length ${content.length}>>\nstream\n${content}\nendstream`],
+      [6, 2, '<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>'],
+    ];
+    let s = '%PDF-1.4\n';
+    const xref = ['0000000000 65535 f ', '', '', '', '0000000000 00001 f ', '', ''];
+    for (const [num, gen, body] of objs) {
+      xref[num] = `${String(s.length).padStart(10, '0')} ${String(gen).padStart(5, '0')} n `;
+      s += `${num} ${gen} obj\n${body}\nendobj\n`;
+    }
+    const at = s.length;
+    s += `xref\n0 7\n${xref.join('\n')}\ntrailer\n<</Size 7/Root 1 0 R>>\nstartxref\n${at}\n%%EOF\n`;
+    const out = latin1(save(new TextEncoder().encode(s), FULL_SAVE_OPTIONS));
+    expect(out.slice(0, 8)).toBe('%PDF-1.5');
+    expect(out).toMatch(/(^|\n)5 1 obj/);
+    expect(out).toMatch(/(^|\n)6 2 obj/);
+    expect(pageTexts(new Uint8Array(Buffer.from(out, 'latin1')))[0]).toContain('Generation test');
+  });
+
+  it('암호화 문서(소유자 비밀번호만)는 암호화를 유지하고 /Encrypt 를 객체 스트림에 넣지 않는다', () => {
+    for (const method of ['aes-256', 'rc4-128']) {
+      const enc = save(
+        objstmSource(),
+        `garbage=yes,compress,objstms,encrypt=${method},owner-password=owner`,
+      );
+      const out = save(enc, FULL_SAVE_OPTIONS);
+      const doc = open(out);
+      expect(doc.needsPassword()).toBe(false);
+      const e = doc.getTrailer().get('Encrypt');
+      expect(e.isNull()).toBe(false);
+      expect(
+        !e.isIndirect() || new RegExp(`(^|\\n)${e.asIndirect()} 0 obj`).test(latin1(out)),
+      ).toBe(true);
+      doc.destroy();
+      expect(pageTexts(out)).toEqual(pageTexts(enc));
+    }
+  });
+
+  it('같은 문서에서 전체 저장 뒤 주석만 더해 증분 저장해도 다시 열린다(PdfSession 은 저장 후 같은 문서를 계속 쓴다)', () => {
+    const src = objstmSource();
+    const doc = open(src);
+    doc.saveToBuffer(FULL_SAVE_OPTIONS).destroy();
+    const page = doc.loadPage(0) as mupdf.PDFPage;
+    const annot = page.createAnnotation('Text');
+    annot.setRect([10, 10, 30, 30]);
+    annot.setContents('A3-7');
+    annot.update();
+    const d = decideSaveMethod(['annotation'], doc.canBeSavedIncrementally());
+    expect(d.method).toBe('incremental');
+    const out = doc.saveToBuffer(d.options).asUint8Array().slice();
+    doc.destroy();
+    expect(Buffer.from(out.subarray(0, src.length)).equals(Buffer.from(src))).toBe(true);
+    const re = open(out);
+    expect(re.countPages()).toBe(20);
+    const notes = re
+      .loadPage(0)
+      .getAnnotations()
+      .filter((a) => a.getContents() === 'A3-7');
+    expect(notes).toHaveLength(1);
+    re.destroy();
   });
 });
