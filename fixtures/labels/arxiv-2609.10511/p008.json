@@ -1,0 +1,350 @@
+{
+ "doc": "arxiv-2609.10511",
+ "pageIndex": 8,
+ "split": "dev",
+ "extract": {
+  "lineCount": 136,
+  "linesSha256": "e359a81ecb508d06ac7b016d8197e5b2f23d0848d699dc7c265100254df449dc"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-arxiv (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Reference list: one list-item paragraph per [n] entry (hanging indent). Lines 1-3 continue ref [13] from previous page; ref [29] (62-64) continues in right column as line 65 (split per column, own paragraph). Lines 103-105 and 122-135 are word-by-word extraction of visual rows, kept inside their entry. review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    1,
+    2,
+    3
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    4,
+    5,
+    6,
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    12,
+    13
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    14,
+    15,
+    16
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    17,
+    18,
+    19,
+    20,
+    21
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    22,
+    23,
+    24,
+    25
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    26,
+    27,
+    28,
+    29
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    30,
+    31,
+    32
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    33,
+    34,
+    35,
+    36
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    37,
+    38,
+    39,
+    40,
+    41,
+    42
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    43,
+    44,
+    45
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    46,
+    47,
+    48,
+    49,
+    50
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    51,
+    52,
+    53
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    54,
+    55,
+    56
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    57,
+    58,
+    59,
+    60,
+    61
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    62,
+    63,
+    64
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    65
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    66,
+    67,
+    68,
+    69
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    70,
+    71,
+    72,
+    73,
+    74,
+    75
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    76,
+    77,
+    78,
+    79
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    80,
+    81,
+    82
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    83,
+    84,
+    85,
+    86,
+    87
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    88,
+    89,
+    90
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    91,
+    92,
+    93
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    94,
+    95,
+    96,
+    97
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    98,
+    99,
+    100,
+    101,
+    102
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    110,
+    111,
+    112
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    113,
+    114,
+    115,
+    116,
+    117,
+    118
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    119,
+    120,
+    121
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    122,
+    123,
+    124,
+    125,
+    126,
+    127,
+    128,
+    129,
+    130,
+    131,
+    132,
+    133,
+    134,
+    135
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

@@ -1,0 +1,256 @@
+{
+  "doc": "zen-ko-moon-21973474",
+  "pageIndex": 8,
+  "split": "dev",
+  "extract": {
+    "lineCount": 114,
+    "linesSha256": "8c916eb0d6b04947872c9b77ee60ed557194cf40c9d34595a6ce7a146288918a"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-d2 (Claude subagent)",
+  "reviewedBy": "reviewer-D (Claude Opus subagent, independent)",
+  "notes": "구결 문자·구결 그림이 섞여 한 시각 줄이 여러 추출 줄로 쪼개짐(그림은 인라인 구결 글리프이며 도형 아님). 예문 원문(예: (15)ㄱ=5-15, ㄴ=18-32, (16)ㄱ=45-67, ㄴ=71-80, ㄷ=82-97, ㄹ=100-109)은 list-item, 그 아래 번역 줄은 별도 body 문단(선례: moon p005). 줄 80 '(화자: …, 청자: …)'은 ㄴ 원문 둘째 시각 줄(글리프 그림 뒤)에 이어 붙은 줄이라 71-80 list-item 에 포함, 줄 99 의 같은 표기는 번역 줄 끝이라 98-99 에 포함. 3-4 는 앞 쪽 예문의 번역이 이어지는 body(내어쓰기 x=126.5). 111-113 은 다음 쪽으로 이어지는 '-' 글머리 항목(112,113 은 구결 글자 조각 사이 줄). review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        3,
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        16,
+        17
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        33,
+        34
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        35,
+        36,
+        37
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        38,
+        39
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        40
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        41,
+        42,
+        43,
+        44
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        68,
+        69,
+        70
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        81
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        98,
+        99
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        110
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        111,
+        112,
+        113
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        2
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

@@ -1,0 +1,200 @@
+{
+  "doc": "zen-ko-sim-21496576",
+  "pageIndex": 10,
+  "split": "test",
+  "extract": {
+    "lineCount": 64,
+    "linesSha256": "902497d4fdf37dc09db4f2f4d388b242db4e616c0a2407e371121579b622ce8b"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-ko (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "수식 줄(3,4,5-7 / 13-19 (번호 (3) 포함) / 21-25 / 26-34 / 48-58 cases 환경)은 수식 하나당 한 문단 other. 정렬 환경의 세 줄(3,4,5-7)은 각각 따로 선 수식으로 분리. 줄 9-12 와 37-42 는 인라인 수식 조각(10, 38-41 등)이 별도 줄로 잡혔으나 같은 문장 문단에 포함. 37-42 의 첫 줄은 굵은 글꼴로 시작하지만 본문 문단으로 판단. 모든 수식·한글 사이 띄어쓰기 없음(추출 특성). review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        8
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        9,
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        20
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        21,
+        22,
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        35,
+        36
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        37,
+        38,
+        39,
+        40,
+        41,
+        42
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        43,
+        44
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        45
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        46,
+        47
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        59,
+        60
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        61,
+        62
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        63
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

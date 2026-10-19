@@ -1,0 +1,188 @@
+/**
+ * 경로 정규화(계약 3절 2단계). `PathInfo.segments`(경로 공간)를 페이지 공간으로 옮겨
+ * 수평·수직 선분(괘선 후보), 채움 사각형, 그 밖의 도형으로 나눈다. clip 경로는 버린다.
+ */
+import type { PageModel, Point, RGB, Rect } from '@pdf-editor/shared-types';
+import { C } from './constants.js';
+import { matrixScale, transformPoint } from './geom.js';
+
+export interface Rule {
+  orient: 'h' | 'v';
+  /** h: y 고정(y0 = y1), x0 < x1. v: x 고정(x0 = x1), y0 < y1. */
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  /** 페이지 공간 두께(pt). */
+  width: number;
+  /** PageModel.paths 인덱스. */
+  path: number;
+  /** 두께 C.thinBoxMax 이하 채움 사각형에서 나왔는지. */
+  fromBox: boolean;
+}
+
+export interface FilledBox {
+  bbox: Rect;
+  path: number;
+  color: RGB | null;
+}
+
+export interface Shape {
+  bbox: Rect;
+  path: number;
+  /** 곡선·사선 포함 여부. */
+  complex: boolean;
+}
+
+export interface PathSummary {
+  rules: Rule[];
+  boxes: FilledBox[];
+  shapes: Shape[];
+}
+
+const EPS = 0.5;
+
+function rectOf(pts: Point[]): Rect | null {
+  // 닫힌 4점(마지막이 첫 점과 같으면 뺀다)이 축 정렬 사각형인지.
+  const p = pts.slice();
+  if (p.length === 5 && Math.abs(p[0]![0] - p[4]![0]) < EPS && Math.abs(p[0]![1] - p[4]![1]) < EPS)
+    p.pop();
+  if (p.length !== 4) return null;
+  for (let i = 0; i < 4; i++) {
+    const a = p[i]!;
+    const b = p[(i + 1) % 4]!;
+    if (Math.abs(a[0] - b[0]) > EPS && Math.abs(a[1] - b[1]) > EPS) return null;
+  }
+  const xs = p.map((q) => q[0]);
+  const ys = p.map((q) => q[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+function pushLine(
+  out: Rule[],
+  a: Point,
+  b: Point,
+  w: number,
+  path: number,
+  fromBox: boolean,
+): boolean {
+  if (Math.abs(a[1] - b[1]) <= EPS && Math.abs(a[0] - b[0]) > EPS) {
+    const y = (a[1] + b[1]) / 2;
+    out.push({
+      orient: 'h',
+      x0: Math.min(a[0], b[0]),
+      x1: Math.max(a[0], b[0]),
+      y0: y,
+      y1: y,
+      width: w,
+      path,
+      fromBox,
+    });
+    return true;
+  }
+  if (Math.abs(a[0] - b[0]) <= EPS && Math.abs(a[1] - b[1]) > EPS) {
+    const x = (a[0] + b[0]) / 2;
+    out.push({
+      orient: 'v',
+      y0: Math.min(a[1], b[1]),
+      y1: Math.max(a[1], b[1]),
+      x0: x,
+      x1: x,
+      width: w,
+      path,
+      fromBox,
+    });
+    return true;
+  }
+  return false;
+}
+
+function boxToRule(r: Rect, path: number): Rule {
+  const w = r[2] - r[0];
+  const h = r[3] - r[1];
+  if (h <= w) {
+    const y = (r[1] + r[3]) / 2;
+    return { orient: 'h', x0: r[0], x1: r[2], y0: y, y1: y, width: h, path, fromBox: true };
+  }
+  const x = (r[0] + r[2]) / 2;
+  return { orient: 'v', y0: r[1], y1: r[3], x0: x, x1: x, width: w, path, fromBox: true };
+}
+
+export function summarizePaths(model: PageModel): PathSummary {
+  const rules: Rule[] = [];
+  const boxes: FilledBox[] = [];
+  const shapes: Shape[] = [];
+  model.paths.forEach((info, index) => {
+    if (info.op === 'clip' || info.op === 'clip-stroke' || !info.segments) return;
+    const stroke = info.op === 'stroke';
+    const lw = stroke ? Math.max((info.lineWidth ?? 1) * matrixScale(info.ctm), 0.1) : 0;
+    // 서브패스로 나눈다.
+    const subpaths: { pts: Point[]; closed: boolean; curve: boolean }[] = [];
+    let cur: { pts: Point[]; closed: boolean; curve: boolean } | null = null;
+    for (const s of info.segments) {
+      if (s.type === 'M') {
+        cur = { pts: [transformPoint(info.ctm, s.p)], closed: false, curve: false };
+        subpaths.push(cur);
+      } else if (s.type === 'L') {
+        cur?.pts.push(transformPoint(info.ctm, s.p));
+      } else if (s.type === 'C') {
+        if (cur) {
+          cur.curve = true;
+          cur.pts.push(transformPoint(info.ctm, s.p3));
+        }
+      } else if (cur) cur.closed = true;
+    }
+    let complex = false;
+    const before = rules.length;
+    for (const sp of subpaths) {
+      if (sp.curve) {
+        complex = true;
+        continue;
+      }
+      // 선(stroke)은 닫힌 경로만 사각형으로 본다(열린 ㄷ자 경로는 변 3개). 채움은 암묵적으로 닫힌다.
+      const closedShape = !stroke || sp.closed || sp.pts.length === 5;
+      const r = sp.pts.length >= 4 && closedShape ? rectOf(sp.pts) : null;
+      if (r) {
+        const w = r[2] - r[0];
+        const h = r[3] - r[1];
+        if (Math.min(w, h) <= C.thinBoxMax && Math.max(w, h) > C.thinBoxMax) {
+          rules.push(
+            boxToRule(
+              stroke ? [r[0] - lw / 2, r[1] - lw / 2, r[2] + lw / 2, r[3] + lw / 2] : r,
+              index,
+            ),
+          );
+        } else if (stroke) {
+          pushLine(rules, [r[0], r[1]], [r[2], r[1]], lw, index, false);
+          pushLine(rules, [r[0], r[3]], [r[2], r[3]], lw, index, false);
+          pushLine(rules, [r[0], r[1]], [r[0], r[3]], lw, index, false);
+          pushLine(rules, [r[2], r[1]], [r[2], r[3]], lw, index, false);
+        } else if (w > C.thinBoxMax && h > C.thinBoxMax) {
+          boxes.push({ bbox: r, path: index, color: info.color?.rgb ?? null });
+        }
+        continue;
+      }
+      if (!stroke) {
+        // 사각형이 아닌 채움: 도형.
+        if (sp.pts.length > 2) complex = true;
+        continue;
+      }
+      const pts = sp.closed ? [...sp.pts, sp.pts[0]!] : sp.pts;
+      for (let i = 1; i < pts.length; i++) {
+        if (!pushLine(rules, pts[i - 1]!, pts[i]!, lw, index, false)) {
+          const a = pts[i - 1]!;
+          const b = pts[i]!;
+          if (Math.hypot(a[0] - b[0], a[1] - b[1]) > EPS) complex = true;
+        }
+      }
+    }
+    if (complex) {
+      // 사선·곡선이 섞인 경로는 선분까지 도형으로 본다(차트 꺾은선 등).
+      rules.length = before;
+      shapes.push({ bbox: info.bbox, path: index, complex: true });
+    } else if (rules.length === before && boxes.at(-1)?.path !== index) {
+      shapes.push({ bbox: info.bbox, path: index, complex: false });
+    }
+  });
+  return { rules, boxes, shapes };
+}

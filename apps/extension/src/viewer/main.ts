@@ -223,6 +223,7 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
       getSourceMap: (i) => pdf.getSourceMap(i),
       linkPage: (i) => pdf.linkPage(i),
       searchText: (r) => pdf.searchText(r),
+      getPageLayout: (i) => pdf.getPageLayout(i),
       log: (event, data) => diag.add(event, data),
     },
     pageCount: info.pageCount,

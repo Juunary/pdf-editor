@@ -1,0 +1,134 @@
+{
+  "doc": "zen-ko-sim-21496576",
+  "pageIndex": 25,
+  "split": "dev",
+  "extract": {
+    "lineCount": 34,
+    "linesSha256": "e3b4933f55ec28fd8105a2a69a236f64e2907e569d4d9aed7391a7b31fac199d"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-d2 (Claude subagent)",
+  "reviewedBy": "reviewer-D (Claude Opus subagent, independent)",
+  "notes": "러닝헤드 두 줄(0,1)=한 header 문단. 'Part II'(17.2pt)와 '영문(English)'(24.8pt)는 글자 크기가 달라 별개 heading 두 개로 둠(한 제목으로 볼 여지 있음). 한글 안내문(4)과 영어 안내문(5,6)은 서로 다른 문장·언어라 별개 문단. 'Abstract'(7) heading, 초록 본문 8-12 한 문단(각주 번호는 같은 줄 안 위첨자). 20-25 Definition 1 문단은 25 줄이 짧게 끝나 종료, 26-29 는 새 문단이며 29 가 끝까지 차서 다음 쪽으로 이어짐. 각주 30-32 는 한 문단(끝의 [1]은 인용 표시). review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0,
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        5,
+        6
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        7
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        8,
+        9,
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        13,
+        14
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        15,
+        16,
+        17
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        18,
+        19
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        26,
+        27,
+        28,
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        30,
+        31,
+        32
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        33
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

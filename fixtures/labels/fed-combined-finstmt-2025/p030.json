@@ -1,0 +1,130 @@
+{
+ "doc": "fed-combined-finstmt-2025",
+ "pageIndex": 30,
+ "split": "test",
+ "extract": {
+  "lineCount": 80,
+  "linesSha256": "77a62bdcaab9b78b286c17cfc341202595d6ebb6f0fd366df77809546f353f4f"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-fin2 (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Reverse-repo table: 3 logical columns (label, 2025, 2024); '$' glyphs belong to value cells. rows = 2 header rows (Total SOMA spanning 2025/2024; 2025|2024) + 6 + 6 + 1 + 4 (section label, 2 items, total) = 19. Intro text (3-4) is an ordinary body paragraph, not a caption; no table title. Paragraph 0-2 ends with short last line '2026.' (auto wrap). Blank spacer gaps between table groups are not rows. Whitespace-only lines omitted. No cells given. review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    78
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    79
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    0,
+    1,
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    3,
+    4
+   ]
+  },
+  {
+   "type": "table",
+   "bbox": [
+    54.0,
+    190.5,
+    558.0,
+    464.5
+   ],
+   "rows": 19,
+   "cols": 3,
+   "lines": [
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    17,
+    18,
+    19,
+    21,
+    22,
+    23,
+    25,
+    26,
+    27,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    39,
+    40,
+    41,
+    43,
+    44,
+    45,
+    47,
+    48,
+    49,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    72,
+    73,
+    74,
+    75,
+    76,
+    77
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

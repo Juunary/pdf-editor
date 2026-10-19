@@ -1,0 +1,269 @@
+{
+ "doc": "fed-h41-current",
+ "pageIndex": 1,
+ "split": "dev",
+ "extract": {
+  "lineCount": 121,
+  "linesSha256": "f52b2504eb262507e4751d690938ea0b903e48c7d533379f17b68780f22e37ca"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-fin1 (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "표 17행x5열: 머리 3행(Averages of daily figures / Week ended·Change from week ended / 날짜) + 데이터 14행. 라벨열 포함 5열. 숫자 줄은 셀 하나(부호 + 포함). 줄 0 은 공백 줄이라 생략. 줄 2(번호 붙은 표 제목)는 caption, 줄 3('Millions of dollars')는 표 위 괘선 밖이라 별도 caption 문단. 각주 번호('1.')가 별도 줄이면 해당 각주 문단에 포함. 86 'Note:' 은 표 아래 괘선 밖이라 footnote. review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "type": "table",
+   "bbox": [
+    35.0,
+    91.0,
+    589.5,
+    297.3
+   ],
+   "rows": 17,
+   "cols": 5,
+   "lines": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    86
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    87,
+    88
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    89,
+    90
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    91,
+    92
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    93,
+    94,
+    95
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    96,
+    97,
+    98,
+    99
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    100,
+    101
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    102,
+    103,
+    104
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    105,
+    106,
+    107,
+    108
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    109,
+    110
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    111
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    112
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    113
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    114,
+    115,
+    116,
+    117
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    118
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    119
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    120
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

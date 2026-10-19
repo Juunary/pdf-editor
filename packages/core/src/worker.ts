@@ -17,6 +17,7 @@ export function exposePdfWorker(endpoint: Comlink.Endpoint): void {
     getSourceMap: async (pageIndex) => (await load()).getSourceMap(pageIndex),
     linkPage: async (pageIndex) => (await load()).linkPage(pageIndex),
     searchText: async (request) => (await load()).searchText(request),
+    getPageLayout: async (pageIndex) => (await load()).getPageLayout(pageIndex),
     planSave: async (request) => (await load()).planSave(request),
     save: async (request) => (await load()).save(request),
     close: async () => (await load()).close(),

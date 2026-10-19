@@ -27,10 +27,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@pdf-editor/layout-recon": "workspace:*",
+    "@pdf-editor/pdf-ops": "workspace:*",
     "@pdf-editor/shared-types": "workspace:*",
     "comlink": "4.4.2",
-    "mupdf": "1.28.1",
-    "@pdf-editor/pdf-ops": "workspace:*"
+    "mupdf": "1.28.1"
   },
   "devDependencies": {}
 }

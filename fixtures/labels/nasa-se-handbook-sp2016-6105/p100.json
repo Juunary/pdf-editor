@@ -1,0 +1,165 @@
+{
+ "doc": "nasa-se-handbook-sp2016-6105",
+ "pageIndex": 100,
+ "split": "dev",
+ "extract": {
+  "lineCount": 84,
+  "linesSha256": "5b85e53f6f79983bef995c1d282c4de152f71284be9f8e7448b7bafce1a94564"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-bench (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Flowchart (Product Verification Process) = one figure; all 39 text lines 23-61 are figure labels (bbox from shape outlines and 'From/To' labels). Caption line 62 is below the figure. Body is two columns below the full-width figure. Bullet glyph lines ('•' inside line 3; separate ' »' lines 6, 9, 63, 76) are put in their list item. Line 3 is a justified full line so lines 3-5 are one auto-wrapped item (bold-style lead sentence + continuation). Lines 77-83 continue onto the next page. Footer order: handbook title (2), then page number (0). review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    112.0,
+    80.0,
+    463.0,
+    363.0
+   ],
+   "labels": [
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    62
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    6,
+    7,
+    8
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

@@ -1,0 +1,148 @@
+{
+ "doc": "ustreas-mts-202509",
+ "pageIndex": 6,
+ "split": "test",
+ "extract": {
+  "lineCount": 68,
+  "linesSha256": "dcb8737a143a2569231ec1453d5ad8d833bbd46f1b6b2f025bdb9aacf0ad8445"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-fin1 (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Figure 5 는 파이 두 개(이달/누계)와 공용 범례를 한 도형으로 묶음(캡션 하나가 둘을 덮음); Figure 6 은 막대 차트+범례 한 도형. 줄 2('$48B $224B')는 두 라벨이 섞인 한 줄(추출 결함 아님, 도형 라벨). 'Source data: Table 9'(줄 1)는 쪽 하단 여백 우측 정렬 출처 줄이나 쪽 번호와 달리 쪽별 내용이라 footnote 로 판단(footer 로 볼 여지 있음). 65-67 은 줄마다 별개 주석이라 각각 문단. 세로 회전 라벨(월 이름, 'Receipt Amount')은 도형 라벨. review: no change (line 1 'Source data: Table 9' kept as footnote per guide 3 source-line rule; footer reading would also be defensible).",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    51
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    39.0,
+    85.8,
+    557.0,
+    376.0
+   ],
+   "labels": [
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    52
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    32.6,
+    422.6,
+    574.0,
+    708.4
+   ],
+   "labels": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    65
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    66
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    67
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

@@ -1,0 +1,105 @@
+{
+ "doc": "fed-h41-current",
+ "pageIndex": 8,
+ "split": "test",
+ "extract": {
+  "lineCount": 53,
+  "linesSha256": "df426296b913c8304b3b36fdc71a673b2d0b6634c6fcdda849b13aca422fae56"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-fin1 (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "가로 쪽(792x612). 표 18행x14열(머리 1행 + 'Liabilities'/'Capital' 소제목 행 2 + 데이터 15행; 라벨열 포함 14열). 숫자 줄 하나가 한 행의 13개 숫자 전체를 담음(추출이 열을 합침) — 표 lines 에만 둠. 줄 9 는 'New York Philadelphia Cleveland' 세 셀이 합쳐진 줄. 줄 0 은 공백 줄이라 생략. cells 는 252개라 생략. 괘선 외곽 bbox 는 이미지에서 추정(상 91, 하 339.7). review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "type": "table",
+   "bbox": [
+    13.7,
+    91.0,
+    757.5,
+    339.7
+   ],
+   "rows": 18,
+   "cols": 14,
+   "lines": [
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    52
+   ]
+  }
+ ],
+ "ignoreLines": []
+}
