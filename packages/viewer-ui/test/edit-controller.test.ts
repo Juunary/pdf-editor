@@ -89,11 +89,11 @@ function recovered(): Error {
 }
 
 describe('기능 격리', () => {
-  it('호스트가 편집 RPC 를 주지 않으면 편집만 꺼진다', async () => {
+  it('호스트가 편집 RPC 를 주지 않으면 편집 UI 를 만들지 않고 렌더는 그대로다', async () => {
     const { controller, host } = setup({ withEdit: false });
     await controller.start();
     expect(controller.edit).toBeNull();
-    expect(controller.getState().disabled.edit).toContain('편집 RPC');
+    expect(controller.getState().disabled.edit).toBeNull();
     expect(controller.getState().view).not.toBeNull();
     expect(host.renderPage).toHaveBeenCalledTimes(1);
   });
