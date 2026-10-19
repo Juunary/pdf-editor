@@ -316,6 +316,12 @@ export class OriginalFont {
   }
 
   private addCode(text: string, code: number, bytes: Uint8Array): void {
+    // NBSP 로 적힌 공백 글리프(MuPDF addFont ToUnicode)는 공백 후보로도 쓴다.
+    if (text === '\u00a0') this.addCodeFor(' ', code, bytes);
+    this.addCodeFor(text, code, bytes);
+  }
+
+  private addCodeFor(text: string, code: number, bytes: Uint8Array): void {
     // 코드 바이트가 폰트 코드 분할과 맞는지 확인한다(ToUnicode 코드스페이스가 폰트 CMap 과 다를 수 있다).
     const dec = this.pdf.decode(bytes);
     if (dec.length !== 1 || dec[0]!.code !== code) return;
@@ -504,6 +510,21 @@ export class OriginalFont {
 
 // ---------------------------------------------------------------- 폴백 폰트
 
+/**
+ * MuPDF addFont 의 ToUnicode 는 U+0020 과 U+00A0 이 같은 글리프면 U+00A0 으로 적는다(실측: Noto Sans KR gid 1).
+ * 폴백 폰트로 쓴 공백이 NBSP 로 추출되지 않도록 그 항목을 U+0020 으로 고친다.
+ */
+function fixSpaceToUnicode(ref: mupdf.PDFObject, font: mupdf.Font): void {
+  const gid = font.encodeCharacter(0x20);
+  const tu = ref.get('ToUnicode');
+  if (gid <= 0 || !tu.isStream()) return;
+  const code = gid.toString(16).padStart(4, '0');
+  const text = new TextDecoder('latin1').decode(readStreamBytes(tu));
+  const re = new RegExp(`<${code}>\\s*<00a0>`, 'i');
+  if (!re.test(text)) return;
+  tu.writeStream(text.replace(re, `<${code}> <0020>`));
+}
+
 export interface FallbackFont {
   num: number;
   ref: mupdf.PDFObject;
@@ -518,6 +539,9 @@ export class FontState {
   private fallback: FallbackFont | null = null;
   private fallbackBytes: Uint8Array | null = null;
   private fallbackFont: mupdf.Font | null = null;
+  /** 폴백 폰트 사전을 만들어 두는 임시 문서(graftObject 원본). */
+  private stage: mupdf.PDFDocument | null = null;
+  private staged: mupdf.PDFObject | null = null;
   /** 이 세션에서 편집 블록에 쓴 폴백 gid(저장 서브셋용). */
   readonly usedFallbackGids = new Set<number>();
 
@@ -601,7 +625,14 @@ export class FontState {
     const bytes = this.bytes();
     const font = this.mupdfFallback();
     if (!bytes || !font) return null;
-    const ref = this.doc.addFont(font);
+    // MuPDF addFont 는 문서별 폰트 리소스 캐시(폰트 다이제스트 → 객체)를 쓴다. 저널 작업을 버리거나 undo 해 객체가
+    // 사라져도 캐시가 옛 번호를 돌려주므로(실측: 'not a dict (null)'), 임시 문서에 넣은 폰트를 옮겨 넣는다.
+    if (!this.staged) {
+      this.stage = new mupdf.PDFDocument();
+      this.staged = this.stage.addFont(font);
+      fixSpaceToUnicode(this.staged, font);
+    }
+    const ref = this.doc.graftObject(this.staged);
     ref.put(FALLBACK_MARK, true);
     const num = ref.asIndirect();
     // 같은 번호의 이전 폰트(undo 로 사라진 객체)를 캐시에서 쓰지 않도록 새 캐시로 읽는다.

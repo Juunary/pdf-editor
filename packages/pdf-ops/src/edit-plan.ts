@@ -344,8 +344,71 @@ function analyzeChars(
   const formPath = touched[0]!.formPath;
   base.formPath = formPath;
 
-  // 지울 글리프와 연산 분석(D2).
+  // ActualText(D1): 지울 글리프가 /ActualText MC 안이면 그 MC 의 글리프를 모두 지운다. MuPDF 구조화 텍스트는
+  // ActualText 로 글자를 바꾸므로 MC 의 일부 글리프는 어느 문단에도 들어가지 않는다(그런 글리프는 함께 지운다).
+  // 다른 문단에 속한 글리프가 있으면 일부만 지우는 것이므로 편집 제한.
   const targetSeqs = new Set(chars.map((c) => ctx.model.chars[c]!.glyphSeq));
+  const atOps = new Set<number>();
+  for (const op of touched) {
+    for (const mc of op.markedContent ?? []) if (mc.actualText && mc.opId >= 0) atOps.add(mc.opId);
+  }
+  if (atOps.size > 0) {
+    const charOfSeq = new Map(ctx.model.chars.map((c, i) => [c.glyphSeq, i]));
+    const paraOf = new Map<number, number>();
+    for (const q of ctx.layout.paragraphs) for (const c of q.chars) paraOf.set(c, q.id);
+    const touchedIds = new Set(touched.map((o) => o.id));
+    for (const bdc of atOps) {
+      let partial = false;
+      const extra: SourceOp[] = [];
+      const extraSeqs: number[] = [];
+      for (let id = bdc + 1; id < ops.length; id++) {
+        const o = ops[id]!;
+        if (!o.markedContent?.some((m) => m.opId === bdc)) break;
+        if (!o.text) continue;
+        let used = false;
+        for (const g of o.text.glyphs) {
+          if (g.seq === null || targetSeqs.has(g.seq)) continue;
+          const c = charOfSeq.get(g.seq);
+          const owner = c === undefined ? undefined : paraOf.get(c);
+          if (owner !== undefined && owner !== paragraph.id) partial = true;
+          else {
+            extraSeqs.push(g.seq);
+            used = true;
+          }
+        }
+        if (used && !touchedIds.has(o.id)) extra.push(o);
+      }
+      if (partial) {
+        limits.add(
+          'actualtext-partial',
+          '/ActualText 가 있는 marked content 의 글자 일부만 지움(남은 ActualText 가 옛 텍스트를 내보냄)',
+          chars,
+        );
+        continue;
+      }
+      base.actualTextClears.push(bdc);
+      for (const q of extraSeqs) targetSeqs.add(q);
+      for (const o of extra) {
+        if (keyOf(o.formPath) !== keyOf(formPath)) {
+          limits.add('mixed-content-sources', 'ActualText 구간이 다른 콘텐츠 출처에 걸침', chars);
+          return base;
+        }
+        touched.push(o);
+        touchedIds.add(o.id);
+        byOp.set(o.id, []);
+      }
+    }
+    touched.sort((x, y) => x.id - y.id);
+  }
+  if (base.actualTextClears.length > 0) {
+    warnings.push({
+      kind: 'actualtext-cleared',
+      message: `지운 문단의 /ActualText ${base.actualTextClears.length}개를 뺍니다.`,
+      rects: [paragraph.bbox],
+    });
+  }
+
+  // 지울 글리프와 연산 분석(D2).
   const removals: OpRemoval[] = [];
   for (const op of touched) {
     const a = analyzeOp(env, op);
@@ -363,38 +426,6 @@ function analyzeChars(
   }
   base.removals = removals;
   if (removals.length !== touched.length) return base;
-
-  // ActualText(D1).
-  const removedOf = new Map(removals.map((r) => [r.op.id, r]));
-  const atOps = new Set<number>();
-  for (const r of removals) {
-    for (const mc of r.op.markedContent ?? [])
-      if (mc.actualText && mc.opId >= 0) atOps.add(mc.opId);
-  }
-  for (const bdc of atOps) {
-    let partial = false;
-    for (let id = bdc + 1; id < ops.length; id++) {
-      const o = ops[id]!;
-      if (!o.markedContent?.some((m) => m.opId === bdc)) break;
-      if (!o.text) continue;
-      const rr = removedOf.get(id);
-      if (o.text.glyphs.some((g, i) => g.seq !== null && !(rr?.remove[i] ?? false))) partial = true;
-    }
-    if (partial) {
-      limits.add(
-        'actualtext-partial',
-        '/ActualText 가 있는 marked content 의 글자 일부만 지움(남은 ActualText 가 옛 텍스트를 내보냄)',
-        chars,
-      );
-    } else base.actualTextClears.push(bdc);
-  }
-  if (base.actualTextClears.length > 0) {
-    warnings.push({
-      kind: 'actualtext-cleared',
-      message: `지운 문단의 /ActualText ${base.actualTextClears.length}개를 뺍니다.`,
-      rects: [paragraph.bbox],
-    });
-  }
 
   // Form 복제본의 /StructParents(D1).
   for (const s of formPath) {
@@ -518,14 +549,14 @@ function findInsertion(env: AnalyzeEnv, a: EditAnalysis, limits: Limits): Insert
   }
 
   const sim = simulateLine(env, btOps, target, removal);
-  if (typeof sim === 'string') return unsupported(sim);
+  if ('error' in sim) return unsupported(sim.error);
   return {
     mode: 'split-bt',
     stream: target.op.stream,
     offset: target.op.range[0],
     splitOp: target.glyph !== null ? target.op.id : null,
     splitGlyph: target.glyph,
-    resume: sim,
+    resume: sim.resume,
     stateOp: target.op,
     ctm: target.op.ctm,
     mcidKept: mcidKeptAt(target.op),
@@ -545,14 +576,14 @@ function readingOrderWarning(a: EditAnalysis): EditWarning {
 /**
  * BT 시작부터 나누는 지점까지 텍스트 줄 행렬과 변위를 따라가 `BT <Tlm> Tm [n] TJ` 를 만든다(계약 D3 규칙 2).
  * 나누는 지점: target.glyph 가 null 이면 target.op 바로 앞, 아니면 그 연산의 target.glyph 글리프 앞.
- * 계산할 수 없으면 사유 문자열.
+ * 계산할 수 없으면 사유.
  */
 function simulateLine(
   env: AnalyzeEnv,
   btOps: readonly SourceOp[],
   target: { op: SourceOp; glyph: number | null },
   removal: Map<number, OpRemoval>,
-): string {
+): { resume: string } | { error: string } {
   let tlm: Matrix = [1, 0, 0, 1, 0, 0];
   let tlmText: string | null = '1 0 0 1 0 0';
   let d = 0;
@@ -588,7 +619,7 @@ function simulateLine(
       }
       case 'Tm': {
         const v = nums(o);
-        if (v.length < 6) return 'Tm 피연산자 부족';
+        if (v.length < 6) return { error: 'Tm 피연산자 부족' };
         tlm = v.slice(0, 6) as Matrix;
         const bytes = env.streams.opBytes(o);
         const text = String.fromCharCode(...bytes).replace(/\s*Tm\s*$/, '');
@@ -597,7 +628,7 @@ function simulateLine(
         break;
       }
       case 'T*':
-        if (tl === null) return 'T* 의 TL 을 알 수 없음';
+        if (tl === null) return { error: 'T* 의 TL 을 알 수 없음' };
         tlm = preTranslate(tlm, 0, -tl);
         tlmText = null;
         d = 0;
@@ -628,7 +659,7 @@ function simulateLine(
         {
           const r = removal.get(o.id);
           const an = r?.analysis ?? analyzeOp(env, o);
-          if (isSkip(an)) return `변위 계산 불가: ${an.detail}`;
+          if (isSkip(an)) return { error: `변위 계산 불가: ${an.detail}` };
           d += isTarget ? displacementBefore(an, target.glyph!) : an.total;
         }
     }
@@ -636,10 +667,10 @@ function simulateLine(
   }
   let tj = '';
   if (Math.abs(d) > 1e-9) {
-    if (!tfs || !th) return `Tfs·Th 가 0 이라 위치를 되돌릴 수 없음`;
+    if (!tfs || !th) return { error: 'Tfs·Th 가 0 이라 위치를 되돌릴 수 없음' };
     tj = ` [${formatNumber((-1000 * d) / (tfs * th))}] TJ`;
   }
-  return `BT ${tlmText ?? tlm.map(fmt9).join(' ')} Tm${tj}`;
+  return { resume: `BT ${tlmText ?? tlm.map(fmt9).join(' ')} Tm${tj}` };
 }
 
 /** 삽입점 그래픽 상태 판정(D3): 특이 CTM, 클립, 패턴 채움, SMask. 영역 상한도 정한다. */
@@ -653,7 +684,7 @@ function checkInsertionState(
   if (Math.abs(determinant(ins.ctm)) < 1e-12 || !invert(ins.ctm)) {
     limits.add('singular-ctm', '삽입점 CTM 이 특이 행렬', a.chars);
   }
-  const clip = ins.stateOp.state?.clipRect ?? ctx.model.bounds;
+  const clip = ins.stateOp.state ? ins.stateOp.state.clipRect : ctx.model.bounds;
   if (clip === null) {
     limits.add(
       'insertion-clipped',
