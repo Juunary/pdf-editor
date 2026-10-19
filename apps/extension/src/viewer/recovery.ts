@@ -13,6 +13,7 @@ import type {
   EditOp,
   ExtractRequest,
   PdfWorkerApi,
+  RedactAnnotSummary,
   RenderRequest,
   SaveRequest,
   SearchRequest,
@@ -327,16 +328,15 @@ export class ResilientPdf implements PdfWorkerApi {
     return this.invoke<EditHistoryState>('replayEdits', [ops]);
   }
 
-  /**
-   * Redact 주석 보고(A2-2). 이 RPC 는 `PdfWorkerApi` 에 아직 없다(pdf-ops `listRedactAnnots` 가 core 에 연결되지 않음).
-   * 없으면 null 을 돌려준다.
-   */
-  async listRedactAnnots(): Promise<{ total: number; pages: number[] } | null> {
+  /** Redact 주석 보고(A2-2, `PdfWorkerApi.listRedactAnnots`, 계약 수정 4). */
+  listRedactAnnots() {
+    return this.invoke<RedactAnnotSummary>('listRedactAnnots', []);
+  }
+
+  /** 열기 시 보고용: 실패하거나 결과 모양이 다르면 null(보고만 건너뛴다). */
+  async tryListRedactAnnots(): Promise<RedactAnnotSummary | null> {
     try {
-      const report = await this.invoke<{ total: number; pages: number[] } | undefined>(
-        'listRedactAnnots' as keyof PdfWorkerApi,
-        [],
-      );
+      const report = await this.listRedactAnnots();
       return report && typeof report.total === 'number' ? report : null;
     } catch {
       return null;

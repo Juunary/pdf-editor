@@ -225,26 +225,26 @@ test.describe('열기 시 알림', () => {
     await page.close();
   });
 
-  test('core 에 Redact 보고 RPC 가 없으면 알림 없이 진단 로그만 남긴다', async () => {
+  test('실제 core 보고(A2-2): Redact 주석이 없는 문서는 알림 없이 진단 로그에 total 0', async () => {
     const page = await openViewer();
-    await expect
-      .poll(async () => (await diagEvents(page, 'redact-report-unavailable')).length)
-      .toBe(1);
+    await expect.poll(async () => (await diagEvents(page, 'redact-report')).length).toBe(1);
+    expect(await diagEvents(page, 'redact-report-unavailable')).toHaveLength(0);
     await expect(page.locator('#notice-bar')).toBeHidden();
     await page.close();
   });
 
-  test('M3 편집 RPC 가 "미구현" 인 동안: 편집만 꺼지고 렌더·저장은 유지된다', async () => {
-    const page = await openViewer();
-    // core 가 편집 RPC 를 구현하면(통합 후) 이 시험은 스스로 건너뛴다.
-    const unavailable = await page.evaluate(
-      () => document.querySelector('#pe-notice')?.textContent ?? '',
-    );
-    test.skip(!unavailable.includes('문단 편집'), 'core 편집 RPC 구현됨 — 통합 e2e 로 대체');
-    await expect(page.locator('#pe-notice')).toContainText('문단 편집');
-    await expect(page.locator('#pe-doc-undo')).toHaveCount(0);
-    expect((await diagEvents(page, 'edit-unavailable')).length).toBe(1);
-    await expect(page.locator('#save')).toBeEnabled();
+  test('Redact 보고가 실패하면 알림 없이 진단 로그만 남긴다', async () => {
+    const page = await openViewer(async (p) => {
+      await p.evaluate(() => {
+        (window as unknown as { __pe: Pe }).__pe.pdf.listRedactAnnots = async () => {
+          throw new Error('보고 실패');
+        };
+      });
+    });
+    await expect
+      .poll(async () => (await diagEvents(page, 'redact-report-unavailable')).length)
+      .toBe(1);
+    await expect(page.locator('#notice-bar')).toBeHidden();
     await page.close();
   });
 });
