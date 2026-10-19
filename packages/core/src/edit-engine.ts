@@ -107,6 +107,8 @@ interface Draft {
   format: ParagraphFormat;
   summary: ReflowSummary;
   warnings: EditWarning[];
+  /** 갱신 실패 뒤 직전 상태로 되돌리지 못했다. 취소만 할 수 있다. */
+  broken: boolean;
 }
 
 interface Composed {
@@ -221,7 +223,10 @@ export class EditEngine {
         });
         continue;
       }
-      const entry = [...entries].reverse().find((e) => e.op.id === ref.editId);
+      // 재편집은 블록 id 를 그대로 둘 수 있다(op.id 는 새로 만든다). 가장 나중 항목을 쓴다.
+      const entry = [...entries]
+        .reverse()
+        .find((e) => e.op.id === ref.editId || e.op.target.editedBlock === ref.editId);
       if (entry) {
         blocks.push({
           editId: ref.editId,
@@ -272,6 +277,7 @@ export class EditEngine {
         format: plan.format,
         summary: composed.summary,
         warnings: composed.warnings,
+        broken: false,
       };
       this.#blocks.set(pageIndex, this.#adapter.listEditBlocks(doc, pageIndex));
       this.#host.invalidateAround(pageIndex);
@@ -304,16 +310,37 @@ export class EditEngine {
     this.#assertUsable();
     const draft = this.#requireDraft(draftId);
     if (!(input.renderScale > 0)) throw new RangeError('renderScale 은 0 보다 커야 함');
+    if (draft.broken) throw new EditStateError('초안이 손상되어 갱신할 수 없습니다. 취소하세요.');
     const t0 = performance.now();
     const previous = draft.summary.contentBox;
-    const composed = this.#compose(
-      draft.ctx,
-      draft.plan,
-      draft.prepared,
-      draft.paragraphId,
-      input.runs,
-      input.format,
-    );
+    let composed: Composed;
+    try {
+      composed = this.#compose(
+        draft.ctx,
+        draft.plan,
+        draft.prepared,
+        draft.paragraphId,
+        input.runs,
+        input.format,
+      );
+    } catch (error) {
+      // 쓰기가 중간에 실패했으면 문서의 블록이 새 내용과 옛 내용 사이에 있을 수 있다. 직전 내용으로 다시 쓰고,
+      // 그것도 실패하면 이 초안은 취소만 허용한다(커밋하면 로그와 문서가 달라진다).
+      try {
+        this.#compose(
+          draft.ctx,
+          draft.plan,
+          draft.prepared,
+          draft.paragraphId,
+          draft.runs,
+          draft.format,
+        );
+      } catch {
+        draft.broken = true;
+      }
+      this.#host.invalidateAround(draft.pageIndex);
+      throw error;
+    }
     draft.runs = input.runs;
     draft.format = input.format;
     draft.summary = composed.summary;
@@ -333,6 +360,7 @@ export class EditEngine {
   async commitParagraphEdit(draftId: string): Promise<CommitResult> {
     this.#assertUsable();
     const draft = this.#requireDraft(draftId);
+    if (draft.broken) throw new EditStateError('초안이 손상되어 커밋할 수 없습니다. 취소하세요.');
     const op: EditOp = {
       kind: 'replace-paragraph',
       id: draft.opId,
@@ -346,6 +374,11 @@ export class EditEngine {
     this.#writeMetadata([...this.#active(), entry]);
     this.#doc.endOperation();
     this.#draft = null;
+    // 작업이 닫혔는데 저널 단계가 늘지 않았으면(닫기 실패 뒤 다시 닫음 등) 로그와 저널이 어긋난 것이다.
+    if (this.#doc.getJournal().position !== this.#undo.length + 1) {
+      this.#failure = '커밋한 편집이 저널에 기록되지 않음';
+      throw new EditStateError(`${this.#failure}. 문서를 다시 열어야 합니다.`);
+    }
     this.#undo.push(entry);
     this.#redo = [];
     this.#edited = true;
@@ -358,7 +391,7 @@ export class EditEngine {
     this.#assertUsable();
     const draft = this.#requireDraft(draftId);
     this.#draft = null;
-    this.#doc.abandonOperation();
+    this.#abandonOrFail();
     this.#reconcileRedo();
     this.#touched([draft.pageIndex]);
     return this.#history();
@@ -476,7 +509,7 @@ export class EditEngine {
     if (entries.length === 0) return null;
     return {
       pages: [...new Set(entries.map((e) => e.op.target.pageIndex))].sort((a, b) => a - b),
-      structureUnlinked: entries.filter((e) => hasWarning(e, 'tagged-structure-unlinked')).length,
+      structureUnlinked: this.#unlinkedBlocks(entries),
       pdfaDeclared: (this.#pdfa ??= declaresPdfA(this.#doc)),
     };
   }
@@ -513,14 +546,14 @@ export class EditEngine {
       result = fn();
     } catch (error) {
       try {
-        doc.abandonOperation();
+        this.#abandonOrFail();
       } catch {
-        // 원래 예외를 우선한다.
+        // 원래 예외를 우선한다(세션은 이미 사용 불가로 표시했다).
       }
       this.#reconcileRedo();
       throw error;
     }
-    doc.abandonOperation();
+    this.#abandonOrFail();
     this.#reconcileRedo();
     return result;
   }
@@ -552,7 +585,12 @@ export class EditEngine {
   #touched(pages: number[], affected = true): void {
     for (const page of pages) {
       this.#host.invalidateAround(page);
-      this.#blocks.set(page, this.#adapter.listEditBlocks(this.#doc, page));
+      try {
+        this.#blocks.set(page, this.#adapter.listEditBlocks(this.#doc, page));
+      } catch {
+        // 문서와 로그는 이미 바뀌었다. 목록은 다음에 쓸 때 다시 만든다.
+        this.#blocks.delete(page);
+      }
     }
     if (affected) this.#lastAffected = [...pages].sort((a, b) => a - b);
   }
@@ -665,16 +703,45 @@ export class EditEngine {
       result = fn();
     } catch (error) {
       try {
-        doc.abandonOperation();
+        this.#abandonOrFail();
       } catch {
-        // 원래 예외를 우선한다.
+        // 원래 예외를 우선한다(세션은 이미 사용 불가로 표시했다).
       }
       this.#reconcileRedo();
       throw error;
     }
-    doc.abandonOperation();
+    this.#abandonOrFail();
     this.#reconcileRedo();
     return result;
+  }
+
+  /** 열린 작업을 버린다. 버리지 못하면 작업이 열린 채 남아 이후 작업이 겹치므로 세션을 쓸 수 없는 상태로 둔다. */
+  #abandonOrFail(): void {
+    try {
+      this.#doc.abandonOperation();
+    } catch (error) {
+      this.#failure = '저널 작업을 버리지 못함';
+      throw error;
+    }
+  }
+
+  /** 구조 연결이 끊긴 편집 문단 수: 같은 블록을 다시 편집한 항목은 마지막 하나만 센다(계약 5.8). */
+  #unlinkedBlocks(entries: LogEntry[]): number {
+    const byId = new Map(entries.map((e) => [e.op.id, e]));
+    const rootOf = (e: LogEntry): string => {
+      let cur = e;
+      const seen = new Set<string>();
+      while (cur.op.target.editedBlock && !seen.has(cur.op.id)) {
+        seen.add(cur.op.id);
+        const parent = byId.get(cur.op.target.editedBlock);
+        if (!parent) return cur.op.target.editedBlock;
+        cur = parent;
+      }
+      return cur.op.id;
+    };
+    const latest = new Map<string, LogEntry>();
+    for (const e of entries) latest.set(rootOf(e), e);
+    return [...latest.values()].filter((e) => hasWarning(e, 'tagged-structure-unlinked')).length;
   }
 
   /**
@@ -698,10 +765,10 @@ export class EditEngine {
   /** 열린 초안 작업을 버리고 캐시를 되돌린다(begin 실패 경로). */
   #rollback(pageIndex: number): void {
     try {
-      this.#doc.abandonOperation();
+      this.#abandonOrFail();
       this.#reconcileRedo();
     } catch {
-      // 작업이 열리지 않은 상태에서의 실패.
+      // 원래 예외를 우선한다(세션은 이미 사용 불가로 표시했다).
     }
     this.#draft = null;
     this.#host.invalidateAround(pageIndex);

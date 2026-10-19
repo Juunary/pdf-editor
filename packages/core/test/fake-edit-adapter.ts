@@ -50,7 +50,15 @@ export interface FakeAdapterProbe {
   /** 호출 이력(prepare·write·list 등). */
   calls: string[];
   /** 다음 prepare / write 호출을 실패시킨다. */
-  failNext: { prepare?: boolean; write?: boolean; finalize?: boolean };
+  failNext: {
+    prepare?: boolean;
+    write?: boolean;
+    finalize?: boolean;
+    /** 쓰고 난 뒤 예외를 내는 write 호출 횟수(원자적이지 않은 쓰기). */
+    writeAfter?: number;
+  };
+  /** 판정이 계획 경고로 더하는 경고(예: 태그 구조 끊김). */
+  planWarnings: EditWarning[];
 }
 
 export interface FakeAdapter extends EditAdapter {
@@ -158,6 +166,7 @@ export function createFakeAdapter(): FakeAdapter {
     metadataCalls: [],
     calls: [],
     failNext: {},
+    planWarnings: [],
   };
   /** 편집 블록 영역(plan 이 재편집 대상을 알아보는 데 쓴다). */
   const blockBoxes = new Map<string, Rect>();
@@ -237,7 +246,7 @@ export function createFakeAdapter(): FakeAdapter {
         },
         editable: limits.length === 0,
         limits,
-        warnings: [],
+        warnings: [...probe.planWarnings],
         runs: [
           {
             text: p.text,
@@ -382,6 +391,10 @@ export function createFakeAdapter(): FakeAdapter {
         doc.newString(JSON.stringify({ runs: runs.map((r) => r.text), format })),
       );
       blockBoxes.set(prepared.editId, result.summary.contentBox);
+      if (probe.failNext.writeAfter) {
+        probe.failNext.writeAfter--;
+        throw new Error('fake write(쓴 뒤) 실패');
+      }
       return { streamBytes: ops.join('\n').length, resources: [...fontsUsed], writeMs: 0 };
     },
 

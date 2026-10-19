@@ -97,7 +97,7 @@ export class PdfSession {
   #pageCache = new Map<string, PageModel>();
   #sourceMapCache = new Map<number, SourceMap>();
   #layoutCache = new Map<number, PageLayout>();
-  #linkageCache = new Map<number, PageLinkage>();
+  #linkageCache = new Map<number, { map: SourceMap; linkage: PageLinkage }>();
   #edit: EditEngine | null = null;
   #lastRenderScale = DEFAULT_RENDER_SCALE;
   /** 이 세션에서 전체 저장을 한 번이라도 했다(A3-9: 이후 저장도 전체 저장). */
@@ -267,10 +267,12 @@ export class PdfSession {
    * 객체를 돌려준다(`invalidatePageCache` 로 비운다).
    */
   linkPage(pageIndex: number): PageLinkage {
+    // 원본 연결 정보가 캐시에서 빠져 다시 만들어졌으면 매칭도 다시 한다(`unmatched` 표시는 그 객체에 붙는다).
+    const map = this.getSourceMap(pageIndex);
     const cached = touch(this.#linkageCache, pageIndex);
-    if (cached) return cached;
-    const linkage = linkPage(this.extractPage({ pageIndex }), this.getSourceMap(pageIndex));
-    remember(this.#linkageCache, pageIndex, linkage);
+    if (cached && cached.map === map) return cached.linkage;
+    const linkage = linkPage(this.extractPage({ pageIndex }), map);
+    remember(this.#linkageCache, pageIndex, { map, linkage });
     return linkage;
   }
 
