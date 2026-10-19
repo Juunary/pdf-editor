@@ -41,7 +41,10 @@ export function splitMargins(units: readonly Unit[], bounds: Rect, body: number)
   const minGap = C.marginGapEm * body;
   const inTop = (u: Unit) => u.bbox[3] <= topLimit;
   const inBottom = (u: Unit) => u.bbox[1] >= bottomLimit;
-  const eligible = (u: Unit) => PAGE_NUMBER.test(u.text) || u.size <= body * 1.3;
+  // 긴 산문 줄(8단어 이상, 쪽 폭 60% 이상)은 머리·꼬리가 아니다(쪽 위 강조 상자 등).
+  const prose = (u: Unit) =>
+    u.parts.reduce((n, p) => n + p.words.length, 0) >= 8 && width(u.bbox) >= 0.6 * W;
+  const eligible = (u: Unit) => PAGE_NUMBER.test(u.text) || (u.size <= body * 1.3 && !prose(u));
   const header = new Set<Unit>();
   const footer = new Set<Unit>();
   // 본문보다 작은 글자로만 된 머리·꼬리 묶음은 간격 기준을 절반으로 둔다.
@@ -162,13 +165,28 @@ const firstWordAfterBullet = (u: Unit): number | null => {
 export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
   const us = region.units;
   if (us.length <= 1) return us.length ? [us.slice()] : [];
-  const pitches: number[] = [];
+  // 줄 간격 기준: 글자 크기가 같은(±10%) 이웃 쌍의 기준선 간격 하위 30% 분위수. 한 영역에 모양이 다른
+  // 글(강조 상자 + 목차 등)이 섞여도 각자의 간격으로 판단한다.
+  const pairs: { d: number; size: number }[] = [];
   for (let i = 1; i < us.length; i++) {
-    const d = us[i]!.baseline - us[i - 1]!.baseline;
+    const a = us[i - 1]!;
+    const b = us[i]!;
+    const d = b.baseline - a.baseline;
     // 두 배 줄 간격(Word 등)까지 포함한다. 문단 사이 간격이 섞여도 하위 분위수는 문단 안 간격이다.
-    if (d > 0 && d < 3.5 * Math.max(us[i]!.size, us[i - 1]!.size)) pitches.push(d);
+    if (d > 0 && d < 3.5 * Math.max(a.size, b.size) && Math.abs(a.size - b.size) <= 0.1 * b.size)
+      pairs.push({ d, size: b.size });
   }
-  const pitch = pitches.length ? quantile(pitches, 0.3) : Infinity;
+  const pitchCache = new Map<number, number>();
+  const pitch = (size: number): number => {
+    const key = Math.round(size * 10);
+    let v = pitchCache.get(key);
+    if (v === undefined) {
+      const ds = pairs.filter((p) => Math.abs(p.size - size) <= 0.1 * size).map((p) => p.d);
+      v = ds.length ? quantile(ds, 0.3) : Infinity;
+      pitchCache.set(key, v);
+    }
+    return v;
+  };
   const left = quantile(
     us.map((u) => u.bbox[0]),
     0.2,
@@ -196,7 +214,7 @@ export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
 
 interface RegionStats {
   justified: boolean;
-  pitch: number;
+  pitch: (size: number) => number;
   left: number;
   right: number;
   regionW: number;
@@ -213,7 +231,7 @@ function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | nu
     return 'color';
   // 간격.
   const d = b.baseline - a.baseline;
-  if (d > s.pitch * C.paraPitchRatio + 0.5 && d > 1.05 * b.size) return 'pitch';
+  if (d > s.pitch(b.size) * C.paraPitchRatio + 0.5 && d > 1.05 * b.size) return 'pitch';
   // 글머리.
   // 글머리: 앞 줄이 끝까지 차고 문장이 이어지며 지금 문단이 목록 항목이 아니면 본문 안의 "(b)" 같은 참조로 본다.
   if (BULLET.test(b.text)) {
@@ -247,9 +265,12 @@ function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | nu
     }
   }
   if (hyphen) return null;
-  // 앞 줄이 일찍 끝남.
+  // 앞 줄이 일찍 끝남: 다음 줄 첫 단어가 앞 줄 남은 자리에 들어가면 자동 줄바꿈이 아니다.
   if (s.regionW > 8 * em) {
-    const short = a.bbox[2] < s.right - C.shortLineRatio * s.regionW;
+    const firstWord = b.parts[0]?.words[0];
+    const wordW = firstWord ? firstWord.x1 - firstWord.x0 : em;
+    const room = s.right - a.bbox[2];
+    const short = room > Math.max(wordW + 0.3 * em, C.shortLineRatio * s.regionW * 0.5);
     if (short) {
       if (SENTENCE_END.test(a.text)) return 'sentence-end';
       if (s.justified && !centered) return 'short-justified';
