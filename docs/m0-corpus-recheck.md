@@ -402,7 +402,7 @@
 | A5-1 | 가로채기 경계를 150 으로 정정(PLAN.md 5.1·6절 DoD·11절). `apps/extension/src/interception.ts` 의 `MIME_HANDLER_MIN_CHROME = 151` 상수·주석 갱신(판정은 API 유무라 동작 영향 없음). 정식 Chrome 150 확인 | M1 |
 | A5-2 | DNR 규칙 `resourceTypes` 에 `object` 추가 여부 결정(128–149 의 embed·object 가로채기) | M1 |
 | A5-3 | DNR 경로 file:// 는 "파일 URL에 대한 액세스 허용" 필요 → 128–149 안내 UI | M3 |
-| A5-4 | Windows 정식 Chrome 128–149 수동 확인은 선택(CfT 결과로 대체 가능 여부 사용자 판단) | 사용자 |
+| A5-4 | Windows 정식 Chrome 128–149 수동 확인은 선택(CfT 결과로 대체 가능 여부 사용자 판단). **2026-10-19 미확인**(W8): 사용자 PC 의 Chrome 이 155 뿐이라 수행 불가, A5 로 남김 | 사용자 |
 
 ## 9. 검증
 

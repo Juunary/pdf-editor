@@ -214,7 +214,7 @@ PLAN.md 반영 필요:
 | A2-2 | 뷰어 UI: 문서 열기 시 `listRedactAnnots` 결과(쪽·개수) 표시, 편집 전 `assessRedactionImpact` 메시지 표시 | M3(viewer-ui) |
 | A2-3 | F3 회피 규칙을 코드 규칙으로 고정: 저장할 작업 문서에서 이미지 XObject 를 `resolve()` 하지 않는다(사전 값은 간접 참조 `get()`). M1 `PageModel`·`SourceMap` 구현 리뷰 항목에 포함. 또는 전체 저장 옵션을 `garbage=yes,compress` 로 바꾸는 안을 3절 측정과 함께 결정 | M1 |
 | A2-4 | F3 을 MuPDF 이슈 트래커에 재현 절차와 함께 보고할지 결정(외부 게시이므로 사용자 판단). **게시됨 2026-10-19**(사용자 지시, Juunary 계정): [ArtifexSoftware/mupdf.js#201](https://github.com/ArtifexSoftware/mupdf.js/issues/201). 1.26.4·1.27.0 미재현·1.28.1 재현(회귀), 원인 분석(코어 커밋 19c3d109ac + mupdf.js `PDFObject` 이중 keep)·수정 제안 포함. 게시 문안·재현 스크립트 `docs/upstream/`. 이후 업스트림 응답·수정 버전 확인은 MuPDF 갱신 시 대조 테스트(`tools/spike-m0/test/mupdf-pitfalls.test.ts`)로 판정 | 사용자(완료) |
-| A2-5 | Windows 다른 뷰어에서 `fixtures/m0/m0-preexisting-redact-edited.pdf` 의 Redact 표시 유지·텍스트 확인(Acrobat 은 Redact 주석을 "적용 대기" 로 표시하는지 포함) | 사용자 |
+| A2-5 | Windows 다른 뷰어에서 `fixtures/m0/m0-preexisting-redact-edited.pdf` 의 Redact 표시 유지·텍스트 확인(Acrobat 은 Redact 주석을 "적용 대기" 로 표시하는지 포함). **2026-10-19 미확인**(W7): Windows PC 에 Acrobat Reader 미설치 | 사용자 |
 
 PLAN.md 반영 필요:
 - 3.1 "기존 Redact 주석 … 사전 감지해 구분 처리한다(사용자 경고 또는 임시 분리)" → "감지·보고(`listRedactAnnots`), 편집은 주석 단위 적용으로 기존 주석을 적용하지 않음, 겹침·링크 제거는 경고, 페이지 단위 적용이 필요한 작업만 임시 분리" 로 확정.
@@ -280,6 +280,31 @@ PLAN.md 반영 필요:
 - 상한 실측(서버 Node, 합성 문서): Buffer 입력 525.5 MiB 성공·675.7 MiB 실패, Stream 입력 675.7 MiB 성공(피크 1,681 MiB, 상한의 82%).
 - maxRSS(Node 프로세스): 대형 900쪽 buffer 실패 2,788 MiB, stream 성공 2,339 MiB. 브라우저 탭은 WASM 힙 외에 JS 쪽 입력·출력 사본이 더해진다(미측정, A3 Day 1 과 함께).
 
+Windows Chrome 실측(2026-10-19 KST, W6 = U3): 확인 빌드 `m2` 110549f dist, Chrome 155.0.8059.82, 문맥 F2(file:// 직접 열기), 진단 "전체 저장 측정" 각 1회(측정, 진단 JSON). 저장 옵션 `garbage=yes,compress`, 입력 Stream, 파일은 만들지 않는다.
+
+| 문서 | 입력 B | 열기 ms | 1쪽 렌더 ms(scale 3) | saveMs | wasmHeapBytes | outputBytes |
+|---|---|---|---|---|---|---|
+| nist-sp800-53r5 492쪽 | 6,073,678 | 15.4 | 34.6 | 219.2 | 69,140,480 | 11,711,450 |
+| nasa-se-handbook-sp2016-6105 297쪽 | 3,773,440 | 11.7 | 518.3 | 349.2 | 85,196,800 | 23,112,140 |
+
+- 미확인: 두 번째 측정값, PC 사양(CPU·RAM), 열기·렌더 체감 시간, NASA 1쪽 렌더가 느린 이유(표지 그림으로 추정, 확인 안 함).
+- 파생 계산: 힙/입력 NIST 11.4배·NASA 22.6배, 쪽당 힙 NIST 약 140 KB·NASA 약 290 KB. 위 합성 문서 배율(2.9~4.5, Day 1 6.5)보다 크다. 실제 문서의 힙은 파일 크기보다 쪽·객체 수에 더 따른다 → A3-8.
+- 출력 크기: 출력/입력 NIST 1.93배·NASA 6.12배. 같은 PC 에서 같은 두 파일로 `saveToBuffer` 옵션만 바꿔 비교했다(측정, 2026-10-19, mupdf npm 1.28.1·Node 24.16.0, 임시 스크립트는 저장소에 없음). 진단 `outputBytes` 와 바이트 단위로 같아 같은 경로다.
+
+| 옵션 | NASA 출력 B(입력 3,773,440) | NIST 출력 B(입력 6,073,678) |
+|---|---|---|
+| (빈 옵션) | 23,220,333 | 11,716,421 |
+| `garbage=yes` | 23,112,140 | 11,711,422 |
+| `garbage=yes,compress`(현재) | 23,112,140 | 11,711,450 |
+| `garbage=yes,compress,objstms` | 3,651,554(0.97배) | 5,890,045(0.97배) |
+| `+compress-fonts` | 3,651,554 | 5,890,045 |
+| `garbage=compact,compress` | 23,094,764 | 11,666,350 |
+| `garbage=deduplicate,compress,objstms` | 3,637,182(11,762 ms) | 5,810,712(90,497 ms) |
+| `compress` | 23,220,333 | 11,716,449 |
+
+- 원인: 원본이 객체 스트림 구조인데 현재 옵션에 `objstms` 가 없어 객체가 풀린 채 저장된다. `objstms` 를 더하면 두 문서 모두 입력의 약 0.97배이고 저장 시간은 비슷하다(NASA 357 → 425 ms, NIST 187 → 319 ms, 같은 스크립트). `deduplicate` 는 NASA 11.8초·NIST 90초라 쓰지 않는다.
+- `objstms` 출력 재열기(측정): 쪽 수 동일(297·492), 1쪽 렌더 잉크 픽셀 있음, 텍스트 추출 정상, 헤더 `%PDF-1.7`·`%PDF-1.6`. 이 두 문서에서 쪽 수·1쪽·텍스트만 확인했다. 픽셀 전체 비교, 다른 뷰어, 다른 문서·redaction 이후 문서·암호화 문서는 미확인 → A3-7.
+
 ### 3.4 `decideSaveMethod` 예상 피크 힙 경고(구현)
 
 `packages/pdf-ops/src/save-method.ts`
@@ -322,9 +347,11 @@ PLAN.md 반영 필요:
 | A3-1 | core 열기 경로를 Stream 입력으로 전환. Worker 의 `PdfSession` 은 원본 바이트를 이미 JS 쪽에 보관하므로 그 바이트를 `read` 콜백 소스로 쓴다. 전환 후 `STREAM_INPUT_PEAK_HEAP_RATIO` 적용. File/Blob 을 `FileReaderSync`·OPFS `FileSystemSyncAccessHandle` 로 직접 읽는 방식은 브라우저 미검증 | M1 |
 | A3-2 | `shared-types` `SaveResult`(또는 저장 전 RPC)에 `heap` 추가, `core` `PdfSession.save` 에서 `{ inputBytes }` 전달, 뷰어에서 `warn`·`over-limit` 경고 UI. shared-types 변경이라 메인 세션에서 통합 | M1(계약), M3(UI) |
 | A3-3 | 저장 실패 복구: 예외 시 Worker 재시작 → Stream 재열기 → 편집 로그 재적용 후 재저장(3.3 실패 양상). PLAN.md 3.2 체크포인트 설계에 포함 | M3 |
-| A3-4 | Windows Chrome Worker 에서 같은 문서로 피크·탭 메모리 측정(Day 1 A3 와 함께). 출력 JS 사본을 FSA 에 청크로 쓰는 방식 검토 | M0 후속 |
+| A3-4 | Windows Chrome Worker 에서 같은 문서로 피크·탭 메모리 측정(Day 1 A3 와 함께). 출력 JS 사본을 FSA 에 청크로 쓰는 방식 검토. **2026-10-19 부분 측정**(W6, 3.3 Windows 실측): 실제 문서 2건의 saveMs·wasmHeapBytes 1회. 탭 메모리·PC 사양·반복 측정은 미확인 | M0 후속 |
 | A3-5 | 배율 모델 재산정: 고정분(기본 힙 22 MiB) + 비례분 형태, 실제 코퍼스(A7) 측정 후 | M5 |
 | A3-6 | 전체 저장 옵션 `garbage=compact` → `garbage=yes` 전환 여부 결정(2.5 F3 회피, 힙 비용 없음 실측). 출력 크기·Day 1 고정 해시 영향 확인 필요 | M1(A2-3 과 함께) |
+| A3-7 | 전체 저장 옵션(`packages/pdf-ops/src/save-method.ts` `FULL_SAVE_OPTIONS`)에 `objstms` 추가 검토(2026-10-19 W6 발견): 객체 스트림 구조 원본을 현재 옵션으로 저장하면 출력이 입력의 1.93·6.12배가 된다. `garbage=yes,compress,objstms` 는 0.97배, 저장 시간 비슷. 채택 전 확인: 다른 코퍼스 문서·redaction 이후 문서·암호화 문서의 재열기·픽셀 비교, 다른 뷰어 표시, A2-3(이미지 `resolve()` 금지)·F3 과의 상호작용, 증분 저장 경로와의 관계. `deduplicate` 는 시간(11.8초·90초) 때문에 제외 | M3 저장 경로 |
+| A3-8 | `decideSaveMethod` 예상 피크 힙을 파일 크기 × 실측 배율(2.9~4.5)로 계산하면 글자 위주 대형 실제 문서에서 과소 추정한다(2026-10-19 W6: 힙/입력 11.4·22.6배). 쪽 수·객체 수를 입력에 넣는 방식을 A3-5 배율 모델 재산정에 포함해 검토 | M5(A3-5 와 함께) |
 
 PLAN.md 반영 필요:
 - 3.1 저장 정책: "전체 저장의 최대 메모리·저장 시간을 M0 부터 벤치마크" 에 결과 요약 추가 — 출력 스트리밍 불가, 저장 전 예상 피크 힙 경고, 입력 Stream 열기 채택(검토).
