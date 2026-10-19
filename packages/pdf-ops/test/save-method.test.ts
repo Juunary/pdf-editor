@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as mupdf from 'mupdf';
 import {
   decideSaveMethod,
   estimateSaveHeap,
@@ -76,5 +77,28 @@ describe('decideSaveMethod: 예상 피크 힙(파일 크기 × 실측 배율)', 
       ratio: { full: 3 },
     });
     expect(e).toMatchObject({ ratio: 3, fraction: 300 / 512, level: 'warn' });
+  });
+});
+
+describe('FULL_SAVE_OPTIONS(A3-6): 이미지 XObject resolve() 후에도 스트림이 남는다', () => {
+  it('garbage=yes 전체 저장은 MuPDF 1.28.x compact 결함(mupdf.js#201) 경로를 타지 않는다', () => {
+    const src = new mupdf.PDFDocument();
+    const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 16, 16], false);
+    pix.clear(128);
+    const ref = src.addImage(new mupdf.Image(pix.asJPEG(80, false)));
+    src.insertPage(
+      -1,
+      src.addPage([0, 0, 50, 50], 0, { XObject: { Im: ref } }, 'q 40 0 0 40 5 5 cm /Im Do Q'),
+    );
+    const doc = mupdf.Document.openDocument(
+      src.saveToBuffer('compress').asUint8Array().slice(),
+      'application/pdf',
+    ) as mupdf.PDFDocument;
+    doc.findPage(0).get('Resources').get('XObject').get('Im').resolve().destroy();
+    const re = mupdf.Document.openDocument(
+      doc.saveToBuffer(FULL_SAVE_OPTIONS).asUint8Array().slice(),
+      'application/pdf',
+    ) as mupdf.PDFDocument;
+    expect(re.findPage(0).get('Resources').get('XObject').get('Im').isStream()).toBe(true);
   });
 });
