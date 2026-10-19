@@ -27,6 +27,10 @@ export interface Unit {
 /** 줄 끝 번호: 쪽 번호·식 번호. */
 const NUMBER_TAG = /^\s*\(?\d{1,4}(?:\.\d{1,3})?[a-z]?\)?\s*$/u;
 
+/** 절·목차 번호("4.1", "B.", "IV.", "(a)"). */
+const SECTION_NO =
+  /^\s*(?:\(?[\dA-Za-z]{1,3}\)|[\dIVXivx]{1,4}(?:\.\d{1,3})*\.?|[A-Z]\.|§\s*\d+)\s*$/u;
+
 /** 점 끈(목차). */
 export const LEADER = /(?:\.\s?){4,}\s*$|…{2,}\s*$/u;
 
@@ -121,7 +125,8 @@ export function buildUnits(
       const script = ratio > 1.5 && gap <= 0.3 * Math.max(f.size, prev.size);
       const em = Math.max(f.size, prev.size);
       // 번호·쪽 번호 같은 짧은 조각(폭 3em 이하)은 2em 간격까지 잇는다(목차·절 번호).
-      const shortPart = Math.min(width(prev.bbox), width(f.bbox)) <= 3 * em;
+      // (다른 열의 짧은 조각을 잇지 않도록 왼쪽 조각이 번호 형식일 때만)
+      const shortPart = width(prev.bbox) <= 3 * em && SECTION_NO.test(prev.text);
       const near = gap <= C.rowJoinGapEm * em || (shortPart && gap <= 2 * em);
       // 줄 끝 번호(목차 쪽 번호·식 번호)는 넓은 왼쪽 조각(쪽 폭 25% 이상) 또는 점 끈 뒤면 간격과 무관하게 잇는다.
       const tag =
