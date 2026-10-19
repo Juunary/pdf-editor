@@ -77,6 +77,9 @@ export function recordDevice(page: mupdf.Page): DeviceEvent[] {
   });
   page.runPageContents(device, mupdf.Matrix.identity);
   device.close();
+  // 동기 루프에서는 FinalizationRegistry 정리가 돌지 않으므로 직접 해제한다(장치 표의 콜백 클로저·텍스트 참조).
+  device.destroy();
+  for (const t of held) t.destroy();
   return events;
 }
 
@@ -176,5 +179,8 @@ export function deliveryTrace(
   });
   page.runPageContents(device, mupdf.Matrix.identity);
   device.close();
+  // 동기 루프에서는 FinalizationRegistry 정리가 돌지 않으므로 직접 해제한다(장치 표의 콜백 클로저·텍스트 참조).
+  device.destroy();
+  for (const t of held) t.destroy();
   return out;
 }
