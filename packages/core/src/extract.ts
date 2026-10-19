@@ -9,6 +9,7 @@ import type {
   Quad,
   Rect,
 } from '@pdf-editor/shared-types';
+import { releaseBorrowedShade } from '@pdf-editor/pdf-ops';
 import { ColorConverter } from './color.js';
 import { DeviceCollector, type RawGlyph } from './extract-device.js';
 import {
@@ -49,24 +50,15 @@ export interface ExtractResult {
   stats: ExtractStats;
 }
 
-/**
- * mupdf.js 는 fillShade 콜백의 Shade 래퍼를 참조를 늘리지 않고 만든다(Path·Text·ColorSpace·
- * StrokeState·Image 는 늘린다). 그 래퍼가 GC 되면 소유하지 않은 참조를 놓아 셰이드가 해제되고
- * 이후 같은 문서를 실행할 때 힙이 손상된 것처럼 실패한다("Unexpected mesh type …", 실측: 실제
- * 코퍼스 문서, 합성 셰이딩+GC 재현). 종료자 등록을 해제해 빌린 참조를 놓지 않게 한다.
- */
-function releaseBorrowed(shade: mupdf.Shade): void {
-  const ctor = shade.constructor as unknown as { _finalizer?: FinalizationRegistry<unknown> };
-  ctor._finalizer?.unregister(shade);
-}
-
 /** quad 근사에 쓰는 글자 위·아래 높이(글자 크기 대비). 구조화 텍스트 값이 없을 때만 쓴다. */
 const APPROX_ASCENT = 0.95;
 const APPROX_DESCENT = 0.25;
 
 /**
  * 페이지 하나의 추출 모델과 계측값을 만든다. 주석·위젯은 제외한다(`runPageContents`).
- * MuPDF 경고는 실행 중에만 가로채 `warnings` 에 담고, 끝나면 로그 콜백을 해제한다.
+ * MuPDF 경고는 실행 중에만 가로채 `warnings` 에 담고, 끝나면 로그 콜백을 해제한다(`setLog(null)`).
+ * mupdf.js 1.28.1 은 현재 로거를 읽는 API 가 없어 이전 로거로 되돌리지 못한다. 이 저장소에서 `setLog` 를 쓰는
+ * 곳은 여기뿐이므로 해제가 곧 기본값(MuPDF 기본 출력) 복원이다. 다른 곳에서 로거를 둘 때는 이 함수를 감싸야 한다.
  */
 export function extractPageDetailed(page: mupdf.PDFPage, request: ExtractRequest): ExtractResult {
   const t0 = performance.now();
@@ -97,19 +89,24 @@ function build(
   const collector = new DeviceCollector(bounds, colors, request.includePathSegments === true);
 
   const device = new mupdf.Device({
+    // 텍스트 래퍼는 collector 가 넘겨받아(직전 객체 비교용) 놓는다. guard 가 건너뛰면(실패 뒤·소프트 마스크 안) 여기서 놓는다.
     fillText: (text, ctm, cs, color) => {
-      collector.guard(() => collector.fillText(text, ctm, cs, color));
+      if (!collector.guard(() => collector.fillText(text, ctm, cs, color))) text.destroy();
       cs.destroy();
     },
     strokeText: (text, stroke, ctm, cs, color) => {
-      collector.guard(() => collector.strokeText(text, ctm, cs, color));
+      if (!collector.guard(() => collector.strokeText(text, ctm, cs, color))) text.destroy();
       stroke.destroy();
       cs.destroy();
     },
-    ignoreText: (text, ctm) => collector.guard(() => collector.ignoreText(text, ctm)),
-    clipText: (text, ctm) => collector.guard(() => collector.clipText(text, ctm)),
+    ignoreText: (text, ctm) => {
+      if (!collector.guard(() => collector.ignoreText(text, ctm))) text.destroy();
+    },
+    clipText: (text, ctm) => {
+      if (!collector.guard(() => collector.clipText(text, ctm))) text.destroy();
+    },
     clipStrokeText: (text, stroke, ctm) => {
-      collector.guard(() => collector.clipText(text, ctm));
+      if (!collector.guard(() => collector.clipText(text, ctm))) text.destroy();
       stroke.destroy();
     },
     fillPath: (path, evenOdd, ctm, cs, color, alpha) => {
@@ -134,7 +131,8 @@ function build(
     },
     fillShade: (shade, ctm, alpha) => {
       collector.guard(() => collector.fillShade(shade, ctm, alpha));
-      releaseBorrowed(shade);
+      // 빌린 참조(종료자가 놓으면 셰이드가 해제됨, 실측: "Unexpected mesh type …"). pdf-ops 공용 도구로 해제.
+      releaseBorrowedShade(shade);
     },
     fillImage: (image, ctm, alpha) => {
       collector.guard(() => collector.fillImage(image, ctm, alpha));

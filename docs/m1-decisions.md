@@ -61,6 +61,13 @@ M0 C2 쪽(zen-ko-report 22·23쪽 6블록): SourceMap 제거 블록 밖 0 px·�
 
 `removeTextShowOps` 동작: 지울 Tj·TJ·'·" 연산의 바이트만 같은 총 전진량의 숫자 TJ 로 바꾼다(전진량 = 글자 폭·Tc·Tw·Tz·TJ 숫자 조정). 텍스트 행렬이 원래 자리에서 끝나 같은 BT 의 뒤 글자 위치가 바뀌지 않고, 스트림의 나머지 바이트는 그대로다(합성 테스트로 고정).
 
+M1 리뷰 반영 후(6절):
+
+- 전진량의 글자 폭은 명세 폭(`PdfFont.advanceSpec`, 실수 /Widths·/W)이다. 소수 폭 폰트에서는 MuPDF 렌더의 뒤 글자가 반올림 오차만큼 움직이고 명세대로 그리는 뷰어에서는 그대로다. 같은 100블록 재측정(6.3) 결과는 위 표와 블록 단위로 같다.
+- 건너뛰는 연산(사유 반환, 호출자는 redaction 대체 경로): Form 안, 클립 텍스트(Tr 4–7), 세로쓰기, Type3, 폰트 폭 불확실·MuPDF 대체 폰트(`font-encoding-unresolved`), CID 매핑 없는 코드, TJ 배열 안 연산자, `"` 피연산자 부족, Tf 크기 0·Tz 0.
+- Tw 는 1바이트 코드 32 에만 더한다(폰트 종류 무관, MuPDF·명세 공통).
+- 콘텐츠 스트림을 다른 쪽 /Contents 나 같은 배열의 다른 칸과 공유하면 사본을 만들어 이 쪽 칸만 바꾼다(`RemoveTextResult.copied`). /Contents 배열 자체를 공유하면 이 쪽에 새 직접 배열을 둔다.
+
 ## 4. M3 로 넘기는 작업
 
 | # | 내용 | 근거 |
@@ -75,6 +82,59 @@ M0 C2 쪽(zen-ko-report 22·23쪽 6블록): SourceMap 제거 블록 밖 0 px·�
 
 | # | 내용 | 상태 |
 |---|---|---|
-| 1 | 코퍼스 도형 번호 불일치 11쪽(arXiv Type3 직접 실행, zen-ko-moon 이미지 Do) | pdf-ops 작업 진행 중 |
-| 2 | pdf-ops 정책 퍼징 테스트의 MuPDF WASM "memory access out of bounds" 간헐 중단(1회, 재실행 4회 통과) | 원인 조사 |
-| 3 | 마일스톤 리뷰(읽기 전용) → `m1` 을 `main` 에 머지(사용자 승인) | 대기 |
+| 1 | 코퍼스 도형 번호 불일치 11쪽(arXiv Type3 직접 실행, zen-ko-moon 이미지 Do) | 해소. 원인은 두 문서 모두 캐시 불가 Type3 글리프 직접 실행(`docs/m1-pdf-ops.md` 5.6). Type3 머지(ebd54e3)와 리뷰 반영 후 core 재측정 실패 0쪽(6.3) |
+| 2 | pdf-ops 정책 퍼징 테스트의 MuPDF WASM "memory access out of bounds" 간헐 중단(1회, 재실행 4회 통과) | 원인 조사. 후보: 테스트 헬퍼(`device-log.ts`·`page-model.ts`)의 `fillShade` 가 빌린 Shade 래퍼의 종료자를 해제하지 않아, GC 시점에 셰이드 참조를 한 번 더 놓는 경로(core 는 같은 문제를 `extract.ts` 에서 해제로 막았다). M1 리뷰 반영에서 헬퍼도 공용 `releaseBorrowedShade` 로 해제. 인과는 미확인(재현 없음) |
+| 3 | 마일스톤 리뷰(읽기 전용) → `m1` 을 `main` 에 머지(사용자 승인) | 리뷰 지적 반영 완료(6절). `main` 머지는 사용자 승인 대기 |
+
+## 6. M1 리뷰 반영
+
+읽기 전용 마일스톤 리뷰(기준 ebd54e3)의 지적과 처리. 커밋은 모두 `m1` 브랜치(미푸시).
+
+### 6.1 지적별 처리
+
+| 등급 | 지적 | 처리 | 커밋 |
+|---|---|---|---|
+| HIGH | `removeTextShowOps` 가 클립 텍스트(Tr 4–7)를 빈 TJ 로 바꿔 클립이 사라짐(파란 칠 279 → 60,000 px) | 수정: 건너뛰고 사유 반환(redaction 대체 경로). PLAN.md 3.1 대체 경로 목록에 추가 | 6092d2c |
+| HIGH | 콘텐츠 스트림을 다른 쪽 /Contents·같은 배열의 다른 칸과 공유해도 제자리에서 고침(2쪽 머리말도 지워짐) | 수정: 전체 쪽 /Contents 사용 수(배열 안 중복 포함)를 세어 공유면 사본을 만들고 이 쪽 칸만 바꿈. 공유 /Contents 배열은 이 쪽에 새 직접 배열 | 6092d2c |
+| MEDIUM | TJ 전진량이 MuPDF 정수 폭(pdf_to_int) 기준이라 명세 뷰어에서 뒤 글자가 밀림 | 수정: `PdfFont.advanceSpec`(실수 폭) 추가, 매칭은 기존 정수 폭 유지. CID 매핑 없는 코드가 있는 연산은 건너뜀 | 4e88b75, 6092d2c |
+| MEDIUM | 세로쓰기(wmode 1)에서 글자마다 앞 글리프의 quad | 수정: stext 원점 = Device 원점 + 세로 전진 벡터로 결합. core 세로쓰기 테스트 추가 | de37d34 |
+| MEDIUM | `pathCmd` 닫기마다 경로 전체 복사·역순 탐색(re 20,000개 4.7 s) | 수정: 마지막 m 인덱스 추적(0.05 s). 2 s 상한 회귀 테스트 | f231f88 |
+| MEDIUM | `loadPage()` 쪽 래퍼·`readStream()` Buffer 래퍼 미해제 | 수정: `readStreamBytes`·`pageTransform`(복사·읽기 직후 destroy). content-interp·type3·pdf-fonts 외에 xobject 읽기·임시 쪽 래퍼도 해제 | a429e58 |
+| MEDIUM | 테스트 헬퍼 `fillShade` 의 빌린 Shade 래퍼 종료자 미해제 | 수정: pdf-ops `releaseBorrowedShade` 를 core·헬퍼가 공용. 퍼징 간헐 중단의 후보 원인으로 5절에 기록(인과 미확인) | a429e58 |
+| LOW | Tw 조건이 `subtype !== 'Type0'` | 수정: 1바이트 코드 32(디코드 길이로 판정) | 6092d2c |
+| LOW | hail-mary 대체 폰트·`font-encoding-unresolved` 연산을 지움 | 수정: 건너뜀 | 6092d2c |
+| LOW | Resources·Font Null, `"` 피연산자 수 미검사 | 수정: 예외 없이 건너뜀. TJ 배열 안 연산자도 건너뜀 | 6092d2c |
+| LOW | linkPage 의 `unmatched` 표시가 버려지는 임시 SourceMap 에 남음 | 수정: 세션이 쪽 SourceMap 캐시(같은 무효화), 뷰어는 linkPage 뒤 getSourceMap 호출(생성 1회) | d91e6a1 |
+| LOW | `subsetFontBytes` 가 CFF(FontFile3)에서 일반 예외 | 수정: `UnsupportedFontError`(cff-outlines·no-fontfile2), TrueType 전용 명시. 서브셋 없는 `embedFont` 는 M0 CFF 대조 측정이 쓰므로 막지 않음 | 6668c44 |
+| LOW | guard 가 건너뛴 Text 래퍼 미해제 | 수정 | f7a2156 |
+| LOW | 추출 후 `setLog(null)` 로 이전 로거를 지움 | 주석으로 기록: mupdf.js 1.28.1 은 현재 로거를 읽는 API 가 없다. 저장소 안 `setLog` 사용처는 이곳뿐 | f7a2156 |
+| LOW | 구조화 텍스트 글자마다 만드는 Font 래퍼 미해제 | 수정 | f7a2156 |
+| LOW | 새 문서를 연 뒤에 이전 뷰어 unmount | 수정: `pdf.open` 전에 unmount, e2e 추가 | f5113dc |
+| LOW | `Math.min(...seqs)` 전개 인자 한도(약 13만) | 수정: 반복으로 계산 | f231f88 |
+| 보류 | 검색 결과 번호가 검색 시작 쪽 기준 | 보류: 표시 정책 결정(문서 순서 번호로 바꿀지)이며 기능 오류 아님. M2 뷰어 작업에서 Chrome 기본 뷰어와 대조 후 결정 | — |
+| 보류 | MuPDF "CTM CHANGE IN CLIP TEXT" 해석 중단 시 부분 모델 | 보류: 중단 전까지의 모델과 MuPDF 경고를 돌려준다. 코퍼스 1,647쪽에서 쪽 예외·실패 0. 편집 제한 표시는 M3 편집 제한 UI 와 함께 | — |
+| 보류 | 소프트 마스크 안에서 `#patternPaint` 판정 | 보류: 리뷰·이번 작업 모두 재현 못 함. 마스크 안 콜백은 guard 가 건너뛴다. 소프트 마스크 + 패턴 색 텍스트 조합을 퍼징에 넣은 뒤 판단 | — |
+
+### 6.2 검증(2026-10-19, `m1` f5113dc 기준 강제 실행)
+
+| 명령 | 결과 |
+|---|---|
+| `pnpm exec turbo run build typecheck test test:e2e --force` | 19/19 작업 성공(캐시 0). 단위: pdf-ops 310 통과·2 건너뜀(코퍼스 러너), core 114·1, viewer-ui 117, extension 21, spike-m0 31·1, shared-types 1. e2e 27 통과·1 건너뜀 |
+| `pnpm lint` | 통과 |
+| `pnpm exec prettier --check .` | 통과 |
+
+### 6.3 코퍼스 재측정(`fixtures/corpus` 19건 1,647쪽)
+
+```
+NODE_OPTIONS=--max-old-space-size=12288 CORE_LINK_MEASURE_DIR=<코퍼스> CORE_LINK_MEASURE_OUT=<경로> pnpm --filter @pdf-editor/core exec vitest run test/corpus-link.test.ts
+NODE_OPTIONS=--max-old-space-size=8192 TEXT_REMOVE_CORPUS_DIR=<코퍼스> TEXT_REMOVE_OUT=<경로> pnpm --filter @pdf-editor/pdf-ops exec vitest run test/text-remove-corpus.test.ts
+```
+
+| 측정 | 쪽 | 글자 | 미매칭 글자 | 글리프 총수 차이 | 도형 | 미매칭 도형 | 도형 총수 차이 | 실패 쪽 | 쪽 예외 |
+|---|---|---|---|---|---|---|---|---|---|
+| core first-arrival, 2절(Type3 머지 전) | 1,647 | 4,126,758 | 0 | 0 | 182,110 | 686 | 1,210 | 11 | 0 |
+| core first-arrival, 리뷰 반영 후 | 1,647 | 4,126,758 | 0 | 0 | 182,110 | 0 | 0 | 0 | 0 |
+
+- 실행 시간 49 s, 열기 실패 0.
+- A7-2 100블록 재측정(명세 폭·새 건너뜀 규칙): SourceMap 제거 블록 밖 렌더 변화 0 px 93/100, 블록 안 남은 글자 0 89/100, 지운 연산 1,950·건너뛴 연산 78. 이전 측정과 블록 단위로 같다. redaction 79/100 도 같다.
+

@@ -17,7 +17,7 @@
 | `extractPage` | 구현. 합성 PDF 68건 + 실제 코퍼스 1,647쪽 무예외(4절) |
 | `searchText` | 구현. 대소문자·순환·pageLimit·maxHits·truncated 테스트 10건 |
 | Stream 입력(A3-1) | 구현. 저장 바이트 동일·열기 힙 +0(5절) |
-| 쪽 캐시 | `PdfSession.extractPage` 최근 사용 순 16쪽, `invalidatePageCache(pageIndex?)` |
+| 쪽 캐시 | `PdfSession.extractPage` 최근 사용 순 16쪽, `invalidatePageCache(pageIndex?)`. `getSourceMap` 도 쪽마다 같은 방식으로 캐시하고 `linkPage` 가 그 객체에 `unmatched` 를 표시한다(M1 리뷰 반영, 같은 무효화 함수) |
 | 합성 공백 | `LineInfo.spaceAfter` 구현(계약 수정 5), 조립 텍스트 vs `asText()` 코퍼스 비교(4.5) |
 | 미결 | 7절(쪽 밖 글자 정책, 통합 시 확인 등) |
 

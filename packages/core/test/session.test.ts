@@ -82,6 +82,38 @@ describe('PdfSession', () => {
     expect(s.searchText({ query: 'other' }).hits.map((h) => h.pageIndex)).toEqual([1]);
     s.close();
   });
+
+  it('쪽 SourceMap 을 캐시해 linkPage 의 unmatched 표시가 getSourceMap 결과에 남는다', () => {
+    const s = new PdfSession();
+    // core 알려진 한계(같은 자리 Tr 0 뒤 다른 BT 의 Tr 7)로 SourceMap 이 글리프 2개를 더 센다 → 짝 없는 연산.
+    const show = (tr: number, body: string) => `BT /F1 12 Tf ${tr} Tr 10 150 Td ${body} ET`;
+    s.open(
+      buildPdf([
+        `${show(0, '(AB) Tj')} 0 0 5 5 re f ${show(7, '(AB) Tj')}`,
+        'BT /F1 12 Tf 10 150 Td (other) Tj ET',
+      ]),
+    );
+    const before = s.getSourceMap(0);
+    expect(s.getSourceMap(0)).toBe(before);
+    const link = s.linkPage(0);
+    expect(link.stats.glyphCountDelta).toBe(-2);
+    const after = s.getSourceMap(0);
+    expect(after).toBe(before);
+    const unmatched = after.ops.filter((o) => o.limits.includes('unmatched'));
+    expect(unmatched.map((o) => o.op)).toEqual(['Tj']);
+    // 다시 매칭해도 표시는 한 번만.
+    s.linkPage(0);
+    expect(unmatched[0]!.limits.filter((r) => r === 'unmatched')).toHaveLength(1);
+
+    // 쪽 캐시 무효화: 그 쪽만 다시 만든다.
+    const other = s.getSourceMap(1);
+    s.invalidatePageCache(0);
+    expect(s.getSourceMap(0)).not.toBe(before);
+    expect(s.getSourceMap(1)).toBe(other);
+    s.invalidatePageCache();
+    expect(s.getSourceMap(1)).not.toBe(other);
+    s.close();
+  });
 });
 
 describe('PdfSession.getPageLayout', () => {
