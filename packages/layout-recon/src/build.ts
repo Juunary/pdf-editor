@@ -88,7 +88,8 @@ export function buildParagraph(model: PageModel, units: readonly Unit[]): Paragr
   const firstLineIndent =
     units.length > 1 ? round2(units[0]!.bbox[0] - median(units.slice(1).map((u) => u.bbox[0]))) : 0;
   return {
-    bbox: bbox ?? [0, 0, 0, 0],
+    // 추출 캐시(PageModel)와 배열을 공유하지 않도록 복사한다.
+    bbox: bbox ? [bbox[0], bbox[1], bbox[2], bbox[3]] : [0, 0, 0, 0],
     lines,
     chars,
     text,

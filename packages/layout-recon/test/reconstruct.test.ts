@@ -1,29 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { PageLayout, PageModel } from '@pdf-editor/shared-types';
 import { reconstructPage } from '../src/reconstruct.js';
+import { validateLayout as layoutViolations } from '../src/validate.js';
 import { buildModel, type LineSpec } from './helpers/model-builder.js';
 
-/** 계약 2.1 불변식. */
+/** 계약 2.1 불변식(helpers/invariants). */
 function checkInvariants(model: PageModel, layout: PageLayout): void {
-  const seen = new Map<number, number>();
-  layout.paragraphs.forEach((p, i) => {
-    expect(p.id).toBe(i);
-    for (const l of p.lines) seen.set(l, (seen.get(l) ?? 0) + 1);
-    expect(p.chars).toEqual(p.lines.flatMap((l) => model.lines[l]!.chars));
-    const covered = p.styleRuns.reduce((n, r) => n + (r.end - r.start), 0);
-    expect(covered).toBe(p.chars.length);
-  });
-  model.lines.forEach((l, i) => {
-    const visible = l.chars.some((c) => model.chars[c]!.text.trim() !== '');
-    expect(seen.get(i) ?? 0).toBe(visible ? 1 : 0);
-    if (!visible) expect(layout.unassignedLines).toContain(i);
-  });
-  const top = new Set(layout.readingOrder.map((r) => `${r.kind}:${r.id}`));
-  expect(top.size).toBe(layout.readingOrder.length);
-  for (const p of layout.paragraphs)
-    expect(top.has(`paragraph:${p.id}`)).toBe(p.table === null && p.figure === null);
-  for (const t of layout.tables) expect(top.has(`table:${t.id}`)).toBe(true);
-  for (const f of layout.figures) expect(top.has(`figure:${f.id}`)).toBe(true);
+  expect(layoutViolations(model, layout)).toEqual([]);
 }
 
 /** 폭 w 의 열에 글자 수 n 짜리 줄들을 채운다(크기 10, 글자 폭 5). */
