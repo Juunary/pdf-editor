@@ -15,6 +15,7 @@ import {
   putUniqueResource,
   subsetFontBytes,
   type EditBlockRef,
+  type FallbackFontSource,
   type ParagraphEditContext,
   type PreparedEdit,
 } from '@pdf-editor/pdf-ops';
@@ -43,8 +44,6 @@ const HANGUL = /[가-힣]/;
 const UNSUPPORTED = /[☃]/; // 눈사람: 원본·폴백 모두 없음(glyph-missing)
 
 export interface FakeAdapterProbe {
-  /** 로더가 돌려준 폴백 바이트 길이 목록(임베딩 때마다 하나). */
-  embeddedBytes: Uint8Array[];
   /** recordEditMetadata 호출 인자. */
   metadataCalls: { pages: number[]; structureNotUpdated: boolean }[];
   /** 호출 이력(prepare·write·list 등). */
@@ -66,31 +65,21 @@ export interface FakeAdapter extends EditAdapter {
 }
 
 class FakeFonts extends FontManager {
-  readonly #doc: mupdf.PDFDocument;
-  readonly #load: () => Uint8Array;
+  readonly #source: FallbackFontSource;
   readonly #probe: FakeAdapterProbe;
-  fallbackRef: mupdf.PDFObject | null = null;
   readonly usedGids = new Set<number>();
 
-  constructor(doc: mupdf.PDFDocument, load: () => Uint8Array, probe: FakeAdapterProbe) {
-    super(doc, load);
-    this.#doc = doc;
-    this.#load = load;
+  constructor(doc: mupdf.PDFDocument, source: FallbackFontSource, probe: FakeAdapterProbe) {
+    super(doc, source);
+    this.#source = source;
     this.#probe = probe;
   }
 
-  /** 계약 D4: 폴백 폰트 객체가 있는지 확인(/PdfEditorFallback)하고 없으면 현재 작업 안에서 다시 넣는다. */
-  ensureFallback(): mupdf.PDFObject {
-    const ref = this.fallbackRef;
-    if (ref && ref.resolve().isDictionary() && !ref.resolve().get('PdfEditorFallback').isNull()) {
-      return ref;
-    }
-    const bytes = this.#load();
-    this.#probe.embeddedBytes.push(bytes);
-    const embedded = this.#doc.addFont(new mupdf.Font('NotoSansKR', bytes));
-    embedded.put('PdfEditorFallback', this.#doc.newBoolean(true));
-    this.fallbackRef = embedded;
-    return embedded;
+  /** core 가 저널을 켜기 직전(작업 밖)에 임베딩한 폴백 폰트 객체(계약 D4 수정 1). 판정 단계에는 없다. */
+  fallbackRef(): mupdf.PDFObject {
+    const ref = this.#source.ref();
+    if (!ref) throw new Error('fake: 폴백 폰트 객체가 아직 없음(저널을 켜기 전)');
+    return ref;
   }
 
   override assign(
@@ -122,7 +111,6 @@ class FakeFonts extends FontManager {
     });
     if (offset !== text.length) throw new Error('fake assign: runs 와 text 길이 불일치');
     if (usesFallback) {
-      this.ensureFallback();
       warnings.push({ kind: 'font-fallback', message: '폴백 폰트 사용', rects: [] });
     }
     if (missing) warnings.push({ kind: 'glyph-missing', message: '글리프 없음', rects: [] });
@@ -135,11 +123,10 @@ class FakeFonts extends FontManager {
       this.#probe.failNext.finalize = false;
       throw new Error('fake finalize 실패');
     }
-    const ref = this.fallbackRef;
-    if (!ref || !ref.resolve().isDictionary() || this.usedGids.size === 0) return;
+    const ref = this.#source.ref();
+    if (!ref || this.usedGids.size === 0) return;
     const file = ref.get('DescendantFonts').get(0).get('FontDescriptor').get('FontFile2');
-    const subset = subsetFontBytes('NotoSansKR', this.#load(), this.usedGids);
-    file.writeStream(subset);
+    file.writeStream(subsetFontBytes('NotoSansKR', this.#source.bytes(), this.usedGids));
   }
 }
 
@@ -162,7 +149,6 @@ const FALLBACK_FACE: FontFace = {
 
 export function createFakeAdapter(): FakeAdapter {
   const probe: FakeAdapterProbe = {
-    embeddedBytes: [],
     metadataCalls: [],
     calls: [],
     failNext: {},
@@ -194,8 +180,8 @@ export function createFakeAdapter(): FakeAdapter {
   const adapter: FakeAdapter = {
     probe,
 
-    createFonts(doc, load) {
-      fonts = new FakeFonts(doc, load, probe);
+    createFonts(doc, source) {
+      fonts = new FakeFonts(doc, source, probe);
       return fonts;
     },
 
@@ -382,7 +368,7 @@ export function createFakeAdapter(): FakeAdapter {
         fontDict.put('F1', page.getObject().get('Resources').get('Font').get('F1'));
         page.destroy();
       }
-      if (fontsUsed.has('FB')) fontDict.put('FB', fonts!.ensureFallback());
+      if (fontsUsed.has('FB')) fontDict.put('FB', fonts!.fallbackRef());
       resources.put('Font', fontDict);
       block.put('Resources', resources);
       block.writeStream(ops.join('\n'));

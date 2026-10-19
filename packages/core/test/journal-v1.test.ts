@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import { openPdf } from '../src/open.js';
-import { ensureInfoDictionary, saltedFontBytes } from '../src/edit-util.js';
+import { ensureInfoDictionary } from '../src/edit-util.js';
 
 const FONT = new Uint8Array(
   readFileSync(
@@ -98,13 +98,9 @@ function addBlock(
   return form;
 }
 
-/** 폴백 폰트 추가. salt 를 바꾸면 폰트 바이트 다이제스트가 달라진다(edit-util `saltedFontBytes`). */
-function embedRaw(doc: mupdf.PDFDocument, salt: number): mupdf.PDFObject {
-  return doc.addFont(new mupdf.Font('NotoSansKR', saltedFontBytes(FONT, salt)));
-}
-
-function embedFallback(doc: mupdf.PDFDocument, salt: number): mupdf.PDFObject {
-  const ref = embedRaw(doc, salt);
+/** 폴백 폰트 추가(Type0, Identity-H). 저널을 켜기 전에 한 번 부르는 것이 계약(D4 수정 1)이다. */
+function embedFallback(doc: mupdf.PDFDocument): mupdf.PDFObject {
+  const ref = doc.addFont(new mupdf.Font('NotoSansKR', FONT));
   ref.put('PdfEditorFallback', doc.newBoolean(true));
   return ref;
 }
@@ -180,22 +176,37 @@ describe('V1: 폴백 폰트 수명', () => {
     const doc = openPlain();
     doc.enableJournal();
     doc.beginOperation('draft');
-    const first = embedFallback(doc, 0);
+    const first = embedFallback(doc);
     expect(fontLive(first)).toBe(true);
     const num = first.asIndirect();
     doc.abandonOperation();
     expect(doc.newIndirect(num).resolve().isNull()).toBe(true);
 
     doc.beginOperation('again');
-    const naive = embedRaw(doc, 0);
+    const naive = doc.addFont(new mupdf.Font('NotoSansKR', FONT));
     // 폰트 바이트 다이제스트로 기존 항목을 찾아 같은 객체 번호를 돌려주지만 객체는 이미 없다.
     expect(naive.asIndirect()).toBe(num);
     expect(fontLive(naive)).toBe(false);
     expect(() => naive.put('X', doc.newInteger(1))).toThrow(/not a dict/);
-    const salted = embedFallback(doc, 1);
-    expect(fontLive(salted)).toBe(true);
-    expect(salted.asIndirect()).not.toBe(num);
     doc.abandonOperation();
+  });
+
+  it('저널을 켜기 전에 넣은 폰트는 초안 취소·undo 로 사라지지 않는다', () => {
+    const doc = openPlain();
+    const font = embedFallback(doc);
+    ensureInfoDictionary(doc);
+    doc.enableJournal();
+    doc.beginOperation('draft');
+    addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
+    doc.abandonOperation();
+    expect(fontLive(font)).toBe(true);
+    doc.beginOperation('edit');
+    addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
+    doc.endOperation();
+    doc.undo();
+    expect(fontLive(font)).toBe(true);
+    doc.redo();
+    expect(fontLive(font)).toBe(true);
   });
 
   it('작업 밖에서 만든 객체(Info)는 그 작업을 버려도 남고, 작업 안에서 만든 Info 는 trailer 가 끊긴다', () => {
@@ -290,18 +301,23 @@ describe('V1: undo 뒤 redo 단계 보존', () => {
 });
 
 describe('V1: 계약 시나리오', () => {
-  it('폴백을 넣은 초안 취소 뒤 새 편집', () => {
+  /** 세션의 첫 `beginParagraphEdit` 준비 순서: 폴백 폰트·Info 를 만든 뒤 저널을 켠다. */
+  function prepared(): { doc: mupdf.PDFDocument; font: mupdf.PDFObject } {
     const doc = openPlain();
+    const font = embedFallback(doc);
     ensureInfoDictionary(doc);
     doc.enableJournal();
-    let salt = 0;
+    return { doc, font };
+  }
+
+  it('폴백을 넣은 초안 취소 뒤 새 편집', () => {
+    const { doc, font } = prepared();
     doc.beginOperation('draft');
-    addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, embedFallback(doc, salt++));
+    addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
     doc.abandonOperation();
     expect(pageText(doc)).toBe('Original');
 
     doc.beginOperation('edit');
-    const font = embedFallback(doc, salt);
     addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
     doc.endOperation();
     const saved = doc.saveToBuffer(SAVE);
@@ -312,18 +328,15 @@ describe('V1: 계약 시나리오', () => {
   });
 
   it('폴백을 넣은 편집 undo 뒤 새 편집 → 저장', () => {
-    const doc = openPlain();
-    ensureInfoDictionary(doc);
-    doc.enableJournal();
-    let salt = 0;
+    const { doc, font } = prepared();
     doc.beginOperation('edit1');
-    addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, embedFallback(doc, salt++));
+    addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
     doc.endOperation();
     doc.undo();
     expect(pageText(doc)).toBe('Original');
 
     doc.beginOperation('edit2');
-    addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, embedFallback(doc, salt));
+    addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
     doc.endOperation();
     const base = ink(doc);
     const saved = doc.saveToBuffer(SAVE);
@@ -333,11 +346,8 @@ describe('V1: 계약 시나리오', () => {
   });
 
   it('D9 저장 순서 뒤 undo/redo: 저장은 저널 단계를 만들지 않고 첫 undo 가 유효하다', () => {
-    const doc = openPlain();
-    ensureInfoDictionary(doc);
-    doc.enableJournal();
+    const { doc, font } = prepared();
     doc.beginOperation('edit');
-    const font = embedFallback(doc, 0);
     addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
     doc.endOperation();
     const edited = ink(doc);
@@ -375,7 +385,7 @@ describe('V1: 계약 시나리오', () => {
 
     doc.undo();
     expect(pageText(doc)).toBe('Original');
-    expect(fontLive(font)).toBe(false);
+    expect(fontLive(font)).toBe(true);
     doc.redo();
     expect(ink(doc)).toBe(edited);
     expect(fontLive(font)).toBe(true);

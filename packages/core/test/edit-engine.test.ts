@@ -15,13 +15,14 @@ import {
   begin,
   draftInput,
   editParagraph,
+  fallbackFonts,
   harness,
   journal,
   text,
 } from './edit-harness.js';
 
 describe('판정 RPC', () => {
-  it('첫 호출에서 폴백 폰트를 한 번 await 하고 저널을 켜며 Info 를 작업 밖에서 만든다', async () => {
+  it('첫 호출에서 폴백 폰트를 한 번 await 하고, 판정은 문서를 바꾸지 않으며 저널도 켜지 않는다', async () => {
     const { s, fontLoads } = harness();
     const [a, b] = await Promise.all([s.getPageEditability(0), s.getPageEditability(0)]);
     expect(fontLoads.count).toBe(1);
@@ -30,10 +31,20 @@ describe('판정 RPC', () => {
     expect(b.ms).toBeGreaterThanOrEqual(0);
     await s.planParagraphEdit(0, 1);
     expect(fontLoads.count).toBe(1);
-    // 저널이 켜졌고, 판정은 저널 단계를 만들지 않는다.
+    // Info·폴백 폰트·저널은 첫 시작에서 만든다(계약 5.7 수정 1).
+    expect(s.document.getTrailer().get('Info').isNull()).toBe(true);
+    expect(fallbackFonts(s.document)).toHaveLength(0);
     expect(journal(s)).toEqual({ position: 0, steps: [] });
-    // Info 는 저널 켜기 전에 만들어 undo·abandon 으로 끊기지 않는다.
+    expect(s.document.canUndo()).toBe(false);
+
+    const { started } = await begin(s, 1);
+    expect(fontLoads.count).toBe(1);
+    // 저널을 켜기 직전(작업 밖)에 만든 객체라 취소·undo 로 끊기지 않는다.
     expect(s.document.getTrailer().get('Info').resolve().isDictionary()).toBe(true);
+    expect(fallbackFonts(s.document)).toHaveLength(1);
+    await s.cancelParagraphEdit(started.draftId);
+    expect(s.document.getTrailer().get('Info').resolve().isDictionary()).toBe(true);
+    expect(journal(s)).toEqual({ position: 0, steps: [] });
     s.close();
   });
 
@@ -412,19 +423,25 @@ describe('초안 미리보기·경고', () => {
 });
 
 describe('저장 방식·문서 수명', () => {
-  it('판정만 한 문서(저널만 켜짐)의 변경 없는 저장은 증분 그대로다', async () => {
+  it('판정만 한 문서의 변경 없는 저장은 증분 그대로이고, 시작한 문서는 전체 저장이다', async () => {
     const { s } = harness();
     await s.getPageEditability(0);
     await s.planParagraphEdit(0, 1);
     const plan = s.planSave({ changes: [] });
     expect(plan).toMatchObject({ method: 'incremental', edits: null });
-    const saved = s.save({ changes: ['annotation'] });
-    expect(saved.method).toBe('incremental');
+    expect(s.save({ changes: ['annotation'] }).method).toBe('incremental');
     expect(journal(s)).toEqual({ position: 0, steps: [] });
-    // 취소한 초안도 문서를 바꾸지 않으므로 마찬가지.
+    // 시작하면 폴백 폰트(미사용 객체)와 Info 가 문서에 들어가므로 취소해도 전체 저장이다(증분은 새 객체를 모두 덧붙인다).
     const { started } = await begin(s, 1);
     await s.cancelParagraphEdit(started.draftId);
-    expect(s.planSave({ changes: [] }).method).toBe('incremental');
+    expect(s.planSave({ changes: [] })).toMatchObject({ method: 'full', edits: null });
+    expect(s.planSave({ changes: [] }).reason).toContain('편집을 시작');
+    const saved = s.save({ changes: [] });
+    const reopened = mupdf.PDFDocument.openDocument(
+      saved.bytes.slice(),
+      'application/pdf',
+    ) as mupdf.PDFDocument;
+    expect(fallbackFonts(reopened)).toHaveLength(0); // 미사용 폴백 폰트는 garbage 가 뺀다
     s.close();
   });
 

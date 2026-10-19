@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
+import type * as mupdf from 'mupdf';
 import { PdfSession } from '../src/index.js';
 import type { DraftInput, ParagraphEditPlan, TextRun } from '@pdf-editor/shared-types';
 import { createFakeAdapter, type FakeAdapter } from './fake-edit-adapter.js';
@@ -58,7 +59,14 @@ export const text = (s: PdfSession, pageIndex = 0): string =>
     .chars.map((c) => c.text)
     .join('');
 
-export const journal = (s: PdfSession) => s.document.getJournal();
+/** 저널 상태. 저널은 첫 `beginParagraphEdit` 에서 켜지므로 그 전에는 빈 상태다. */
+export const journal = (s: PdfSession): { position: number; steps: string[] } => {
+  try {
+    return s.document.getJournal();
+  } catch {
+    return { position: 0, steps: [] };
+  }
+};
 
 export function draftInput(plan: ParagraphEditPlan, newText: string, scale = 2): DraftInput {
   const run: TextRun = { text: newText, style: plan.runs[0]!.style };
@@ -81,4 +89,14 @@ export async function editParagraph(
   const { plan, started } = await begin(s, paragraphId, pageIndex);
   await s.updateParagraphDraft(started.draftId, draftInput(plan, newText));
   return s.commitParagraphEdit(started.draftId);
+}
+
+/** 폴백 폰트 객체 목록(폰트 사전 /PdfEditorFallback 표지). 픽스처의 F2 도 같은 폰트이지만 표지가 없다. */
+export function fallbackFonts(doc: mupdf.PDFDocument): mupdf.PDFObject[] {
+  const found: mupdf.PDFObject[] = [];
+  for (let n = 1; n < doc.countObjects(); n++) {
+    const obj = doc.newIndirect(n);
+    if (obj.isDictionary() && !obj.get('PdfEditorFallback').isNull()) found.push(obj);
+  }
+  return found;
 }

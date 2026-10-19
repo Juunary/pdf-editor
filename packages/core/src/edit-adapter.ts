@@ -6,6 +6,7 @@
 import * as mupdf from 'mupdf';
 import {
   FontManager,
+  type FallbackFontSource,
   listEditBlocks,
   planPageEditability,
   planParagraphEdit,
@@ -24,8 +25,8 @@ export type {
 } from '@pdf-editor/pdf-ops';
 
 export interface EditAdapter {
-  /** 문서당 하나. `loadFallback` 은 폴백 폰트 바이트를 동기로 돌려준다(core 가 미리 await 한 값). */
-  createFonts(doc: mupdf.PDFDocument, loadFallback: () => Uint8Array): FontManager;
+  /** 문서당 하나. `fallback` 은 core 가 미리 await 한 폴백 폰트 바이트와, 저널을 켜기 직전에 임베딩한 객체(그 전에는 null)다. */
+  createFonts(doc: mupdf.PDFDocument, fallback: FallbackFontSource): FontManager;
   planPageEditability: typeof planPageEditability;
   planParagraphEdit: typeof planParagraphEdit;
   prepareParagraphEdit: typeof prepareParagraphEdit;
@@ -69,7 +70,7 @@ function formBoundsInPage(
 }
 
 export const defaultEditAdapter: EditAdapter = {
-  createFonts: (doc, loadFallback) => new FontManager(doc, loadFallback),
+  createFonts: (doc, fallback) => new FontManager(doc, fallback),
   planPageEditability,
   planParagraphEdit,
   prepareParagraphEdit,

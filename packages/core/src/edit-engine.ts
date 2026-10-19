@@ -43,10 +43,12 @@ import {
   ensureInfoDictionary,
   inflateRect,
   mergeWarnings,
-  saltedFontBytes,
   unionRect,
 } from './edit-util.js';
-import type { FontManager } from '@pdf-editor/pdf-ops';
+import { embedFont, type FallbackFontSource, type FontManager } from '@pdf-editor/pdf-ops';
+
+/** 문서에 임베딩하는 폴백 폰트의 BaseFont 이름(저장 때 서브셋 태그가 붙는다). */
+const FALLBACK_FONT_NAME = 'NotoSansKR';
 
 /** 변경 영역 렌더에 더하는 여백(pt). 계약 8.3 의 변경 허용 영역 여백과 같다. */
 const REGION_MARGIN_PT = 2;
@@ -125,8 +127,8 @@ export class EditEngine {
   #fonts: FontManager | null = null;
   #fallbackBytes: Uint8Array | null = null;
   #fallbackLoading: Promise<void> | null = null;
-  /** 폴백 폰트 바이트에 덧붙일 salt 의 다음 값(saltedFontBytes). */
-  #salt = 0;
+  /** 저널을 켜기 직전(작업 밖)에 한 번 임베딩한 폴백 폰트 객체. 그 전에는 null. */
+  #fallbackRef: mupdf.PDFObject | null = null;
 
   #journalOn = false;
   /** 커밋이나 재적용으로 문서가 한 번이라도 바뀌었다(undo 로 되돌렸어도 true). */
@@ -168,6 +170,14 @@ export class EditEngine {
     return this.#edited;
   }
 
+  /**
+   * 저널을 켜면서 문서에 폴백 폰트(저장 때 garbage 가 빼는 미사용 객체)와 Info 가 새로 들어갔다. 증분 저장은 새 객체를
+   * 모두 덧붙이므로 이 문서의 저장은 전체 저장이다.
+   */
+  get hasNewObjects(): boolean {
+    return this.#journalOn;
+  }
+
   get revision(): number {
     return this.#revision;
   }
@@ -186,7 +196,7 @@ export class EditEngine {
   // ---- 판정(문서를 바꾸지 않는다) ----
 
   async getPageEditability(pageIndex: number): Promise<PageEditability> {
-    await this.#ready();
+    await this.#prepareRead();
     this.#requireNoDraft('getPageEditability');
     const t0 = performance.now();
     const ctx = this.#context(pageIndex);
@@ -196,7 +206,7 @@ export class EditEngine {
   }
 
   async planParagraphEdit(pageIndex: number, paragraphId: number): Promise<ParagraphEditPlan> {
-    await this.#ready();
+    await this.#prepareRead();
     this.#requireNoDraft('planParagraphEdit');
     const ctx = this.#context(pageIndex);
     const fonts = this.#requireFonts();
@@ -248,7 +258,7 @@ export class EditEngine {
     paragraphId: number,
     revision: number,
   ): Promise<BeginEditResult> {
-    await this.#ready();
+    await this.#prepareEdit();
     this.#requireNoDraft('beginParagraphEdit');
     if (revision !== this.#revision) throw new StaleRevisionError(revision, this.#revision);
     const doc = this.#doc;
@@ -457,7 +467,8 @@ export class EditEngine {
       );
     }
     const fonts = this.#ensureFonts();
-    ensureInfoDictionary(this.#doc);
+    // 저널이 꺼진 채라 Info 와 폴백 폰트는 기준 문서에 들어간다. 재적용한 글자가 폴백 폰트를 쓰므로 먼저 만든다.
+    this.#prepareDocument();
     const pages = new Set<number>();
     for (const [index, op] of ops.entries()) {
       try {
@@ -478,8 +489,7 @@ export class EditEngine {
         throw new EditStateError(`${this.#failure}: ${reason}`);
       }
     }
-    this.#doc.enableJournal();
-    this.#journalOn = true;
+    this.#startJournal();
     this.#edited ||= ops.length > 0;
     this.#revision++;
     this.#lastAffected = [...pages].sort((a, b) => a - b);
@@ -636,16 +646,41 @@ export class EditEngine {
     return this.#fonts;
   }
 
-  /** 폴백 폰트 바이트 로드 → FontManager → 저널(Info 는 켜기 전에 만든다, D9). 편집 계열 첫 호출에서 한다. */
-  async #ready(): Promise<void> {
+  /**
+   * 판정 RPC 의 준비: 폴백 폰트 바이트 로드 → FontManager. 문서를 바꾸지 않고 저널도 켜지 않는다. 이 단계의
+   * `FallbackFontSource.ref()` 는 null 이다(계약 5.7).
+   */
+  async #prepareRead(): Promise<void> {
     await this.#loadFallbackBytes();
     this.#assertUsable();
     this.#ensureFonts();
-    if (!this.#journalOn) {
-      ensureInfoDictionary(this.#doc);
-      this.#doc.enableJournal();
-      this.#journalOn = true;
+  }
+
+  /**
+   * 첫 `beginParagraphEdit` 의 준비: 판정 준비 → Info 사전·폴백 폰트 임베딩(저널 밖, 한 번) → 저널 켜기. 저널 밖에서
+   * 만든 객체는 편집 취소·undo 로 사라지지 않는다(계약 D4·D9 수정 1, docs/m3-core.md 2.2·2.3).
+   */
+  async #prepareEdit(): Promise<void> {
+    await this.#prepareRead();
+    if (this.#journalOn) return;
+    this.#prepareDocument();
+    this.#startJournal();
+  }
+
+  /** 저널을 켜기 전(작업 밖)에 한 번: Info 사전 생성, 폴백 폰트 임베딩. */
+  #prepareDocument(): void {
+    ensureInfoDictionary(this.#doc);
+    if (!this.#fallbackRef && this.#fallbackBytes) {
+      const { ref } = embedFont(this.#doc, FALLBACK_FONT_NAME, this.#fallbackBytes);
+      // 폰트 사전 표지: 문서 안에서 폴백 폰트를 알아본다(저장 파일에서는 서브셋으로 바뀐다).
+      ref.put('PdfEditorFallback', this.#doc.newBoolean(true));
+      this.#fallbackRef = ref;
     }
+  }
+
+  #startJournal(): void {
+    this.#doc.enableJournal();
+    this.#journalOn = true;
   }
 
   async #loadFallbackBytes(): Promise<void> {
@@ -662,14 +697,18 @@ export class EditEngine {
   }
 
   #ensureFonts(): FontManager {
-    this.#fonts ??= this.#adapter.createFonts(this.#doc, () => {
-      if (!this.#fallbackBytes) {
-        throw new EditStateError(
-          '폴백 폰트가 없습니다(PdfSessionOptions.loadFallbackFont 미설정).',
-        );
-      }
-      return saltedFontBytes(this.#fallbackBytes, this.#salt++);
-    });
+    const source: FallbackFontSource = {
+      bytes: () => {
+        if (!this.#fallbackBytes) {
+          throw new EditStateError(
+            '폴백 폰트가 없습니다(PdfSessionOptions.loadFallbackFont 미설정).',
+          );
+        }
+        return this.#fallbackBytes;
+      },
+      ref: () => this.#fallbackRef,
+    };
+    this.#fonts ??= this.#adapter.createFonts(this.#doc, source);
     return this.#fonts;
   }
 
@@ -696,6 +735,8 @@ export class EditEngine {
    * 변경을 하더라도 저널이 켜진 문서에서 작업 밖 변경은 예외이고, 변경이 남으면 undo 단계가 어긋난다.
    */
   #probe<T>(fn: () => T): T {
+    // 저널이 꺼진 동안(첫 `beginParagraphEdit` 전)에는 문서를 바꿀 수 없으므로 감쌀 필요가 없다.
+    if (!this.#journalOn) return fn();
     const doc = this.#doc;
     doc.beginOperation('probe');
     let result: T;

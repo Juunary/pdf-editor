@@ -134,20 +134,6 @@ export function mergeWarnings(
   return [...merged.values()];
 }
 
-/**
- * 폴백 폰트 바이트에 salt 를 덧붙인 사본. MuPDF `addFont` 는 폰트 바이트 다이제스트를 키로 문서의 폰트 리소스 표에서
- * 기존 폰트 객체를 찾아 돌려주는데, 저널이 그 객체를 되돌려(abandon·undo) xref 에서 지워도 표 항목은 남는다. 같은
- * 바이트로 다시 넣으면 끊긴 참조가 돌아온다(docs/m3-core.md 2.3). 바이트가 다르면 새 객체가 생기므로 호출마다 salt 를
- * 바꾼다. TrueType 은 마지막 테이블 뒤의 여분 바이트를 무시한다. salt 0 은 원본 그대로(복사 없음).
- */
-export function saltedFontBytes(bytes: Uint8Array, salt: number): Uint8Array {
-  if (salt === 0) return bytes;
-  const out = new Uint8Array(bytes.length + 4);
-  out.set(bytes);
-  new DataView(out.buffer).setUint32(bytes.length, salt >>> 0);
-  return out;
-}
-
 /** /Metadata(XMP)에 PDF/A 선언(`pdfaid:part`)이 있는지(계약 5.6). 읽지 못하면 false. */
 export function declaresPdfA(doc: mupdf.PDFDocument): boolean {
   try {

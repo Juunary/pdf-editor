@@ -309,14 +309,17 @@ export class PdfSession {
     };
     const merged = [...new Set([...changes, ...(edit?.changeKinds() ?? [])])];
     let decision = decideSaveMethod(merged, canBeSavedIncrementally, size);
-    if (decision.method === 'incremental' && (this.#fullSaved || edit?.edited)) {
+    if (
+      decision.method === 'incremental' &&
+      (this.#fullSaved || edit?.edited || edit?.hasNewObjects)
+    ) {
       // 증분 구간에는 되돌린(undo) 객체의 흔적이 남을 수 있고 xref 형식도 섞인다(A3-9). 전체 저장으로 올린다.
       decision = {
         method: 'full',
         options: FULL_SAVE_OPTIONS,
         reason: this.#fullSaved
           ? '세션에서 전체 저장을 한 번 했음(A3-9)'
-          : '편집 이력이 있는 문서(되돌린 객체 흔적, D9)',
+          : '편집을 시작한 문서(되돌린 객체 흔적·미사용 폴백 폰트, D9)',
         heap: estimateSaveHeap('full', size),
       };
     }
