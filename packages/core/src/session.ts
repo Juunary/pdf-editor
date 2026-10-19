@@ -29,8 +29,27 @@ import { renderPageRgba } from './render.js';
 import { searchDocument } from './search.js';
 import { wasmHeapBytes } from './wasm-module.js';
 
-/** 추출 모델을 캐시하는 최대 쪽 수(요청 종류별로 센다). */
+/** 추출 모델·원본 연결 정보를 캐시하는 최대 쪽 수(추출 모델은 요청 종류별로 센다). */
 const PAGE_CACHE_LIMIT = 16;
+
+/** 최근 사용 순 캐시에서 꺼내며 순서를 올린다. */
+function touch<K, V>(cache: Map<K, V>, key: K): V | undefined {
+  const value = cache.get(key);
+  if (value !== undefined) {
+    cache.delete(key);
+    cache.set(key, value);
+  }
+  return value;
+}
+
+/** 넣고, 상한을 넘으면 가장 오래된 항목을 뺀다. */
+function remember<K, V>(cache: Map<K, V>, key: K, value: V): void {
+  cache.set(key, value);
+  if (cache.size > PAGE_CACHE_LIMIT) {
+    const oldest = cache.keys().next();
+    if (!oldest.done) cache.delete(oldest.value);
+  }
+}
 
 /**
  * 문서 1개의 상태. 뷰어 소유 Worker 안에서만 생성한다(PLAN.md 5.2).
@@ -41,6 +60,7 @@ export class PdfSession {
   #doc: mupdf.PDFDocument | null = null;
   #inputMode: InputMode = 'buffer';
   #pageCache = new Map<string, PageModel>();
+  #sourceMapCache = new Map<number, SourceMap>();
 
   get document(): mupdf.PDFDocument {
     if (!this.#doc) throw new Error('열린 문서 없음');
@@ -108,13 +128,8 @@ export class PdfSession {
    */
   extractPage(request: ExtractRequest): PageModel {
     const key = `${request.pageIndex}:${request.includePathSegments === true ? 1 : 0}`;
-    const cached = this.#pageCache.get(key);
-    if (cached) {
-      // 최근 사용 순으로 올린다.
-      this.#pageCache.delete(key);
-      this.#pageCache.set(key, cached);
-      return cached;
-    }
+    const cached = touch(this.#pageCache, key);
+    if (cached) return cached;
     const page = this.document.loadPage(request.pageIndex);
     let model: PageModel;
     try {
@@ -122,29 +137,38 @@ export class PdfSession {
     } finally {
       page.destroy();
     }
-    this.#pageCache.set(key, model);
-    if (this.#pageCache.size > PAGE_CACHE_LIMIT) {
-      const oldest = this.#pageCache.keys().next();
-      if (!oldest.done) this.#pageCache.delete(oldest.value);
-    }
+    remember(this.#pageCache, key, model);
     return model;
   }
 
-  /** 추출 캐시를 비운다. 쪽을 지정하면 그 쪽만. 문서 내용(콘텐츠·리소스·쪽 순서)이 바뀐 뒤에 부른다. */
+  /**
+   * 추출·원본 연결 정보 캐시를 비운다. 쪽을 지정하면 그 쪽만. 문서 내용(콘텐츠·리소스·쪽 순서)이 바뀐 뒤에 부른다.
+   */
   invalidatePageCache(pageIndex?: number): void {
     if (pageIndex === undefined) {
       this.#pageCache.clear();
+      this.#sourceMapCache.clear();
       return;
     }
     for (const key of [...this.#pageCache.keys()]) {
       if (key.startsWith(`${pageIndex}:`)) this.#pageCache.delete(key);
     }
+    this.#sourceMapCache.delete(pageIndex);
   }
 
+  /**
+   * 쪽의 원본 연결 정보. extractPage 와 같이 쪽마다 캐시하고 같은 객체를 돌려준다. `linkPage` 가 이 객체의
+   * `ops[].limits` 에 `unmatched` 를 더하므로, linkPage 뒤의 getSourceMap 은 그 표시를 담는다.
+   */
   getSourceMap(pageIndex: number): SourceMap {
-    return buildSourceMap(this.document, pageIndex);
+    const cached = touch(this.#sourceMapCache, pageIndex);
+    if (cached) return cached;
+    const map = buildSourceMap(this.document, pageIndex);
+    remember(this.#sourceMapCache, pageIndex, map);
+    return map;
   }
 
+  /** 캐시한 추출 모델과 원본 연결 정보를 매칭한다(원본 연결 정보에 `unmatched` 표시). */
   linkPage(pageIndex: number): PageLinkage {
     return linkPage(this.extractPage({ pageIndex }), this.getSourceMap(pageIndex));
   }
@@ -190,6 +214,7 @@ export class PdfSession {
 
   close(): void {
     this.#pageCache.clear();
+    this.#sourceMapCache.clear();
     this.#doc?.destroy();
     this.#doc = null;
     this.#original = null;
