@@ -83,3 +83,29 @@ describe('PdfSession', () => {
     s.close();
   });
 });
+
+describe('PdfSession.getPageLayout', () => {
+  const content = [
+    'BT /F1 18 Tf 72 720 Td (Title Heading) Tj ET',
+    'BT /F1 10 Tf 72 690 Td (first paragraph line one is long enough to fill the column) Tj',
+    '0 -12 Td (and it continues on this line.) Tj ET',
+    'BT /F1 10 Tf 72 640 Td (Second paragraph starts here and ends.) Tj ET',
+  ].join('\n');
+
+  it('제목·문단 복원, 쪽 캐시, 캐시 무효화', () => {
+    const s = new PdfSession();
+    s.open(buildPdf([{ content, mediabox: [0, 0, 612, 792] }]));
+    const layout = s.getPageLayout(0);
+    expect(layout.pageIndex).toBe(0);
+    expect(layout.paragraphs.map((p) => p.lines)).toEqual([[0], [1, 2], [3]]);
+    expect(layout.paragraphs.map((p) => p.role)).toEqual(['heading', 'body', 'body']);
+    expect(layout.paragraphs[1]!.text).toBe(
+      'first paragraph line one is long enough to fill the column and it continues on this line.',
+    );
+    expect(layout.readingOrder.map((r) => r.id)).toEqual([0, 1, 2]);
+    expect(s.getPageLayout(0)).toBe(layout);
+    s.invalidatePageCache(0);
+    expect(s.getPageLayout(0)).not.toBe(layout);
+    s.close();
+  });
+});
