@@ -1,7 +1,8 @@
 /**
  * 구조화 텍스트(`Page.toStructuredText`) 순회와 Device 글리프와의 결합.
  * 결합 키는 원점이다(같은 `fz_text` 에서 나온 값이라 오차가 부동소수 반올림 수준이다). 같은 원점에
- * 후보가 여럿이면 유니코드가 같은 것을 먼저 고른다.
+ * 후보가 여럿이면 유니코드가 같은 것을 먼저 고른다. 세로쓰기는 구조화 텍스트 원점이 Device 원점에서 세로
+ * 전진 벡터만큼 떨어져 있으므로(`stextOriginOf`) 그 점으로 찾는다.
  */
 import type * as mupdf from 'mupdf';
 import type { Point, Quad, RGB, Rect } from '@pdf-editor/shared-types';
@@ -70,7 +71,9 @@ export function readStructuredText(page: mupdf.Page): StextData {
         });
         data.blocks[block]!.lines.push(line);
       },
-      onChar(c, origin, _font, _size, quad, color) {
+      onChar(c, origin, font, _size, quad, color) {
+        // 글자마다 새로 만든 Font 래퍼(참조 1). 쓰지 않으므로 바로 놓는다.
+        font.destroy();
         const lineData = data.lines[line]!;
         const ch: StextChar = {
           rune: c.charCodeAt(0),
@@ -142,6 +145,16 @@ export function glyphText(unicode: number, extra: readonly number[] = []): strin
 }
 
 /**
+ * 구조화 텍스트가 이 글리프에 두는 원점(페이지 공간). 가로쓰기는 Device 원점과 같다. 세로쓰기(wmode 1)는
+ * MuPDF stext 가 글리프 원점에 세로 전진 벡터(폰트 세로 advance × 글리프 행렬로 옮긴 (0, −1))를 더한 점을
+ * 원점으로 둔다(1.28.1 실측: 다음 글리프의 Device 원점과 같다. 회전·Tz·Tc 에서도 성립).
+ */
+function stextOriginOf(g: RawGlyph): Point {
+  if (g.wmode !== 1) return [g.m[4], g.m[5]];
+  return [g.m[4] - g.advance * g.m[2], g.m[5] - g.advance * g.m[3]];
+}
+
+/**
  * 글리프 순서대로 구조화 텍스트 글자를 하나씩 소비한다. 반환 배열은 글리프마다 짝(없으면 null).
  * 합자 글리프는 구조화 텍스트가 전개한 글자들(`f`,`i`)을 줄 순서대로 함께 소비한다.
  * 짝이 남은 구조화 텍스트 글자(Tr 4–6 중복 줄, 합성 공백, 주석 텍스트)는 `owner` 가 -1 인 채 남는다.
@@ -153,20 +166,24 @@ export function matchGlyphs(glyphs: readonly RawGlyph[], data: StextData): Array
     const g = glyphs[i]!;
     const text = glyphText(g.unicode, g.extra);
     const wanted = text.charCodeAt(0);
-    const x = g.m[4];
-    const y = g.m[5];
+    // 세로쓰기는 전진 벡터만큼 옮긴 점을 먼저 찾고, 없으면 Device 원점으로 한 번 더 찾는다.
+    const points: Point[] = [stextOriginOf(g)];
+    if (g.wmode === 1) points.push([g.m[4], g.m[5]]);
     let best: StextChar | null = null;
-    let bestScore = Infinity;
-    for (const ch of grid.near(x, y)) {
-      if (ch.owner !== -1) continue;
-      const d = Math.hypot(ch.origin[0] - x, ch.origin[1] - y);
-      if (d > SEARCH_RADIUS) continue;
-      // 원점이 사실상 같으면 유니코드가 같은 쪽(0)을 먼저, 다르면(1) 그다음. 어긋난 후보는 거리순.
-      const score = d <= TIGHT_EPS ? (ch.rune === wanted ? 0 : 1) : 2 + d;
-      if (score < bestScore || (score === bestScore && best && isBefore(ch, best))) {
-        best = ch;
-        bestScore = score;
+    for (const [x, y] of points) {
+      let bestScore = Infinity;
+      for (const ch of grid.near(x, y)) {
+        if (ch.owner !== -1) continue;
+        const d = Math.hypot(ch.origin[0] - x, ch.origin[1] - y);
+        if (d > SEARCH_RADIUS) continue;
+        // 원점이 사실상 같으면 유니코드가 같은 쪽(0)을 먼저, 다르면(1) 그다음. 어긋난 후보는 거리순.
+        const score = d <= TIGHT_EPS ? (ch.rune === wanted ? 0 : 1) : 2 + d;
+        if (score < bestScore || (score === bestScore && best && isBefore(ch, best))) {
+          best = ch;
+          bestScore = score;
+        }
       }
+      if (best) break;
     }
     if (!best) continue;
     best.owner = i;

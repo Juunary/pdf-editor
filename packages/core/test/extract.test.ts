@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import v8 from 'node:v8';
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PdfSession, extractPageDetailed } from '../src/index.js';
 import * as mupdf from 'mupdf';
 import type { PageModel } from '@pdf-editor/shared-types';
+import { readStructuredText } from '../src/extract-stext.js';
 import { buildPdf, hexGlyphs, koreanFont, type PageSpec } from './pdf-fixtures.js';
 
 function open(pages: Array<string | PageSpec>): PdfSession {
@@ -214,6 +215,45 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
     // Form 의 BBox 클립은 paintSeq 를 1 쓴다.
     expect(m.paths.map((p) => [p.paintSeq, p.op])).toEqual([[0, 'clip']]);
     expect(m.chars[1]!.origin).toEqual([55, 145]);
+  });
+});
+
+describe('extractPage: 세로쓰기(wmode 1) 구조화 텍스트 결합', () => {
+  /** F2 와 같은 한글 폰트를 Identity-V 로 둔 /FV. */
+  const vertical = (content: string): PageSpec => ({
+    content,
+    mediabox: [0, 0, 300, 300],
+    resources: (doc, resources) => {
+      const ref = doc.addFont(koreanFont);
+      ref.put('Encoding', doc.newName('Identity-V'));
+      (resources.Font as Record<string, unknown>).FV = ref;
+    },
+  });
+
+  it.each([
+    ['기본', 'BT /FV 20 Tf 150 280 Td GLYPHS Tj ET'],
+    ['회전·Tc', 'BT /FV 10 Tf 3 Tc 0.7071 0.7071 -0.7071 0.7071 150 280 Tm GLYPHS Tj ET'],
+  ])('%s: 글자마다 자기 글리프의 quad 를 받는다(앞 글리프 quad 아님), 근사 없음', (_, body) => {
+    const word = '한글세로쓰기';
+    const s = open([vertical(body.replace('GLYPHS', hexGlyphs(word)))]);
+    const page = s.document.loadPage(0);
+    const { model, stats } = extractPageDetailed(page, { pageIndex: 0 });
+    // 구조화 텍스트 글자(같은 순서로 나온다)의 quad.
+    const stext: { c: string; quad: number[] }[] = [];
+    const st = page.toStructuredText('');
+    st.walk({ onChar: (c, _o, _f, _s, quad) => stext.push({ c, quad: [...quad] }) });
+    st.destroy();
+    page.destroy();
+    s.close();
+    expect(text(model)).toBe(word);
+    expect(stext.map((x) => x.c).join('')).toBe(word);
+    expect(model.chars.every((c) => c.wmode === 1)).toBe(true);
+    expect(stats.approximated).toBe(0);
+    expect(model.chars.every((c) => c.line >= 0)).toBe(true);
+    // 글자 i 는 구조화 텍스트 글자 i 의 quad 를 받는다(이전 결함: 앞 글리프의 quad, 첫 글자는 근사).
+    model.chars.forEach((c, i) => {
+      c.quad.forEach((v, k) => expect(v, `${i}.${k}`).toBeCloseTo(stext[i]!.quad[k]!, 3));
+    });
   });
 });
 
@@ -982,5 +1022,54 @@ describe('extractPage: 래퍼 소유권(mupdf.js Shade 래퍼)', () => {
     s.invalidatePageCache();
     expect(s.extractPage({ pageIndex: 0 }).shades).toHaveLength(1);
     s.close();
+  });
+});
+
+describe('extractPage: WASM 래퍼 해제(M1 리뷰 반영)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** 클래스 종료자 레지스트리의 등록·해제 횟수를 센다(래퍼 생성 = 등록, destroy = 해제). */
+  function countWrappers(cls: { _finalizer?: FinalizationRegistry<unknown> }) {
+    const registry = cls._finalizer!;
+    const register = vi.spyOn(registry, 'register');
+    const unregister = vi.spyOn(registry, 'unregister');
+    return () => ({ created: register.mock.calls.length, released: unregister.mock.calls.length });
+  }
+
+  it('소프트 마스크 안(guard 가 건너뜀)의 텍스트 래퍼도 놓는다', () => {
+    // 레지스트리는 첫 래퍼 생성 때 생긴다.
+    new mupdf.Text().destroy();
+    const s = open([
+      {
+        content: 'q /GsM gs 0 0 1 rg 0 0 100 100 re f Q BT /F1 12 Tf 10 150 Td (after) Tj ET',
+        resources: softMaskResources,
+      },
+    ]);
+    const page = s.document.loadPage(0);
+    const counts = countWrappers(mupdf.Text as never);
+    const { model } = extractPageDetailed(page, { pageIndex: 0 });
+    const c = counts();
+    page.destroy();
+    s.close();
+    expect(text(model)).toBe('after');
+    // 마스크 그룹 글자 M 과 본문 글자: 텍스트 콜백 2회 이상.
+    expect(c.created).toBeGreaterThanOrEqual(2);
+    expect(c.released).toBe(c.created);
+  });
+
+  it('구조화 텍스트 글자마다 만드는 Font 래퍼를 놓는다', () => {
+    new mupdf.Font('Helvetica').destroy();
+    const s = open([
+      `BT /F1 12 Tf 10 150 Td (Hello) Tj ET BT /F2 14 Tf 10 100 Td ${hexGlyphs('한글')} Tj ET`,
+    ]);
+    const page = s.document.loadPage(0);
+    const counts = countWrappers(mupdf.Font as never);
+    const data = readStructuredText(page);
+    const c = counts();
+    page.destroy();
+    s.close();
+    expect(data.chars).toHaveLength(7);
+    expect(c.created).toBeGreaterThanOrEqual(7);
+    expect(c.released).toBe(c.created);
   });
 });

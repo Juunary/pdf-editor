@@ -349,6 +349,8 @@ describe('표준 글꼴이 아닌 이름 (/Widths 없음)', () => {
     expect(r.font.unresolved).toEqual([]);
     expect(compareHorizontal(r, bytes, true).mismatches).toEqual([]);
     expect(r.font.advance(32)).toBe(250);
+    // 내장 글꼴 폭은 정수이므로 명세 폭과 같다.
+    for (const c of bytes) expect(r.font.advanceSpec(c)).toBe(r.font.advance(c));
   });
 
   it('부분 집합 접두어가 붙은 표준 이름은 별칭으로 인정되지 않는다(1.28.1 실측)', () => {
@@ -461,6 +463,12 @@ describe('단순 폰트 /Widths', () => {
     const adv = (c: number) => r.font.advance(r.font.cid(c));
     expect([60, 64, 74, 80].map(adv)).toEqual([123, 123, 123, 123]);
     expect(range(65, 73).map(adv)).toEqual([557, 556, 501, -300, -301, 100, 3, 0, 0]);
+    // 명세 폭(편집용): 실수 그대로(MuPDF 객체의 float32 정밀도), MissingWidth 도 자르지 않는다.
+    const spec = (c: number) => r.font.advanceSpec(r.font.cid(c));
+    const near = (got: number[], want: number[]) =>
+      want.forEach((w, i) => expect(got[i], `${i}`).toBeCloseTo(w, 4));
+    near([60, 64, 74, 80].map(spec), [123.9, 123.9, 123.9, 123.9]);
+    near(range(65, 73).map(spec), [556.6, 556.4, 500.5, -300.5, -300.6, 100, 2.5, 0, 0]);
   });
 
   it('MissingWidth 가 없으면 0, 기술자가 없어도 0', () => {
@@ -733,6 +741,12 @@ describe('Type0 (CID 폰트)', () => {
       expect([5, 10, 11, 12, 20, 22, 23, 40, 41, 100, 101].map(adv)).toEqual([
         500, 100, 201, 300, 450, 450, 500, 999, 500, 124, 500,
       ]);
+      const spec = [5, 10, 11, 12, 20, 22, 23, 40, 41, 100, 101].map((c) =>
+        r.font.advanceSpec(r.font.cid(c)),
+      );
+      [500, 100, 200.5, 300, 450, 450, 500, 999, 500, 123.6, 500].forEach((w, i) =>
+        expect(spec[i], `${i}`).toBeCloseTo(w, 4),
+      );
     });
 
     it('/DW 없으면 1000, /DW 가 실수면 반올림', () => {
@@ -743,6 +757,7 @@ describe('Type0 (CID 폰트)', () => {
       const r2 = run(type0('Identity-H', { DW: 777.5 }), `${hex(bytes)} Tj`);
       expect(compareHorizontal(r2, bytes).mismatches).toEqual([]);
       expect(r2.font.advance(1)).toBe(778);
+      expect(r2.font.advanceSpec(1)).toBe(777.5);
     });
 
     it('겹치는 /W 항목·자르다 만 /W·시작 CID 가 실수인 항목도 MuPDF 와 같은 폭', () => {

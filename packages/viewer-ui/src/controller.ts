@@ -331,10 +331,10 @@ export class ViewerController {
     }
     this.patch({ debug: { status: 'loading', pageIndex } });
     try {
-      const [linkage, map] = await Promise.all([
-        this.host.linkPage(pageIndex),
-        this.host.getSourceMap(pageIndex),
-      ]);
+      // 순서대로 부른다: core 세션은 쪽 SourceMap 을 캐시하고 linkPage 가 그 객체에 unmatched 를 표시하므로,
+      // linkPage 뒤에 받은 map 이 그 표시를 담는다(SourceMap 생성 1회).
+      const linkage = await this.host.linkPage(pageIndex);
+      const map = await this.host.getSourceMap(pageIndex);
       if (this.isStalePage(pageIndex)) return this.resetStaleLoading('debug', pageIndex);
       this.patch({ debug: { status: 'ready', pageIndex, value: { linkage, map } } });
     } catch (e) {

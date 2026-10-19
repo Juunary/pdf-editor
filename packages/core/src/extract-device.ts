@@ -108,15 +108,17 @@ export class DeviceCollector {
   /**
    * 콜백 본문을 실행한다. 이미 실패했거나 소프트 마스크 그룹 안이면 건너뛴다
    * (`structural` 은 마스크 경계 콜백용으로 마스크 안에서도 실행).
+   * 본문을 실행했으면(예외 포함) true. 건너뛰었으면 false 이고, 본문이 넘겨받을 래퍼(Text)는 호출자가 놓는다.
    */
-  guard(body: () => void, structural = false): void {
-    if (this.error !== null) return;
-    if (this.#maskDepth > 0 && !structural) return;
+  guard(body: () => void, structural = false): boolean {
+    if (this.error !== null) return false;
+    if (this.#maskDepth > 0 && !structural) return false;
     try {
       body();
     } catch (e) {
       this.error = e;
     }
+    return true;
   }
 
   /** 실행이 끝났을 때(성공·실패 모두) 잡고 있는 래퍼를 놓는다. */

@@ -14,6 +14,10 @@
  * - Type3 /FontMatrix 가 배열이 아니면(없으면) 항등행렬이다(명세 기본값 0.001 아님). 배열이면 모자란 칸은 0
  * - 임베디드 CMap: 코드스페이스가 없고 매핑 범위가 있으면 2바이트 <0000>-<FFFF> 를 넣고, 사전 /WMode 가 본문 WMode 를 덮는다
  * - 폰트 로드 실패(Type3 필수 키 없음, Type0 에서 CMap 이름 불명·FontDescriptor 없음 등)는 hail-mary(Times-Roman, 1바이트)로 대체된다
+ *
+ * 폭은 두 벌을 둔다. `advance` 는 MuPDF 재현(pdf_to_int 정수 폭, 매칭용), `advanceSpec` 은 명세 폭(pdf_to_real 실수 폭,
+ * 편집용)이다. 소수 /Widths·/W 가 있는 폰트에서 편집 연산(TJ 숫자 조정)을 정수 폭으로 계산하면 명세대로 그리는
+ * 뷰어(PDFium·Acrobat·pdf.js)에서 뒤 글자가 밀린다.
  */
 import * as mupdf from 'mupdf';
 import type { Matrix } from '@pdf-editor/shared-types';
@@ -28,6 +32,7 @@ import {
   type CodespaceRange,
   type EncodingTable,
 } from './glyph-names.js';
+import { readStreamBytes } from './mupdf-util.js';
 
 export interface DecodedCode {
   /** 원 코드 값: 바이트 big-endian (MuPDF cpt) */
@@ -55,8 +60,13 @@ export interface PdfFont {
   decode(bytes: Uint8Array): DecodedCode[];
   /** 코드 → CID(pdf_lookup_cmap). -1 이면 MuPDF 는 글리프를 그리지 않고 전진하지도 않는다 */
   cid(code: number): number;
-  /** 가로 전진량 w0, 1/1000 텍스트 공간 단위 = pdf_lookup_hmtx(cid).w */
+  /** 가로 전진량 w0, 1/1000 텍스트 공간 단위 = pdf_lookup_hmtx(cid).w(MuPDF 정수 폭, 매칭용) */
   advance(cid: number): number;
+  /**
+   * 명세 가로 전진량 w0, 1/1000 텍스트 공간 단위. /Widths·/W·/DW·/MissingWidth 를 실수 그대로 읽는다(편집용).
+   * MuPDF 객체의 실수는 float32 라 원문 십진값과 1e-5 수준 차이가 날 수 있다.
+   */
+  advanceSpec(cid: number): number;
   /** 세로 지표 = pdf_lookup_vmtx(cid): w = w1y, x/y = 위치 벡터(1/1000) */
   vertical(cid: number): { w: number; x: number; y: number };
 }
@@ -94,13 +104,19 @@ interface HEntry {
   w: number;
 }
 
-/** pdf_hmtx 표. 등록 → lo 오름차순 정렬 → 이진 탐색(겹치면 탐색 중 먼저 걸린 항목). 못 찾으면 기본폭 */
+/**
+ * pdf_hmtx 표. 등록 → lo 오름차순 정렬 → 이진 탐색(겹치면 탐색 중 먼저 걸린 항목). 못 찾으면 기본폭.
+ * real = true 면 폭을 정수로 자르지 않는다(명세 폭 표).
+ */
 class HmtxTable {
   readonly entries: HEntry[] = [];
-  constructor(readonly dw: number) {}
+  constructor(
+    readonly dw: number,
+    readonly real = false,
+  ) {}
   add(lo: number, hi: number, w: number): void {
-    // lo/hi 는 unsigned short, w 는 int
-    this.entries.push({ lo: uint16(lo), hi: uint16(hi), w: w | 0 });
+    // lo/hi 는 unsigned short, w 는 int(MuPDF 표)
+    this.entries.push({ lo: uint16(lo), hi: uint16(hi), w: this.real ? w : w | 0 });
   }
   end(): void {
     this.entries.sort((a, b) => a.lo - b.lo);
@@ -454,7 +470,7 @@ function parseCMapBody(data: Uint8Array): ParsedCMap {
  */
 function loadEmbeddedCMap(stream: mupdf.PDFObject, depth = 0): CMapSpec {
   const unresolved: string[] = [];
-  const parsed = parseCMapBody(stream.readStream().asUint8Array());
+  const parsed = parseCMapBody(readStreamBytes(stream));
   const codespaces = parsed.codespaces;
   if (codespaces.length === 0 && parsed.ranges.count > 0) codespaces.push(cs(2, 0, 0xffff));
 
@@ -662,6 +678,8 @@ interface FontParts {
   unresolved: string[];
   fallbackReason?: string;
   h: HmtxTable;
+  /** 명세 폭 표(실수). */
+  hSpec: HmtxTable;
   v: VmtxTable | null;
   /** null = 1바이트 단순 폰트 */
   cmap: CMapSpec | null;
@@ -684,6 +702,9 @@ function makeFont(p: FontParts): PdfFont {
     },
     advance(cid) {
       return p.h.lookup(cid);
+    },
+    advanceSpec(cid) {
+      return p.hSpec.lookup(cid);
     },
     vertical(cid) {
       const v = p.v ?? new VmtxTable(880, -1000);
@@ -719,13 +740,17 @@ function buildSimple(dict: mupdf.PDFObject | null, subtype: string | null): Font
   const symbolic = (flags & FD_NONSYMBOLIC) !== 0 ? false : (flags & FD_SYMBOLIC) !== 0;
 
   const h = new HmtxTable(Math.trunc(missingWidth));
+  const hSpec = new HmtxTable(missingWidth, true);
   let gids: number[] | undefined;
   const widths = get('Widths');
   if (has(widths)) {
     let first = toInt(get('FirstChar'));
     let last = toInt(get('LastChar'));
     if (first < 0 || last > 255 || first > last) first = last = 0;
-    for (let i = 0; i < last - first + 1; i++) h.add(i + first, i + first, arrInt(widths, i));
+    for (let i = 0; i < last - first + 1; i++) {
+      h.add(i + first, i + first, arrInt(widths, i));
+      hSpec.add(i + first, i + first, arrReal(widths, i));
+    }
   } else if (embedded) {
     unresolved.add(
       '임베디드 폰트 + /Widths 없음: 폰트 파일 글리프 폭 해석 불가(MissingWidth 로 대체)',
@@ -754,12 +779,16 @@ function buildSimple(dict: mupdf.PDFObject | null, subtype: string | null): Font
     try {
       const r = builtinWidths(face, est, has(enc), unresolved);
       gids = r.gids;
-      for (let i = 0; i < 256; i++) h.add(i, i, r.widths[i]!);
+      for (let i = 0; i < 256; i++) {
+        h.add(i, i, r.widths[i]!);
+        hSpec.add(i, i, r.widths[i]!);
+      }
     } catch (e) {
       unresolved.add(`내장 글꼴 ${face} 로드 실패: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   h.end();
+  hSpec.end();
   return {
     subtype,
     objectNumber: null,
@@ -767,6 +796,7 @@ function buildSimple(dict: mupdf.PDFObject | null, subtype: string | null): Font
     type3Matrix: null,
     unresolved: [...unresolved],
     h,
+    hSpec,
     v: null,
     cmap: null,
     ...(gids ? { gids } : {}),
@@ -789,6 +819,7 @@ function buildType3(dict: mupdf.PDFObject): FontParts {
     : [1, 0, 0, 1, 0, 0];
 
   const h = new HmtxTable(0);
+  const hSpec = new HmtxTable(0, true);
   let first = toInt(dict.get('FirstChar'));
   let last = toInt(dict.get('LastChar'));
   if (first < 0 || last > 255 || first > last) first = last = 0;
@@ -796,8 +827,10 @@ function buildType3(dict: mupdf.PDFObject): FontParts {
     // float w = a * w * 1000 (모두 float32), pdf_add_hmtx(int) 로 절단
     const w = f32(f32(m[0] * f32(arrReal(widths, i - first))) * 1000);
     h.add(i, i, Math.trunc(w));
+    hSpec.add(i, i, m[0] * arrReal(widths, i - first) * 1000);
   }
   h.end();
+  hSpec.end();
   return {
     subtype: 'Type3',
     objectNumber: null,
@@ -805,6 +838,7 @@ function buildType3(dict: mupdf.PDFObject): FontParts {
     type3Matrix: m,
     unresolved: [],
     h,
+    hSpec,
     v: null,
     cmap: null,
   };
@@ -835,6 +869,7 @@ function buildType0(dict: mupdf.PDFObject): FontParts {
   const dwObj = dfont.get('DW');
   const dw = dwObj.isNumber() ? toInt(dwObj) : 1000;
   const h = new HmtxTable(dw);
+  const hSpec = new HmtxTable(dwObj.isNumber() ? toReal(dwObj) : 1000, true);
   const w = dfont.get('W');
   if (has(w)) {
     const n = w.length;
@@ -843,16 +878,21 @@ function buildType0(dict: mupdf.PDFObject): FontParts {
       const obj = w.get(i + 1);
       if (obj.isArray()) {
         const m = obj.length;
-        for (let k = 0; k < m; k++) h.add(c0 + k, c0 + k, arrInt(obj, k));
+        for (let k = 0; k < m; k++) {
+          h.add(c0 + k, c0 + k, arrInt(obj, k));
+          hSpec.add(c0 + k, c0 + k, arrReal(obj, k));
+        }
         i += 2;
       } else {
         const c1 = toInt(obj);
         h.add(c0, c1, arrInt(w, i + 2));
+        hSpec.add(c0, c1, arrReal(w, i + 2));
         i += 3;
       }
     }
   }
   h.end();
+  hSpec.end();
   if (h.hasAmbiguousTies())
     unresolved.add('/W: 같은 시작 CID 에 폭이 다른 항목(MuPDF 정렬 순서 불확정)');
 
@@ -913,6 +953,7 @@ function buildType0(dict: mupdf.PDFObject): FontParts {
     type3Matrix: null,
     unresolved: [...unresolved],
     h,
+    hSpec,
     v,
     cmap,
   };
