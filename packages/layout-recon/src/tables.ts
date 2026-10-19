@@ -20,7 +20,7 @@
 import type { PageModel, Rect } from '@pdf-editor/shared-types';
 import type { LineFeature } from './features.js';
 import { C as RECON } from './constants.js';
-import { median } from './geom.js';
+import { GridIndex, median } from './geom.js';
 import type { PathSummary } from './paths.js';
 
 export interface DetectedCell {
@@ -530,15 +530,29 @@ function collectEdges(model: PageModel, ps: PathSummary): Edge[] {
     if (x1 - x0 >= T.pageBoxRatio * pw && y1 - y0 >= T.pageBoxRatio * ph) return false;
     return !(b.color && b.color.every((c) => c >= T.whiteBox));
   });
-  const byColor = new Map<string, Rect[]>();
-  for (const b of boxes) pushTo(byColor, colorKey(b.color), b.bbox);
+  // 색별 공간 색인(같은 색 사각형이 수천 개여도 표본점 근처만 본다).
+  const byColor = new Map<string, { rects: Rect[]; index: GridIndex }>();
+  for (const b of boxes) {
+    const key = colorKey(b.color);
+    let g = byColor.get(key);
+    if (!g) {
+      g = { rects: [], index: new GridIndex() };
+      byColor.set(key, g);
+    }
+    g.index.insert(g.rects.length, b.bbox);
+    g.rects.push(b.bbox);
+  }
   for (const b of boxes) {
     const [x0, y0, x1, y1] = b.bbox;
-    const same = b.color ? (byColor.get(colorKey(b.color)) ?? []) : [];
+    const same = b.color ? byColor.get(colorKey(b.color)) : undefined;
     // 변 바깥 1pt 띠의 표본 5점이 모두 같은 색 사각형 안이면 보이지 않는 변이다.
     const hidden = (pts: [number, number][]): boolean =>
+      same !== undefined &&
       pts.every(([x, y]) =>
-        same.some((r) => r !== b.bbox && x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3]),
+        same.index.query([x, y, x, y]).some((i) => {
+          const r = same.rects[i]!;
+          return r !== b.bbox && x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+        }),
       );
     const along = (a0: number, a1: number): number[] =>
       [0.1, 0.3, 0.5, 0.7, 0.9].map((t) => a0 + t * (a1 - a0));
@@ -1395,10 +1409,12 @@ export function detectTables(
   // 2) 정렬 전략: 괘선 표 밖 줄.
   accepted.push(...textStrategy(ctx, taken, accepted.map(candBBox)));
   const byIndex = new Map(lines.map((f) => [f.index, f]));
-  return accepted
-    .map(toDetected)
-    .map((t) => normalizeTable(t, byIndex))
-    .sort((a, b) => a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0]);
+  return dedupeTables(
+    accepted
+      .map(toDetected)
+      .map((t) => normalizeTable(t, byIndex))
+      .sort((a, b) => a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0]),
+  );
 }
 
 // ── 후처리(라벨 격자 기준 정리) ──────────────────────────────────────
@@ -1507,10 +1523,13 @@ function normalizeTable(t: DetectedTable, byIndex: Map<number, LineFeature>): De
     const indented = first.bbox[0] >= Math.min(...la.map((f) => f.bbox[0])) + 0.5 * first.size;
     const fills = last.bbox[2] - colBounds[0]! >= 0.6 * col0W;
     if (!indented || !fills || /[:.]\s*$/u.test(last.text)) continue;
+    // a 의 첫 열 셀이 다른 행에도 걸쳐 있으면(병합 셀) 합치지 않는다(줄이 두 셀에 들어가는 것을 막는다).
+    const spansOther = g.some((row, i) => i !== r && row.includes(a[0]!));
+    if (spansOther || g.some((row, i) => i !== r + 1 && row.includes(b[0]!))) continue;
     // a 의 첫 열 셀을 b 의 첫 열 셀에 합치고, b 의 나머지 칸은 그대로 두며 두 행을 하나로.
     const keep = b[0]!;
     merged.set(keep, [...linesOf(a[0]!), ...linesOf(keep)]);
-    const row = b.map((k, q) => (q === 0 || a[q] === a[0] || !filled(a[q]!) ? k : k));
+    const row = b.slice();
     row[0] = keep;
     g = [...g.slice(0, r), row, ...g.slice(r + 2)];
     rowBounds = [...rowBounds.slice(0, r + 1), ...rowBounds.slice(r + 2)];
@@ -1537,4 +1556,26 @@ function normalizeTable(t: DetectedTable, byIndex: Map<number, LineFeature>): De
   )
     return t;
   return rebuild(t, g, rowBounds, colBounds, linesOf);
+}
+
+/**
+ * 줄은 최대 한 셀(계약 2.1). 후처리·여러 후보 결합에서 같은 줄이 두 셀에 들어가면 앞 셀만 남긴다.
+ * 줄이 남지 않은 셀이 2개 미만인 표는 버린다(줄 제거·행 제거 뒤 유지 조건 재확인).
+ */
+function dedupeTables(tables: DetectedTable[]): DetectedTable[] {
+  const used = new Set<number>();
+  const out: DetectedTable[] = [];
+  for (const t of tables) {
+    const cells = t.cells.map((c) => {
+      const lines = c.lines.filter((l) => !used.has(l));
+      for (const l of lines) used.add(l);
+      return lines.length === c.lines.length ? c : { ...c, lines };
+    });
+    if (cells.filter((c) => c.lines.length > 0).length < 2) {
+      for (const c of cells) for (const l of c.lines) used.delete(l);
+      continue;
+    }
+    out.push({ ...t, cells });
+  }
+  return out;
 }

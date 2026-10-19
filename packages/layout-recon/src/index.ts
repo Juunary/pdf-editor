@@ -31,3 +31,4 @@ export {
   type PageScore,
   type ScoreSummary,
 } from './accuracy.js';
+export { validateLayout } from './validate.js';

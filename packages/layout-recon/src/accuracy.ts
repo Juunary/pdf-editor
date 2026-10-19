@@ -58,6 +58,10 @@ export interface PageScore {
   pairs: Counts;
   /** 읽기 순서 Kendall τ(머리·꼬리 제외). 항목 2개 미만이면 null. */
   tau: number | null;
+  /** 기준선 τ: 복원 없이 PageModel 줄 순서(MuPDF 구조화 텍스트 순서)만 쓴 값(같은 항목 대응). */
+  tauBaseline: number | null;
+  /** τ 에서 뺀 라벨 항목 수(예측 순위가 없는 항목: 줄 없는 도형이 매칭되지 않은 경우 등). */
+  tauExcluded: number;
   tables: Counts;
   /** 매칭된 표 중 행·열 수가 모두 맞은 수 / 매칭 수. */
   tableShape: { exact: number; matched: number };
@@ -190,17 +194,22 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
     ),
   );
   const ranks: number[] = [];
+  const baseRanks: number[] = [];
+  let tauExcluded = 0;
   label.items.forEach((it) => {
     if (it.type === 'paragraph' && (it.role === 'header' || it.role === 'footer')) return;
     const ls = clean(it.type === 'paragraph' || it.type === 'table' ? it.lines : it.labels);
+    if (ls.length) baseRanks.push(median(ls));
     const rs = ls.map((l) => rank.get(l)).filter((r): r is number => r !== undefined);
     if (rs.length) ranks.push(median(rs));
     else if (it.type === 'figure') {
       const j = figMatch.get(labelFigures.indexOf(it));
       if (j !== undefined && figurePos.has(j)) ranks.push(figurePos.get(j)! + 0.5);
-    }
+      else tauExcluded++;
+    } else tauExcluded++;
   });
   const tau = ranks.length >= 2 ? kendallTau(ranks) : null;
+  const tauBaseline = baseRanks.length >= 2 ? kendallTau(baseRanks) : null;
 
   // 표.
   const tm = greedyMatch(
@@ -215,22 +224,26 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
   };
   let exact = 0;
   const cellLines = { correct: 0, total: 0 };
+  // 셀 줄: 셀 라벨이 있는 모든 라벨 표의 줄을 센다. 매칭되지 않은 표의 줄은 틀린 것으로 센다.
+  const matchOf = new Map(tm);
   for (const [i, j] of tm) {
     const lt = labelTables[i]!;
     const pt = layout.tables[j]!;
     if (lt.rows === pt.rows && lt.cols === pt.cols) exact++;
-    if (!lt.cells) continue;
+  }
+  labelTables.forEach((lt, i) => {
+    if (!lt.cells) return;
+    const j = matchOf.get(i);
     const cellOf = new Map<number, string>();
-    for (const c of pt.cells) for (const l of c.lines) cellOf.set(l, `${c.row},${c.col}`);
+    if (j !== undefined)
+      for (const c of layout.tables[j]!.cells)
+        for (const l of c.lines) cellOf.set(l, `${c.row},${c.col}`);
     for (const c of lt.cells)
       for (const l of clean(c.lines)) {
         cellLines.total++;
         if (cellOf.get(l) === `${c.row},${c.col}`) cellLines.correct++;
       }
-  }
-  if (tm.length === 0)
-    for (const lt of labelTables)
-      if (lt.cells) cellLines.total += lt.cells.flatMap((c) => clean(c.lines)).length;
+  });
 
   // 도형.
   const figures = {
@@ -258,6 +271,8 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
     paragraphs,
     pairs,
     tau,
+    tauBaseline,
+    tauExcluded,
     tables,
     tableShape: { exact, matched: tm.length },
     cellLines,
@@ -274,6 +289,8 @@ export interface ScoreSummary {
   paragraphR: number;
   pairF1: number;
   tauMean: number | null;
+  /** 기준선 τ 쪽 평균(PageModel 줄 순서). */
+  tauBaselineMean: number | null;
   tableP: number | null;
   tableR: number | null;
   tableShape: number | null;
@@ -302,6 +319,7 @@ export function summarizeScores(scores: readonly PageScore[]): ScoreSummary {
   const figures = scores.reduce((s, x) => add(s, x.figures), z);
   const margin = scores.reduce((s, x) => add(s, x.margin), z);
   const taus = scores.map((s) => s.tau).filter((t): t is number => t !== null);
+  const baseTaus = scores.map((s) => s.tauBaseline).filter((t): t is number => t !== null);
   const shape = scores.reduce(
     (s, x) => ({ e: s.e + x.tableShape.exact, m: s.m + x.tableShape.matched }),
     { e: 0, m: 0 },
@@ -317,6 +335,7 @@ export function summarizeScores(scores: readonly PageScore[]): ScoreSummary {
     paragraphR: rec(para) ?? 0,
     pairF1: f1(pairs) ?? 0,
     tauMean: taus.length ? taus.reduce((a, b) => a + b, 0) / taus.length : null,
+    tauBaselineMean: baseTaus.length ? baseTaus.reduce((a, b) => a + b, 0) / baseTaus.length : null,
     tableP: prec(tables),
     tableR: rec(tables),
     tableShape: shape.m ? shape.e / shape.m : null,

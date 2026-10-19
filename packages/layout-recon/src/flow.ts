@@ -61,7 +61,9 @@ export function splitMargins(units: readonly Unit[], bounds: Rect, body: number)
     if (!above.every((u) => inTop(u) && eligible(u))) continue;
     const bottom = Math.max(...above.map((u) => u.bbox[3]));
     const below = units.filter((u) => u.bbox[1] >= bottom - 1 && !above.includes(u));
-    const next = Math.min(...below.map((u) => u.bbox[1]));
+    // 아래에 본문 단위가 없으면(모든 글자가 띠 안) 머리로 판정하지 않는다.
+    if (below.length === 0) continue;
+    const next = below.reduce((m, u) => Math.min(m, u.bbox[1]), Infinity);
     if (next - bottom >= gapFor(above)) topCut = Math.max(topCut, bottom);
   }
   for (const u of units) if (u.bbox[3] <= topCut) header.add(u);
@@ -79,7 +81,8 @@ export function splitMargins(units: readonly Unit[], bounds: Rect, body: number)
     if (!ok) continue;
     const top = Math.min(...belowSet.map((u) => u.bbox[1]));
     const aboveSet = units.filter((u) => u.bbox[3] <= top + 1 && !belowSet.includes(u));
-    const prev = Math.max(...aboveSet.map((u) => u.bbox[3]));
+    if (aboveSet.length === 0) continue;
+    const prev = aboveSet.reduce((m, u) => Math.max(m, u.bbox[3]), -Infinity);
     if (top - prev >= gapFor(belowSet)) bottomCut = Math.min(bottomCut, top);
   }
   for (const u of units) if (u.bbox[1] >= bottomCut) footer.add(u);

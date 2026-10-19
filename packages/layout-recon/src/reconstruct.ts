@@ -68,16 +68,34 @@ interface Draft {
 
 const FOOTNOTE_START = /^\s*(?:\d{1,3}|[*†‡§¶])\s?\S/u;
 
+/** 캡션 인접: 같은 가로 범위의 도형·표가 위·아래 3em 안에 있거나, 옆(세로 겹침)에 3em 안에 있다. */
+function nearObject(bbox: Rect, size: number, objects: readonly Rect[]): boolean {
+  const d = 3 * size;
+  return objects.some((o) => {
+    const ox = Math.min(o[2], bbox[2]) - Math.max(o[0], bbox[0]);
+    const oy = Math.min(o[3], bbox[3]) - Math.max(o[1], bbox[1]);
+    const below = bbox[1] - o[3];
+    const above = o[1] - bbox[3];
+    const side = Math.max(o[0] - bbox[2], bbox[0] - o[2]);
+    return (
+      (ox > 0 && ((below >= -d && below <= d) || (above >= -d && above <= d))) ||
+      (oy > 0 && side <= d)
+    );
+  });
+}
+
 function flowRole(
   units: Unit[],
   text: string,
   body: number,
   pageTop: number,
   pageH: number,
+  bbox: Rect,
+  objects: readonly Rect[],
 ): ParagraphRole {
-  const size = Math.max(...units.map((u) => u.size));
+  const size = units.reduce((m, u) => Math.max(m, u.size), 0);
   const bold = units.every((u) => u.bold);
-  if (CAPTION.test(text)) return 'caption';
+  if (CAPTION.test(text) && nearObject(bbox, size, objects)) return 'caption';
   if (units.length <= 3 && size >= C.headingSizeRatio * body) return 'heading';
   if (
     units.length <= 2 &&
@@ -99,7 +117,8 @@ export function reconstructPage(model: PageModel, _options: ReconOptions = {}): 
   const warnings: string[] = [];
   const feats = lineFeatures(model);
   const visible = feats.filter((f) => f.chars.length > 0 && f.text.trim() !== '');
-  const unassignedLines = feats.filter((f) => !visible.includes(f)).map((f) => f.index);
+  const visibleSet = new Set(visible);
+  const unassignedLines = feats.filter((f) => !visibleSet.has(f)).map((f) => f.index);
   const horizontal = visible.filter((f) => f.horizontal);
   const rotated = visible.filter((f) => !f.horizontal);
   const pathSummary = summarizePaths(model);
@@ -128,6 +147,8 @@ export function reconstructPage(model: PageModel, _options: ReconOptions = {}): 
       const box = expand(fig.bbox, 0.3 * f.size);
       if (!intersect(box, f.bbox) || !containsPoint(box, center(f.bbox))) continue;
       if (fig.kind === 'vector' && width(f.bbox) > width(fig.bbox)) continue;
+      // 산문 줄(6단어 이상, 도형 폭 절반 이상)은 라벨이 아니라 흐름 본문이다(사진 위 본문·사이드바).
+      if (f.words.length >= 6 && width(f.bbox) > 0.5 * width(fig.bbox)) continue;
       labelOf.set(f.index, k);
     }
   });
@@ -138,11 +159,21 @@ export function reconstructPage(model: PageModel, _options: ReconOptions = {}): 
   const units = buildUnits(model, flowFeats, fillers);
   const body = bodySize(units);
   const margins = splitMargins(units, bounds, body);
-  const bodyX0 = Math.min(...margins.body.map((u) => u.bbox[0]), bounds[2]);
-  const bodyX1 = Math.max(...margins.body.map((u) => u.bbox[2]), bounds[0]);
+  const bodyX0 = margins.body.reduce((m, u) => Math.min(m, u.bbox[0]), bounds[2]);
+  const bodyX1 = margins.body.reduce((m, u) => Math.max(m, u.bbox[2]), bounds[0]);
   const rotatedFree = rotated.filter((f) => free(f) && !labelOf.has(f.index));
-  const sideTabs = rotatedFree.filter((f) => f.bbox[0] >= bodyX1 - 1 || f.bbox[2] <= bodyX0 + 1);
-  const rotatedBody = rotatedFree.filter((f) => !sideTabs.includes(f));
+  // 본문 가로 줄이 없으면(가로 표를 회전해 넣은 쪽, 세로쓰기 쪽) 섹션 탭 판정을 하지 않는다.
+  // 탭은 본문 가로 범위 밖이면서 쪽 좌우 여백 띠(쪽 폭 15%) 안에 있어야 한다.
+  const sideBand = 0.15 * width(bounds);
+  const sideTabs = margins.body.length
+    ? rotatedFree.filter(
+        (f) =>
+          (f.bbox[0] >= bodyX1 - 1 && f.bbox[0] >= bounds[2] - sideBand) ||
+          (f.bbox[2] <= bodyX0 + 1 && f.bbox[2] <= bounds[0] + sideBand),
+      )
+    : [];
+  const sideSet = new Set(sideTabs);
+  const rotatedBody = rotatedFree.filter((f) => !sideSet.has(f));
 
   const tableBoxes: Rect[] = detected.map((t) => t.bbox);
   const figBoxes: Rect[] = figs.map((f, k) => {
@@ -320,7 +351,10 @@ export function reconstructPage(model: PageModel, _options: ReconOptions = {}): 
   // 역할(흐름 문단).
   for (const d of drafts) {
     if (d.role !== 'body' || d.table !== null || d.figure !== null) continue;
-    d.role = flowRole(d.units, d.body.text, body, bounds[1], pageH);
+    d.role = flowRole(d.units, d.body.text, body, bounds[1], pageH, d.body.bbox, [
+      ...tableBoxes,
+      ...figBoxes,
+    ]);
   }
 
   // 7단계: 영역 넘김 연결.
@@ -357,7 +391,7 @@ export function reconstructPage(model: PageModel, _options: ReconOptions = {}): 
   if (rotatedBody.length) warnings.push(`회전·세로 줄 ${rotatedBody.length}개는 한 줄 문단(other)`);
   return {
     pageIndex: model.pageIndex,
-    bounds,
+    bounds: [...bounds] as Rect,
     columns,
     paragraphs,
     tables,

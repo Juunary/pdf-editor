@@ -139,7 +139,9 @@ export function summarizePaths(model: PageModel): PathSummary {
         complex = true;
         continue;
       }
-      const r = sp.pts.length >= 4 ? rectOf(sp.pts) : null;
+      // 선(stroke)은 닫힌 경로만 사각형으로 본다(열린 ㄷ자 경로는 변 3개). 채움은 암묵적으로 닫힌다.
+      const closedShape = !stroke || sp.closed || sp.pts.length === 5;
+      const r = sp.pts.length >= 4 && closedShape ? rectOf(sp.pts) : null;
       if (r) {
         const w = r[2] - r[0];
         const h = r[3] - r[1];
