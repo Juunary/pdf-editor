@@ -109,7 +109,19 @@ describe.skipIf(!corpus)('M2 정확도 하네스', () => {
             stale.push(`${name}: 추출 지문 불일치`);
             continue;
           }
-          const layout = reconstructPage(model);
+          // 이웃 쪽(±1·±2)은 경로 없이 추출해 반복 판정에만 쓴다(core getPageLayout 과 같은 입력).
+          const neighbors = [-2, -1, 1, 2]
+            .map((k) => label.pageIndex + k)
+            .filter((n) => n >= 0 && n < pdf!.countPages())
+            .map((n) => {
+              const np = pdf!.loadPage(n);
+              try {
+                return extractPageModel(np, { pageIndex: n });
+              } finally {
+                np.destroy();
+              }
+            });
+          const layout = reconstructPage(model, { neighbors });
           rows.push({
             name,
             split: label.split,

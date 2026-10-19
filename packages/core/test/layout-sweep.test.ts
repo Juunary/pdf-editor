@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 // core 를 mupdf 보다 먼저 import 한다(src/wasm-module.ts).
 import { extractPageModel, openPdf } from '../src/index.js';
 import * as mupdf from 'mupdf';
+import type { PageModel } from '@pdf-editor/shared-types';
 // 불변식 검사기(셀·문단 상호 일치, 도형 라벨, 격자 덮음, 비유한 수 포함).
 import { reconstructPage, validateLayout } from '@pdf-editor/layout-recon';
 
@@ -34,11 +35,31 @@ describe.skipIf(!dir)('코퍼스 전수 복원 점검', () => {
       const doc = openPdf(new Uint8Array(readFileSync(join(dir!, name))));
       try {
         const n = Math.min(doc.countPages(), limit);
+        // 이웃 쪽(경로 없는 추출) 창 캐시: 쪽마다 ±2 쪽을 다시 추출하지 않는다.
+        const plain = new Map<number, PageModel>();
+        const plainModel = (k: number): PageModel => {
+          let m = plain.get(k);
+          if (!m) {
+            const p = doc.loadPage(k);
+            try {
+              m = extractPageModel(p, { pageIndex: k });
+            } finally {
+              p.destroy();
+            }
+            plain.set(k, m);
+          }
+          return m;
+        };
         for (let i = 0; i < n; i++) {
+          for (const k of [...plain.keys()]) if (k < i - 2) plain.delete(k);
           const page = doc.loadPage(i);
           try {
             const model = extractPageModel(page, { pageIndex: i, includePathSegments: true });
-            const layout = reconstructPage(model);
+            const neighbors = [-2, -1, 1, 2]
+              .map((k) => i + k)
+              .filter((k) => k >= 0 && k < doc.countPages())
+              .map(plainModel);
+            const layout = reconstructPage(model, { neighbors });
             const v = validateLayout(model, layout);
             if (v.length) failures.push(`${name}:${i}: ${v.slice(0, 3).join('; ')}`);
             pages.push({

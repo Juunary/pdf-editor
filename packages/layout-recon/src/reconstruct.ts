@@ -37,6 +37,42 @@ import { xyCut, type CutItem } from './xycut.js';
 export interface ReconOptions {
   /** ML 보조 후보(계약 3절 8단계). v1 기본 구현 없음. */
   plugins?: readonly LayoutPlugin[];
+  /**
+   * 이웃 쪽(앞뒤 1–2쪽) 추출 모델. 주면 같은 자리·같은 글(숫자 무시)로 반복되는 쪽 위·아래 줄을
+   * 머리·꼬리로 본다(러닝헤드·쪽 번호, 계약 2.5). 없으면 쪽 하나만 본다.
+   */
+  neighbors?: readonly PageModel[];
+}
+
+/** 반복 비교용 글 정규화: 소문자, 숫자 → #, 공백 하나. */
+const normRepeat = (t: string): string =>
+  t.toLowerCase().replace(/\d+/gu, '#').replace(/\s+/gu, ' ').trim();
+
+/** 이웃 쪽에 같은 자리(위 끝 ±3pt, 왼쪽 또는 오른쪽 끝 ±3pt)·같은 정규화 글로 있는 쪽 위·아래 20% 단위. */
+function repeatedUnits(
+  units: readonly Unit[],
+  bounds: Rect,
+  neighbors: readonly PageModel[],
+): Set<Unit> {
+  const out = new Set<Unit>();
+  if (!neighbors.length) return out;
+  const H = height(bounds);
+  const others = neighbors.map((m) => lineFeatures(m).filter((f) => f.text.trim() !== ''));
+  for (const u of units) {
+    const edge = u.bbox[3] <= bounds[1] + 0.2 * H || u.bbox[1] >= bounds[3] - 0.2 * H;
+    if (!edge) continue;
+    const matchPart = (p: LineFeature) =>
+      others.some((fs) =>
+        fs.some(
+          (f) =>
+            Math.abs(f.bbox[1] - p.bbox[1]) <= 3 &&
+            (Math.abs(f.bbox[0] - p.bbox[0]) <= 3 || Math.abs(f.bbox[2] - p.bbox[2]) <= 3) &&
+            normRepeat(f.text) === normRepeat(p.text),
+        ),
+      );
+    if (u.parts.every(matchPart)) out.add(u);
+  }
+  return out;
 }
 
 export interface RegionProposal {
@@ -112,7 +148,7 @@ function flowRole(
   return 'body';
 }
 
-export function reconstructPage(model: PageModel, _options: ReconOptions = {}): PageLayout {
+export function reconstructPage(model: PageModel, options: ReconOptions = {}): PageLayout {
   const t0 = now();
   const warnings: string[] = [];
   const feats = lineFeatures(model);
@@ -158,7 +194,12 @@ export function reconstructPage(model: PageModel, _options: ReconOptions = {}): 
   const fillers = inlineImages(model, median(flowFeats.map((f) => f.size)) || 10);
   const units = buildUnits(model, flowFeats, fillers);
   const body = bodySize(units);
-  const margins = splitMargins(units, bounds, body);
+  const margins = splitMargins(
+    units,
+    bounds,
+    body,
+    repeatedUnits(units, bounds, options.neighbors ?? []),
+  );
   const bodyX0 = margins.body.reduce((m, u) => Math.min(m, u.bbox[0]), bounds[2]);
   const bodyX1 = margins.body.reduce((m, u) => Math.max(m, u.bbox[2]), bounds[0]);
   const rotatedFree = rotated.filter((f) => free(f) && !labelOf.has(f.index));

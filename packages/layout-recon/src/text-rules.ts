@@ -21,3 +21,9 @@ export const SENTENCE_END = /[.!?。．！？:;]["'”’)\]」』]*\s*$/u;
 export const STARTS_UPPER = /^\s*["'“‘([]?[A-Z0-9À-ÖØ-Þ]/u;
 
 export const STARTS_LOWER = /^\s*[a-zà-öø-ÿ]/u;
+
+/** TeX·OpenType 수식 글꼴 이름(서브셋 접두사 뒤). */
+export const MATH_FONT =
+  /^(?:[A-Z]{6}\+)?(?:CMMI|CMSY|CMEX|CMBSY|CMMIB|MSAM|MSBM|EUSM|EUFM|EUEX|RSFS|LMMathItalic|LMMathSymbols|LMMathExtension|txsy|txmi|txex|pxsy|pxmi|pxex|MTMI|MTSY|MTEX|STIXMath|STIXTwoMath|CambriaMath|Cambria-Math|XITSMath|LatinModernMath|Asana)/i;
+/** 수학 기호 코드 범위(화살표·연산자·기타 수학 기호·수학 영숫자). */
+export const MATH_CHAR = /[←-⇿∀-⋿⟀-⟯⦀-⫿\u{1D400}-\u{1D7FF}]/u;

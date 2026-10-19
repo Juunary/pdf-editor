@@ -4,6 +4,7 @@
  */
 import type { PageModel, RGB, Rect } from '@pdf-editor/shared-types';
 import { C } from './constants.js';
+import { MATH_CHAR, MATH_FONT } from './text-rules.js';
 import type { LineFeature } from './features.js';
 import { height, overlapY, union, width } from './geom.js';
 
@@ -25,12 +26,6 @@ export interface Unit {
   /** 보이는 글자 중 수식 글꼴·수학 기호 비율(0–1). 표시 수식 묶음 판단용. */
   math: number;
 }
-
-/** TeX·OpenType 수식 글꼴 이름(서브셋 접두사 뒤). */
-const MATH_FONT =
-  /^(?:[A-Z]{6}\+)?(?:CMMI|CMSY|CMEX|CMBSY|CMMIB|MSAM|MSBM|EUSM|EUFM|EUEX|RSFS|LMMathItalic|LMMathSymbols|LMMathExtension|txsy|txmi|txex|pxsy|pxmi|pxex|MTMI|MTSY|MTEX|STIXMath|STIXTwoMath|CambriaMath|Cambria-Math|XITSMath|LatinModernMath|Asana)/i;
-/** 수학 기호 코드 범위(화살표·연산자·기타 수학 기호·수학 영숫자). */
-const MATH_CHAR = /[←-⇿∀-⋿⟀-⟯⦀-⫿\u{1D400}-\u{1D7FF}]/u;
 
 /** 줄 끝 번호: 쪽 번호·식 번호. */
 export const NUMBER_TAG = /^\s*\(?\d{1,4}(?:\.\d{1,3})?[a-z]?\)?\s*$/u;
@@ -114,7 +109,9 @@ export function buildUnits(
     const ref = row?.[0];
     // 위·아래 첨자 조각(크기 비 1.3 초과)은 기준선 차이를 더 허용한다.
     const ratio = ref ? Math.max(f.size, ref.size) / Math.max(Math.min(f.size, ref.size), 0.1) : 1;
-    const tol = (ratio > 1.3 ? 0.6 : 0.35) * Math.max(f.size, ref?.size ?? 0);
+    // 수식 조각(분수·첨자로 기준선이 어긋남)이 낀 행은 기준선 차이를 더 허용한다.
+    const mathy = ref !== undefined && (fragMath(model, f) >= 0.3 || fragMath(model, ref) >= 0.3);
+    const tol = (ratio > 1.3 || mathy ? 0.6 : 0.35) * Math.max(f.size, ref?.size ?? 0);
     if (row && ref && Math.abs(f.baseline - ref.baseline) <= tol && sameRow(f.bbox, ref.bbox))
       row.push(f);
     else rows.push([f]);
@@ -217,7 +214,7 @@ function mergeMathClusters(model: PageModel, units: Unit[], disabled: boolean): 
         sameRow(eq.bbox, tag.bbox) &&
         tag.bbox[0] >= eq.bbox[2] - 1 &&
         tag.bbox[0] - eq.bbox[2] <= 0.35 * pageWidth;
-      if ((gx <= 1.5 * em && gy <= 0.6 * em) || tagged) parent.set(find(idx[a]!), find(idx[b]!));
+      if ((gx <= 1.5 * em && gy <= 0.4 * em) || tagged) parent.set(find(idx[a]!), find(idx[b]!));
     }
   const groups = new Map<number, number[]>();
   for (const i of idx) {

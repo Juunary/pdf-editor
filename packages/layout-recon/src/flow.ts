@@ -33,7 +33,12 @@ export interface MarginSplit {
  * 머리·꼬리(계약 2.5): 위·아래 여백 띠 안에 있고 본문과 marginGapEm 이상 떨어진 단위.
  * 본문보다 많이 큰 글자(제목)는 쪽 번호 형식이 아니면 제외한다. 꼬리는 짧거나(쪽 폭 60% 이하) 쪽 번호 형식만.
  */
-export function splitMargins(units: readonly Unit[], bounds: Rect, body: number): MarginSplit {
+export function splitMargins(
+  units: readonly Unit[],
+  bounds: Rect,
+  body: number,
+  repeated: ReadonlySet<Unit> = new Set(),
+): MarginSplit {
   const H = height(bounds);
   const W = width(bounds);
   const topLimit = bounds[1] + C.marginBand * H;
@@ -86,6 +91,17 @@ export function splitMargins(units: readonly Unit[], bounds: Rect, body: number)
     if (top - prev >= gapFor(belowSet)) bottomCut = Math.min(bottomCut, top);
   }
   for (const u of units) if (u.bbox[1] >= bottomCut) footer.add(u);
+  // 이웃 쪽에서 같은 자리·같은 글(숫자 무시)로 반복되는 단위(러닝헤드·쪽 번호): 쪽 위·아래 20% 안이고,
+  // 그보다 바깥쪽에 반복되지 않는 본문 단위가 없으면 머리·꼬리다(여백 띠·간격 조건 대신).
+  for (const u of repeated) {
+    if (u.bbox[3] <= bounds[1] + 0.2 * H) {
+      const outer = units.filter((v) => v.bbox[3] <= u.bbox[1] + 1);
+      if (outer.every((v) => header.has(v) || repeated.has(v))) header.add(u);
+    } else if (u.bbox[1] >= bounds[3] - 0.2 * H) {
+      const outer = units.filter((v) => v.bbox[1] >= u.bbox[3] - 1);
+      if (outer.every((v) => footer.has(v) || repeated.has(v))) footer.add(u);
+    }
+  }
   return {
     header: units.filter((u) => header.has(u)),
     footer: units.filter((u) => footer.has(u)),
@@ -288,8 +304,14 @@ function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | nu
   const dd = d - (tall(a) + tall(b)) / 2;
   if (dd > s.pitch(b.size) * C.paraPitchRatio + 0.5 && dd > 1.05 * b.size) return 'pitch';
   // 글머리.
+  // 가운데 정렬 줄: 중심이 같고(0.25em) 왼쪽·오른쪽 끝이 모두 다르다(들여쓰기와 구분). 캡션·제목 블록.
+  const centered =
+    Math.abs((a.bbox[0] + a.bbox[2]) / 2 - (b.bbox[0] + b.bbox[2]) / 2) <= 0.25 * em &&
+    Math.abs(a.bbox[0] - b.bbox[0]) > indent &&
+    Math.abs(a.bbox[2] - b.bbox[2]) > indent;
   // 글머리: 앞 줄이 끝까지 차고 문장이 이어지며 지금 문단이 목록 항목이 아니면 본문 안의 "(b)" 같은 참조로 본다.
-  if (BULLET.test(b.text)) {
+  // 가운데 정렬 문단 안의 "(b)" 도 참조다.
+  if (BULLET.test(b.text) && !centered) {
     const inline =
       a.bbox[2] >= s.right - 0.5 * em && !SENTENCE_END.test(a.text) && !BULLET.test(cur[0]!.text);
     if (!inline) return 'bullet';
@@ -298,9 +320,6 @@ function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | nu
   if (TOC_ENTRY.test(a.text)) return 'toc';
   const hyphen = /[-‐]$/u.test(a.text);
   // 가운데 정렬 줄(가운데가 맞고 왼쪽이 영역 왼쪽보다 들어감)은 들여쓰기로 보지 않는다.
-  const centered =
-    Math.abs((a.bbox[0] + a.bbox[2]) / 2 - (b.bbox[0] + b.bbox[2]) / 2) <= 0.5 * em &&
-    Math.min(a.bbox[0], b.bbox[0]) > s.left + indent;
   if (!centered) {
     if (cur.length === 1) {
       if (b.bbox[0] > a.bbox[0] + indent) {

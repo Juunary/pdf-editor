@@ -38,7 +38,15 @@ describe.skipIf(!MODELS)('정확도 개발 측정', () => {
           rows.push({ name, stale: true });
           continue;
         }
-        const layout = reconstructPage(model);
+        // 이웃 쪽(±1·±2) 덤프가 있으면 넘긴다(LAYOUT_DEV_NEIGHBORS 디렉터리).
+        const nbDir = process.env.LAYOUT_DEV_NEIGHBORS;
+        const neighbors: PageModel[] = [];
+        if (nbDir)
+          for (const k of [-2, -1, 1, 2]) {
+            const nf = path.join(nbDir, `${doc}-p${String(label.pageIndex + k).padStart(3, '0')}.json`);
+            if (fs.existsSync(nf)) neighbors.push(JSON.parse(fs.readFileSync(nf, 'utf8')) as PageModel);
+          }
+        const layout = reconstructPage(model, { neighbors });
         const s = scoreLayout(label, layout);
         scores.push(s);
         rows.push({ name, status: label.status, ...s, ms: Math.round(layout.reconMs) });
