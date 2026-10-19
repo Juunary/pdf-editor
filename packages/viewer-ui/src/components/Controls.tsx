@@ -10,6 +10,7 @@ const FEATURE_LABELS: Record<FeatureName, string> = {
   search: '검색',
   debug: '연결 디버그',
   layout: '레이아웃',
+  edit: '문단 편집',
 };
 
 interface Props {
