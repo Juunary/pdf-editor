@@ -874,17 +874,35 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect(await hostCalls(page, 'commitParagraphEdit')).toBe(1);
     });
   });
-});
 
-// ── 통합 때 켜는 시나리오(실제 core 편집 RPC 필요) ──────────────────────
+  // ── devicePixelRatio 2 ────────────────────────────────────────────
 
-test.describe('통합(실제 core 편집 RPC 필요)', () => {
-  const REASON = 'core 편집 RPC(S3)가 m3 에 머지된 뒤 켠다 — docs/m3-viewer-ui.md 5절';
-  test.skip(true, REASON);
+  test.describe('devicePixelRatio 2', () => {
+    test.use({ deviceScaleFactor: 2 });
 
-  test('I1: 확장 뷰어에서 한글 조합 → 확정 → 저장 → 재열기 → 같은 문단 재편집', async () => {});
-  test('편집 반응 시간 p95 ≤ 100 ms(8.4 모집단, scale 1.5·dpr 1)', async () => {});
-  test('폴백 글자(한글)·없는 글자(glyph-missing) 경고가 실제 plan/draft 경고와 일치', async () => {});
-  test('태그 쪽 편집: tagged-structure-kept/unlinked 경고와 저장 전 structureUnlinked 확인', async () => {});
-  test('Worker 강제 종료 → 복구 → replayEdits 결과 = 복구 전 화면', async () => {});
+    test('변경 영역이 렌더 배율(CSS 배율 × dpr)로 합성되고 오버레이는 CSS px 그대로', async ({
+      page,
+    }) => {
+      await startEdit(page, 10, 0.8);
+      expect(await page.evaluate(() => window.devicePixelRatio)).toBe(2);
+      await page.keyboard.type('abc');
+      const s = await settled(page);
+      expect(s.text).toBe('Hello Worldabc');
+      // 시작 갱신·입력 모두 renderScale = 1.5 × 2 = 3 으로 요청됐다.
+      const scales = await page.evaluate(() =>
+        (window as unknown as { __edit: { inputs: { renderScale: number }[] } }).__edit.inputs.map(
+          (i) => i.renderScale,
+        ),
+      );
+      expect(scales.length).toBeGreaterThan(0);
+      for (const scale of scales) expect(scale).toBe(3);
+      // 캔버스 비트맵은 dpr 배, 합성 위치도 같은 배율이다("Worldabc" 둘째 줄 x 20–100, y 41–52).
+      expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]);
+      expect(await pixel(page, 95, 46)).toEqual([0x22, 0x22, 0x22]);
+      expect(await pixel(page, 105, 46)).toEqual([255, 255, 255]);
+      const caret = await page.locator('#pe-edit-caret').boundingBox();
+      const g = await geo(page);
+      expect(Math.abs(caret!.x - (g.x + 100 * g.scale))).toBeLessThan(2);
+    });
+  });
 });
