@@ -180,7 +180,7 @@
 
 ## 8. 계약 불일치·메인 세션 확인 요청
 
-1. **D3 규칙 2 `<Tlm>` 표기**: 계약 `ET q /X Do Q BT <Tlm> Tm [n] TJ`(원 Tm 바이트 또는 유효숫자 9자리)는 6절 5 의 실측으로 pdf.js(계산값 Tm)·Poppler(합친 Td)에서 영역 밖 차이를 만든다. 구현은 마지막 Tm(없으면 BT)부터의 줄 설정 연산을 원 피연산자 그대로 같은 순서로 다시 실행한다(Tm·Td 원 바이트, TD → `tx ty Td`, T*·`'`·`"` 줄 이동 → `0 -TL Td` 또는 `T*`). 결과 Tlm 은 계약과 같고 표기만 다르다. 제안: 계약 문장을 이 방식으로 고침. 2026-10-19 메인 세션에 메시지를 보냈으나 전달 실패(상대 세션 훅 시간 초과).
+1. **D3 규칙 2 `<Tlm>` 표기**: 계약 `ET q /X Do Q BT <Tlm> Tm [n] TJ`(원 Tm 바이트 또는 유효숫자 9자리)는 6절 5 의 실측으로 pdf.js(계산값 Tm)·Poppler(합친 Td)에서 영역 밖 차이를 만든다. 구현은 마지막 Tm(없으면 BT)부터의 줄 설정 연산을 원 피연산자 그대로 같은 순서로 다시 실행한다(Tm·Td 원 바이트, TD → `tx ty Td`, T*·`'`·`"` 줄 이동 → `0 -TL Td` 또는 `T*`). 결과 Tlm 은 계약과 같고 표기만 다르다. 제안: 계약 문장을 이 방식으로 고침. 2026-10-19 메인 세션에 보고(첫 전송은 상대 세션 훅 시간 초과로 실패, 재전송 전달).
 2. **`insertion-clipped` 확장**: 계약은 직사각형 클립을 `areaLimit` 에 넣으라고만 한다. 원 문단 일부를 다른 클립 아래 그린 경우(fed-h41 4쪽 각주: 번호 "1." 만 좁은 셀 클립 안) 블록 BBox 가 18pt 폭이 되어 새 텍스트가 잘렸다(pdf.js·Poppler 는 잘린 글자도 추출해 텍스트 판정이 엇갈림). 원 문단 글자 원점이 삽입점 직사각형 클립 밖에 있으면 `insertion-clipped` 로 막는다. 코퍼스 12문단.
 3. `SourceOpState.fillColorOps` 주석은 "기본값이면 null" 이나 타입은 `number[]` 다. 구현은 빈 배열.
 4. `RemoveTextResult.skipped[].reason` 을 `code`·`detail` 로 바꿨다(pdf-ops 내보낸 타입, paragraph-edit.ts 밖). 저장소 안 다른 사용처 없음(packages·apps·tools grep).
