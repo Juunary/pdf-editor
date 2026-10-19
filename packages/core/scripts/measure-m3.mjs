@@ -3,6 +3,10 @@
 //   node scripts/measure-m3.mjs region <PDF 폴더> [문서 수=12] [반복=7]   V8: 변경 영역 렌더 시간(쪽 전체 렌더 대비)
 //   node --expose-gc scripts/measure-m3.mjs journal-heap <ops> <쪽 콘텐츠 KB> [off|on]
 //                                                                       저널 보유 메모리(쪽 콘텐츠 스트림을 작업마다 교체)
+//   node --expose-gc scripts/measure-m3.mjs journal-stream <ops> <스트림 KB> [off|on]
+//                                                                       작업마다 스트림 하나(KB 크기)를 교체할 때의 힙 증가
+//   node --expose-gc scripts/measure-m3.mjs journal-oneop <쓰기 수> <스트림 KB>
+//                                                                       한 작업 안에서 같은 스트림을 반복해 쓸 때의 힙 증가
 //
 // 코퍼스 PDF 는 커밋하지 않는다(fixtures/corpus/manifest.json). 읽기 전용으로만 연다.
 import { readdirSync, readFileSync } from 'node:fs';
@@ -223,8 +227,61 @@ async function journalHeap(opsArg, pageKbArg, mode = 'on') {
   );
 }
 
+/** 작업마다(또는 한 작업 안에서) 스트림 하나를 교체할 때의 WASM 힙 증가. */
+async function journalStream(opsArg, kbArg, mode = 'on', oneOp = false) {
+  const ops = Number(opsArg);
+  const bytes = Number(kbArg) * 1024;
+  const d = new mupdf.PDFDocument();
+  const f1 = d.addSimpleFont(new mupdf.Font('Helvetica'));
+  d.insertPage(
+    -1,
+    d.addPage([0, 0, 300, 200], 0, { Font: { F1: f1 } }, 'BT /F1 12 Tf 10 150 Td (x) Tj ET'),
+  );
+  const b = d.saveToBuffer('');
+  const raw = b.asUint8Array().slice();
+  b.destroy();
+  d.destroy();
+  const doc = mupdf.PDFDocument.openDocument(raw, 'application/pdf');
+  if (mode === 'on') doc.enableJournal();
+  const stream = (() => {
+    if (mode === 'on') doc.beginOperation('init');
+    const s0 = doc.addStream('x', {});
+    if (mode === 'on') doc.endOperation();
+    return s0;
+  })();
+  const gc = async () => {
+    globalThis.gc();
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  await gc();
+  const h0 = wasmHeapBytes();
+  if (oneOp) doc.beginOperation('one');
+  for (let i = 0; i < ops; i++) {
+    if (!oneOp && mode === 'on') doc.beginOperation(`e${i}`);
+    stream.writeStream(`BT ${String.fromCharCode(97 + (i % 26)).repeat(bytes)} ET`);
+    if (!oneOp && mode === 'on') doc.endOperation();
+    if (i % 10 === 9) await gc();
+  }
+  if (oneOp) doc.endOperation();
+  await gc();
+  const growth = wasmHeapBytes() - h0;
+  console.log(
+    JSON.stringify({
+      mode: oneOp ? 'one-operation' : mode,
+      writes: ops,
+      streamKB: Number(kbArg),
+      heapGrowthMiB: round(growth / 2 ** 20, 2),
+      perWriteKiB: round(growth / ops / 1024, 1),
+    }),
+  );
+}
+
 if (command === 'region')
   region(args[0], args[1] ? Number(args[1]) : undefined, args[2] ? Number(args[2]) : undefined);
+else if (command === 'journal-stream')
+  await journalStream(args[0] ?? '500', args[1] ?? '195', args[2]);
+else if (command === 'journal-oneop')
+  await journalStream(args[0] ?? '200', args[1] ?? '195', 'on', true);
 else if (command === 'journal-heap') await journalHeap(args[0] ?? '100', args[1] ?? '100', args[2]);
 else {
   console.error(
