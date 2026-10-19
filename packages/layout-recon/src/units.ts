@@ -88,6 +88,8 @@ export function buildUnits(
   model: PageModel,
   feats: readonly LineFeature[],
   fillers: readonly Rect[] = [],
+  /** 같은 행 조각을 간격과 무관하게 잇는다(표 셀 안: 셀이 이미 가로 범위를 가둔다). */
+  joinRow = false,
 ): Unit[] {
   const pageWidth = width(model.bounds);
   // 행 간격을 메우는 것: 인라인 이미지와 다른 글자 조각(수식의 큰 연산자·첨자는 다른 기준선의 조각이다).
@@ -134,7 +136,7 @@ export function buildUnits(
         f === row.at(-1) &&
         NUMBER_TAG.test(f.text) &&
         (width(prev.bbox) >= 0.25 * pageWidth || LEADER.test(prev.text));
-      if ((near && (ratio <= 1.5 || script)) || tag) parts.push(f);
+      if ((near && (ratio <= 1.5 || script)) || tag || joinRow) parts.push(f);
       else {
         units.push(makeUnit(model, parts));
         parts = [f];
