@@ -1,0 +1,58 @@
+/**
+ * 저장 전 판정 해석(계약 5.8, A3-2). `planSave` 결과로 저장을 막을지, 확인을 받을지 정한다.
+ *
+ * - 힙 `over-limit`: 저장하지 않고 안내(중단).
+ * - 힙 `warn`: 확인 창.
+ * - 태그 쪽 편집에서 구조 연결이 끊긴 문단이 있으면 확인 창(D1).
+ * - PDF/A 선언 문서의 편집은 "적합성이 깨질 수 있음" 확인 창(5.6).
+ * - 편집이 있으면 "편집한 쪽 번호가 파일 정보에 기록됨" 안내(확인 창이 뜰 때 함께 보인다).
+ */
+import type { SavePlan } from '@pdf-editor/shared-types';
+
+export interface SaveDecision {
+  /** 중단 사유(있으면 저장하지 않는다). */
+  block: string | null;
+  /** 확인이 필요한 경고. 비어 있지 않으면 확인 창을 띄운다. */
+  warnings: string[];
+  /** 확인 창에 함께 보여 주는 안내(그것만으로는 확인 창을 띄우지 않는다). */
+  infos: string[];
+}
+
+const mib = (bytes: number) => `${(bytes / 2 ** 20).toFixed(0)} MiB`;
+
+export function decideSave(plan: SavePlan): SaveDecision {
+  const warnings: string[] = [];
+  const infos: string[] = [];
+  const { heap, edits } = plan;
+  if (heap.level === 'over-limit') {
+    return {
+      block:
+        heap.message ??
+        `저장 중 메모리가 한계(${mib(heap.limitBytes)})를 넘을 것으로 예상되어 저장하지 않습니다 (예상 피크 ${mib(heap.estimatedPeakBytes)}).`,
+      warnings,
+      infos,
+    };
+  }
+  if (heap.level === 'warn') {
+    warnings.push(
+      heap.message ??
+        `저장 중 메모리를 많이 쓸 것으로 예상됩니다 (예상 피크 ${mib(heap.estimatedPeakBytes)} / 한계 ${mib(heap.limitBytes)}). 저장이 실패하면 작업 모듈을 복구하고 다시 저장할지 묻습니다.`,
+    );
+  }
+  if (edits) {
+    if (edits.structureUnlinked > 0) {
+      warnings.push(
+        `태그된 PDF 쪽에서 편집한 문단 ${edits.structureUnlinked}개는 구조(읽기 순서·태그)와의 연결이 끊어집니다.`,
+      );
+    }
+    if (edits.pdfaDeclared) {
+      warnings.push('이 문서는 PDF/A 로 선언되어 있어 편집하면 PDF/A 적합성이 깨질 수 있습니다.');
+    }
+    if (edits.pages.length > 0) {
+      infos.push(
+        `저장하면 편집한 쪽 번호(${edits.pages.map((p) => p + 1).join(', ')}쪽)가 파일 정보(PdfEditorEdits)에 기록됩니다.`,
+      );
+    }
+  }
+  return { block: null, warnings, infos };
+}
