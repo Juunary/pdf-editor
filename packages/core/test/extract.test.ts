@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import v8 from 'node:v8';
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PdfSession, extractPageDetailed } from '../src/index.js';
 import * as mupdf from 'mupdf';
 import type { PageModel } from '@pdf-editor/shared-types';
+import { readStructuredText } from '../src/extract-stext.js';
 import { buildPdf, hexGlyphs, koreanFont, type PageSpec } from './pdf-fixtures.js';
 
 function open(pages: Array<string | PageSpec>): PdfSession {
@@ -1021,5 +1022,54 @@ describe('extractPage: 래퍼 소유권(mupdf.js Shade 래퍼)', () => {
     s.invalidatePageCache();
     expect(s.extractPage({ pageIndex: 0 }).shades).toHaveLength(1);
     s.close();
+  });
+});
+
+describe('extractPage: WASM 래퍼 해제(M1 리뷰 반영)', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** 클래스 종료자 레지스트리의 등록·해제 횟수를 센다(래퍼 생성 = 등록, destroy = 해제). */
+  function countWrappers(cls: { _finalizer?: FinalizationRegistry<unknown> }) {
+    const registry = cls._finalizer!;
+    const register = vi.spyOn(registry, 'register');
+    const unregister = vi.spyOn(registry, 'unregister');
+    return () => ({ created: register.mock.calls.length, released: unregister.mock.calls.length });
+  }
+
+  it('소프트 마스크 안(guard 가 건너뜀)의 텍스트 래퍼도 놓는다', () => {
+    // 레지스트리는 첫 래퍼 생성 때 생긴다.
+    new mupdf.Text().destroy();
+    const s = open([
+      {
+        content: 'q /GsM gs 0 0 1 rg 0 0 100 100 re f Q BT /F1 12 Tf 10 150 Td (after) Tj ET',
+        resources: softMaskResources,
+      },
+    ]);
+    const page = s.document.loadPage(0);
+    const counts = countWrappers(mupdf.Text as never);
+    const { model } = extractPageDetailed(page, { pageIndex: 0 });
+    const c = counts();
+    page.destroy();
+    s.close();
+    expect(text(model)).toBe('after');
+    // 마스크 그룹 글자 M 과 본문 글자: 텍스트 콜백 2회 이상.
+    expect(c.created).toBeGreaterThanOrEqual(2);
+    expect(c.released).toBe(c.created);
+  });
+
+  it('구조화 텍스트 글자마다 만드는 Font 래퍼를 놓는다', () => {
+    new mupdf.Font('Helvetica').destroy();
+    const s = open([
+      `BT /F1 12 Tf 10 150 Td (Hello) Tj ET BT /F2 14 Tf 10 100 Td ${hexGlyphs('한글')} Tj ET`,
+    ]);
+    const page = s.document.loadPage(0);
+    const counts = countWrappers(mupdf.Font as never);
+    const data = readStructuredText(page);
+    const c = counts();
+    page.destroy();
+    s.close();
+    expect(data.chars).toHaveLength(7);
+    expect(c.created).toBeGreaterThanOrEqual(7);
+    expect(c.released).toBe(c.created);
   });
 });

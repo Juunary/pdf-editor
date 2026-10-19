@@ -56,7 +56,9 @@ const APPROX_DESCENT = 0.25;
 
 /**
  * 페이지 하나의 추출 모델과 계측값을 만든다. 주석·위젯은 제외한다(`runPageContents`).
- * MuPDF 경고는 실행 중에만 가로채 `warnings` 에 담고, 끝나면 로그 콜백을 해제한다.
+ * MuPDF 경고는 실행 중에만 가로채 `warnings` 에 담고, 끝나면 로그 콜백을 해제한다(`setLog(null)`).
+ * mupdf.js 1.28.1 은 현재 로거를 읽는 API 가 없어 이전 로거로 되돌리지 못한다. 이 저장소에서 `setLog` 를 쓰는
+ * 곳은 여기뿐이므로 해제가 곧 기본값(MuPDF 기본 출력) 복원이다. 다른 곳에서 로거를 둘 때는 이 함수를 감싸야 한다.
  */
 export function extractPageDetailed(page: mupdf.PDFPage, request: ExtractRequest): ExtractResult {
   const t0 = performance.now();
@@ -87,19 +89,24 @@ function build(
   const collector = new DeviceCollector(bounds, colors, request.includePathSegments === true);
 
   const device = new mupdf.Device({
+    // 텍스트 래퍼는 collector 가 넘겨받아(직전 객체 비교용) 놓는다. guard 가 건너뛰면(실패 뒤·소프트 마스크 안) 여기서 놓는다.
     fillText: (text, ctm, cs, color) => {
-      collector.guard(() => collector.fillText(text, ctm, cs, color));
+      if (!collector.guard(() => collector.fillText(text, ctm, cs, color))) text.destroy();
       cs.destroy();
     },
     strokeText: (text, stroke, ctm, cs, color) => {
-      collector.guard(() => collector.strokeText(text, ctm, cs, color));
+      if (!collector.guard(() => collector.strokeText(text, ctm, cs, color))) text.destroy();
       stroke.destroy();
       cs.destroy();
     },
-    ignoreText: (text, ctm) => collector.guard(() => collector.ignoreText(text, ctm)),
-    clipText: (text, ctm) => collector.guard(() => collector.clipText(text, ctm)),
+    ignoreText: (text, ctm) => {
+      if (!collector.guard(() => collector.ignoreText(text, ctm))) text.destroy();
+    },
+    clipText: (text, ctm) => {
+      if (!collector.guard(() => collector.clipText(text, ctm))) text.destroy();
+    },
     clipStrokeText: (text, stroke, ctm) => {
-      collector.guard(() => collector.clipText(text, ctm));
+      if (!collector.guard(() => collector.clipText(text, ctm))) text.destroy();
       stroke.destroy();
     },
     fillPath: (path, evenOdd, ctm, cs, color, alpha) => {

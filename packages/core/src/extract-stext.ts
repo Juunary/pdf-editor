@@ -71,7 +71,9 @@ export function readStructuredText(page: mupdf.Page): StextData {
         });
         data.blocks[block]!.lines.push(line);
       },
-      onChar(c, origin, _font, _size, quad, color) {
+      onChar(c, origin, font, _size, quad, color) {
+        // 글자마다 새로 만든 Font 래퍼(참조 1). 쓰지 않으므로 바로 놓는다.
+        font.destroy();
         const lineData = data.lines[line]!;
         const ch: StextChar = {
           rune: c.charCodeAt(0),
