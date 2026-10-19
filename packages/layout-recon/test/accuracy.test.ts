@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { LayoutParagraph, PageLayout, ParagraphRole } from '@pdf-editor/shared-types';
-import { kendallTau, scoreLayout, summarizeScores, type PageLabel } from '../src/accuracy.js';
+import {
+  kendallTau,
+  scoreLayout,
+  summarizeScores,
+  type PageLabel,
+  type PageScore,
+} from '../src/accuracy.js';
 import { xyCut } from '../src/xycut.js';
 
 function para(id: number, lines: number[], role: ParagraphRole = 'body'): LayoutParagraph {
@@ -152,6 +158,140 @@ describe('scoreLayout', () => {
   });
 });
 
+describe('역할 채점', () => {
+  const lbl = (role: ParagraphRole, lines: number[]): PageLabel['items'][number] => ({
+    type: 'paragraph',
+    role,
+    lines,
+  });
+
+  it('역할이 모두 같으면 대각선만 채운다', () => {
+    const s = scoreLayout(
+      label([lbl('heading', [0]), lbl('body', [1, 2]), lbl('caption', [3])]),
+      layoutOf([para(0, [0], 'heading'), para(1, [1, 2]), para(2, [3], 'caption')]),
+    );
+    expect(s.roles).toEqual({
+      heading: { heading: 1 },
+      body: { body: 1 },
+      caption: { caption: 1 },
+    });
+    expect(s.roleMisses).toEqual([]);
+  });
+
+  it('역할이 다르면 혼동표 칸과 roleMisses 에 남는다', () => {
+    const s = scoreLayout(
+      label([lbl('caption', [0]), lbl('footnote', [1]), lbl('list-item', [2, 3])]),
+      layoutOf([para(0, [0], 'body'), para(1, [1], 'list-item'), para(2, [2, 3], 'list-item')]),
+    );
+    expect(s.roles).toEqual({
+      caption: { body: 1 },
+      footnote: { 'list-item': 1 },
+      'list-item': { 'list-item': 1 },
+    });
+    expect(s.roleMisses).toEqual(['caption[0] → body P0[0]', 'footnote[1] → list-item P1[1]']);
+    // 문단 경계 지표는 역할과 무관하다.
+    expect(s.paragraphs).toEqual({ tp: 3, fp: 0, fn: 0 });
+  });
+
+  it('경계가 틀려도 줄 Jaccard 0.5 이상이면 짝지어 역할을 비교한다', () => {
+    // 라벨 [1,2,3] 을 예측이 [1,2] + [3] 으로 갈랐다: [1,2] 는 J=2/3 로 짝, [3] 은 짝 없음.
+    const s = scoreLayout(
+      label([lbl('heading', [1, 2, 3])]),
+      layoutOf([para(0, [1, 2], 'heading'), para(1, [3], 'body')]),
+    );
+    expect(s.roles).toEqual({ heading: { heading: 1 }, none: { body: 1 } });
+  });
+
+  it('짝 하한 미만이면 짝 없음: 라벨은 예측 열 none, 예측은 라벨 행 none', () => {
+    // 라벨 [1,2,3,4] vs 예측 [1],[2],[3],[4]: 각 J=1/4 < 0.5.
+    const s = scoreLayout(
+      label([lbl('list-item', [1, 2, 3, 4])]),
+      layoutOf([1, 2, 3, 4].map((l, k) => para(k, [l], 'list-item'))),
+    );
+    expect(s.roles).toEqual({ 'list-item': { none: 1 }, none: { 'list-item': 4 } });
+  });
+
+  it('일대일 짝: Jaccard 가 큰 쪽이 먼저 짝을 가져간다', () => {
+    // 예측 [1,2,3] 은 라벨 [1,2,3](J=1)과 짝이고, 라벨 [4] 와 예측 [4]도 짝이다.
+    const s = scoreLayout(
+      label([lbl('body', [1, 2, 3]), lbl('footnote', [4])]),
+      layoutOf([para(0, [1, 2, 3]), para(1, [4], 'footnote')]),
+    );
+    expect(s.roles).toEqual({ body: { body: 1 }, footnote: { footnote: 1 } });
+  });
+
+  it('표·도형 안 예측 문단과 짝이면 container 열, 짝 없는 표·도형 문단은 세지 않는다', () => {
+    const inTable = { ...para(0, [1]), table: 0 };
+    const inFigure = { ...para(1, [9]), figure: 0 };
+    const s = scoreLayout(
+      label([lbl('caption', [1])]),
+      layoutOf([inTable, inFigure, para(2, [5], 'body')]),
+    );
+    // 예측 P2([5])는 라벨 문단 줄이 없어 세지 않는다. P1([9])은 짝도 라벨 줄도 없다.
+    expect(s.roles).toEqual({ caption: { container: 1 } });
+    expect(s.roleMisses).toEqual(['caption[1] → container P0[1]']);
+  });
+
+  it('ignoreLines 는 짝짓기에서 뺀다', () => {
+    const s = scoreLayout(
+      label([lbl('footnote', [1, 2])], [3]),
+      layoutOf([para(0, [1, 2, 3], 'footnote'), para(1, [3], 'body')]),
+    );
+    expect(s.roles).toEqual({ footnote: { footnote: 1 } });
+  });
+
+  it('합산: 역할별 정밀도·재현율·F1 과 짝 비율', () => {
+    const z = { tp: 0, fp: 0, fn: 0 };
+    const page = (roles: PageScore['roles']): PageScore => ({
+      paragraphs: z,
+      pairs: z,
+      tau: null,
+      tauBaseline: null,
+      tauExcluded: 0,
+      tables: z,
+      tableShape: { exact: 0, matched: 0 },
+      cellLines: { correct: 0, total: 0 },
+      figures: z,
+      margin: z,
+      roles,
+      roleMisses: [],
+      misses: [],
+    });
+    const s = summarizeScores([
+      page({ caption: { caption: 2, body: 1 }, body: { body: 5, none: 1 }, none: { caption: 1 } }),
+      page({ caption: { none: 1 }, footnote: { body: 2 } }),
+    ]);
+    // caption: 라벨 4(일치 2), 예측 3(일치 2).
+    expect(s.roles.caption).toEqual({
+      support: 4,
+      predicted: 3,
+      tp: 2,
+      precision: 2 / 3,
+      recall: 0.5,
+      f1: 4 / 7,
+    });
+    // body: 라벨 6(일치 5), 예측 5 + 1 + 2 = 8.
+    expect(s.roles.body).toMatchObject({ support: 6, predicted: 8, tp: 5 });
+    expect(s.roles.footnote).toMatchObject({
+      support: 2,
+      predicted: 0,
+      tp: 0,
+      precision: null,
+      recall: 0,
+    });
+    expect(s.roles.heading).toMatchObject({
+      support: 0,
+      predicted: 0,
+      precision: null,
+      recall: null,
+      f1: null,
+    });
+    // 라벨 문단 3 + 6 + 1 + 2 = 12, 짝 없음 2(caption 1, body 1)를 빼면 짝 10, 그중 역할 일치 7.
+    expect(s.rolePairs).toEqual({ labeled: 12, paired: 10, match: 7 });
+    expect(s.roleMatrix.none).toEqual({ caption: 1 });
+  });
+});
+
 describe('kendallTau·summarizeScores', () => {
   it('순위 일치율', () => {
     expect(kendallTau([1, 2, 3, 4])).toBe(1);
@@ -172,6 +312,8 @@ describe('kendallTau·summarizeScores', () => {
       cellLines: { correct: 0, total: 0 },
       figures: z,
       margin: z,
+      roles: {},
+      roleMisses: [],
       misses: [],
     };
     const s = summarizeScores([
