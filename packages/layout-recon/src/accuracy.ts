@@ -38,7 +38,8 @@ export type LabelItem = LabelParagraph | LabelTable | LabelFigure;
 export interface PageLabel {
   doc: string;
   pageIndex: number;
-  split: 'dev' | 'test';
+  /** dev: 조정용, test: 1차 보류(1회 측정), test2: 2차 보류(보강 라운드, docs/m2-contract.md 4.4). */
+  split: 'dev' | 'test' | 'test2';
   extract: { lineCount: number; linesSha256: string };
   status: 'draft' | 'reviewed' | 'confirmed';
   items: LabelItem[];

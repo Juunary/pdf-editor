@@ -134,6 +134,7 @@ describe.skipIf(!corpus)('M2 정확도 하네스', () => {
       test: (r) => r.split === 'test',
       'test-docs-unseen': (r) => r.split === 'test' && !devDocs.has(r.doc),
       'test-unprocessed': (r) => r.split === 'test' && UNPROCESSED_DOCS.has(r.doc),
+      test2: (r) => r.split === 'test2',
       all: () => true,
     };
     const summaries = Object.fromEntries(

@@ -5,7 +5,7 @@ import type { Rect } from '@pdf-editor/shared-types';
 import { C } from './constants.js';
 import { height, median, overlapX, quantile, width } from './geom.js';
 import { BULLET, PAGE_NUMBER, SENTENCE_END, STARTS_UPPER } from './text-rules.js';
-import type { Unit } from './units.js';
+import { NUMBER_TAG, type Unit } from './units.js';
 
 const TOC_ENTRY = /(?:\.\s?){4,}\s*\d{1,4}\s*$|…{2,}\s*\d{1,4}\s*$/u;
 
@@ -205,15 +205,53 @@ export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
     0.9,
   );
   const regionW = right - left;
-  // 양쪽 정렬 영역: 줄 대부분이 오른쪽 기준선까지 찬다. 이때 짧은 줄은 문장부호와 무관하게 문단 끝이다.
-  const flush = us.filter((u) => u.bbox[2] >= right - 0.5 * u.size).length;
-  const justified = us.length >= 4 && flush >= 0.6 * us.length;
+  // 줄마다 국소 통계: 앞뒤 4줄 중 왼쪽 끝이 3em 안이거나 가로로 70% 이상 겹치는 줄(같은 열의 본문)로
+  // 오른쪽 끝·왼쪽 끝·양쪽 정렬 여부를 정한다. 넓은 제목·초록과 좁은 단 본문이 한 영역에 쌓여도
+  // 본문 줄을 넓은 줄 기준으로 "짧다"고 보지 않는다.
+  const localStats = us.map((u, i) => {
+    const em = u.size;
+    const group = us.filter((v, j) => {
+      if (Math.abs(i - j) > 4) return false;
+      if (Math.abs(v.bbox[0] - u.bbox[0]) <= 3 * em) return true;
+      const ov = Math.min(u.bbox[2], v.bbox[2]) - Math.max(u.bbox[0], v.bbox[0]);
+      // 넓은 쪽 폭 기준(좁은 단 줄을 감싸는 넓은 줄은 같은 열로 보지 않는다).
+      return ov >= 0.7 * Math.max(u.bbox[2] - u.bbox[0], v.bbox[2] - v.bbox[0]);
+    });
+    const r = quantile(
+      group.map((v) => v.bbox[2]),
+      0.9,
+    );
+    const l = quantile(
+      group.map((v) => v.bbox[0]),
+      0.2,
+    );
+    const flushN = group.filter((v) => v.bbox[2] >= r - 0.5 * v.size).length;
+    return {
+      left: l,
+      right: r,
+      regionW: r - l,
+      justified: group.length >= 4 && flushN >= 0.6 * group.length,
+    };
+  });
+  // 표시 수식 줄: 수식 비율 40% 이상이고 짧은(쪽 폭 대신 영역 폭 85% 미만) 줄, 그 옆·아래의 식 번호.
+  const isMath = us.map(
+    (u) => u.math >= 0.4 && u.bbox[2] - u.bbox[0] < 0.85 * Math.max(regionW, 1),
+  );
+  us.forEach((u, i) => {
+    if (!isMath[i] && NUMBER_TAG.test(u.text) && (isMath[i - 1] || isMath[i + 1])) isMath[i] = true;
+  });
   const paras: Unit[][] = [[us[0]!]];
   for (let i = 1; i < us.length; i++) {
     const a = us[i - 1]!;
     const b = us[i]!;
     const cur = paras.at(-1)!;
-    const why = breakReason(a, b, cur, { pitch, left, right, regionW, justified });
+    let why: string | null;
+    if (isMath[i - 1] && isMath[i]) {
+      // 같은 표시 수식의 줄(분수·첨자·식 번호)은 간격이 크지 않으면 한 문단.
+      why = b.baseline - a.baseline > 3 * Math.max(a.size, b.size) ? 'math-gap' : null;
+    } else if (isMath[i - 1] !== isMath[i]) {
+      why = 'math-boundary';
+    } else why = breakReason(a, b, cur, { pitch, ...localStats[i - 1]! });
     reasons?.push(why ?? '');
     if (why) paras.push([b]);
     else cur.push(b);
@@ -229,6 +267,11 @@ interface RegionStats {
   regionW: number;
 }
 
+const firstWordWidth = (u: Unit, em: number): number => {
+  const w = u.parts[0]?.words[0];
+  return w ? w.x1 - w.x0 : em;
+};
+
 /** 문단을 나눌 이유(없으면 null). */
 function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | null {
   const em = Math.max(a.size, b.size);
@@ -240,7 +283,10 @@ function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | nu
     return 'color';
   // 간격.
   const d = b.baseline - a.baseline;
-  if (d > s.pitch(b.size) * C.paraPitchRatio + 0.5 && d > 1.05 * b.size) return 'pitch';
+  // 흡수한 큰 연산자·첨자로 늘어난 줄 높이만큼은 간격에서 뺀다.
+  const tall = (u: Unit) => Math.max(0, u.full[3] - u.full[1] - (u.bbox[3] - u.bbox[1]));
+  const dd = d - (tall(a) + tall(b)) / 2;
+  if (dd > s.pitch(b.size) * C.paraPitchRatio + 0.5 && dd > 1.05 * b.size) return 'pitch';
   // 글머리.
   // 글머리: 앞 줄이 끝까지 차고 문장이 이어지며 지금 문단이 목록 항목이 아니면 본문 안의 "(b)" 같은 참조로 본다.
   if (BULLET.test(b.text)) {
@@ -264,7 +310,9 @@ function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | nu
           (after !== null && Math.abs(b.bbox[0] - after) <= 0.6 * em) ||
           words.some((w) => Math.abs(w.x0 - b.bbox[0]) <= 1.5) ||
           // 글머리 첫 줄이 오른쪽 끝까지 차고 다음 줄이 들어가 있으면 내어쓰기 이어짐.
-          (BULLET.test(a.text) && a.bbox[2] >= s.right - 0.5 * em);
+          (BULLET.test(a.text) && a.bbox[2] >= s.right - 0.5 * em) ||
+          // 글머리 첫 줄 뒤에 다음 줄 첫 단어가 들어갈 자리가 없으면 넘긴 줄이다.
+          (BULLET.test(a.text) && s.right - a.bbox[2] < firstWordWidth(b, em) + 0.3 * em);
         if (!hanging) return 'indent-first';
       }
     } else {

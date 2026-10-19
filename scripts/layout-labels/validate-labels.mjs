@@ -53,7 +53,7 @@ for (const rel of files.sort()) {
       if (!Number.isInteger(i) || i < 0 || i >= count) errs.push(`${where}: 줄 번호 범위 밖 ${i}`);
       seen.set(i, [...(seen.get(i) ?? []), where]);
     };
-    if (!['dev', 'test'].includes(label.split)) errs.push(`split ${label.split}`);
+    if (!['dev', 'test', 'test2'].includes(label.split)) errs.push(`split ${label.split}`);
     if (!['draft', 'reviewed', 'confirmed'].includes(label.status))
       errs.push(`status ${label.status}`);
     // 독립 검토: reviewed 이상은 검토자가 있어야 하고 라벨러와 달라야 한다.
