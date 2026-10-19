@@ -1,0 +1,96 @@
+{
+ "doc": "zen-beamer-7535020",
+ "pageIndex": 20,
+ "split": "test",
+ "extract": {
+  "lineCount": 14,
+  "linesSha256": "064ea253a2f756c3eb4acde4b6c2fd13472396eafc28a9c6b25e176d60d44f5d"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-fin2 (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Two-column slide read left column then right. 1 = orange subtitle line 'Initiatives ... (ou presque)' labeled heading (judgment call; could be body). 2 and 8 = column headings. Bullet glyph is part of each item's first line; wrapped bullet continuations (3-4, 6-7, 10-11) belong to their item. 13 = slide number (footer). Small logo icon at top-right (image 335,5,349,19) and 'SCIENCE OUVERTE' logo bottom-right have no extracted text and are decorative, so not labeled as figures. review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    3,
+    4
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    6,
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    8
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    9
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    10,
+    11
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    12
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    13
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

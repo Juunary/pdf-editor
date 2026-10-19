@@ -1,0 +1,247 @@
+{
+  "doc": "zen-ko-report-21333257",
+  "pageIndex": 60,
+  "split": "test",
+  "extract": {
+    "lineCount": 39,
+    "linesSha256": "4cd4b733b1f6c6c625d9998efa070bfff9c33998ad39fb1896dff08740064d5f"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-report (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "Korean report. Paragraphs start with a first-line indent (lines 2, 6, 33), which marks paragraph boundaries; line 5 is a short last line. Table 14 is a borderless-column table with shaded header and row rules (header + 2 data rows x 5 cols); header cell 21 is truncated to a single character in extraction. Caption (16) is above the table. Paragraph at 33-38 continues onto the next page (not linked). review: no change to items (line 21 '총' is the complete header word 'total', not an extraction truncation).",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        16
+      ]
+    },
+    {
+      "type": "table",
+      "bbox": [
+        127.5,
+        414.0,
+        459.0,
+        483.0
+      ],
+      "rows": 3,
+      "cols": 5,
+      "lines": [
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ],
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            17
+          ]
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            18
+          ]
+        },
+        {
+          "row": 0,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            19
+          ]
+        },
+        {
+          "row": 0,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            20
+          ]
+        },
+        {
+          "row": 0,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            21
+          ]
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            22
+          ]
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            23
+          ]
+        },
+        {
+          "row": 1,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            24
+          ]
+        },
+        {
+          "row": 1,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            25
+          ]
+        },
+        {
+          "row": 1,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            26
+          ]
+        },
+        {
+          "row": 2,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            27
+          ]
+        },
+        {
+          "row": 2,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            28
+          ]
+        },
+        {
+          "row": 2,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            29
+          ]
+        },
+        {
+          "row": 2,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            30
+          ]
+        },
+        {
+          "row": 2,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            31
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        32
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        33,
+        34,
+        35,
+        36,
+        37,
+        38
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        1
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

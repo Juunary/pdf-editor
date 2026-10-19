@@ -1,0 +1,237 @@
+{
+  "doc": "zen-ko-sim-21496576",
+  "pageIndex": 2,
+  "split": "dev",
+  "extract": {
+    "lineCount": 71,
+    "linesSha256": "af089b95d293e18755039dfafca4bbef3a8c5103df5cc441b414a827e8d29c48"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-ko (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "목차 항목(장·절 번호 + 제목 + 점선 + 쪽 번호)은 항목마다 한 문단, 역할은 해당 역할이 없어 body. 'Part I'(17pt)와 '국문(Korean)'(25pt)은 글자 크기가 달라 별도 heading 으로 둠. Abstract 는 가운데 정렬 heading. 줄 0 '심재민, 한승헌' 은 우측 러닝헤드. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        4,
+        5,
+        6
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        11,
+        12,
+        13
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        14,
+        15,
+        16
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        17,
+        18,
+        19
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        20,
+        21,
+        22,
+        23
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        24,
+        25,
+        26
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        27,
+        28,
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        30,
+        31,
+        32
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        33,
+        34,
+        35,
+        36
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        37,
+        38,
+        39
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        40,
+        41,
+        42
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        43,
+        44,
+        45,
+        46
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        47,
+        48,
+        49
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        50,
+        51,
+        52
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        53
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        54
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        55
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        56,
+        57,
+        58,
+        59,
+        60,
+        61
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        62,
+        63
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        64,
+        65,
+        66
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        67,
+        68,
+        69
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        70
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

@@ -1,0 +1,199 @@
+{
+  "doc": "zen-ko-moon-21973474",
+  "pageIndex": 5,
+  "split": "dev",
+  "extract": {
+    "lineCount": 93,
+    "linesSha256": "d7c065bd728e74177acee1ccc670d5eb99a6211674f2d75454e61a70acf9d8b7"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-ko (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "구결 문자·구결 그림이 섞여 한 시각 줄이 여러 추출 줄로 쪼개짐(줄 이미지는 인라인 구결 글리프이며 도형 아님). 시각 줄이 오른쪽 끝(약 510pt)까지 차고 다음 줄이 내어쓰기(행잉 인덴트)로 이어지면 한 문단으로 묶음: (9ㄱ)=10-22, (9ㄴ)=27-37, (10ㄴ)=69-79, 글머리 '-' 문단=40-63 및 82-92(82-92 는 다음 쪽으로 이어짐). 예문 원문은 list-item, 그 아래 해석/현대어 번역 줄은 별도 body 문단. 3-9 는 앞 쪽에서 이어지는 본문 문단. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        23,
+        24
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        25,
+        26
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        38,
+        39
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        64,
+        65,
+        66,
+        67
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        68
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        80,
+        81
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        2
+      ]
+    }
+  ],
+  "ignoreLines": []
+}
