@@ -732,7 +732,22 @@ function checkInsertionState(
       '삽입점에 직사각형이 아닌 클립이 걸려 있음(원 문단을 덮는지 판정하지 않음)',
       a.chars,
     );
-  } else a.areaLimit = intersect(ctx.model.bounds, clip as Rect);
+  } else {
+    a.areaLimit = intersect(ctx.model.bounds, clip as Rect);
+    // 직사각형 클립이라도 원 문단 글자를 다 덮지 않으면(다른 클립 아래 그린 글자가 섞임) 새 텍스트가 잘린다.
+    const r = a.areaLimit;
+    const out = a.chars.filter((c) => {
+      const o = ctx.model.chars[c]!.origin;
+      return o[0] < r[0] - 1 || o[0] > r[2] + 1 || o[1] < r[1] - 1 || o[1] > r[3] + 1;
+    });
+    if (out.length > 0) {
+      limits.add(
+        'insertion-clipped',
+        `삽입점의 직사각형 클립이 원 문단 글자 ${out.length}개를 덮지 않음(새 텍스트가 잘림)`,
+        out,
+      );
+    }
+  }
   // 판정에는 효력 있는 SMask 만 필요하다(gs 연산별로 한 번 읽는다. 쪽 끝까지 누적되는 gs 목록을 매번 합치지 않는다).
   const smaskOf = (ids: readonly number[]): mupdf.PDFObject | undefined => {
     let v: mupdf.PDFObject | undefined;
