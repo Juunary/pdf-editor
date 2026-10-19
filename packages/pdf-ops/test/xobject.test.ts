@@ -7,6 +7,7 @@ import {
   outsideFormBBox,
   redactFormUsage,
   samePath,
+  toRect,
 } from '../src/index.js';
 
 /**
@@ -141,5 +142,43 @@ describe('redactFormUsage: 선택 사용 위치만 새 인스턴스로 교체', 
     const after = listXObjectUsages(doc, 0);
     expect(after.every((u) => u.objectNumber !== fx1)).toBe(true); // A 도 원본이 아님
     expect(listXObjectUsages(doc, 1)[0]!.objectNumber).toBe(fx1); // 다른 페이지는 원본
+  });
+});
+
+describe('사각형 정규화(A7-3): 뒤집힌 /BBox [0 792 612 0]', () => {
+  function flippedDoc(): Uint8Array {
+    const doc = new mupdf.PDFDocument();
+    const F1 = doc.addSimpleFont(new mupdf.Font('Helvetica'));
+    const fx = doc.addStream('BT /F1 11 Tf 0 0 0 rg 72 700 Td (Running head) Tj ET\n', {
+      Type: 'XObject',
+      Subtype: 'Form',
+      BBox: [0, 792, 612, 0],
+      Resources: { Font: { F1 } },
+    });
+    doc.insertPage(-1, doc.addPage([0, 0, 612, 792], 0, { XObject: { Fx: fx } }, '/Fx Do\n'));
+    return doc.saveToBuffer('compress').asUint8Array().slice();
+  }
+
+  it('toRect 는 x0 ≤ x1, y0 ≤ y1 로 정규화한다', () => {
+    const doc = new mupdf.PDFDocument();
+    const arr = doc.newArray();
+    for (const v of [0, 792, 612, 0]) arr.push(v);
+    expect(toRect(arr)).toEqual([0, 0, 612, 792]);
+  });
+
+  it('사용 위치의 페이지 공간 경계가 빈 사각형이 아니다', () => {
+    const doc = open(flippedDoc());
+    const [u] = listXObjectUsages(doc, 0);
+    expect(u).toBeDefined();
+    const [x0, y0, x1, y1] = u!.pageBox;
+    expect(x1 - x0).toBeCloseTo(612);
+    expect(y1 - y0).toBeCloseTo(792);
+  });
+
+  it('BBox 안의 사각형을 BBox 밖으로 오판하지 않는다', () => {
+    const doc = open(flippedDoc());
+    const fx = doc.findPage(0).get('Resources').get('XObject').get('Fx');
+    expect(outsideFormBBox(fx, [72, 690, 300, 712])).toBe(false);
+    expect(outsideFormBBox(fx, [72, 690, 700, 712])).toBe(true);
   });
 });

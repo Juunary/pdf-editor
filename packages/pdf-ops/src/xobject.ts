@@ -44,8 +44,14 @@ function toMatrix(obj: mupdf.PDFObject): Matrix {
   return [0, 1, 2, 3, 4, 5].map((i) => obj.get(i).asNumber()) as Matrix;
 }
 
-function toRect(obj: mupdf.PDFObject): Rect {
-  return [0, 1, 2, 3].map((i) => obj.get(i).asNumber()) as Rect;
+/**
+ * PDF 사각형 배열 → 정규화한 Rect(x0 ≤ x1, y0 ≤ y1). 실제 문서의 /BBox·/MediaBox 는 `[0 792 612 0]` 처럼
+ * 뒤집힌 경우가 있다(docs/m0-corpus-recheck.md C3, 시험한 Form 9개 중 4개). MuPDF Rect.transform 은 뒤집힌
+ * 사각형을 빈 사각형으로 다루므로 변환·비교 전에 정규화한다(PDF 32000-1 7.9.5).
+ */
+export function toRect(obj: mupdf.PDFObject): Rect {
+  const [a, b, c, d] = [0, 1, 2, 3].map((i) => obj.get(i).asNumber()) as Rect;
+  return [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
 }
 
 function transformRect(r: Rect, m: Matrix): Rect {
