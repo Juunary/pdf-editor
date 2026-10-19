@@ -1,0 +1,174 @@
+{
+  "doc": "nasa-se-handbook-sp2016-6105",
+  "pageIndex": 30,
+  "split": "dev",
+  "extract": {
+    "lineCount": 50,
+    "linesSha256": "4d80b5b30e99f153e5ecee11f38652f7ac15b734481cac290d2ae7c24e14ff61"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-d1 (Claude subagent)",
+  "reviewedBy": "reviewer-D (Claude Opus subagent, independent)",
+  "notes": "No whitespace-only lines. Page has a full-width shaded callout box (SPACE FLIGHT PROGRAM IMPLEMENTATION, lines 18-33) above two columns; the box is read first, then left column (3-17), then right column (34-49). Box content is not a table or figure: banner title 18 and bold sub-labels (19, 22, 30) are headings; 20-21 one body paragraph; each bullet is one list-item including its indented continuation line (23-24, 25-26, 27, 28, 29, 31, 32-33). Left column 3-17 continues a paragraph from the previous page (starts mid-sentence, hyphenated 'cost-effec-/tively') and ends the paragraph at 17. Section heading '3.3 Project Pre-Phase A: / Concept Studies' (34-35) is one two-line heading; right column body 36-49 is one paragraph that continues on the next page. Header: running head (1). Footer order: handbook title (2), then page number (0), as in approved p050/p100. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        18
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        19
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        20,
+        21
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        22
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        23,
+        24
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        25,
+        26
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        27
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        28
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        30
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        31
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        32,
+        33
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        34,
+        35
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

@@ -1,0 +1,202 @@
+{
+  "doc": "arxiv-2609.09268",
+  "pageIndex": 0,
+  "split": "dev",
+  "extract": {
+    "lineCount": 96,
+    "linesSha256": "5083847deeca06f7ba5390453fc2d5f0b7c294bf9f3ac3fdf2b47d9a45d70424"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-d1 (Claude subagent)",
+  "reviewedBy": "reviewer-D (Claude Opus subagent, independent)",
+  "notes": "Rotated arXiv identifier stamp in the left margin (95) = header (same treatment as approved margin DOI notice / rotated tabs). Title (0-1) heading. Authors (2) body; each affiliation is its own body paragraph (3, 4, 5-6; 5-6 is one wrapped affiliation); date (7) body. These front-matter blocks are the article's own title block, not a journal masthead, so they are not header. Abstract 8-18 is one paragraph (first line indented). Section heading 'I.' (19) + 'INTRODUCTION' (20) are one visual row = one heading, as in approved p006. Two-column body split at the column boundary per guide: left column 21-34 and 35-51 (35 is indented = new paragraph), right column 54-69 (continuation of 35-51, not indented) and 70-94 (70 indented = new paragraph; continues on next page). Lines 58, 75, 81, 92 are the start of a sentence on the same visual row as the previous line's end (57, 74, 80, 91), kept in the same paragraph. Footnotes: author e-mail lines 52 and 53 are separate footnote paragraphs placed after the body in reading order (they sit at the bottom of the left column). review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        95
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        0,
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        5,
+        6
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        7
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        19,
+        20
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        52
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        53
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

@@ -1,0 +1,97 @@
+{
+  "doc": "zen-ko-kimtw-23386644",
+  "pageIndex": 0,
+  "split": "dev",
+  "extract": {
+    "lineCount": 28,
+    "linesSha256": "4e0ab2f62c38a20e75a8beaa416c580eb91319e710b4f18a7ad3c82445cf9f49"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-d2 (Claude subagent)",
+  "reviewedBy": "reviewer-D (Claude Opus subagent, independent)",
+  "notes": "줄 5 는 공백뿐이라 제외. 제목 1-2 한 heading(두 줄 제목), 3 은 글자 크기·모양이 달라 부제로 보고 별도 heading(body 로 볼 여지 있음). 4 저자명 body. 국문초록 본문 7-20 은 첫 줄 들여쓰기(x=82.2)로 시작해 한 문단(줄마다 문장이 끝나는 듯 보이나 다음 줄 첫 어절이 들어갈 폭이 없어 자동 줄바꿈으로 판단). 주제어 줄(21)은 들여쓰기 시작이라 별도 body. 23-27 은 들여쓰기로 시작하고 27 이 끝까지 차서 다음 쪽으로 이어짐. 쪽 번호(0)=footer. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        1,
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        4
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        6
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        21
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        22
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        23,
+        24,
+        25,
+        26,
+        27
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    }
+  ],
+  "ignoreLines": []
+}
