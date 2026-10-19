@@ -77,7 +77,8 @@
 - 실행 단위: 같은 tos 모드의 연속 글리프. 플러시 시점은 색공간·색·패턴 설정, `w`·`j`·`J`·`M`·`d`·`ri`, `gs`(Font 만 있는 경우 제외), `Q`, `cm`, `W`·`W*`, `ET`, `BMC`·`BDC`·`EMC`·`MP`·`DP`, 콘텐츠 끝(페이지·Form·패턴 셀, MuPDF `op_END`), 다음 글리프의 Tr 변경. `q`·`BT`·`Tf`·경로 칠하기·`Do`·`BI`·`sh` 는 플러시하지 않는다(Form 안 글리프가 페이지의 진행 중 실행 단위에 합쳐진다).
 - 플러시 시 도착: 모드 0·4 fill, 1·5 stroke, 2·6 fill+stroke(같은 객체), 3 ignore, 7 없음. 0–7 밖의 Tr 은 없음. 꺼진 /OC 면 fill·stroke 없음(ignore 는 있음). 채움 재질이 셰이딩 패턴이면 clipText + fillShade, 타일링 패턴이면 clipText + 패턴, 선도 같다(clipStrokeText).
 - 클립 누적: 모드 & 4 인 글리프(꺼진 /OC 포함, 0–7 밖 값도 비트 연산 그대로)는 ET 에서 다시 간다. 마지막 실행 단위 모드가 4–7 이면 clipText(클립 +1), 3 이면 ignoreText, 그 밖은 없음. 콘텐츠 끝에서는 보내지 않고, 누적은 BT 로 지워지지 않는다(Form 을 넘어 이어진다).
-- Type3: Tr ≥ 4 는 −4, 3 이 아니면 0(MuPDF 9.3.6 처리). 클립 누적 없음. 글리프 프로시저 직접 실행(render_direct)은 에뮬레이션하지 않는다(7절).
+- Type3: Tr ≥ 4 는 −4, 3 이 아니면 0(MuPDF 9.3.6 처리). 클립 누적 없음.
+- Type3 직접 실행(MuPDF `render_direct`, `src/type3.ts`, 코퍼스 결함 수정 2026-10-19): MuPDF 는 폰트를 읽을 때 글리프 프로시저마다 장치 플래그를 계산한다(`fz_prepare_t3_glyph`). 시작은 채움·선 색과 선 상태(끝 모양·연결·마이터·폭·대시) "미정" 이고, `d0` 은 COLOR, `d1` 은 MASK + 색 미정 해제, 색 연산·`w`·`j`·`J`·`M`·`d`(gs 의 LW·LC·LJ·ML·D 포함)는 해당 미정을 푼다. 칠하기가 미정 상태를 쓰면(채움 색 미정, 선 색·연결·폭·대시 미정, 대시 있을 때 끝 모양 미정, 마이터 연결일 때 마이터 미정) 캐시 불가다. 캐시 불가 글리프(또는 색 있는 d0 글리프 + 패턴 채움 색)는 표시할 때 실행 단위를 끊고 글리프 프로시저를 새 처리기로 직접 실행한다(CTM = FontMatrix × trm × CTM, 현재 색·선 상태 상속, 글꼴·텍스트 객체·숨김·marked content 는 새로, 숨김 카운터 0 이라 꺼진 /OC 안에서도 칠하기가 온다). 그 뒤 글리프는 Tr 3(ignoreText)으로 보낸다. 직접 실행 칠하기 번호는 그 텍스트 연산이 소유하고 `outside-page-content`(L4)를 단다. 프로시저 안 `d1` 은 장치 MASK 를 켜 이후 색 연산을 무시하게 하지만, MuPDF 가 직접 실행 뒤 장치 플래그를 되돌리므로 글리프 안에서만 유효하다.
 - 클립 누적이 남은 상태의 `cm` 은 MuPDF 가 예외로 페이지 해석을 끝낸다. 인터프리터도 오류를 기록하고 멈춘다.
 
 ### 3.2 칠하기(paintSeq)
@@ -181,6 +182,17 @@
 | 러너 | `LINK_MEASURE_DIR=<폴더> LINK_MEASURE_OUT=<경로> pnpm --filter @pdf-editor/pdf-ops exec vitest run test/corpus-measure.test.ts`(정책 기본 `first-arrival,no-clip`, `LINK_MEASURE_POLICIES` 로 지정). 결과 `<경로>.json`(문서별·정책별 요약, 실패 쪽 번호, 쪽 예외, 열기 실패)과 `<경로>.md`(문서별·정책별 표 + 합계). PageModel 은 테스트 헬퍼(MuPDF Device, 계약 3.1 판정) |
 | 시험 실행 | fixtures/m0 6개 문서 10쪽: 두 정책 모두 실패 0(테스트 `fixtures-m0.test.ts` 가 같은 도구로 확인) |
 
+### 5.6 실제 코퍼스(`fixtures/corpus` 19건 1,647쪽, 실측 2026-10-19)
+
+| 측정 | 기준 PageModel | 결과 |
+|---|---|---|
+| 메인 세션 통합 측정(수정 전) | core `extractPage`, first-arrival | 글자 4,126,758개 미매칭 0, 글리프 총수 차이 0. 실패 11쪽 전부 도형 총수 차이: arxiv-2609.10511 p2·3·6(차이 합 460), zen-ko-moon-21973474 p0·6·8·13·16·18·19·20(차이 합 750) |
+| 원인 | — | 두 문서 모두 캐시 불가 Type3 글리프(arxiv: Ghostscript `d0` + 색 미지정 채움, zen-ko: `d1` + 선 상태 미정 B)의 직접 실행(R1) 미에뮬레이션. Device 전달 순서열 비교로 확인 |
+| 수정 후, 두 문서 | core `extractPage`(m1 의 `packages/core/test/corpus-link.test.ts`) | 37쪽 실패 0, 도형 18,978개 미매칭 0, 총수 차이 0 |
+| 수정 후, 전체 | 테스트 헬퍼(`test/corpus-measure.test.ts`), first-arrival·no-clip | 두 정책 모두 1,647쪽 실패 0, 글자 4,126,758·도형 182,110 미매칭 0, 총수 차이 0, 쪽 예외 0 |
+
+러너 메모리: 동기 루프에서는 mupdf 래퍼의 FinalizationRegistry 정리가 돌지 않아, 테스트 헬퍼가 만든 Device 가 콜백 클로저(쪽 데이터)를 장치 표에 남겨 JS 힙이 3GB 를 넘었다. 헬퍼에서 Device·Text 를 명시적으로 해제한다. 문서를 `destroy()` 한 뒤 이벤트 루프를 양보하면 남은 PDFObject 래퍼 정리가 해제된 문서에 접근해 WASM 메모리 오류가 나므로, 러너는 문서를 명시적으로 해제하지 않는다.
+
 ## 6. 폰트 폭·코드 분리(pdf-fonts.ts)
 
 Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`test/pdf-fonts.test.ts` 151건, 실측 2026-10-19). 리뷰·통합은 Opus.
@@ -199,7 +211,7 @@ Sonnet 서브에이전트가 구현하고 MuPDF Device 콜백과 대조했다(`t
 
 | # | 내용 | 영향 | 처리 |
 |---|---|---|---|
-| R1 | Type3 글리프 직접 실행(MuPDF `render_direct`: 캐시 불가 글리프는 글리프 프로시저를 Device 로 직접 실행하고 텍스트는 ignore)을 에뮬레이션하지 않는다 | 그런 글리프가 있으면 paintSeq 가 늘고 글리프 도착 종류가 바뀐다 | linkPage 재동기화. 코퍼스에서 빈도 확인 |
+| R1 | Type3 캐시 가능 판정은 글리프 프로시저의 경로 칠하기만 본다. 프로시저 안 Form `Do`·텍스트·중첩 Type3 의 플래그 영향은 계산하지 않는다(2026-10-19 render_direct 에뮬레이션 추가 전에는 미구현이었고, 코퍼스 2개 문서 11쪽 도형 총수 차이의 원인이었다) | 그런 글리프에서 직접 실행 여부가 다를 수 있다 | linkPage 재동기화 |
 | R2 | 패턴 색 텍스트의 타일 수 판정에 쓰는 글리프 경계는 근사(em 상자 + 1)다. MuPDF 는 실제 글리프 경계를 쓴다 | 타일링 패턴 색 텍스트에서 직접 실행 여부·타일 수가 다를 수 있다(퍼징 356쪽 중 4쪽) | 재동기화. 셀 칠하기는 소유 연산이 없어 편집 연산 매칭에는 영향이 작다 |
 | R3 | 토크나이저 오류 뒤는 해석하지 않는다. MuPDF 는 오류 토큰을 건너뛰고 계속한다(최대 100회) | 오류 뒤 번호가 MuPDF 와 어긋난다 | `tokenizer-error`, 해당 콘텐츠 편집 불가(L6) |
 | R4 | 필터 있는 인라인 이미지의 EI 는 앞뒤 공백 조건으로 찾는다(MuPDF 는 디코더가 데이터를 소비한 뒤 찾음) | 압축 데이터 안 우연한 " EI " 에서 잘못 끝날 수 있다 | L6 와 같은 위험. 코퍼스에서 확인 |
