@@ -86,6 +86,9 @@ export function buildUnits(
   fillers: readonly Rect[] = [],
 ): Unit[] {
   const pageWidth = width(model.bounds);
+  // 행 간격을 메우는 것: 인라인 이미지와 다른 글자 조각(수식의 큰 연산자·첨자는 다른 기준선의 조각이다).
+  // 글자 조각은 좁고(쪽 폭 25% 이하) 행 높이를 거의 다 덮을 때만 메운다(다른 열의 줄은 메우지 않음).
+  const textFillers = feats.map((f) => f.bbox).filter((r) => width(r) <= 0.25 * pageWidth);
   const sorted = [...feats].sort((a, b) => a.baseline - b.baseline || a.bbox[0] - b.bbox[0]);
   const rows: LineFeature[][] = [];
   for (const f of sorted) {
@@ -109,7 +112,10 @@ export function buildUnits(
     let parts: LineFeature[] = [row[0]!];
     for (const f of row.slice(1)) {
       const prev = parts.at(-1)!;
-      const gap = uncoveredGap(prev.bbox, f.bbox, fillers);
+      const gap = Math.min(
+        uncoveredGap(prev.bbox, f.bbox, fillers, 0.5),
+        uncoveredGap(prev.bbox, f.bbox, [...fillers, ...textFillers], 0.8),
+      );
       const ratio = Math.max(f.size, prev.size) / Math.max(Math.min(f.size, prev.size), 0.1);
       // 위·아래 첨자(작은 조각이 바로 붙음)는 크기 비율과 무관하게 합친다.
       const script = ratio > 1.5 && gap <= 0.3 * Math.max(f.size, prev.size);
@@ -141,9 +147,14 @@ const visibleCount = (u: Unit): number => u.text.replace(/\s/gu, '').length;
  * 흡수한다. 흡수한 조각은 텍스트·줄 목록에는 들어가지만 배치 판단 상자(bbox)는 바꾸지 않는다.
  */
 function absorbMinor(model: PageModel, units: Unit[]): Unit[] {
-  const minor = units.filter((u) => visibleCount(u) <= 3);
+  // 작은 조각: 보이는 글자 3개 이하, 또는 본문 크기 80% 이하 글자의 10자 이하 조각(첨자 묶음).
+  const sizes = units.map((u) => u.size).sort((a, b) => a - b);
+  const typical = sizes.length ? sizes[sizes.length >> 1]! : 10;
+  const isMinor = (u: Unit) =>
+    visibleCount(u) <= 3 || (u.size <= 0.8 * typical && visibleCount(u) <= 10);
+  const minor = units.filter(isMinor);
   if (minor.length === 0) return units;
-  const major = units.filter((u) => visibleCount(u) > 3);
+  const major = units.filter((u) => !isMinor(u));
   const hosts = new Map<Unit, Unit[]>();
   const kept: Unit[] = [];
   for (const m of minor) {
@@ -180,14 +191,15 @@ function absorbMinor(model: PageModel, units: Unit[]): Unit[] {
  * 두 조각 사이 가로 간격에서 같은 행의 인라인 이미지(글리프 그림 등)가 덮는 길이를 뺀 값.
  * Hancom 출력은 구결·외자 글리프를 작은 이미지로 넣어 줄을 여러 stext 줄로 쪼갠다(2026-10-19 실측).
  */
-function uncoveredGap(a: Rect, b: Rect, fillers: readonly Rect[]): number {
+function uncoveredGap(a: Rect, b: Rect, fillers: readonly Rect[], minCover: number): number {
   const lo = a[2];
   const hi = b[0];
   if (hi <= lo || fillers.length === 0) return hi - lo;
   const row: Rect = [lo, Math.min(a[1], b[1]), hi, Math.max(a[3], b[3])];
   const spans = fillers
     .filter(
-      (r) => r[2] > lo && r[0] < hi && overlapY(r, row) >= 0.5 * Math.min(height(r), height(row)),
+      (r) =>
+        r[2] > lo && r[0] < hi && overlapY(r, row) >= minCover * Math.min(height(r), height(row)),
     )
     .map((r) => [Math.max(r[0], lo), Math.min(r[2], hi)] as [number, number])
     .sort((x, y) => x[0] - y[0]);
