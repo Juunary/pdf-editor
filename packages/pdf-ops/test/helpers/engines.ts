@@ -365,4 +365,5 @@ export async function pdfjsMarkedText(
   }
 }
 
-export const squash = (s: string) => s.replace(/\s+/gu, '');
+/** 텍스트 판정용: 공백류와 기본 무시 문자(Default_Ignorable_Code_Point, 계약 8.3 수정 4)를 지운다. */
+export const squash = (s: string) => s.replace(/[\s\p{Default_Ignorable_Code_Point}]+/gu, '');

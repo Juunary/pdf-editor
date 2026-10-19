@@ -9,7 +9,7 @@
 | 입력 | M1 계약(`docs/m1-contract.md`: SourceMap·매칭·좌표계), M1 결정(`docs/m1-decisions.md`: A7-2 SourceMap 기반 제거 등), M2 계약(`docs/m2-contract.md`: PageLayout), 1.2절의 이관 Action Item |
 | 일정 | PLAN.md 6절 계획은 2026-12-14~2027-01-17(5주). 2026-10-19 착수 |
 | 상태 표기 | 확정 = 근거가 있고 바꾸지 않음. 권고 = 메인 세션 결정, 사용자 확인 전. 결정 대기 = 사용자 결정 필요 |
-| 변경 이력 | 수정 1(2026-10-19, S3 core 실측 보고): 폴백 폰트 임베딩과 Info 생성을 저널을 켜기 전 한 번으로 바꿈(D4·D9·5.7), FontManager 생성자를 `FallbackFontSource` 로 바꿈. 수정 2(2026-10-19, S2 reflow 실측 보고): 폴백 서브셋 cmap 을 일대일로 다시 만듦(D12), 입력 정규화에 U+00A0 → U+0020 추가(1.3·5.9) 수정 3(2026-10-19, S1 pdf-ops 실측 보고): BT 나누기의 Tlm 복원을 원 줄 설정 연산 재실행으로(D3 규칙 2), `insertion-clipped` 에 직사각형 클립이 원 글리프를 덮지 않는 경우 추가 |
+| 변경 이력 | 수정 1(2026-10-19, S3 core 실측 보고): 폴백 폰트 임베딩과 Info 생성을 저널을 켜기 전 한 번으로 바꿈(D4·D9·5.7), FontManager 생성자를 `FallbackFontSource` 로 바꿈. 수정 2(2026-10-19, S2 reflow 실측 보고): 폴백 서브셋 cmap 을 일대일로 다시 만듦(D12), 입력 정규화에 U+00A0 → U+0020 추가(1.3·5.9) 수정 3(2026-10-19, S1 pdf-ops 실측 보고): BT 나누기의 Tlm 복원을 원 줄 설정 연산 재실행으로(D3 규칙 2), `insertion-clipped` 에 직사각형 클립이 원 글리프를 덮지 않는 경우 추가 수정 4(2026-10-19, S2·S3·S4 보고 정리): Info 기록을 커밋 작업 안으로(D9·5.6), redo 소실 조건(D9), 초안 중 허용 RPC(5.7), 전용 Worker 의 chrome.* 불가(5.7), 리플로우 요약 규약·통합 때 추가할 RPC(4절), 텍스트 판정에서 기본 무시 문자 제외(8.3) |
 | 독립 검토 | 2026-10-19 읽기 전용 검토(판정 REVISE: BLOCKER 1·HIGH 6·MEDIUM 9·LOW 12)를 이 판에 반영했다. 저널·폰트·harfbuzz 실측 주장은 메인 세션이 재현했다(11절) |
 
 ## 1. 완료 기준과 범위
@@ -220,7 +220,7 @@
 
 - 저장 순서
   1. `beginOperation('save')`
-  2. Info 기록(5.6)·폴백 서브셋 교체(D4)
+  2. 폴백 서브셋 교체(D4, 폴백을 쓴 활성 편집이 있을 때만). Info 기록은 저장이 아니라 커밋 작업 안에서 한다(수정 4, 5.6)
   3. `saveToBuffer(FULL_SAVE_OPTIONS)`
   4. `abandonOperation()`
   - 저장은 저널 단계를 만들지 않고, 작업 문서는 저장 전 상태로 남는다. 실측으로 출력 반영·저널 유지·undo/redo 정상을 확인했다.
@@ -229,6 +229,8 @@
 - 초안이 있는 동안 `planSave`·`save` 는 예외다. 뷰어는 Ctrl+S 때 먼저 커밋한다.
 - 편집이 있는 저장은 항상 전체 저장이다. 세션에서 전체 저장을 한 번이라도 했으면 이후 저장도 전체 저장이다(증분 구간 xref 형식 문제, A3-9). 증분 저장은 편집 없는 주석·메타 저장에만 쓴다.
 - 저장 뒤에도 로그와 저널은 유지한다(저장 후 undo 가능). 복구 기준은 원본 바이트 + 활성 로그다.
+- redo 와 작업(수정 4, S3 실측): undo 로 redo 가 가능한 상태에서 작업 안의 첫 객체 변경은 redo 단계를 버리고, 그 작업을 `abandonOperation` 해도 돌아오지 않는다. 그래서 초안을 시작하면 redo 가 사라지고(취소해도 복원 안 됨), 폴백을 쓴 문서에서 undo 직후 저장하면 서브셋 교체 때문에 redo 가 사라진다. 변경 없는 감싼 저장은 redo 를 유지한다. core 는 작업을 버린 직후 `doc.canRedo()` 로 redo 스택을 MuPDF 와 맞춘다.
+- 커밋·재적용 이력이 있으면 그 편집을 모두 되돌렸어도 전체 저장으로 승격한다(미사용 폴백 폰트 객체가 문서에 남아 있음).
 - `SaveRequest.changes` 가 비어 있어도 core 가 로그에서 변경 종류(`content-stream`, 폴백 사용 시 `font-embed`)를 더한다.
 
 ### D12 폴백 폰트 범위
@@ -280,6 +282,8 @@
 | `undo()`·`redo()`·`getEditHistory()` | 문서 단위 undo/redo, 영향 쪽·`revision`·`activeEditIds` |
 | `replayEdits(ops)` | 새로 연 문서에 로그를 다시 적용(복구, D6) |
 
+- 통합 때 추가(수정 4, 메인 세션): `beginParagraphEdit` 에 선택 인자 `renderScale`(없으면 마지막 쪽 전체 렌더 배율, 그것도 없으면 2. `first.region` 은 이 배율), `listRedactAnnots(): Promise<{ total: number; pages: number[] }>`(A2-2 열기 시 보고, core 가 pdf-ops `listRedactAnnots` 를 돌려줌).
+- 리플로우 요약 규약(수정 4, S2 구현·S4 사용 기준): `PlacedLine.[start, end)` 는 텍스트를 빈틈 없이 덮고 줄 끝 공백과 강제 줄바꿈 문자를 그 줄에 포함한다. `ascent` 는 양수, `descent` 는 음수(pt, 배율 적용)이고 줄 상자는 [기준선 − ascent, 기준선 − descent]. `x0`·`x1` 은 줄 끝 공백을 뺀 내용 범위. `PlacedGlyph.x` 는 정렬·커닝을 반영한 원점. `DraftUpdate.warnings` 는 그 시점의 전체 경고(계획 경고 포함, 같은 종류는 하나)다. `overflow-clipped`·`area-overlaps-content` 는 core 가 계산한다.
 - 연결부(계약 커밋): core 의 새 RPC 는 "M3 미구현" 예외. 뷰어는 기존 규칙(`failure.ts`)대로 "미구현" 이면 그 기능만 끈다.
 
 ## 5. 단계별 규칙
@@ -351,16 +355,20 @@
 
 ### 5.6 저장 메타
 
-- 저장 때 Info `/PdfEditorEdits` = `"pages=<1부터 쪽 번호 목록>; structure=not-updated|n/a"`(D1). 이미 있으면 쪽 번호를 합집합으로 합친다. `/ModDate` 갱신, `/Producer` 는 바꾸지 않는다.
+- Info `/PdfEditorEdits` = `"pages=<1부터 쪽 번호 목록>; structure=not-updated|n/a"`(D1). 기록 시점은 **커밋 작업 안**이다(수정 4, S3 실측: 저장 작업 안에서 기록하면 undo 직후 저장이 redo 를 잃는다). 그래서 기록이 저널에 남아 undo·redo 와 함께 움직인다. 재적용은 끝에서 한 번 기록한다.
+  - `recordEditMetadata(doc, { pages, structureNotUpdated })` 의 `pages` 는 활성 편집 전체의 쪽 인덱스(0부터)이고, 문자열은 1부터 쓴다. 커밋마다 다시 불리므로 같은 입력에 멱등이어야 한다.
+  - 이전 세션이 남긴 `/PdfEditorEdits` 가 있으면 그 쪽 번호와 합집합으로 합친다(그래서 undo 로 이번 세션 편집을 되돌려도 이전 세션 쪽 번호는 남는다).
+  - Info 사전은 이미 있다고 가정한다(5.7). 객체를 더한 뒤에는 `getTrailer()` 를 다시 불러야 현재 trailer 를 얻는다(먼저 받아 둔 trailer 에 `put` 하면 반영되지 않음, S3 실측).
+  - `/ModDate` 는 마지막 커밋 시각이 된다. `/Producer` 는 바꾸지 않는다.
 - XMP `ModifyDate` 는 갱신하지 않는다(불일치는 기록만). `/Metadata` 에 PDF/A 선언이 있으면 저장 전 "PDF/A 적합성이 깨질 수 있음" 경고.
 - 편집 쪽 번호가 파일에 남는다는 사실을 설정·도움말에 적는다.
 
 ### 5.7 세션 상태(core)
 
-- 문서 1개당 초안은 최대 1개. 초안이 있는 동안 렌더·추출·검색은 허용(초안 상태 기준, D7), 다른 편집 RPC 와 `planSave`·`save` 는 예외.
+- 문서 1개당 초안은 최대 1개. 초안이 있는 동안 렌더·추출·검색·`getPageEdits`·`getEditHistory` 는 허용(초안 상태 기준, D7). 판정 2개·`beginParagraphEdit`·`undo`·`redo`·`replayEdits`·`planSave`·`save` 는 예외(수정 4).
 - 커밋 시 그 쪽의 추출·SourceMap·레이아웃 캐시를 무효화한다. 이웃 쪽 레이아웃(머리·꼬리 반복 판정, M2)도 무효화한다(±2쪽). `revision` 을 올린다.
 - 편집 블록 목록(쪽별)은 undo/redo 뒤 `listEditBlocks` 로 다시 만든다.
-- 폴백 폰트 바이트는 세션 생성 옵션의 비동기 로더(`loadFallbackFont`)로 첫 `getPageEditability`·`planParagraphEdit`·`beginParagraphEdit` 에서 await 한다. 저널은 첫 `beginParagraphEdit` 에서 켜고, 켜기 직전(작업 밖)에 Info 사전 생성(없을 때)과 폴백 폰트 `embedFont` 를 한 번 한다(수정 1). FontManager 에는 `FallbackFontSource`(바이트는 판정·셰이핑용, 객체 참조는 저널을 켠 뒤부터)로 넘긴다. 확장은 Worker 에서 `new URL('<번들 경로>', import.meta.url)` 로 받는다(전용 Worker 에서 chrome.* 사용 가능 여부는 S4 가 확인), Node 테스트는 `assets/fonts` 파일을 읽는다.
+- 폴백 폰트 바이트는 세션 생성 옵션의 비동기 로더(`loadFallbackFont`)로 첫 `getPageEditability`·`planParagraphEdit`·`beginParagraphEdit` 에서 await 한다. 저널은 첫 `beginParagraphEdit` 에서 켜고, 켜기 직전(작업 밖)에 Info 사전 생성(없을 때)과 폴백 폰트 `embedFont` 를 한 번 한다(수정 1). FontManager 에는 `FallbackFontSource`(바이트는 판정·셰이핑용, 객체 참조는 저널을 켠 뒤부터)로 넘긴다. 확장은 Worker 에서 `new URL('<번들 경로>', import.meta.url)` 로 받는다(전용 Worker 에서는 `chrome.*` 를 쓸 수 없다: S4 실측, `typeof chrome === 'undefined'`, 확장 자산 fetch 는 됨). Node 테스트는 `assets/fonts` 파일을 읽는다.
 
 ### 5.8 저장(core·뷰어)
 
@@ -454,7 +462,7 @@
 | --- | --- |
 | 렌더 | scale 2, 주석 제외, 채널 차 8 초과 픽셀 수. MuPDF·pdf.js(pdfjs-dist 6.4.299)·Poppler(pdftoppm) |
 | 변경 허용 영역 | 원 문단 bbox ∪ 최종 배치 상자(`contentBox`) ∪ 지운 글리프 잉크 상자, 여백 2pt. 잉크 상자 = 원본에서 지운 글리프만 그린 렌더의 잉크 외접 상자 |
-| 텍스트 | 추출기: MuPDF 구조화 텍스트, pdf.js `getTextContent`. 편집 블록 출처 글자(블록 상자 안의 글자)만 모아 양쪽 모두 공백류를 지운 문자열이 같다. 공백 접기 비교(줄바꿈 → 공백)는 보조 지표로 기록만 |
+| 텍스트 | 추출기: MuPDF 구조화 텍스트, pdf.js `getTextContent`. 편집 블록 출처 글자(블록 상자 안의 글자)만 모아 양쪽 모두 공백류와 기본 무시 문자(Default_Ignorable_Code_Point, 예: U+00AD·U+3164)를 지운 문자열이 같다(수정 4, S2 보고 N4: 기본 무시 문자는 쓰지 않는다). 공백 접기 비교(줄바꿈 → 공백)는 보조 지표로 기록만 |
 | 순서 | 같은 엔진으로 원본에서 추출한 순서 기준. 원 문단의 직전·직후 문단(PageLayout 읽기 순서 이웃)의 마지막·첫 글자 위치를 편집본 추출에서 찾아, 직전 마지막 < 새 첫 글자, 새 마지막 < 직후 첫 글자 |
 
 ### 8.4 성능 측정

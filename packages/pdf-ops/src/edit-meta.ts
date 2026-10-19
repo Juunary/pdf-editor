@@ -1,5 +1,6 @@
 /**
- * 저장 메타(docs/m3-contract.md 5.6·D1): Info /PdfEditorEdits 기록, /ModDate 갱신, PDF/A 선언 확인.
+ * 편집 메타(docs/m3-contract.md 5.6·D1 수정 4): Info /PdfEditorEdits 기록, /ModDate 갱신, PDF/A 선언 확인.
+ * core 가 커밋 작업 안에서 커밋마다(재적용은 끝에서 한 번) 부른다. 기록이 저널에 남아 undo·redo 와 함께 움직인다.
  * /Producer 와 XMP ModifyDate 는 바꾸지 않는다(불일치는 기록만, docs/m3-pdf-ops.md).
  */
 import type * as mupdf from 'mupdf';
@@ -39,18 +40,31 @@ function infoDict(doc: mupdf.PDFDocument): mupdf.PDFObject {
   return info;
 }
 
-/** pages 는 0부터. Info 에는 1부터 적고 기존 값과 합집합으로 합친다. */
+/** 문서별 이전 세션 기록(이 세션의 첫 기록 직전 값). 이 세션 기록과 섞지 않으려고 한 번만 읽는다. */
+const baselines = new WeakMap<mupdf.PDFDocument, { pages: number[]; structure: string | null }>();
+
+/**
+ * pages 는 활성 편집 전체의 쪽 인덱스(0부터)이고 Info 에는 1부터 적는다. 이전 세션의 쪽 번호와 합집합으로 쓰며,
+ * 같은 입력이면 같은 /PdfEditorEdits 가 된다(멱등). /ModDate 는 호출 시각. Info 사전은 core 가 만들어 둔다.
+ */
 export function recordMetadata(
   doc: mupdf.PDFDocument,
   info: { pages: number[]; structureNotUpdated: boolean },
   date: Date = new Date(),
 ): void {
+  // 객체를 더한 뒤에는 trailer 를 다시 받아야 현재 값이 나온다(계약 5.6 수정 4, S3 실측): infoDict 가 매번 받는다.
   const dict = infoDict(doc);
-  const prev = dict.get(KEY);
-  const old = prev.isString() ? parseEditsInfo(prev.asString()) : { pages: [], structure: null };
-  const pages = [...new Set([...old.pages, ...info.pages.map((p) => p + 1)])].sort((a, b) => a - b);
+  let base = baselines.get(doc);
+  if (!base) {
+    const prev = dict.get(KEY);
+    base = prev.isString() ? parseEditsInfo(prev.asString()) : { pages: [], structure: null };
+    baselines.set(doc, base);
+  }
+  const pages = [...new Set([...base.pages, ...info.pages.map((p) => p + 1)])].sort(
+    (a, b) => a - b,
+  );
   const structure =
-    info.structureNotUpdated || old.structure === 'not-updated' ? 'not-updated' : 'n/a';
+    info.structureNotUpdated || base.structure === 'not-updated' ? 'not-updated' : 'n/a';
   dict.put(KEY, doc.newString(`pages=${pages.join(',')}; structure=${structure}`));
   dict.put('ModDate', doc.newString(pdfDate(date)));
 }
