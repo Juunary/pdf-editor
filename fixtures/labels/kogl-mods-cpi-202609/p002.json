@@ -1,0 +1,119 @@
+{
+ "doc": "kogl-mods-cpi-202609",
+ "pageIndex": 2,
+ "split": "test2",
+ "extract": {
+  "lineCount": 19,
+  "linesSha256": "ffc2f1ad0a7c8d9854640a4bf02a20e620114c0136c2a9b1fb4b508c9174f976"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t1 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Table-of-contents page; the gray frame around the page and the gray title box are decoration, not figures. '목  차' (0) is the page heading. Per guide, TOC entries are one paragraph per entry; where the extractor split the page number off a dotted-leader line (1+2, 3+4, 5+6, 7+8, 9+10) the pair is one paragraph (one entry); entries 11-14 and 16-18 carry their page number inside the same line. Roles: entries with glyph bullets (❐, ◎, ◇) or numbering are labeled list-item; '◇부  록' (15) is a TOC group entry without page number, also list-item (could be read as a heading). No header/footer on this page. review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    1,
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    3,
+    4
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    5,
+    6
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    7,
+    8
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    9,
+    10
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    11
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    12
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    13
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    14
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    15
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    16
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    17
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    18
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

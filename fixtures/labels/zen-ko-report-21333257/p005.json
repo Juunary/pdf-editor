@@ -1,0 +1,85 @@
+{
+ "doc": "zen-ko-report-21333257",
+ "pageIndex": 5,
+ "split": "test2",
+ "extract": {
+  "lineCount": 27,
+  "linesSha256": "f5afe4b4130b5a38bbc7e5ac1ff53c468573aafa2fe66c443829e1df841e4efc"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t2 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Korean report, first-line indent marks paragraph starts (6, 9, 18, 20). Paragraph 2-5 continues from the previous page (no indent at line 2) and its first line is a continuation. Lines 18-19 are two short consecutive questions with one indent at 18, kept as one paragraph. Header = running title (0), footer = page number (1). review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    6,
+    7,
+    8
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    18,
+    19
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    1
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

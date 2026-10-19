@@ -1,0 +1,205 @@
+{
+ "doc": "jnl-jdis-2026-2-2-7",
+ "pageIndex": 3,
+ "split": "test2",
+ "extract": {
+  "lineCount": 48,
+  "linesSha256": "b4545022255e2df1d0fe1cebe7feb9190aa75b12f5363586adadeedcc6fd7fe5"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t2 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Single-column page. Running head (2) is header. Paragraph 3-5 continues from the previous page (no indent at 3). New paragraphs start at the indented lines 6, 11, 18, 25. 17 is the section heading. Caption 33 is above Table 1. Table 1: header row + 2 data rows x 2 cols, bbox from rules approx (170,603)-(553,686); bullet marks are inside the first content line of each cell, and the '*' source lines (39, 44) are inside the cell rules so they stay in their cells. Footnote 3) (34-35, hanging indent on 35) is one paragraph and comes after the table in reading order. Footer: 1 journal name (left), 0 page number (right). review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    3,
+    4,
+    5
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    6,
+    7,
+    8,
+    9,
+    10
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    11,
+    12,
+    13,
+    14,
+    15,
+    16
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    17
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    33
+   ]
+  },
+  {
+   "type": "table",
+   "bbox": [
+    170,
+    603,
+    553,
+    686
+   ],
+   "rows": 3,
+   "cols": 2,
+   "lines": [
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47
+   ],
+   "cells": [
+    {
+     "row": 0,
+     "col": 0,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      36
+     ]
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      37
+     ]
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      38,
+      39
+     ]
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      40,
+      41
+     ]
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      42,
+      43,
+      44
+     ]
+    },
+    {
+     "row": 2,
+     "col": 1,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      45,
+      46,
+      47
+     ]
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    34,
+    35
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

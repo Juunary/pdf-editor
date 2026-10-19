@@ -1,0 +1,136 @@
+{
+ "doc": "jnl-jdis-2026-2-2-7",
+ "pageIndex": 8,
+ "split": "test2",
+ "extract": {
+  "lineCount": 32,
+  "linesSha256": "b65769b7619a9daab540511ebb1846ef7b153af776ede7f5ce4719d6f726e16c"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t2 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Single-column page. Running head (2) is header. Paragraph 3-7 continues from the previous page (no indent at 3). 8 = section heading, 9 = subsection heading (consecutive). Body paragraphs start at the indented lines 10, 14, 19, 23. The checklist graphic (image box 188,505,535,661) is a raster image whose text was not extracted, so it is a figure with empty labels; caption 27 is below it. Footnotes 8) (28-29) and 9) (30-31) are separate paragraphs (two different notes, hanging indent on 29 and 31). Footer: 1 journal name (left), 0 page number (right). review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    3,
+    4,
+    5,
+    6,
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    8
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    9
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    10,
+    11,
+    12,
+    13
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    14,
+    15,
+    16,
+    17,
+    18
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    19,
+    20,
+    21,
+    22
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    23,
+    24,
+    25,
+    26
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    188,
+    505,
+    535,
+    661
+   ],
+   "labels": []
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    27
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    28,
+    29
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footnote",
+   "lines": [
+    30,
+    31
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  }
+ ],
+ "ignoreLines": []
+}
