@@ -83,10 +83,12 @@ export function LayoutLayer({ doc, layout }: Props) {
       if (!r) return;
       const label = String(k + 1);
       const w = ctx.measureText(label).width + 4 * px;
+      // 왼쪽 끝 항목은 번호가 캔버스 밖으로 나가지 않게 상자 안쪽에 그린다.
+      const x = r[0] - w >= layout.origin[0] ? r[0] - w : r[0];
       ctx.fillStyle = '#212121';
-      ctx.fillRect(r[0] - w, r[1], w, 12 * px);
+      ctx.fillRect(x, r[1], w, 12 * px);
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(label, r[0] - w + 2 * px, r[1] + 1 * px);
+      ctx.fillText(label, x + 2 * px, r[1] + 1 * px);
     });
   }, [doc, layout]);
 

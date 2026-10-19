@@ -137,14 +137,15 @@ const host = {
     if (cfg.failures?.link) throw new Error(cfg.failures.link);
     return cfg.linkages[i];
   },
-    searchText: async (req) => {
+  searchText: async (req) => {
     if (cfg.failures?.search) throw new Error(cfg.failures.search);
     return search(req);
   },
   getPageLayout: async (i) => {
     if (cfg.failures?.layout) throw new Error(cfg.failures.layout);
     return cfg.layouts[i];
-  },log: (event, data) => log.push({ event, data }),
+  },
+  log: (event, data) => log.push({ event, data }),
 };
 
 const controller = new ViewerController({
@@ -809,7 +810,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     const canvas = page.locator('#pe-layout-canvas');
     await expect(canvas).toHaveAttribute('data-paragraphs', String(layouts[0]!.paragraphs.length));
     await expect(canvas).toHaveAttribute('data-order', String(layouts[0]!.readingOrder.length));
-    // 첫 문단 상자 왼쪽 위 모서리 바로 안쪽 픽셀은 본문 색(파랑 계열)이다.
+    // 첫 문단 상자 왼쪽 변 바로 안쪽 픽셀.
     const first = layouts[0]!.paragraphs[0]!.bbox;
     const px = await canvas.evaluate(
       (c: HTMLCanvasElement, [x, y]: [number, number]) => {
@@ -820,8 +821,8 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
       },
       [(first[0] + 0.3) * 1.5, ((first[1] + first[3]) / 2) * 1.5] as [number, number],
     );
+    // 역할과 무관하게: 문단 상자 안쪽 픽셀은 반투명 채움이 있다(빈 캔버스가 아니다).
     expect(px[3]!).toBeGreaterThan(0);
-    expect(px[2]!).toBeGreaterThan(px[0]!);
     await page.screenshot({ path: testInfo.outputPath('layout-overlay.png') });
     await page.keyboard.press('Control+A');
     expect(await copied(page)).toBe(FULL_TEXT);
