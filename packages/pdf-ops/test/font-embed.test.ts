@@ -1,8 +1,14 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
-import { embedFont, glyphHex, subsetFontBytes } from '../src/index.js';
+import {
+  UnsupportedFontError,
+  embedFont,
+  fontOutlineFormat,
+  glyphHex,
+  subsetFontBytes,
+} from '../src/index.js';
 
 /** A7-1: 폴백 폰트만 서브셋한다. 편집 중인 문서에서는 subsetFonts() 를 부르지 않는다. */
 const FONT_PATH = fileURLToPath(
@@ -96,4 +102,43 @@ describe('embedFont(subsetGids) 는 문서의 다른 폰트를 바꾸지 않는�
     // 이 단언이 실패하면 MuPDF 동작이 바뀐 것이다 → A7-1 재평가.
     expect(changed).toBe(true);
   });
+});
+
+describe('폴백 폰트는 TrueType(glyf) 전용(PLAN.md 2절 P1)', () => {
+  /** 시스템 CFF OpenType(있을 때만). M1 리뷰 재현 폰트. */
+  const CFF_OTF = '/usr/share/fonts/opentype/porson/GFSPorson.otf';
+
+  it('fontOutlineFormat: sfnt 머리로 TrueType·CFF·컬렉션을 가른다', () => {
+    expect(fontOutlineFormat(FONT)).toBe('truetype');
+    expect(fontOutlineFormat(new TextEncoder().encode('OTTO\0\0'))).toBe('cff');
+    expect(fontOutlineFormat(Uint8Array.from([1, 0, 4, 2, 0]))).toBe('cff');
+    expect(fontOutlineFormat(new TextEncoder().encode('ttcf\0\0'))).toBe('collection');
+    expect(fontOutlineFormat(new TextEncoder().encode('true'))).toBe('truetype');
+    expect(fontOutlineFormat(new Uint8Array(2))).toBe('unknown');
+  });
+
+  it('CFF 머리면 MuPDF 를 부르기 전에 UnsupportedFontError(cff-outlines)', () => {
+    const fake = new TextEncoder().encode('OTTO not a real font');
+    let error: unknown;
+    try {
+      subsetFontBytes('Fake', fake, [1]);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(UnsupportedFontError);
+    expect((error as UnsupportedFontError).code).toBe('cff-outlines');
+  });
+
+  it.skipIf(!existsSync(CFF_OTF))(
+    '실제 CFF OTF: embedFont(subsetGids) 가 형식 오류를 내고 편집 문서를 바꾸지 않는다',
+    () => {
+      const otf = new Uint8Array(readFileSync(CFF_OTF));
+      expect(fontOutlineFormat(otf)).toBe('cff');
+      const doc = new mupdf.PDFDocument();
+      const objects = doc.countObjects();
+      const gid = new mupdf.Font('X', otf).encodeCharacter(0x41);
+      expect(() => embedFont(doc, 'X', otf, { subsetGids: [gid] })).toThrow(UnsupportedFontError);
+      expect(doc.countObjects()).toBe(objects);
+    },
+  );
 });
