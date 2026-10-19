@@ -130,6 +130,7 @@ function popplerRaster(bytes: Uint8Array, pageIndex: number): Raster {
       '-l',
       p,
       '-hide-annotations',
+      '-cropbox',
       '-singlefile',
       path,
       prefix,
@@ -244,6 +245,91 @@ export async function pageText(
     });
     if (r.status !== 0) throw new Error(`pdftotext 실패: ${r.stderr}`);
     return r.stdout;
+  });
+}
+
+/**
+ * 상자 안 글자(계약 8.3 텍스트 판정): MuPDF 는 글자 사각형 중심, pdf.js 는 텍스트 항목 기준점(줄 왼쪽 아래),
+ * Poppler 는 단어 상자 중심이 box(페이지 공간, 쪽 경계 기준 origin) 안인 것을 읽기 순서대로 잇는다.
+ */
+export async function textInBox(
+  engine: Engine,
+  bytes: Uint8Array,
+  pageIndex: number,
+  box: Rect,
+  origin: [number, number] = [0, 0],
+  margin = 1,
+): Promise<string> {
+  const inside = (x: number, y: number) =>
+    x >= box[0] - margin && x <= box[2] + margin && y >= box[1] - margin && y <= box[3] + margin;
+  if (engine === 'mupdf') {
+    const doc = mupdf.Document.openDocument(bytes, 'application/pdf');
+    try {
+      const page = doc.loadPage(pageIndex);
+      const st = page.toStructuredText('preserve-whitespace');
+      let out = '';
+      st.walk({
+        onChar: (c, _o, _f, _s, q) => {
+          const cx = (q[0] + q[2] + q[4] + q[6]) / 4;
+          const cy = (q[1] + q[3] + q[5] + q[7]) / 4;
+          if (inside(cx, cy)) out += c;
+        },
+      });
+      st.destroy();
+      page.destroy();
+      return out;
+    } finally {
+      doc.destroy();
+    }
+  }
+  if (engine === 'pdfjs') {
+    const doc = await openPdfjs(bytes);
+    try {
+      const page = await doc.getPage(pageIndex + 1);
+      const vp = page.getViewport({ scale: 1 });
+      const tc = await page.getTextContent();
+      let out = '';
+      for (const i of tc.items) {
+        if (!('str' in i)) continue;
+        const [x, y] = vp.convertToViewportPoint(
+          i.transform[4] as number,
+          i.transform[5] as number,
+        );
+        const h = Math.abs(i.transform[3] as number) || 1;
+        if (inside(x + origin[0], y + origin[1] - h * 0.3)) out += i.str;
+      }
+      return out;
+    } finally {
+      await doc.close();
+    }
+  }
+  return withTempPdf(bytes, (path) => {
+    const p = String(pageIndex + 1);
+    const r = spawnSync(
+      'pdftotext',
+      ['-enc', 'UTF-8', '-cropbox', '-bbox', '-f', p, '-l', p, path, '-'],
+      {
+        encoding: 'utf8',
+      },
+    );
+    if (r.status !== 0) throw new Error(`pdftotext 실패: ${r.stderr}`);
+    let out = '';
+    const re =
+      /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g;
+    const dec = (t: string) =>
+      t
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/&amp;/g, '&');
+    for (const m of r.stdout.matchAll(re)) {
+      const cx = (Number(m[1]) + Number(m[3])) / 2 + origin[0];
+      const cy = (Number(m[2]) + Number(m[4])) / 2 + origin[1];
+      if (inside(cx, cy)) out += dec(m[5]!);
+    }
+    return out;
   });
 }
 

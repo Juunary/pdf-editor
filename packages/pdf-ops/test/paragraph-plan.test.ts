@@ -133,6 +133,13 @@ describe('편집 제한(5.1)', () => {
     expect(p1.limits.find((l) => l.reason === 'bt-split-unsupported')!.detail).toMatch(/q\/Q/);
   });
 
+  it('특이 CTM → singular-ctm', () => {
+    const doc = makeDoc([
+      'q 1 0 0 0.0000000000001 0 100 cm BT /F1 12 Tf 50 0 Td (Singular ctm text) Tj ET Q BT /F1 12 Tf 50 200 Td (Normal text) Tj ET',
+    ]);
+    expect(reasons(plan(pageContext(doc, 0), 'Singular ctm'))).toContain('singular-ctm');
+  });
+
   it('직사각형이 아닌 클립 → insertion-clipped', () => {
     const doc = makeDoc([
       'q 30 150 m 380 150 l 200 290 l h W n BT /F1 12 Tf 120 200 Td (Triangle clip text.) Tj ET Q',

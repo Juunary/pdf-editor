@@ -182,7 +182,7 @@ export function simpleReflow(
       glyphs: placed.sort((a, b) => a.offset - b.offset),
       contentBox: box ?? [area[0], area[1], area[0], area[1]],
       area,
-      overflow: false,
+      overflow: box !== null && (box as Rect)[3] > area[3] + 0.5,
       fontScale: s,
       reflowMs: 0,
     },

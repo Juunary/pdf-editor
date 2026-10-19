@@ -143,15 +143,3 @@ export function samePdfValue(
   if (a.isIndirect() && b.isIndirect()) return a.asIndirect() === b.asIndirect();
   return a.toString() === b.toString();
 }
-
-/** 효력 있는 SMask 가 같은가(없음 = /None). */
-export function sameSMask(
-  a: Map<string, mupdf.PDFObject>,
-  b: Map<string, mupdf.PDFObject>,
-): boolean {
-  const norm = (m: Map<string, mupdf.PDFObject>) => {
-    const v = m.get('SMask');
-    return v && !(v.isName() && v.asName() === 'None') ? v : undefined;
-  };
-  return samePdfValue(norm(a), norm(b));
-}

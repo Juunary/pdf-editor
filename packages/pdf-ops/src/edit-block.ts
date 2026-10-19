@@ -145,6 +145,17 @@ function colorOps(spec: readonly ColorOpSpec[], res: BlockResources, stroke: boo
   return out;
 }
 
+/** 같은 gs 목록(초안의 삽입점·모양 원천)은 초안 동안 바뀌지 않으므로 효력값을 한 번만 계산한다. */
+const gsCache = new WeakMap<readonly mupdf.PDFObject[], Map<string, mupdf.PDFObject>>();
+function cachedGs(list: readonly mupdf.PDFObject[]): Map<string, mupdf.PDFObject> {
+  let v = gsCache.get(list);
+  if (!v) {
+    v = effectiveGs(list);
+    gsCache.set(list, v);
+  }
+  return v;
+}
+
 /** 삽입점과 원 글자의 ExtGState 가 다르면 원 글자 상태를 재현하는 gs 사전(계약 D3). 같으면 null. */
 function gsFor(
   doc: mupdf.PDFDocument,
@@ -152,8 +163,8 @@ function gsFor(
   rs: ResolvedStyle,
   strokeLikeFill: boolean,
 ): mupdf.PDFObject | null {
-  const ins = effectiveGs(wc.insertionGs);
-  const src = effectiveGs(rs.gs);
+  const ins = cachedGs(wc.insertionGs);
+  const src = cachedGs(rs.gs);
   const keys = new Set([...ins.keys(), ...src.keys()]);
   keys.delete('SMask');
   const differs = [...keys].some((k) => !samePdfValue(ins.get(k), src.get(k)));

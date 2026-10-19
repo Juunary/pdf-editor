@@ -69,6 +69,33 @@ describe('V2 before-bt: 삽입점에 q /이름 Do Q', () => {
   });
 });
 
+describe('V2 기하 근접: 같은 MuPDF 블록 안의 두 문단', () => {
+  it('붙어 있는 다음 문단을 길게 바꿔도 재추출 순서가 원래 자리(세 엔진)', async () => {
+    const doc = makeDoc([
+      'BT /F1 11 Tf 13 TL 50 260 Td (First block line one,) Tj T* (first block line two.) Tj T* ' +
+        '(Second part line three) Tj T* (second part line four.) Tj ET BT /F1 11 Tf 50 150 Td (Tail paragraph.) Tj ET',
+    ]);
+    const before = bytesOf(doc);
+    const ctx0 = pageContext(doc, 0);
+    const a = charsOfText(ctx0, 'First block line one,first block line two.');
+    const b = charsOfText(ctx0, 'Second part line threesecond part line four.');
+    const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, a, 0), paragraphOf(ctx0, b, 1)]);
+    const fm = new FontManager(doc, loadFallback);
+    const r = editParagraph(
+      ctx,
+      fm,
+      1,
+      'Second part rewritten into a noticeably longer sentence here.',
+    );
+    const after = bytesOf(doc);
+    await expectNoChangeOutside(before, after, 0, [
+      ctx.layout.paragraphs[1]!.bbox,
+      r.result.summary.contentBox,
+    ]);
+    await expectOrder(after, 0, 'first block line two.', r.text, 'Tail paragraph.');
+  });
+});
+
 describe('V3 split-bt: BT 나누기', () => {
   const ONE_BT =
     'BT /F1 11 Tf 13 TL 0.98 0 0 1.02 50.25 260.125 Tm (Kept first paragraph line.) Tj ' +
@@ -111,6 +138,36 @@ describe('V3 split-bt: BT 나누기', () => {
     const r = editParagraph(ctx, fm, 0);
     expect(r.plan.insertion?.mode).toBe('split-bt');
     expect(contentOf(doc)).toContain('Do Q BT 0.98 0 0 1.02 50.123456 200.5 Tm');
+  });
+
+  it('줄 행렬은 원 줄 설정 연산을 같은 순서로 다시 실행해 되돌린다(Td 누적·TD·T*, 세 엔진 0 px)', async () => {
+    const doc = makeDoc([
+      'BT /F1 10 Tf 61.827 269.963 Td (Head words kept.) Tj 117.789 -13.948 Td (more) Tj ' +
+        '-125.616 -23.91 TD (Target line here) Tj 12 TL T* (target second line.) Tj T* (Kept tail line after.) Tj ET',
+    ]);
+    const before = bytesOf(doc);
+    const st0 = stextChars(doc, 0);
+    const ctx0 = pageContext(doc, 0);
+    const chars = [
+      ...charsOfText(ctx0, 'Target line here'),
+      ...charsOfText(ctx0, 'target second line.'),
+    ];
+    const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, chars, 0)]);
+    const fm = new FontManager(doc, loadFallback);
+    const r = editParagraph(ctx, fm, 0, 'Replaced lines.');
+    expect(r.plan.insertion?.mode).toBe('split-bt');
+    expect(contentOf(doc)).toContain(
+      'ET q /PEB0 Do Q BT 61.827 269.963 Td 117.789 -13.948 Td -125.616 -23.91 Td',
+    );
+    const st1 = stextChars(doc, 0);
+    expectSameOrigins(
+      wordOrigins(st0, 'Kept tail line after.'),
+      wordOrigins(st1, 'Kept tail line after.'),
+    );
+    await expectNoChangeOutside(before, bytesOf(doc), 0, [
+      ctx.layout.paragraphs[0]!.bbox,
+      r.result.summary.contentBox,
+    ]);
   });
 
   for (const [label, content, keep, target, after] of [
@@ -368,6 +425,23 @@ describe('V5 marked content·ActualText', () => {
     expect(kinds).toContain('reading-order-approximate');
     expect(kinds).toContain('tagged-structure-unlinked');
     expect(contentOf(doc)).toMatch(/ET q \/PEB0 Do Q BT [^]*?\/Span <<\/MCID 0>> BDC/);
+  });
+
+  it('BT 안 BMC(태그 없음)도 규칙 3 대상: BMC 앞으로 옮긴다', async () => {
+    const doc = makeDoc([
+      'BT /F1 12 Tf 50 250 Td (Kept line before.) Tj 0 -40 Td /Artifact BMC (Target in bmc) Tj EMC (after) Tj ET',
+    ]);
+    const before = bytesOf(doc);
+    const ctx0 = pageContext(doc, 0);
+    const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, charsOfText(ctx0, 'Target in bmc'), 0)]);
+    const fm = new FontManager(doc, loadFallback);
+    const r = editParagraph(ctx, fm, 0, 'Moved text');
+    expect(r.plan.insertion).toEqual({ container: 'page', mode: 'split-bt', mcidKept: null });
+    expect(contentOf(doc)).toMatch(/ET q \/PEB0 Do Q BT [^]*?\/Artifact BMC/);
+    await expectNoChangeOutside(before, bytesOf(doc), 0, [
+      ctx.layout.paragraphs[0]!.bbox,
+      r.result.summary.contentBox,
+    ]);
   });
 
   for (const viaProperties of [false, true]) {
