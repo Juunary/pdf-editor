@@ -161,3 +161,27 @@ describe('reconstructPage', () => {
     expect(layout.readingOrder).toEqual([]);
   });
 });
+
+describe('이웃 쪽 반복 머리·꼬리', () => {
+  it('이웃 쪽 같은 자리의 러닝헤드·쪽 번호는 여백 띠·간격 조건 없이도 머리·꼬리', () => {
+    // 러닝헤드가 본문과 가깝고(간격 작음) 쪽 번호가 9% 띠 밖(쪽 높이 89%)에 있다.
+    const page = (n: number) =>
+      buildModel({
+        lines: [
+          { x: 72, y: 84, text: 'A Running Head Title' },
+          ...column(72, 98, [FULL, FULL, 'end.']),
+          { x: 300, y: 712, text: `Page ${n}` },
+        ],
+      });
+    const model = page(6);
+    const alone = reconstructPage(model);
+    expect(alone.paragraphs.filter((p) => p.role === 'header' || p.role === 'footer')).toHaveLength(
+      0,
+    );
+    const layout = reconstructPage(model, { neighbors: [page(5), page(7)] });
+    checkInvariants(model, layout);
+    const roles = layout.readingOrder.map((r) => layout.paragraphs[r.id]!.role);
+    expect(roles[0]).toBe('header');
+    expect(roles.at(-1)).toBe('footer');
+  });
+});
