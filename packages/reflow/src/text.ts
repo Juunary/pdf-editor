@@ -40,6 +40,7 @@ const TAIL_SET = new Set([...KINSOKU_TAIL].map((c) => c.codePointAt(0) ?? 0));
 const RE_CJK =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Bopomofo}\u3000-\u303f\u31f0-\u31ff\u3200-\u33ff\ufe30-\ufe4f\uff00-\uff9f\uffe0-\uffef\p{Extended_Pictographic}]/u;
 const RE_DIGIT = /\p{Nd}/u;
+const RE_HANGUL = /\p{Script=Hangul}/u;
 
 export type BreakClass = 'BK' | 'SP' | 'ZW' | 'GL' | 'HY' | 'AL';
 
@@ -51,6 +52,8 @@ export interface CharClass {
   noBreakAfter: boolean;
   /** CJK 표의문자류(한자·가나·CJK 기호·전각): 둘이 이웃하면 그 사이에서 나눌 수 있다. 한글은 아니다(어절 우선). */
   cjk: boolean;
+  /** CJK 표의문자류 또는 한글: 공백 없는 justify 줄에서 이웃한 둘 사이에 간격을 나눌 수 있다. */
+  wide: boolean;
   digit: boolean;
 }
 
@@ -74,6 +77,7 @@ const BK_CLASS: CharClass = {
   noBreakBefore: false,
   noBreakAfter: false,
   cjk: false,
+  wide: false,
   digit: false,
 };
 
@@ -90,6 +94,7 @@ function classifyCodePoint(cp: number, ch: string): CharClass {
     noBreakAfter: TAIL_SET.has(cp),
     // 반각 한글(U+FFA0–FFDC)은 RE_CJK 범위(U+FF00–FF9F) 밖이다.
     cjk: cls === 'AL' && RE_CJK.test(ch),
+    wide: cls === 'AL' && (RE_CJK.test(ch) || RE_HANGUL.test(ch)),
     digit: RE_DIGIT.test(ch),
   };
 }
