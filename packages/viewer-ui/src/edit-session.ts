@@ -167,7 +167,13 @@ export class EditSession {
       composition: null,
       reflow: begin.first.reflow,
     };
-    this.region = { seq: 0, rendered: begin.first.region, t0: deps.now() };
+    // begin.first.region 은 쓰지 않는다: beginParagraphEdit 에는 렌더 배율 인자가 없어 그 영역이 뷰어 배율과 같다는
+    // 보장이 없다. 시작 직후 start() 가 현재 상태로 갱신을 한 번 보내 올바른 배율의 영역을 받는다.
+  }
+
+  /** 시작 직후 현재 상태(원 텍스트)로 변경 영역을 한 번 받아 뷰어 배율의 미리보기와 리플로우 프레임을 맞춘다. */
+  start(): void {
+    this.touch();
   }
 
   /** 지금 상태의 불변 스냅샷. */

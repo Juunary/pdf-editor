@@ -194,6 +194,7 @@ export function Controls({ controller }: Props) {
             id="pe-fb-toggle"
             type="button"
             class="pe-btn"
+            data-pe-keep=""
             title="원본 글꼴에 없어 폴백 글꼴로 쓴 글자에 점선 밑줄 표시"
             aria-pressed={state.edit.fallbackUnderline}
             onClick={() => controller.edit?.setFallbackUnderline(!state.edit.fallbackUnderline)}
@@ -202,6 +203,7 @@ export function Controls({ controller }: Props) {
           </button>
           <label
             class="pe-edit-opt"
+            data-pe-keep=""
             title={`태그된 PDF 쪽의 문단은 편집하지 않습니다. ${EDIT_PAGES_NOTICE}`}
           >
             <input

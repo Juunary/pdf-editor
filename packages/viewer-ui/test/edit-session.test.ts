@@ -45,9 +45,25 @@ describe('EditSession 시작', () => {
     expect(v.editor.text).toBe('ab cd efgh');
     expect(v.editor.caret).toBe(3);
     expect(v.shown.text).toBe('ab cd efgh');
-    expect(v.region?.seq).toBe(0);
+    // begin.first.region 은 쓰지 않는다(렌더 배율을 알 수 없음). start() 가 현재 상태로 첫 갱신을 보낸다.
+    expect(v.region).toBeNull();
     expect(v.dirty).toBe(false);
     expect((await start()).session.view().editor.caret).toBe(10);
+  });
+});
+
+describe('시작 갱신', () => {
+  it('start() 는 현재 상태로 갱신을 한 번 보내 뷰어 배율의 변경 영역을 받는다', async () => {
+    const { session, host } = await start({ caret: 3 });
+    session.start();
+    await session.settle();
+    const v = session.view();
+    expect(host.inputs).toHaveLength(1);
+    expect(host.inputs[0]!.renderScale).toBe(2);
+    expect(host.inputs[0]!.runs.map((r) => r.text).join('')).toBe('ab cd efgh');
+    expect(v.region?.seq).toBe(1);
+    // 텍스트가 같으므로 시작 갱신만으로는 변경으로 치지 않는다(커밋 = 취소).
+    expect(v.dirty).toBe(false);
   });
 });
 

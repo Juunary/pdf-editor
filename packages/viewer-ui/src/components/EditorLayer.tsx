@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
+import { useLayoutEffect, useRef } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import type { EditWarning, Rect } from '@pdf-editor/shared-types';
 import type { ViewerController } from '../controller.js';
@@ -77,7 +77,9 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
   const sessionOf = (): EditSession | null => controller.edit?.currentSession() ?? null;
 
   // 시작할 때 입력용 textarea 에 포커스를 준다.
+  // 더블클릭으로 선택됐던 텍스트 층의 DOM 선택은 지운다(남아 있으면 이후 IME 조합 중 선택이 바뀌어 조합이 끊긴다).
   useLayoutEffect(() => {
+    document.getSelection()?.removeAllRanges();
     taRef.current?.focus({ preventScroll: true });
   }, [session.draftId]);
 
@@ -94,12 +96,17 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
   }, [editor.composition]);
 
   // 입력: keydown·beforeinput·composition*·클립보드. Preact 의 이벤트 이름 규칙과 무관하게 직접 등록한다.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
     const onKeyDown = (e: KeyboardEvent) => {
       const s = sessionOf();
       if (!s) return;
+      if ((e.isComposing || e.keyCode === 229) && (e.ctrlKey || e.metaKey)) {
+        // 조합 중 단축키(Ctrl+Z 등)는 무시한다(I5). 막지 않으면 브라우저가 편집 명령(historyUndo)으로 조합을 깨뜨린다.
+        e.preventDefault();
+        return;
+      }
       const action = mapEditKey(e);
       if (!action) return;
       e.preventDefault();
@@ -139,7 +146,13 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
     };
     const onBeforeInput = (e: InputEvent) => {
       const s = sessionOf();
-      if (!s || e.isComposing) return; // 조합 중 입력은 composition 이벤트로 처리한다
+      if (!s) return;
+      // 되돌리기·다시 실행 편집 명령은 조합 여부와 무관하게 막는다(편집기 이력은 keydown 에서 처리한다).
+      if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') {
+        e.preventDefault();
+        return;
+      }
+      if (e.isComposing) return; // 조합 중 입력은 composition 이벤트로 처리한다
       e.preventDefault();
       switch (e.inputType) {
         case 'insertText':
@@ -218,7 +231,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
   }, [controller]);
 
   // 바깥 클릭 = 커밋(조합 중이면 조합을 확정한 뒤, 계약 I8).
-  useEffect(() => {
+  useLayoutEffect(() => {
     const onDown = (e: MouseEvent) => {
       const target = e.target as Element | null;
       if (target?.closest?.('[data-pe-keep]')) return;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import type { PageEditability, Rect } from '@pdf-editor/shared-types';
 import type { ViewerController } from '../controller.js';
@@ -40,7 +40,8 @@ export function EditEntry({
   const [hover, setHover] = useState<number | null>(null);
   const paragraphs = editability.paragraphs;
 
-  useEffect(() => {
+  // 레이아웃 효과로 등록한다: 렌더 직후(다음 프레임을 기다리지 않고) 더블클릭을 받는다.
+  useLayoutEffect(() => {
     const page = pageRef.current;
     if (!page) return;
     const pointOf = (e: MouseEvent) => {
