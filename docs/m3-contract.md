@@ -9,6 +9,7 @@
 | 입력 | M1 계약(`docs/m1-contract.md`: SourceMap·매칭·좌표계), M1 결정(`docs/m1-decisions.md`: A7-2 SourceMap 기반 제거 등), M2 계약(`docs/m2-contract.md`: PageLayout), 1.2절의 이관 Action Item |
 | 일정 | PLAN.md 6절 계획은 2026-12-14~2027-01-17(5주). 2026-10-19 착수 |
 | 상태 표기 | 확정 = 근거가 있고 바꾸지 않음. 권고 = 메인 세션 결정, 사용자 확인 전. 결정 대기 = 사용자 결정 필요 |
+| 변경 이력 | 수정 1(2026-10-19, S3 core 실측 보고): 폴백 폰트 임베딩과 Info 생성을 저널을 켜기 전 한 번으로 바꿈(D4·D9·5.7), FontManager 생성자를 `FallbackFontSource` 로 바꿈 |
 | 독립 검토 | 2026-10-19 읽기 전용 검토(판정 REVISE: BLOCKER 1·HIGH 6·MEDIUM 9·LOW 12)를 이 판에 반영했다. 저널·폰트·harfbuzz 실측 주장은 메인 세션이 재현했다(11절) |
 
 ## 1. 완료 기준과 범위
@@ -167,7 +168,7 @@
   - (iii) 명세 폭 > 0(결합 문자 제외). pdfTeX 류는 안 쓴 코드의 /Widths 가 0 이다.
   - (iv) Type1·TrueType·Type0(Identity-H 또는 역매핑 가능한 가로쓰기 CMap).
   - 비임베디드 폰트는 (ii) 대신 원본과 같은 처리(뷰어 대체)를 받아들인다.
-- 폴백 폰트 수명(저널, 11절 실측): 저널 작업 안에서 넣은 폰트 객체는 그 작업을 버리거나 undo 하면 xref 에서 사라진다. FontManager 는 `assign` 때마다 폴백 폰트 객체가 있는지 확인(폰트 사전 `/PdfEditorFallback true`)하고, 없으면 현재 작업 안에서 다시 넣는다. 캐시는 객체 번호가 아니라 이 확인 결과로 갱신한다.
+- 폴백 폰트 수명(저널, 11절 실측, 수정 1): 저널 작업 안에서 넣은 폰트 객체는 그 작업을 버리거나 undo 하면 xref 에서 사라진다. 같은 바이트로 다시 `addFont` 하면 MuPDF 가 문서의 폰트 표(바이트 다이제스트 키)에서 사라진 객체 번호를 그대로 돌려줘 끊긴 참조가 된다(S3 실측, 메인 세션 재현). 그래서 폴백 폰트는 core 가 저널을 켜기 직전(첫 `beginParagraphEdit`, 작업 밖)에 한 번 `embedFont` 하고, FontManager 는 그 객체(`FallbackFontSource.ref()`)만 쓴다(직접 `embedFont` 하지 않는다). 저널 밖에서 만든 객체라 취소·undo 로 사라지지 않고, 쓰지 않았으면 저장의 `garbage` 가 뺀다. 바이트를 덧붙여 다이제스트를 바꾸는 재임베딩은 취소마다 폰트 전체를 새로 넣으므로 쓰지 않는다. 편집 블록 Resources 에는 이 객체를 참조로 넣는다.
 - 서브셋(A7-1): 저장할 때 D9 의 저장 작업 안에서만 `subsetFontBytes` 결과로 바꾸고, 그 작업을 버려 작업 문서는 전체 폰트를 유지한다(저장 뒤 계속 편집할 때 새 음절이 빈 글리프가 되지 않게). `subsetFonts()` 는 쓰지 않는다.
 - 폴백 폰트는 Regular 하나다.
   - 굵게 구간: 합성 굵게. `2 Tr`, 선 두께 = 크기 × 0.03(블록 공간 = 사용자 공간이라 pt 그대로), `[] 0 d 0 J 0 j`, 선 색은 채움 색과 같은 색공간의 `CS`/`SCN`, 선 알파는 채움과 같게.
@@ -223,7 +224,7 @@
   3. `saveToBuffer(FULL_SAVE_OPTIONS)`
   4. `abandonOperation()`
   - 저장은 저널 단계를 만들지 않고, 작업 문서는 저장 전 상태로 남는다. 실측으로 출력 반영·저널 유지·undo/redo 정상을 확인했다.
-- Info 사전이 없으면 첫 편집 작업 안에서 만든다. 저장 작업 안에서 만들면 버린 뒤 trailer `/Info` 가 끊긴 참조로 남는다(실측).
+- Info 사전이 없으면 core 가 저널을 켜기 직전(작업 밖)에 만든다. `trailer.put('Info')` 는 저널에 기록되지 않아, 작업 안에서 만들면 그 작업을 버리거나 undo 한 뒤 trailer `/Info` 가 끊긴 참조로 남는다(실측, 수정 1). 이미 있는 Info 사전에 키를 더하는 것(`recordEditMetadata`)은 저널에 기록되어 저장 작업을 버리면 되돌아간다.
 - 저널이 켜진 문서에는 `garbage=compact`·`deduplicate`·`linearize` 를 쓰지 않는다.
 - 초안이 있는 동안 `planSave`·`save` 는 예외다. 뷰어는 Ctrl+S 때 먼저 커밋한다.
 - 편집이 있는 저장은 항상 전체 저장이다. 세션에서 전체 저장을 한 번이라도 했으면 이후 저장도 전체 저장이다(증분 구간 xref 형식 문제, A3-9). 증분 저장은 편집 없는 주석·메타 저장에만 쓴다.
@@ -353,7 +354,7 @@
 - 문서 1개당 초안은 최대 1개. 초안이 있는 동안 렌더·추출·검색은 허용(초안 상태 기준, D7), 다른 편집 RPC 와 `planSave`·`save` 는 예외.
 - 커밋 시 그 쪽의 추출·SourceMap·레이아웃 캐시를 무효화한다. 이웃 쪽 레이아웃(머리·꼬리 반복 판정, M2)도 무효화한다(±2쪽). `revision` 을 올린다.
 - 편집 블록 목록(쪽별)은 undo/redo 뒤 `listEditBlocks` 로 다시 만든다.
-- 폴백 폰트 바이트는 세션 생성 옵션의 비동기 로더(`loadFallbackFont`)로 첫 `getPageEditability`·`planParagraphEdit`·`beginParagraphEdit` 에서 await 하고, FontManager 에는 동기 로더로 넘긴다. 확장은 Worker 에서 `new URL('<번들 경로>', import.meta.url)` 로 받는다(전용 Worker 에서 chrome.* 사용 가능 여부는 S4 가 확인), Node 테스트는 `assets/fonts` 파일을 읽는다.
+- 폴백 폰트 바이트는 세션 생성 옵션의 비동기 로더(`loadFallbackFont`)로 첫 `getPageEditability`·`planParagraphEdit`·`beginParagraphEdit` 에서 await 한다. 저널은 첫 `beginParagraphEdit` 에서 켜고, 켜기 직전(작업 밖)에 Info 사전 생성(없을 때)과 폴백 폰트 `embedFont` 를 한 번 한다(수정 1). FontManager 에는 `FallbackFontSource`(바이트는 판정·셰이핑용, 객체 참조는 저널을 켠 뒤부터)로 넘긴다. 확장은 Worker 에서 `new URL('<번들 경로>', import.meta.url)` 로 받는다(전용 Worker 에서 chrome.* 사용 가능 여부는 S4 가 확인), Node 테스트는 `assets/fonts` 파일을 읽는다.
 
 ### 5.8 저장(core·뷰어)
 
