@@ -1,0 +1,357 @@
+import { describe, expect, it, vi } from 'vitest';
+import { EditSession, type EditSessionView } from '../src/edit-session.js';
+import { WORKER_RECOVERED_ERROR_NAME } from '../src/failure.js';
+import { FakeEditHost, type FakeParagraph } from './fake-edit-host.js';
+
+const PARAGRAPH: FakeParagraph = { id: 3, bbox: [100, 50, 150, 90], text: 'ab cd efgh' };
+
+function recoveredError(): Error {
+  const e = new Error('Worker 를 복구했습니다');
+  e.name = WORKER_RECOVERED_ERROR_NAME;
+  return e;
+}
+
+async function start(options: { paragraph?: FakeParagraph; caret?: number | null } = {}): Promise<{
+  host: FakeEditHost;
+  session: EditSession;
+  views: EditSessionView[];
+  clock: { t: number };
+}> {
+  const host = new FakeEditHost({ paragraphs: [options.paragraph ?? PARAGRAPH] });
+  const paragraph = options.paragraph ?? PARAGRAPH;
+  const plan = await host.planParagraphEdit(0, paragraph.id);
+  const begun = await host.beginParagraphEdit(0, paragraph.id, plan.revision);
+  const clock = { t: 100 };
+  const views: EditSessionView[] = [];
+  const session = new EditSession(
+    {
+      rpc: host,
+      now: () => clock.t,
+      renderScale: () => 2,
+      log: vi.fn(),
+      onChange: (v) => views.push(v),
+    },
+    plan,
+    begun,
+    options.caret ?? null,
+  );
+  return { host, session, views, clock };
+}
+
+describe('EditSession 시작', () => {
+  it('시작 프레임은 begin 결과이고 캐럿은 지정한 위치(없으면 끝)', async () => {
+    const { session } = await start({ caret: 3 });
+    const v = session.view();
+    expect(v.editor.text).toBe('ab cd efgh');
+    expect(v.editor.caret).toBe(3);
+    expect(v.shown.text).toBe('ab cd efgh');
+    // begin.first.region 은 쓰지 않는다(렌더 배율을 알 수 없음). start() 가 현재 상태로 첫 갱신을 보낸다.
+    expect(v.region).toBeNull();
+    expect(v.dirty).toBe(false);
+    expect((await start()).session.view().editor.caret).toBe(10);
+  });
+});
+
+describe('시작 갱신', () => {
+  it('start() 는 현재 상태로 갱신을 한 번 보내 뷰어 배율의 변경 영역을 받는다', async () => {
+    const { session, host } = await start({ caret: 3 });
+    session.start();
+    await session.settle();
+    const v = session.view();
+    expect(host.inputs).toHaveLength(1);
+    expect(host.inputs[0]!.renderScale).toBe(2);
+    expect(host.inputs[0]!.runs.map((r) => r.text).join('')).toBe('ab cd efgh');
+    expect(v.region?.seq).toBe(1);
+    // 텍스트가 같으므로 시작 갱신만으로는 변경으로 치지 않는다(커밋 = 취소).
+    expect(v.dirty).toBe(false);
+  });
+});
+
+describe('입력 전송(마지막 입력만)', () => {
+  it('입력은 모델에 즉시 반영되고, 처리된 프레임은 입력 시점 텍스트와 함께 보관된다', async () => {
+    const { session, host } = await start({ caret: 10 });
+    session.typeText('X');
+    expect(session.view().editor.text).toBe('ab cd efghX');
+    expect(session.view().shown.text).toBe('ab cd efgh'); // 아직 이전 프레임
+    expect(session.view().updating).toBe(true);
+    await session.settle();
+    const v = session.view();
+    expect(v.shown.text).toBe('ab cd efghX');
+    expect(v.shown.caret).toBe(11);
+    expect(v.updating).toBe(false);
+    expect(v.dirty).toBe(true);
+    const sent = host.inputs.at(-1)!;
+    expect(sent.runs.map((r) => r.text).join('')).toBe('ab cd efghX');
+    expect(sent.renderScale).toBe(2);
+    expect(sent.composition).toBeNull();
+  });
+
+  it('처리 중이면 마지막 입력 하나만 보낸다(중간 입력은 합친다)', async () => {
+    const { session, host } = await start({ caret: 10 });
+    const release = host.hold('updateParagraphDraft');
+    session.typeText('1'); // 전송(보류됨)
+    session.typeText('2'); // 대기
+    session.typeText('3'); // 대기를 덮어씀
+    session.typeText('4');
+    expect(host.count('updateParagraphDraft')).toBe(1);
+    release();
+    await session.settle();
+    expect(host.count('updateParagraphDraft')).toBe(2);
+    expect(host.inputs.map((i) => i.runs.map((r) => r.text).join(''))).toEqual([
+      'ab cd efgh1',
+      'ab cd efgh1234',
+    ]);
+    expect(session.view().shown.text).toBe('ab cd efgh1234');
+  });
+
+  it('IME 조합: 조합 구간을 보내고 확정하면 composition 이 사라진다(I1)', async () => {
+    const { session, host } = await start({ caret: 2 });
+    session.compositionStart();
+    session.compositionUpdate('ㅎ');
+    await session.settle();
+    expect(host.inputs.at(-1)!.composition).toEqual([2, 3]);
+    expect(session.view().shown.composition).toEqual([2, 3]);
+    expect(session.view().shown.caret).toBe(3);
+    session.compositionUpdate('한');
+    session.compositionEnd('한');
+    await session.settle();
+    expect(host.inputs.at(-1)!.composition).toBeNull();
+    expect(session.view().shown.text).toBe('ab한 cd efgh');
+  });
+
+  it('줄 끝에서 조합 글자가 다음 줄로 넘어가도 프레임의 캐럿·조합이 따라간다(I3)', async () => {
+    const { session } = await start({ caret: 5 });
+    // 폭 50 = 5글자. "ab cd" 뒤에 조합 문자열을 넣으면 'ab cd' 다음 줄로 넘어간다.
+    session.compositionStart();
+    session.compositionUpdate('가나');
+    await session.settle();
+    const v = session.view();
+    expect(v.shown.composition).toEqual([5, 7]);
+    const line = v.shown.reflow.lines.findIndex((l) => 5 >= l.start && 5 < l.end);
+    expect(line).toBeGreaterThanOrEqual(0);
+    expect(v.shown.reflow.glyphs.filter((g) => g.offset >= 5 && g.offset < 7)).toHaveLength(2);
+  });
+
+  it('갱신 오류는 error 로 남기고 다음 입력에서 다시 시도한다', async () => {
+    const { session, host } = await start({ caret: 10 });
+    host.failNext('updateParagraphDraft', new Error('boom'));
+    session.typeText('a');
+    await session.settle();
+    expect(session.view().error).toBe('boom');
+    session.typeText('b');
+    await session.settle();
+    expect(session.view().error).toBeNull();
+    expect(session.view().shown.text).toBe('ab cd efghab');
+  });
+
+  it('붙여넣기·Backspace·되돌리기가 입력으로 전송된다', async () => {
+    const { session, host } = await start({ caret: 10 });
+    session.paste('XY\r\nZ');
+    await session.settle();
+    expect(session.view().editor.text).toBe('ab cd efghXY\nZ');
+    session.backspace();
+    session.undo();
+    await session.settle();
+    expect(session.view().editor.text).toBe('ab cd efghXY\nZ');
+    session.undo();
+    await session.settle();
+    expect(session.view().editor.text).toBe('ab cd efgh');
+    expect(
+      host.inputs
+        .at(-1)!
+        .runs.map((r) => r.text)
+        .join(''),
+    ).toBe('ab cd efgh');
+    expect(session.view().canRedo).toBe(true);
+  });
+});
+
+describe('캐럿 이동·포인터', () => {
+  it('위·아래 이동은 앞선 입력이 처리된 뒤 리플로우 줄 기준으로 계산한다', async () => {
+    const { session } = await start({ caret: 3 });
+    session.typeText('Z'); // 줄이 바뀔 수 있는 입력 직후
+    session.moveVerticalKey(1, false);
+    await session.idle();
+    const s = session.view().editor;
+    const lines = session.view().shown.reflow.lines;
+    expect(lines.length).toBeGreaterThan(1);
+    expect(s.caret).toBeGreaterThan(lines[0]!.end - 1);
+  });
+
+  it('Home/End 는 줄 기준, Ctrl 이면 문단 기준, Shift 이면 선택', async () => {
+    const { session } = await start({ caret: 8 });
+    session.moveLineBoundary('home', false, false);
+    await session.idle();
+    expect(session.view().editor.caret).toBe(6); // 둘째 줄 처음
+    session.moveLineBoundary('end', true, false);
+    await session.idle();
+    expect(session.view().editor.caret).toBe(10);
+    expect(session.view().editor.anchor).toBe(6);
+    session.moveLineBoundary('home', false, true);
+    await session.idle();
+    expect(session.view().editor.caret).toBe(0);
+  });
+
+  it('좌우 이동: 선택이 있으면 접는다, Shift 는 확장, Ctrl 은 단어', async () => {
+    const { session } = await start({ caret: 4 });
+    session.moveHorizontal(1, true, false);
+    session.moveHorizontal(1, true, false);
+    expect([session.view().editor.anchor, session.view().editor.caret]).toEqual([4, 6]);
+    session.moveHorizontal(-1, false, false);
+    expect(session.view().editor.caret).toBe(4);
+    session.moveHorizontal(1, false, true);
+    expect(session.view().editor.caret).toBe(6);
+  });
+
+  it('포인터: 클릭은 캐럿, 드래그는 선택, 더블클릭은 단어, 트리플클릭은 전체', async () => {
+    const { session } = await start({ caret: 0 });
+    // 첫 줄 기준선 62, 글자 폭 10, 왼쪽 100: x=124 → 오프셋 2 와 3 의 경계 근처
+    session.pointerDown([123, 58], 1, false);
+    await session.idle();
+    expect(session.view().editor.caret).toBe(2);
+    session.pointerDrag([146, 58]);
+    await session.idle();
+    expect([session.view().editor.anchor, session.view().editor.caret]).toEqual([2, 5]);
+    session.pointerUp();
+    session.pointerDown([103, 58], 2, false);
+    await session.idle();
+    expect([session.view().editor.anchor, session.view().editor.caret]).toEqual([0, 2]); // "ab"
+    session.pointerDown([103, 58], 3, false);
+    await session.idle();
+    expect([session.view().editor.anchor, session.view().editor.caret]).toEqual([0, 10]);
+  });
+});
+
+describe('영역·초과', () => {
+  it('shrink 는 글자 크기 배율을, expand 는 영역 확대를 프레임에 반영한다', async () => {
+    const { session } = await start({
+      paragraph: { id: 3, bbox: [100, 50, 150, 70], text: 'ab cd efgh ij kl mn' },
+      caret: 19,
+    });
+    expect(session.view().shown.reflow.overflow).toBe(true);
+    session.setFormat({ overflow: 'shrink' });
+    await session.settle();
+    expect(session.view().shown.reflow.fontScale).toBeLessThan(1);
+    session.setFormat({ overflow: 'expand' });
+    await session.settle();
+    const r = session.view().shown.reflow;
+    expect(r.area[3]).toBeGreaterThan(70);
+    expect(r.overflow).toBe(false);
+    session.setFormat({ overflow: 'keep' });
+    await session.settle();
+    expect(session.view().warnings.map((w) => w.kind)).toContain('overflow-clipped');
+  });
+
+  it('영역을 바꾸면 format 에 반영되어 dirty 가 된다', async () => {
+    const { session, host } = await start();
+    session.setFormat({ area: [100, 50, 200, 90] });
+    await session.settle();
+    expect(host.inputs.at(-1)!.format.area).toEqual([100, 50, 200, 90]);
+    expect(session.view().dirty).toBe(true);
+  });
+});
+
+describe('종료', () => {
+  it('변경이 없으면 커밋은 취소와 같다', async () => {
+    const { session, host } = await start();
+    const out = await session.commit();
+    expect(out.kind).toBe('cancelled');
+    expect(host.count('cancelParagraphEdit')).toBe(1);
+    expect(host.count('commitParagraphEdit')).toBe(0);
+  });
+
+  it('변경이 있으면 처리 중인 입력까지 마친 뒤 커밋한다', async () => {
+    const { session, host } = await start({ caret: 10 });
+    const release = host.hold('updateParagraphDraft');
+    session.typeText('q');
+    session.typeText('r');
+    const done = session.commit();
+    release();
+    const out = await done;
+    expect(out.kind).toBe('committed');
+    expect(
+      host.inputs
+        .at(-1)!
+        .runs.map((r) => r.text)
+        .join(''),
+    ).toBe('ab cd efghqr');
+    if (out.kind === 'committed') {
+      expect(out.result.history.activeEditIds).toEqual([out.result.op.id]);
+    }
+  });
+
+  it('조합 중 커밋하면 조합을 확정한 뒤 커밋한다(I8)', async () => {
+    const { session, host } = await start({ caret: 10 });
+    session.compositionStart();
+    session.compositionUpdate('한');
+    const out = await session.commit();
+    expect(out.kind).toBe('committed');
+    expect(host.inputs.at(-1)!.composition).toBeNull();
+    expect(
+      host.inputs
+        .at(-1)!
+        .runs.map((r) => r.text)
+        .join(''),
+    ).toBe('ab cd efgh한');
+  });
+
+  it('취소는 대기 입력을 버리고 취소 RPC 를 보낸다', async () => {
+    const { session, host } = await start({ caret: 10 });
+    session.typeText('x');
+    await session.cancel();
+    expect(host.count('cancelParagraphEdit')).toBe(1);
+    expect(host.count('commitParagraphEdit')).toBe(0);
+  });
+});
+
+describe('복구(D6)', () => {
+  it('갱신 중 Worker 가 복구되면 같은 문단 초안을 편집기 모델로 다시 시작한다', async () => {
+    const { session, host } = await start({ caret: 10 });
+    session.typeText('가');
+    await session.settle();
+    host.simulateRecovery();
+    host.failNext('updateParagraphDraft', recoveredError());
+    session.typeText('나');
+    await session.settle();
+    expect(host.count('planParagraphEdit')).toBe(2);
+    expect(host.count('beginParagraphEdit')).toBe(2);
+    const v = session.view();
+    expect(v.notice).toContain('복구');
+    expect(v.shown.text).toBe('ab cd efgh가나');
+    expect(
+      host.inputs
+        .at(-1)!
+        .runs.map((r) => r.text)
+        .join(''),
+    ).toBe('ab cd efgh가나');
+  });
+
+  it('커밋 중 복구되면 초안을 다시 시작하고 편집 모드를 유지한다', async () => {
+    const { session, host } = await start({ caret: 10 });
+    session.typeText('x');
+    await session.settle();
+    host.simulateRecovery();
+    host.failNext('commitParagraphEdit', recoveredError());
+    const out = await session.commit();
+    expect(out.kind).toBe('restarted');
+    expect(session.view().notice).toContain('복구');
+    // 다시 커밋하면 성공한다.
+    const second = await session.commit();
+    expect(second.kind).toBe('committed');
+  });
+});
+
+describe('반응 시간 기록', () => {
+  it('합성 직후 reportPainted 가 입력 → 합성 시간을 기록한다', async () => {
+    const { session, clock } = await start({ caret: 10 });
+    clock.t = 1000;
+    session.typeText('a');
+    clock.t = 1040;
+    await session.settle();
+    const seq = session.view().region!.seq;
+    clock.t = 1060;
+    expect(session.reportPainted(seq)).toBe(60);
+    expect(session.reportPainted(seq + 99)).toBeNull();
+    expect(session.latencies).toEqual([60]);
+  });
+});
