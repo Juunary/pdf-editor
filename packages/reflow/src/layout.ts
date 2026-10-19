@@ -325,12 +325,17 @@ function placeLine(
     if (spaces.length > 0) {
       for (const i of spaces) extra[i - a] = free / spaces.length;
     } else {
+      // 공백 없는 줄: 이웃한 두 클러스터가 모두 CJK·한글일 때만 그 사이에 나눈다. 라틴 단어 하나뿐인 줄을 글자
+      // 사이로 벌리면 추출기가 글자마다 공백을 넣어 복사·검색이 깨진다(M3 코퍼스 측정 2026-10-20). 나눌 곳이 없으면 왼쪽.
       const visible: number[] = [];
       for (let i = a; i < contentEnd; i++) if (items[i]?.kind === 'glyph') visible.push(i);
+      const gaps: number[] = [];
       for (let k = 0; k < visible.length - 1; k++) {
         const i = visible[k] ?? a;
-        extra[i - a] = free / (visible.length - 1);
+        const j = visible[k + 1] ?? a;
+        if (items[i]?.cc.wide && items[j]?.cc.wide) gaps.push(i);
       }
+      for (const i of gaps) extra[i - a] = free / gaps.length;
     }
   }
 

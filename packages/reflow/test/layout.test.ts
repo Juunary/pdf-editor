@@ -42,6 +42,22 @@ describe('정렬', () => {
     expect(r.summary.lines[1]?.x1).toBeCloseTo(30, 9);
   });
 
+  it('공백이 없는 라틴 단어 줄은 글자 사이를 벌리지 않고 왼쪽에 둔다(추출 시 글자 사이 공백 방지)', () => {
+    const text = 'aaaaaaaa bb';
+    const r = layoutParagraph(input(text, { align: 'justify', area: [0, 0, 45, 1000] }));
+    expect(lineTexts(r, text)).toEqual(['aaaaaaaa ', 'bb']);
+    const xs = r.summary.glyphs.slice(0, 8).map((g) => g.x);
+    expect(xs).toEqual([0, 5, 10, 15, 20, 25, 30, 35]);
+    expect(r.summary.lines[0]?.x1).toBeCloseTo(40, 9);
+  });
+
+  it('공백 없는 한글 음절 줄은 음절 사이에 나눈다', () => {
+    const text = '가나다라마바';
+    const r = layoutParagraph(input(text, { align: 'justify', area: [0, 0, 35, 1000] }));
+    expect(lineTexts(r, text)).toEqual(['가나다', '라마바']);
+    expect(r.summary.lines[0]?.x1).toBeCloseTo(35, 9);
+  });
+
   it('강제 줄바꿈 앞 줄은 늘리지 않는다', () => {
     const r = layoutParagraph(input('aa bb\ncc', { align: 'justify' }));
     expect(r.summary.lines[0]?.x1).toBeCloseTo(22.5, 9);

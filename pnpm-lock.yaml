@@ -81,6 +81,10 @@ importers:
       mupdf:
         specifier: 1.28.1
         version: 1.28.1
+    devDependencies:
+      pdfjs-dist:
+        specifier: 6.4.299
+        version: 6.4.299
 
   packages/layout-recon:
     dependencies:

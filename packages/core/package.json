@@ -34,5 +34,7 @@
     "comlink": "4.4.2",
     "mupdf": "1.28.1"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "pdfjs-dist": "6.4.299"
+  }
 }
