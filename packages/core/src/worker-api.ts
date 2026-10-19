@@ -29,6 +29,9 @@ export function createPdfWorkerApi(session = new PdfSession()): PdfWorkerApi {
     async searchText(request) {
       return session.searchText(request);
     },
+    async getPageLayout(pageIndex) {
+      return session.getPageLayout(pageIndex);
+    },
     async planSave(request) {
       return session.planSave(request);
     },
