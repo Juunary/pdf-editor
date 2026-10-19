@@ -55,8 +55,8 @@ describe.skipIf(!dir)('코퍼스 매칭 측정(LINK_MEASURE_DIR)', () => {
         openErrors.push({ file, message: e instanceof Error ? e.message : String(e) });
         continue;
       }
+      // doc.destroy() 는 하지 않는다: 남은 PDFObject 래퍼의 나중 정리가 해제된 문서에 접근할 수 있다.
       docs.push(measureDocument(file, doc, buildTestPageModel, policies));
-      doc.destroy();
     }
     const table = formatMeasureTable(docs);
     if (out) {
