@@ -9,6 +9,7 @@ import type {
   Quad,
   Rect,
 } from '@pdf-editor/shared-types';
+import { releaseBorrowedShade } from '@pdf-editor/pdf-ops';
 import { ColorConverter } from './color.js';
 import { DeviceCollector, type RawGlyph } from './extract-device.js';
 import {
@@ -47,17 +48,6 @@ export interface ExtractStats {
 export interface ExtractResult {
   model: PageModel;
   stats: ExtractStats;
-}
-
-/**
- * mupdf.js 는 fillShade 콜백의 Shade 래퍼를 참조를 늘리지 않고 만든다(Path·Text·ColorSpace·
- * StrokeState·Image 는 늘린다). 그 래퍼가 GC 되면 소유하지 않은 참조를 놓아 셰이드가 해제되고
- * 이후 같은 문서를 실행할 때 힙이 손상된 것처럼 실패한다("Unexpected mesh type …", 실측: 실제
- * 코퍼스 문서, 합성 셰이딩+GC 재현). 종료자 등록을 해제해 빌린 참조를 놓지 않게 한다.
- */
-function releaseBorrowed(shade: mupdf.Shade): void {
-  const ctor = shade.constructor as unknown as { _finalizer?: FinalizationRegistry<unknown> };
-  ctor._finalizer?.unregister(shade);
 }
 
 /** quad 근사에 쓰는 글자 위·아래 높이(글자 크기 대비). 구조화 텍스트 값이 없을 때만 쓴다. */
@@ -134,7 +124,8 @@ function build(
     },
     fillShade: (shade, ctm, alpha) => {
       collector.guard(() => collector.fillShade(shade, ctm, alpha));
-      releaseBorrowed(shade);
+      // 빌린 참조(종료자가 놓으면 셰이드가 해제됨, 실측: "Unexpected mesh type …"). pdf-ops 공용 도구로 해제.
+      releaseBorrowedShade(shade);
     },
     fillImage: (image, ctm, alpha) => {
       collector.guard(() => collector.fillImage(image, ctm, alpha));

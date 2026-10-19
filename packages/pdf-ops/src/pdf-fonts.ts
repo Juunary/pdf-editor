@@ -28,6 +28,7 @@ import {
   type CodespaceRange,
   type EncodingTable,
 } from './glyph-names.js';
+import { readStreamBytes } from './mupdf-util.js';
 
 export interface DecodedCode {
   /** 원 코드 값: 바이트 big-endian (MuPDF cpt) */
@@ -454,7 +455,7 @@ function parseCMapBody(data: Uint8Array): ParsedCMap {
  */
 function loadEmbeddedCMap(stream: mupdf.PDFObject, depth = 0): CMapSpec {
   const unresolved: string[] = [];
-  const parsed = parseCMapBody(stream.readStream().asUint8Array());
+  const parsed = parseCMapBody(readStreamBytes(stream));
   const codespaces = parsed.codespaces;
   if (codespaces.length === 0 && parsed.ranges.count > 0) codespaces.push(cs(2, 0, 0xffff));
 

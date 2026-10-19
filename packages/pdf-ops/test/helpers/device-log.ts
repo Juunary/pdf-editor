@@ -3,6 +3,7 @@
  * 텍스트 콜백은 글리프 유니코드를 이어 붙인 문자열과 텍스트 객체 포인터를 남긴다.
  */
 import * as mupdf from 'mupdf';
+import { releaseBorrowedShade } from '../../src/mupdf-util.js';
 import {
   FirstArrivalJudge,
   glyphKey,
@@ -58,7 +59,10 @@ export function recordDevice(page: mupdf.Page): DeviceEvent[] {
     strokePath: other('strokePath'),
     clipPath: other('clipPath'),
     clipStrokePath: other('clipStrokePath'),
-    fillShade: other('fillShade'),
+    fillShade: (shade) => {
+      releaseBorrowedShade(shade);
+      events.push({ kind: 'fillShade' });
+    },
     fillImage: other('fillImage'),
     fillImageMask: other('fillImageMask'),
     clipImageMask: other('clipImageMask'),
@@ -169,7 +173,10 @@ export function deliveryTrace(
     strokePath: paint,
     clipPath: paint,
     clipStrokePath: paint,
-    fillShade: paint,
+    fillShade: (shade) => {
+      releaseBorrowedShade(shade);
+      paint();
+    },
     fillImage: paint,
     fillImageMask: paint,
     clipImageMask: paint,
