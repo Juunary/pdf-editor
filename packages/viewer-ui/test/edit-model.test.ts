@@ -84,6 +84,15 @@ describe('입력·삭제·선택', () => {
     expect(m.state.caret).toBe(2);
   });
 
+  it('입력·붙여넣기·조합 확정의 NBSP 는 공백이 된다', () => {
+    const { m } = model(runs(['', A]));
+    m.insertText('a\u00a0b');
+    m.paste('c\u00a0d');
+    m.compositionUpdate('e\u00a0f');
+    m.compositionEnd();
+    expect(m.state.text).toBe('a bc de f');
+  });
+
   it('분리 입력된 NFD 자모도 이웃 자소와 합쳐 NFC 로 만든다', () => {
     const { m } = model(runs(['', A]));
     m.insertText('ᄒ'); // ᄒ

@@ -18,6 +18,13 @@ describe('normalizeInput', () => {
     expect(normalizeInput('é')).toBe('é');
   });
 
+  it('U+00A0(NBSP)은 공백(U+0020)으로 바꾼다(계약 수정 2)', () => {
+    expect(normalizeInput('a\u00a0b')).toBe('a b');
+    expect(normalizeInput('\u00a0\u00a0')).toBe('  ');
+    // 다른 공백류(전각 공백·가는 공백 등)는 그대로 둔다
+    expect(normalizeInput('a\u3000b\u2009c')).toBe('a\u3000b\u2009c');
+  });
+
   it('줄바꿈은 \\n 으로, 탭은 공백으로, 그 밖 제어 문자는 제거한다', () => {
     expect(normalizeInput('a\r\nb\rc d e')).toBe('a\nb\nc\nd\ne');
     expect(normalizeInput('a\tb')).toBe('a b');
