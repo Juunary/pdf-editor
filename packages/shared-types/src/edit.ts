@@ -213,12 +213,13 @@ export interface PlacedGlyph {
 export interface PlacedLine {
   /** 기준선 y. */
   baseline: number;
-  /** 줄 글자 상자의 왼쪽·오른쪽(줄 끝 공백 제외). */
+  /** 줄 내용의 왼쪽·오른쪽(줄 끝 공백 제외). 빈 줄은 정렬 기준점. */
   x0: number;
   x1: number;
+  /** 올림(양수)·내림(음수), pt·배율 적용. 줄 상자 = [baseline − ascent, baseline − descent]. */
   ascent: number;
   descent: number;
-  /** 이 줄 텍스트 위치 [start, end). */
+  /** 이 줄 텍스트 위치 [start, end). 줄들이 텍스트를 빈틈 없이 덮고, 줄 끝 공백·강제 줄바꿈 문자를 포함한다. */
   start: number;
   end: number;
   /** 강제 줄바꿈으로 끝남. */
@@ -251,6 +252,7 @@ export interface DraftInput {
 export interface DraftUpdate {
   draftId: string;
   reflow: ReflowSummary;
+  /** 그 시점의 전체 경고(계획 경고 포함, 같은 종류는 하나). */
   warnings: EditWarning[];
   /** 변경 영역 렌더(clip 이 채워져 있다). */
   region: RenderedPage;
