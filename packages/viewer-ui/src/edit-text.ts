@@ -7,7 +7,8 @@ const graphemeSegmenter = new Intl.Segmenter('und', { granularity: 'grapheme' })
 const wordSegmenter = new Intl.Segmenter('und', { granularity: 'word' });
 
 /**
- * 입력·붙여넣기 텍스트 정리: 줄바꿈은 `\n`, 탭은 공백, 그 밖 제어 문자는 제거, NFC 정규화(NFD 자모 입력 대비, 계약 1.3).
+ * 입력·붙여넣기 텍스트 정리: 줄바꿈은 `\n`, 탭·U+00A0(NBSP)은 공백, 그 밖 제어 문자는 제거, NFC 정규화(NFD 자모 입력 대비,
+ * 계약 1.3·5.9 수정 2: 폴백 폰트 cmap 에 U+00A0 이 없어 공백으로 바꾼다).
  * 강제 줄바꿈 `\n` 만 제어 문자로 남긴다.
  */
 export function normalizeInput(raw: string): string {
@@ -16,7 +17,7 @@ export function normalizeInput(raw: string): string {
   for (const ch of text) {
     const c = ch.codePointAt(0) ?? 0;
     if (ch === '\n') out += ch;
-    else if (ch === '\t') out += ' ';
+    else if (ch === '\t' || ch === '\u00a0') out += ' ';
     else if (c < 0x20 || c === 0x7f || (c >= 0x80 && c < 0xa0)) continue;
     else out += ch;
   }

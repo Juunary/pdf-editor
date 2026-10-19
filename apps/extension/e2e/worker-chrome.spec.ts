@@ -57,7 +57,7 @@ test('전용 Worker: chrome.* 사용 불가, 확장 자산(폴백 폰트) fetch 
     expect(report.typeofRuntime).toBe('undefined');
     expect(report.manifestFetch).toEqual({ status: 200 });
     expect(report.fontFetch).toMatchObject({ status: 200, magic: [0, 1, 0, 0] });
-    expect((report.fontFetch as { bytes: number }).bytes).toBe(4_083_596);
+    expect((report.fontFetch as { bytes: number }).bytes).toBe(4_082_236);
     expect(pageChrome.typeofRuntime).toBe('object');
   } finally {
     await context.close();
