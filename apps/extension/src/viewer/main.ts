@@ -1,9 +1,19 @@
 import { transferBytes, wrapPdfWorker } from '@pdf-editor/core/client';
-import { ViewerController, mountViewer, type PagePaintedEvent } from '@pdf-editor/viewer-ui';
+import {
+  EditLog,
+  ViewerController,
+  classifyFailure,
+  mountViewer,
+  type PagePaintedEvent,
+} from '@pdf-editor/viewer-ui';
 import '@pdf-editor/viewer-ui/style.css';
 import { decideInterceptionMode, parseChromeMajor } from '../interception.js';
 import { DiagLog } from './diag.js';
+import { alertDialog, confirmDialog } from './dialog.js';
+import { fileAccessNotice, redactNotice } from './notices.js';
+import { ResilientPdf, type WorkerHandle } from './recovery.js';
 import { SaveTarget, type SaveOutcome, type WritableFileHandle } from './save-target.js';
+import { decideSave } from './save-plan.js';
 import { resolveViewerSource, type ViewerContextKind, type ViewerSource } from './source.js';
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -35,12 +45,85 @@ function setStatus(state: string, text: string): void {
   statusEl.textContent = text;
 }
 
-const worker = new Worker(new URL('../worker/pdf-worker.ts', import.meta.url), { type: 'module' });
-const pdf = wrapPdfWorker(worker);
-worker.addEventListener('error', (e) => {
-  diag.add('worker-error', e.message || 'Worker 스크립트 로드 실패');
-  setStatus('error', `Worker 오류: ${e.message}`);
+const noticeBar = byId<HTMLDivElement>('notice-bar');
+const dialogEl = byId<HTMLDialogElement>('app-dialog');
+
+/** 알림 줄(열기 시 보고·안내·복구). text 가 null 이면 그 id 의 알림을 지운다. */
+function setNotice(id: string, text: string | null): void {
+  noticeBar.querySelector(`[data-notice="${id}"]`)?.remove();
+  if (text) {
+    const row = document.createElement('div');
+    row.className = 'notice';
+    row.dataset.notice = id;
+    const span = document.createElement('span');
+    span.textContent = text;
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = '✕';
+    close.title = '닫기';
+    close.addEventListener('click', () => setNotice(id, null));
+    row.append(span, close);
+    noticeBar.append(row);
+  }
+  noticeBar.hidden = noticeBar.childElementCount === 0;
+}
+
+/** 뷰어 소유 module Worker 하나를 만든다. 죽으면(`error`·`messageerror`) `dead` 가 reject 된다(복구 계층이 감지). */
+function spawnWorker(): WorkerHandle {
+  const worker = new Worker(new URL('../worker/pdf-worker.ts', import.meta.url), {
+    type: 'module',
+  });
+  const api = wrapPdfWorker(worker);
+  const dead = new Promise<never>((_, reject) => {
+    const fail = (message: string) => {
+      const e = new Error(message);
+      e.name = 'WorkerCrash';
+      reject(e);
+    };
+    worker.addEventListener('error', (e) => {
+      diag.add('worker-error', e.message || 'Worker 스크립트 로드 실패');
+      setStatus('error', `Worker 오류: ${e.message}`);
+      fail(e.message || 'Worker 오류');
+    });
+    worker.addEventListener('messageerror', () => {
+      diag.add('worker-messageerror', 'Worker 메시지 역직렬화 실패');
+      fail('Worker 메시지 오류');
+    });
+  });
+  dead.catch(() => undefined);
+  return { api, dead, terminate: () => worker.terminate() };
+}
+
+/** 복구용 편집 로그(계약 D6): 커밋한 EditOp 와 지금 문서에 반영된 편집 id. */
+const editLog = new EditLog();
+let controllerRef: ViewerController | null = null;
+
+const pdf = new ResilientPdf({
+  spawn: spawnWorker,
+  transfer: transferBytes,
+  editLog: () => editLog.snapshot(),
+  log: (event, data) => diag.add(event, data),
+  onRecovered: async (info) => {
+    setNotice(
+      'recovered',
+      `작업 모듈이 중단되어 문서를 복구했습니다(편집 ${info.replayedEdits}건 다시 적용). 복구 전 되돌리기 이력은 사라졌습니다.`,
+    );
+    await controllerRef?.handleWorkerRecovered();
+  },
 });
+
+// e2e 시험 이음매: `viewer.html?e2e` 로 열었을 때만 내부 객체를 노출한다(저장 판정·복구 오류 주입용).
+if (new URLSearchParams(location.search).has('e2e')) {
+  Object.assign(window, {
+    __pe: {
+      pdf,
+      editLog,
+      get controller() {
+        return controllerRef;
+      },
+    },
+  });
+}
 
 interface UADataLike {
   getHighEntropyValues(hints: string[]): Promise<{
@@ -97,7 +180,7 @@ const saveTarget = new SaveTarget({
   now: () => performance.now(),
 });
 
-/** Worker 에서 저장 바이트를 만든다. 아직 편집 기능이 없으므로 변경 유형은 비어 있다. */
+/** Worker 에서 저장 바이트를 만든다. 변경 유형은 core 가 편집 로그에서 더한다(계약 D9). */
 async function documentBytes(): Promise<Uint8Array<ArrayBuffer>> {
   const r = await pdf.save({ changes: [] });
   diag.add('worker-save', {
@@ -113,7 +196,62 @@ async function documentBytes(): Promise<Uint8Array<ArrayBuffer>> {
 
 type SaveTrigger = 'save-as' | 'save' | 'ctrl+s' | 'downloads';
 
+/**
+ * 저장 전 준비(계약 5.8): 초안이 있으면 먼저 커밋 → planSave → over-limit 은 중단 안내, 경고는 확인 창.
+ * 저장해도 되면 true.
+ */
+async function prepareSave(): Promise<boolean> {
+  const edit = controllerRef?.edit;
+  if (edit && !(await edit.commitActive())) {
+    setStatus('error', '편집을 마치지 못해 저장하지 않았습니다');
+    return false;
+  }
+  let plan;
+  try {
+    plan = await pdf.planSave({ changes: [] });
+  } catch (e) {
+    diag.add('save-plan-error', String(e));
+    setStatus('error', `저장 전 판정 실패: ${String(e)}`);
+    return false;
+  }
+  const decision = decideSave(plan);
+  diag.add('save-plan', {
+    method: plan.method,
+    options: plan.options,
+    heap: plan.heap.level,
+    edits: plan.edits,
+    block: decision.block,
+    warnings: decision.warnings,
+  });
+  if (decision.block) {
+    await alertDialog(dialogEl, '저장할 수 없습니다', [decision.block]);
+    setStatus('error', `저장 중단: ${decision.block}`);
+    return false;
+  }
+  if (decision.warnings.length > 0) {
+    const ok = await confirmDialog(
+      dialogEl,
+      '저장 전 확인',
+      [...decision.warnings, ...decision.infos],
+      '저장',
+      '취소',
+    );
+    if (!ok) {
+      setStatus('idle', '저장을 취소했습니다');
+      return false;
+    }
+  }
+  return true;
+}
+
+/** 복구 알림 오류(저장 중 Worker 가 죽어 복구됨)인지. 저장 대상이 오류를 문자열로 감싸 돌려주는 경우도 본다. */
+function isRecoveredSave(error: unknown): boolean {
+  if (classifyFailure(error).kind === 'recovered') return true;
+  return typeof error === 'string' && error.includes('WorkerRecoveredError');
+}
+
 async function runSave(trigger: SaveTrigger): Promise<void> {
+  if (!(await prepareSave())) return;
   setStatus('saving', '저장 중');
   let outcome: SaveOutcome;
   try {
@@ -125,8 +263,13 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
           : await saveTarget.save(documentBytes, documentName);
   } catch (e) {
     diag.add('save-error', { trigger, context: contextKind, error: String(e) });
+    if (isRecoveredSave(e)) return askSaveAgain(trigger);
     setStatus('error', `저장 실패: ${String(e)}`);
     return;
+  }
+  if (outcome.status === 'failed' && isRecoveredSave(outcome.error)) {
+    diag.add('save-error', { trigger, context: contextKind, error: outcome.error });
+    return askSaveAgain(trigger);
   }
   diag.add('save', {
     trigger,
@@ -139,6 +282,22 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
     outcome.status === 'saved' ? 'saved' : outcome.status,
     `${outcome.status === 'saved' ? '저장됨' : outcome.status}: ${where}${outcome.reusedHandle ? ' (같은 대상 재저장)' : ''}`,
   );
+}
+
+/** 저장 중 Worker 가 죽어 복구한 뒤(계약 5.8, A3-3): 다시 저장할지 묻는다. */
+async function askSaveAgain(trigger: SaveTrigger): Promise<void> {
+  setStatus('error', '저장 중 작업 모듈이 중단되어 문서를 복구했습니다');
+  const again = await confirmDialog(
+    dialogEl,
+    '저장하지 못했습니다',
+    [
+      '저장하는 동안 작업 모듈이 중단되어 문서를 복구했습니다. 편집 내용은 복구되었지만 복구 전 되돌리기 이력은 사라졌습니다.',
+      '다시 저장할까요?',
+    ],
+    '다시 저장',
+    '나중에',
+  );
+  if (again) await runSave(trigger);
 }
 
 /** M0 진단: 브라우저 Worker 에서 전체 저장 시간·WASM 힙 측정(파일은 저장하지 않음). */
@@ -210,7 +369,11 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
     diag.add('viewer-unmount', { reason: 'open' });
   }
   firstPaintAnnounced = false;
-  const info = await pdf.open(transferBytes(bytes));
+  editLog.reset();
+  setNotice('recovered', null);
+  setNotice('redact', null);
+  // 원본은 복구 계층이 open 전에 Blob 으로 보관한 뒤 Worker 로 넘긴다(계약 D6).
+  const info = await pdf.open(bytes);
   diag.add('open', info);
   documentName = label;
   document.title = `${label} - PDF Editor`;
@@ -224,6 +387,15 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
       linkPage: (i) => pdf.linkPage(i),
       searchText: (r) => pdf.searchText(r),
       getPageLayout: (i) => pdf.getPageLayout(i),
+      getPageEditability: (i) => pdf.getPageEditability(i),
+      planParagraphEdit: (i, p) => pdf.planParagraphEdit(i, p),
+      beginParagraphEdit: (i, p, r) => pdf.beginParagraphEdit(i, p, r),
+      updateParagraphDraft: (d, input) => pdf.updateParagraphDraft(d, input),
+      commitParagraphEdit: (d) => pdf.commitParagraphEdit(d),
+      cancelParagraphEdit: (d) => pdf.cancelParagraphEdit(d),
+      undo: () => pdf.undo(),
+      redo: () => pdf.redo(),
+      getEditHistory: () => pdf.getEditHistory(),
       log: (event, data) => diag.add(event, data),
     },
     pageCount: info.pageCount,
@@ -232,7 +404,9 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
       availableWidth: document.documentElement.clientWidth,
     }),
     onPagePainted,
+    editLog,
   });
+  controllerRef = controller;
   unmountViewer = mountViewer(
     { controls: byId('viewer-controls'), pages: byId('page-container') },
     controller,
@@ -241,6 +415,36 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   const { view, renderError } = controller.getState();
   // 첫 페이지를 그리지 못하면 열기 실패로 본다(MIME handler 에서는 Chrome 기본 뷰어로 넘긴다).
   if (!view) throw new Error(renderError ?? '첫 페이지 렌더 실패');
+  void reportRedactAnnots();
+}
+
+/** 열기 시 Redact 주석 보고(A2-2). core 에 보고 RPC 가 없으면(`listRedactAnnots`) 진단 로그만 남긴다. */
+async function reportRedactAnnots(): Promise<void> {
+  const report = await pdf.listRedactAnnots();
+  if (report === null) {
+    diag.add('redact-report-unavailable', 'core 에 listRedactAnnots RPC 가 없음(A2-2)');
+    return;
+  }
+  diag.add('redact-report', report);
+  setNotice('redact', redactNotice(report));
+}
+
+/** DNR 폴백 경로에서 file:// 접근이 꺼져 있으면 안내한다(A5-3). */
+async function reportFileAccess(displayUrl: string | null, mode: string): Promise<void> {
+  let allowed: boolean | null;
+  try {
+    allowed = await chrome.extension.isAllowedFileSchemeAccess();
+  } catch {
+    allowed = null;
+  }
+  const notice = fileAccessNotice({
+    mode: mode === 'mime-handler' || mode === 'dnr-fallback' ? mode : 'unsupported',
+    fileAccessAllowed: allowed,
+    displayUrl,
+    extensionId: chrome.runtime.id,
+  });
+  diag.add('file-access', { mode, allowed, displayUrl, notice: notice !== null });
+  setNotice('file-access', notice);
 }
 
 function describeSource(source: ViewerSource): Record<string, unknown> {
@@ -280,6 +484,13 @@ async function main(): Promise<void> {
   });
   contextKind = source.kind;
   badgeEl.textContent = source.kind;
+  void reportFileAccess(
+    source.displayUrl,
+    decideInterceptionMode({
+      hasMimeHandlerApi: 'mimeHandler' in chrome && chrome.mimeHandler !== undefined,
+      chromeMajor: parseChromeMajor(navigator.userAgent),
+    }),
+  );
   if (source.kind === 'mime-handler-embedded') document.body.classList.add('embedded');
   diag.add('source', describeSource(source));
 
