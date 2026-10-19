@@ -1394,5 +1394,147 @@ export function detectTables(
   }
   // 2) 정렬 전략: 괘선 표 밖 줄.
   accepted.push(...textStrategy(ctx, taken, accepted.map(candBBox)));
-  return accepted.map(toDetected).sort((a, b) => a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0]);
+  const byIndex = new Map(lines.map((f) => [f.index, f]));
+  return accepted
+    .map(toDetected)
+    .map((t) => normalizeTable(t, byIndex))
+    .sort((a, b) => a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0]);
+}
+
+// ── 후처리(라벨 격자 기준 정리) ──────────────────────────────────────
+
+/** 격자 칸 → 셀 인덱스. */
+function gridOf(t: DetectedTable): number[][] {
+  const rows = t.rowBounds.length - 1;
+  const cols = t.colBounds.length - 1;
+  const g = Array.from({ length: rows }, () => new Array<number>(cols).fill(-1));
+  t.cells.forEach((c, k) => {
+    for (let r = c.row; r < c.row + c.rowSpan; r++)
+      for (let q = c.col; q < c.col + c.colSpan; q++) if (g[r]) g[r]![q] = k;
+  });
+  return g;
+}
+
+/** 격자 칸 배정에서 셀을 다시 만든다(같은 인덱스의 칸들이 사각형을 이룬다고 본다). */
+function rebuild(
+  t: DetectedTable,
+  g: number[][],
+  rowBounds: number[],
+  colBounds: number[],
+  lines: (k: number) => number[],
+): DetectedTable {
+  const seen = new Map<number, DetectedCell>();
+  const cells: DetectedCell[] = [];
+  g.forEach((row, r) =>
+    row.forEach((k, q) => {
+      const key = k < 0 ? -1 - (r * 10_000 + q) : k;
+      const cur = seen.get(key);
+      if (cur) {
+        cur.rowSpan = Math.max(cur.rowSpan, r - cur.row + 1);
+        cur.colSpan = Math.max(cur.colSpan, q - cur.col + 1);
+        return;
+      }
+      const cell: DetectedCell = {
+        row: r,
+        col: q,
+        rowSpan: 1,
+        colSpan: 1,
+        bbox: [0, 0, 0, 0],
+        lines: k < 0 ? [] : lines(k),
+      };
+      seen.set(key, cell);
+      cells.push(cell);
+    }),
+  );
+  for (const c of cells)
+    c.bbox = [
+      colBounds[c.col]!,
+      rowBounds[c.row]!,
+      colBounds[c.col + c.colSpan]!,
+      rowBounds[c.row + c.rowSpan]!,
+    ];
+  return {
+    ...t,
+    rowBounds,
+    colBounds,
+    cells,
+    bbox: [colBounds[0]!, rowBounds[0]!, colBounds.at(-1)!, rowBounds.at(-1)!],
+  };
+}
+
+/**
+ * 1) 맨 위·맨 아래의 "모든 열에 걸친 한 칸" 행(틀 안 제목 띠·주석 띠)은 표에서 뺀다(라벨은 캡션·각주로 본다).
+ * 2) 줄바꿈된 행 제목 합치기: 첫 열만 찬 행 뒤의 행이 첫 열 줄을 0.5em 이상 들여 쓰고, 앞 줄이 첫 열 폭의
+ *    60% 이상 차며 ':'·'.' 로 끝나지 않으면 두 행을 합친다.
+ * 3) 어떤 행도 두 쪽에 따로 글자를 두지 않고 한 칸이 걸쳐 있는 열 경계는 지운다(글자 투영으로 생긴 경계).
+ */
+function normalizeTable(t: DetectedTable, byIndex: Map<number, LineFeature>): DetectedTable {
+  let g = gridOf(t);
+  let rowBounds = t.rowBounds.slice();
+  let colBounds = t.colBounds.slice();
+  const cellLines = (k: number) => t.cells[k]?.lines ?? [];
+  const merged = new Map<number, number[]>(); // 합친 셀 인덱스 → 줄
+  const linesOf = (k: number) => merged.get(k) ?? cellLines(k);
+  const fullSpan = (row: number[]) => row.every((k) => k === row[0]) && row[0]! >= 0;
+  // 1) 제목·주석 띠.
+  while (g.length > 3 && fullSpan(g[0]!)) {
+    g = g.slice(1);
+    rowBounds = rowBounds.slice(1);
+  }
+  while (g.length > 3 && fullSpan(g.at(-1)!) && g.at(-2)!.some((k, q) => k !== g.at(-1)![q])) {
+    g = g.slice(0, -1);
+    rowBounds = rowBounds.slice(0, -1);
+  }
+  // 2) 줄바꿈된 행 제목.
+  const filled = (k: number) => k >= 0 && linesOf(k).length > 0;
+  for (let r = 0; r + 1 < g.length; r++) {
+    const a = g[r]!;
+    const b = g[r + 1]!;
+    const onlyFirst = a.every((k, q) => q === 0 || k === a[0] || !filled(k));
+    if (!onlyFirst || !filled(a[0]!) || !filled(b[0]!) || a[0] === b[0]) continue;
+    if (!b.some((k, q) => q > 0 && k !== b[0] && filled(k))) continue;
+    const la = linesOf(a[0]!)
+      .map((i) => byIndex.get(i))
+      .filter((f) => f !== undefined);
+    const lb = linesOf(b[0]!)
+      .map((i) => byIndex.get(i))
+      .filter((f) => f !== undefined);
+    if (!la.length || !lb.length) continue;
+    const last = la.at(-1)!;
+    const first = lb[0]!;
+    const col0Right = colBounds[1]!;
+    const col0W = col0Right - colBounds[0]!;
+    const indented = first.bbox[0] >= Math.min(...la.map((f) => f.bbox[0])) + 0.5 * first.size;
+    const fills = last.bbox[2] - colBounds[0]! >= 0.6 * col0W;
+    if (!indented || !fills || /[:.]\s*$/u.test(last.text)) continue;
+    // a 의 첫 열 셀을 b 의 첫 열 셀에 합치고, b 의 나머지 칸은 그대로 두며 두 행을 하나로.
+    const keep = b[0]!;
+    merged.set(keep, [...linesOf(a[0]!), ...linesOf(keep)]);
+    const row = b.map((k, q) => (q === 0 || a[q] === a[0] || !filled(a[q]!) ? k : k));
+    row[0] = keep;
+    g = [...g.slice(0, r), row, ...g.slice(r + 2)];
+    rowBounds = [...rowBounds.slice(0, r + 1), ...rowBounds.slice(r + 2)];
+    r--;
+  }
+  // 3) 걸친 칸만 있는 열 경계.
+  for (let q = 0; q + 1 < (g[0]?.length ?? 0); q++) {
+    const distinguishes = g.some(
+      (row) => row[q] !== row[q + 1] && filled(row[q]!) && filled(row[q + 1]!),
+    );
+    const spanned = g.some((row) => row[q] === row[q + 1] && filled(row[q]!));
+    if (distinguishes || !spanned) continue;
+    g = g.map((row) => {
+      const keep = filled(row[q]!) ? row[q]! : row[q + 1]!;
+      return [...row.slice(0, q), keep, ...row.slice(q + 2)];
+    });
+    colBounds = [...colBounds.slice(0, q + 1), ...colBounds.slice(q + 2)];
+    q--;
+  }
+  if (
+    g.length === t.rowBounds.length - 1 &&
+    colBounds.length === t.colBounds.length &&
+    merged.size === 0
+  )
+    return t;
+  return rebuild(t, g, rowBounds, colBounds, linesOf);
 }
