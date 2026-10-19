@@ -805,3 +805,28 @@ describe('linkPage 재동기화', () => {
     expect(loose.stats.matchedChars).toBe(3);
   });
 });
+
+describe('성능 회귀: 긴 경로', () => {
+  it('re 20,000개를 한 경로로 칠해도 경로 닫기가 경로 길이에 비례하지 않는다(이전 4.7 s)', () => {
+    const parts: string[] = [];
+    for (let i = 0; i < 20_000; i++) {
+      parts.push(`${(i % 100) * 6} ${Math.floor(i / 100) * 3} 4 2 re`);
+    }
+    parts.push('f');
+    const { doc } = build(parts.join('\n'));
+    const t0 = performance.now();
+    const map = buildSourceMap(doc, 0);
+    const ms = performance.now() - t0;
+    expect(map.paintCount).toBe(1);
+    expect(map.ops.filter((o) => o.op === 're')).toHaveLength(20_000);
+    // 수정 후 실측 약 0.05 s. 동시 실행 부하를 감안한 넉넉한 상한.
+    expect(ms).toBeLessThan(2_000);
+  });
+
+  it('글리프 150,000개짜리 Tj 도 glyphSeq 범위를 구한다(전개 인자 수 한도 없음)', () => {
+    const { doc } = build(`BT /F1 0.01 Tf 0 0 Td (${'a'.repeat(150_000)}) Tj ET`);
+    const map = buildSourceMap(doc, 0);
+    expect(map.glyphCount).toBe(150_000);
+    expect(map.ops.find((o) => o.op === 'Tj')!.glyphSeq).toEqual([0, 150_000]);
+  });
+});
