@@ -16,6 +16,7 @@
 import * as mupdf from 'mupdf';
 import type { EditWarning, SourceMap } from '@pdf-editor/shared-types';
 import type { EncodedGlyph, FaceSource, FontFace, FontSegment } from '@pdf-editor/reflow';
+import { latin1String } from './edit-common.js';
 import { subsetFontBytes } from './font-embed.js';
 import {
   glyphNameToUnicode,
@@ -548,7 +549,7 @@ function fixSpaceToUnicode(ref: mupdf.PDFObject, font: mupdf.Font): void {
   const tu = ref.get('ToUnicode');
   if (gid <= 0 || !tu.isStream()) return;
   const code = gid.toString(16).padStart(4, '0');
-  const text = new TextDecoder('latin1').decode(readStreamBytes(tu));
+  const text = latin1String(readStreamBytes(tu));
   const re = new RegExp(`<${code}>\\s*<00a0>`, 'i');
   if (!re.test(text)) return;
   tu.writeStream(text.replace(re, `<${code}> <0020>`));
