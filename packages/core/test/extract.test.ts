@@ -217,6 +217,45 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
   });
 });
 
+describe('extractPage: 세로쓰기(wmode 1) 구조화 텍스트 결합', () => {
+  /** F2 와 같은 한글 폰트를 Identity-V 로 둔 /FV. */
+  const vertical = (content: string): PageSpec => ({
+    content,
+    mediabox: [0, 0, 300, 300],
+    resources: (doc, resources) => {
+      const ref = doc.addFont(koreanFont);
+      ref.put('Encoding', doc.newName('Identity-V'));
+      (resources.Font as Record<string, unknown>).FV = ref;
+    },
+  });
+
+  it.each([
+    ['기본', 'BT /FV 20 Tf 150 280 Td GLYPHS Tj ET'],
+    ['회전·Tc', 'BT /FV 10 Tf 3 Tc 0.7071 0.7071 -0.7071 0.7071 150 280 Tm GLYPHS Tj ET'],
+  ])('%s: 글자마다 자기 글리프의 quad 를 받는다(앞 글리프 quad 아님), 근사 없음', (_, body) => {
+    const word = '한글세로쓰기';
+    const s = open([vertical(body.replace('GLYPHS', hexGlyphs(word)))]);
+    const page = s.document.loadPage(0);
+    const { model, stats } = extractPageDetailed(page, { pageIndex: 0 });
+    // 구조화 텍스트 글자(같은 순서로 나온다)의 quad.
+    const stext: { c: string; quad: number[] }[] = [];
+    const st = page.toStructuredText('');
+    st.walk({ onChar: (c, _o, _f, _s, quad) => stext.push({ c, quad: [...quad] }) });
+    st.destroy();
+    page.destroy();
+    s.close();
+    expect(text(model)).toBe(word);
+    expect(stext.map((x) => x.c).join('')).toBe(word);
+    expect(model.chars.every((c) => c.wmode === 1)).toBe(true);
+    expect(stats.approximated).toBe(0);
+    expect(model.chars.every((c) => c.line >= 0)).toBe(true);
+    // 글자 i 는 구조화 텍스트 글자 i 의 quad 를 받는다(이전 결함: 앞 글리프의 quad, 첫 글자는 근사).
+    model.chars.forEach((c, i) => {
+      c.quad.forEach((v, k) => expect(v, `${i}.${k}`).toBeCloseTo(stext[i]!.quad[k]!, 3));
+    });
+  });
+});
+
 describe('extractPage: 구조화 텍스트에 없는 글자(quad 근사)', () => {
   it('페이지 밖 글자는 quad 를 근사하고 line -1, 경고', () => {
     const s = open(['BT /F1 12 Tf 10 150 Td (AB) Tj ET BT /F1 12 Tf 350 150 Td (XY) Tj ET']);
