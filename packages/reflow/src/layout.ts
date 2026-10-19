@@ -217,6 +217,8 @@ function buildItems(text: string, segments: readonly FontSegment[]): Item[] {
 /**
  * 탐욕 줄 나눔. 공백은 폭 판정에 넣지 않고(줄 끝에 매달림), 줄 끝 클러스터의 다음 커닝은 뺀다. 넘치면 줄 안의 마지막 일반
  * 나눔 기회에서 나누고, 없으면(어절·단어가 줄 폭보다 김) 비상 나눔(음절·글자 단위)을 한다. 줄에는 최소 한 클러스터가 들어간다.
+ * 공백은 넘침 판정 전에 줄에 들어가고 나눔 위치는 공백·강제 줄바꿈 앞이 될 수 없으므로, 줄 끝 공백과 그 뒤 강제 줄바꿈은
+ * 항상 그 줄에 붙는다(빈 줄을 따로 만들지 않는다).
  */
 function breakLines(
   items: readonly Item[],
@@ -252,16 +254,7 @@ function breakLines(
       }
       pen += it.adv * s;
     }
-    if (end < 0) {
-      end = n;
-    } else if (!hard) {
-      // 줄 끝 공백과 바로 뒤 강제 줄바꿈은 이 줄에 붙인다.
-      while (end < n && items[end]?.cc.cls === 'SP') end++;
-      if (end < n && items[end]?.kind === 'break') {
-        end++;
-        hard = true;
-      }
-    }
+    if (end < 0) end = n;
     lines.push({ a, b: end, hard });
     i = end;
   }
