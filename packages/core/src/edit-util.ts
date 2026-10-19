@@ -95,12 +95,14 @@ export function coreWarnings(input: CoreWarningInput): EditWarning[] {
       .map((t) => t.bbox)
       .filter((box) => !containsRect(box, originalBox)),
   ];
+  const significant = (r: Rect | null): r is Rect =>
+    r !== null && r[2] - r[0] > OVERLAP_MIN_PT && r[3] - r[1] > OVERLAP_MIN_PT;
   const overlaps: Rect[] = [];
   for (const box of others) {
+    // 원 문단이 이미 겹쳐 있던 상자(좁은 행간·그림 위 글)는 영역을 넓혀서 생긴 겹침이 아니다.
+    if (significant(intersectRect(originalBox, box))) continue;
     const hit = intersectRect(summary.area, box);
-    if (hit && hit[2] - hit[0] > OVERLAP_MIN_PT && hit[3] - hit[1] > OVERLAP_MIN_PT) {
-      overlaps.push(hit);
-    }
+    if (significant(hit)) overlaps.push(hit);
   }
   if (overlaps.length > 0) {
     warnings.push({
@@ -169,7 +171,15 @@ export function declaresPdfA(doc: mupdf.PDFDocument): boolean {
  */
 export function ensureInfoDictionary(doc: mupdf.PDFDocument): void {
   // isDictionary 는 간접 참조를 따라간다. 끊긴 참조·null 이면 false.
-  if (doc.getTrailer().get('Info').isDictionary()) return;
-  const info = doc.addObject(doc.newDictionary());
-  doc.getTrailer().put('Info', info);
+  const info = doc.getTrailer().get('Info');
+  if (info.isDictionary()) {
+    // 직접 사전이면 trailer 변경이 저널에 기록되지 않아 undo 가 닿지 않는다. 간접 객체로 바꿔 둔다.
+    if (!info.isIndirect()) {
+      const ref = doc.addObject(info);
+      doc.getTrailer().put('Info', ref);
+    }
+    return;
+  }
+  const created = doc.addObject(doc.newDictionary());
+  doc.getTrailer().put('Info', created);
 }

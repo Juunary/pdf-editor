@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { PdfSession } from '../src/index.js';
 import { EditStateError, StaleRevisionError } from '../src/edit-engine.js';
+import * as mupdf from 'mupdf';
 import { createFakeAdapter } from './fake-edit-adapter.js';
 import { buildPdf } from './pdf-fixtures.js';
 import {
@@ -219,6 +220,15 @@ describe('초안 → 커밋 → undo/redo', () => {
     expect(second.op.target.editedBlock).toBe('id-1');
     expect(second.op.id).not.toBe('id-1');
     expect((await s.getPageEdits(0)).blocks).toHaveLength(1);
+    // 블록 영역은 가장 나중 편집의 배치 결과다.
+    const third = await begin(s, blockParagraph.id);
+    const updated = await s.updateParagraphDraft(
+      third.started.draftId,
+      draftInput(third.plan, 'Gamma delta '.repeat(6)),
+    );
+    expect((await s.getPageEdits(0)).blocks[0]!.contentBox).toEqual(updated.reflow.contentBox);
+    await s.cancelParagraphEdit(third.started.draftId);
+    expect((await s.getPageEdits(0)).blocks[0]!.contentBox).not.toEqual(updated.reflow.contentBox);
     expect(text(s)).toContain('Gamma delta');
     await s.undo();
     expect(text(s)).toContain('Alpha beta');
@@ -470,6 +480,140 @@ describe('쪽 캐시 무효화(계약 5.7)', () => {
     await s.cancelParagraphEdit(started.draftId);
     expect(s.extractPage({ pageIndex: 1 })).not.toBe(stale);
     expect(text(s, 1)).not.toContain('Draft body');
+    s.close();
+  });
+});
+
+describe('실패 경로(독립 검토 반영)', () => {
+  it('갱신이 쓴 뒤에 실패하면 직전 내용으로 되돌려 로그와 문서가 같다', async () => {
+    const { s, adapter } = harness();
+    const { plan, started } = await begin(s, 1);
+    await s.updateParagraphDraft(started.draftId, draftInput(plan, 'Version X'));
+    adapter.probe.failNext.writeAfter = 1;
+    await expect(
+      s.updateParagraphDraft(started.draftId, draftInput(plan, 'Version Y')),
+    ).rejects.toThrow('쓴 뒤');
+    expect(text(s)).toContain('Version X');
+    expect(text(s)).not.toContain('Version Y');
+    const result = await s.commitParagraphEdit(started.draftId);
+    expect(result.op.runs.map((r) => r.text)).toEqual(['Version X']);
+    s.close();
+  });
+
+  it('되돌리기도 실패하면 초안은 취소만 할 수 있다', async () => {
+    const { s, adapter } = harness();
+    const before = text(s);
+    const { plan, started } = await begin(s, 1);
+    adapter.probe.failNext.writeAfter = 2;
+    await expect(
+      s.updateParagraphDraft(started.draftId, draftInput(plan, 'Broken')),
+    ).rejects.toThrow('쓴 뒤');
+    await expect(
+      s.updateParagraphDraft(started.draftId, draftInput(plan, 'Again')),
+    ).rejects.toThrow('손상');
+    await expect(s.commitParagraphEdit(started.draftId)).rejects.toThrow('손상');
+    await s.cancelParagraphEdit(started.draftId);
+    expect(text(s)).toBe(before);
+    expect(journal(s)).toEqual({ position: 0, steps: [] });
+    s.close();
+  });
+
+  it('커밋 뒤 블록 목록 재구성이 실패해도 커밋 결과를 돌려준다', async () => {
+    const { s, adapter } = harness();
+    const { plan, started } = await begin(s, 1);
+    await s.updateParagraphDraft(started.draftId, draftInput(plan, 'Committed'));
+    const real = adapter.listEditBlocks;
+    adapter.listEditBlocks = () => {
+      throw new Error('목록 실패');
+    };
+    const result = await s.commitParagraphEdit(started.draftId);
+    adapter.listEditBlocks = real;
+    expect(result.history).toMatchObject({ edits: 1, canUndo: true });
+    // 다음에 쓸 때 다시 만든다.
+    expect((await s.getPageEdits(0)).blocks).toHaveLength(1);
+    s.close();
+  });
+
+  it('커밋한 편집이 저널에 없으면 세션을 쓸 수 없게 한다', async () => {
+    const { s } = harness();
+    const { plan, started } = await begin(s, 1);
+    await s.updateParagraphDraft(started.draftId, draftInput(plan, 'Lost'));
+    const doc = s.document;
+    doc.getJournal = () => ({ position: 0, steps: [] });
+    await expect(s.commitParagraphEdit(started.draftId)).rejects.toThrow('저널에 기록되지 않음');
+    await expect(s.getEditHistory()).rejects.toThrow('다시 열어야');
+    s.close();
+  });
+});
+
+describe('구조 연결이 끊긴 문단 수(SavePlan.edits)', () => {
+  it('같은 블록을 다시 편집해도 문단 하나로 센다', async () => {
+    const { s, adapter } = harness();
+    adapter.probe.planWarnings = [
+      { kind: 'tagged-structure-unlinked', message: '구조 연결 끊김', rects: [] },
+    ];
+    await editParagraph(s, 1, 'Tagged one');
+    expect(s.planSave({ changes: [] }).edits?.structureUnlinked).toBe(1);
+    expect(adapter.probe.metadataCalls.at(-1)).toEqual({ pages: [0], structureNotUpdated: true });
+    const block = s.getPageLayout(0).paragraphs.find((p) => p.text.includes('Tagged one'))!;
+    await editParagraph(s, block.id, 'Tagged two');
+    await editParagraph(
+      s,
+      s.getPageLayout(0).paragraphs.find((p) => p.text.includes('Tagged two'))!.id,
+      'Tagged three',
+    );
+    expect(s.planSave({ changes: [] }).edits?.structureUnlinked).toBe(1);
+    await editParagraph(
+      s,
+      s.getPageLayout(0).paragraphs.find((p) => p.text.startsWith('Second'))!.id,
+      'Other paragraph',
+    );
+    expect(s.planSave({ changes: [] }).edits?.structureUnlinked).toBe(2);
+    s.close();
+  });
+});
+
+describe('Info 사전과 캐시', () => {
+  it('trailer /Info 가 직접 사전인 문서도 메타 기록이 undo 로 되돌아간다', async () => {
+    const adapter = createFakeAdapter();
+    const direct = new mupdf.PDFDocument();
+    const f1 = direct.addSimpleFont(new mupdf.Font('Helvetica'));
+    direct.insertPage(
+      -1,
+      direct.addPage(
+        [0, 0, 612, 792],
+        0,
+        { Font: { F1: f1 } },
+        'BT /F1 10 Tf 72 700 Td (direct info doc) Tj ET',
+      ),
+    );
+    const info = direct.newDictionary();
+    info.put('Title', direct.newString('t'));
+    direct.getTrailer().put('Info', info);
+    const buffer = direct.saveToBuffer('');
+    const bytes = buffer.asUint8Array().slice();
+    buffer.destroy();
+    const s = new PdfSession({ editAdapter: adapter, loadFallbackFont: async () => FONT_BYTES });
+    s.open(bytes);
+    expect(s.document.getTrailer().get('Info').isIndirect()).toBe(false);
+    await editParagraph(s, 0, 'Edited direct');
+    const key = () => s.document.getTrailer().get('Info').get('PdfEditorEdits');
+    expect(key().isNull()).toBe(false);
+    await s.undo();
+    expect(key().isNull()).toBe(true);
+    expect(s.document.getTrailer().get('Info').get('Title').asString()).toBe('t');
+    await s.redo();
+    expect(key().isNull()).toBe(false);
+    s.close();
+  });
+
+  it('원본 연결 정보 캐시에서 쪽이 빠지면 매칭 캐시도 다시 만든다', () => {
+    const s = new PdfSession();
+    s.open(buildPdf(Array.from({ length: 18 }, () => ({ content: PAGE, mediabox: MEDIABOX }))));
+    const first = s.linkPage(0);
+    expect(s.linkPage(0)).toBe(first);
+    for (let i = 1; i <= 16; i++) s.getSourceMap(i); // 16쪽 LRU: 0쪽 원본 연결 정보가 밀려난다
+    expect(s.linkPage(0)).not.toBe(first);
     s.close();
   });
 });

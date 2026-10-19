@@ -246,9 +246,36 @@ save:     [journalOn] beginOperation('save')
 | --- | --- | --- |
 | `test/render-clip.test.ts` | 8(매개변수 포함) | 영역 = 쪽 전체의 같은 위치 픽셀(회전·배율), 격자 정렬, 쪽 경계 자르기, RangeError |
 | `test/journal-v1.test.ts` | 13 | V1 전반(MuPDF 직접): 블록·콘텐츠·리소스·폰트 undo/redo, 폰트 표 끊긴 참조, Info, trailer 함정, redo 단계 보존 3건, 계약 시나리오 3건, 감싸지 않은 저장 |
-| `test/edit-engine.test.ts` | 26 | 판정·초안·커밋·취소·undo/redo·재편집·상태 규칙·실패 복구·캐시 무효화·경고·저장 방식·수명 |
+| `test/edit-engine.test.ts` | 33 | 판정·초안·커밋·취소·undo/redo·재편집·상태 규칙·실패 복구(갱신 되돌리기·저널 불일치·목록 실패)·캐시 무효화·경고·저장 방식·수명·구조 연결 문단 수·직접 Info·linkage 캐시 |
 | `test/edit-save-replay.test.ts` | 22 | 폴백 수명 4, D9 저장 7, redo 보존 4, 재적용 6, 재열기 1 |
 | `test/edit-walk.test.ts` | 6(시드) | 임의 순서(커밋·취소·undo·redo·저장) 40단계, 매 단계 저널 위치·단계 수 = 로그, 글자 = 모델 |
-| `test/edit-util.test.ts` | 6 | 사각형·경고 판정·경고 합성 |
+| `test/edit-util.test.ts` | 7 | 사각형·경고 판정·경고 합성 |
 
 가짜 어댑터 기반 시험은 core 의 저널·로그·캐시·저장 로직을 검증하고, pdf-ops·reflow 의 정확성은 검증하지 않는다.
+
+## 7. 독립 검토 반영 (2026-10-19, 읽기 전용 Opus 검토 1회)
+
+검토 기준 `a7464f1..c68efeb`(결과: BLOCKER 0, HIGH 1, MEDIUM 2, LOW 6, 해석 차이 6). 조치는 모두 `m3-core` 에 반영했다.
+
+| 검토 항목 | 조치 |
+| --- | --- |
+| HIGH-1 undo 뒤 저장·초안 취소에서 MuPDF redo 와 core `#redo` 어긋남 | 검토 전에 같은 발견을 해 2.4 로 처리했다(redo 스택을 저널에 맞춤, Info 기록을 커밋으로). 검토가 `getPageEditability` 판정에서 폴백이 들어가는 경로(재현 C)까지 짚어 판정·롤백 뒤에도 맞춘다 |
+| MEDIUM-1 재편집 뒤 `getPageEdits` 가 옛 영역 반환 | 블록 id 또는 `editedBlock` 이 같은 가장 나중 항목을 쓴다(시험: 재편집 후 `contentBox` = 마지막 배치) |
+| MEDIUM-2 갱신이 쓴 뒤 실패하면 문서와 로그의 runs 가 다름 | 실패하면 같은 작업 안에서 직전 runs·format 으로 다시 써 되돌리고 캐시를 비운다. 되돌리기도 실패하면 그 초안은 `손상`으로 표시해 취소만 허용(커밋·갱신 거절) |
+| LOW-1 abandon·end 실패 | 커밋은 `endOperation` 뒤 저널 위치가 `undo 스택 + 1` 인지 확인하고 아니면 세션을 쓸 수 없는 상태로 둔다. abandon 이 실패하면 같은 처리(`저널 작업을 버리지 못함`) |
+| LOW-2 커밋 뒤 블록 목록 실패 | 커밋은 결과를 돌려주고 목록은 다음에 쓸 때 다시 만든다 |
+| LOW-3 `structureUnlinked` 가 편집 횟수 | 블록별 마지막 활성 항목만 센다(`editedBlock` 연쇄를 따라 같은 블록 판정) |
+| LOW-4 `area-overlaps-content` 과다 | 원 문단 bbox 가 이미 겹쳐 있던 상자는 제외 |
+| LOW-5 직접 사전 Info | 저널을 켜기 전 `ensureInfoDictionary` 가 직접 사전을 간접 객체로 바꾼다 |
+| LOW-6 linkage 캐시와 SourceMap 캐시 | linkage 캐시 항목이 만든 때의 SourceMap 을 들고 있어, SourceMap 이 다시 만들어졌으면 다시 매칭한다 |
+
+해석 차이(조치 없음, 5절에 반영 또는 계약 수정 권고)
+
+| # | 내용 |
+| --- | --- |
+| 1 | D9 Info 생성·기록 위치와 4절 "문서를 바꾸지 않는다": 첫 판정이 빈 Info 를 만들 수 있다(2.3) |
+| 2 | 전체 저장 승격(편집 이력이 있으면 전부 되돌려도 전체 저장, 3.5) |
+| 3 | `replayEdits` 는 편집 RPC 전의 문서만(복구 중 마우스 오버 판정이 먼저 불리면 거절되므로 뷰어는 복구 순서를 보장해야 한다) |
+| 4 | `getPageEdits` 는 다른 세션이 만든 블록도 `/BBox` 근사로 돌려준다(`PageEditInfo` 주석은 "같은 세션에서 편집한 문단") |
+| 5 | 5.3 "같은 세션 재편집의 시작 상태 = 마지막 `EditOp` 의 runs·format": core 는 로그를 계획에 반영하지 않고 pdf-ops 계획(`/PdfEditorFormat`)에 맡긴다. `sourceChar` 는 적용 시점 PageModel 인덱스라 옛 로그를 그대로 쓰면 낡은 인덱스를 가리키므로 현재 방식이 맞다. 계약을 "블록 `/PdfEditorFormat` + `sourceChar` 재결정"으로 고치기를 권고 |
+| 6 | Info 기록을 커밋 작업으로 옮긴 것(D9·5.6 의 저장 때 `/ModDate` 갱신과 달라짐): 2.4, 5절 2a |

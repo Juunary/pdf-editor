@@ -83,6 +83,20 @@ describe('coreWarnings', () => {
     expect(w[0]!.rects).toEqual([[100, 792, 300, 800]]);
   });
 
+  it('원 문단이 이미 겹쳐 있던 이웃은 영역을 넓혀서 생긴 겹침이 아니다', () => {
+    const w = coreWarnings({
+      summary: summary([100, 100, 300, 150], [100, 100, 300, 150]),
+      areaLimit,
+      layout: layout([
+        { id: 0, bbox: originalBox },
+        { id: 1, bbox: [100, 130, 300, 170] }, // 원 bbox(100–140)와 이미 겹침
+      ]),
+      paragraphId: 0,
+      originalBox,
+    });
+    expect(w).toEqual([]);
+  });
+
   it('쓴 영역이 다른 문단·표·도형과 겹치면 area-overlaps-content, 원 문단을 덮는 도형은 제외', () => {
     const w = coreWarnings({
       summary: summary([100, 100, 300, 200], [100, 100, 300, 200]),
