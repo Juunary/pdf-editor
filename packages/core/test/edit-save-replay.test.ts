@@ -199,7 +199,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     expect(plan.edits).toBeNull();
     // 편집 이력이 있는(저널이 켜진) 문서는 변경이 없어도 전체 저장이다(증분 구간에 되돌린 객체 흔적 방지).
     expect(plan.method).toBe('full');
-    expect(plan.reason).toContain('저널');
+    expect(plan.reason).toContain('편집 이력');
     s.close();
   });
 
