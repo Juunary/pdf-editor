@@ -4,13 +4,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| 버전 | v2.6 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
+| 버전 | v2.7 (v2 = 1차 안 리뷰 반영: 저장 정책 충돌, 폰트 임베딩 오해, 원본 연결 계층 누락, 지원 범위 불명확, M0 검증 순서, Chrome API 정정, 테스트 기준, 모델 배정, ML/태그 범위, 작성·검증 방식) |
 | 작성일 | 2026-10-18 |
 | 작성 환경 | Mustree 서버(호스트명 `sailab01`) `/mnt/nas4/kjune/pdf-editor`, Claude Code 세션에서 작성. Windows PC(`C:\Users\harry\pdf-editor\PLAN.md`)에는 scp 복사본만 둔다 |
 | 리서치 근거 | MuPDF 1.28.x 공식 JavaScript/WASM 레퍼런스, Chrome 확장(MV3) 공식 문서, Claude Code 공식 문서 |
 | 수치 표기 규칙 | 용량·버전은 "원본 / 압축 / 배포 번들" 기준과 측정 버전을 함께 적는다. 실측 전 값은 **문서 기준** 으로 표시하고, 실측 값에는 **실측 YYYY-MM-DD** 를 붙인다 |
-| 상태 | 계획 문서. **M0 종료(2026-10-19)**: DoD 9항목 통과 4·제한 5, 잔여 해소 작업은 M1·M3 에 반영, 사용자 확인 잔여 4건(`docs/m0-closeout.md`). 근거 `docs/m0-day1-log.md`, `docs/m0-dod-xobject-redact-save.md`, `docs/m0-corpus-recheck.md`. M1 진행 중(`m1` 브랜치, 계약 `docs/m1-contract.md`) |
-| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 2026-10-19 v2.3: 11절 "Chrome 버전 / 검증한 가로채기 경로"(이 PC 열) 실측 기입, 0절 상태·변경 이력 갱신. 2026-10-19 v2.4: 6절 M1 에 텍스트 선택 층·Ctrl+F 작업 추가(Windows 검증 알려진 한계 반영), 4절 `viewer-ui` 책임·6절 재산정 메모·8절 "편집 동작" 축에 같은 항목 추가. 2026-10-19 v2.5: 7절 리스크 7 의 업스트림 보고 상태를 게시됨(mupdf.js#201)으로 갱신. 2026-10-19 v2.6: M0 종료·재산정 반영 — 0절 상태, 3.3 폰트 서브셋(C1), 3.1 redaction 재직렬화(C2), 3.4 공유 Form 코퍼스 결과(C3·C6), 5.1 가로채기 경계 150·DNR 128–149 제한, 5.4 실제 문서 힙 배율(C4), 6절 일정 재산정(M1 4주·M3 5주, MVP 2027-02-28)·M0 DoD 가로채기 행, 7절 리스크 9·10, 8절 코퍼스 방식, 11절 서버 Chrome 실측. 그 외 절은 변경 없음 |
+| 상태 | 계획 문서. **M0 종료(2026-10-19)**: DoD 9항목 통과 4·제한 5, 잔여 해소 작업은 M1·M3 에 반영, 사용자 확인 잔여 4건(`docs/m0-closeout.md`). 근거 `docs/m0-day1-log.md`, `docs/m0-dod-xobject-redact-save.md`, `docs/m0-corpus-recheck.md`. M1 진행 중(`m1` 브랜치, 계약 `docs/m1-contract.md`) M1(2026-10-19, `m1` 브랜치): 세 작업 통합 완료(`docs/m1-integration.md`), 결정 항목 완료(`docs/m1-decisions.md`). 남은 것: 코퍼스 도형 번호 불일치 11쪽, 마일스톤 리뷰, `main` 머지 |
+| 변경 이력 | 2026-10-18 v2.1: 2절 "한글 폴백 폰트" 를 M0 Day 1 실측(P1: CFF OTF 실패 → glyf TTF 서브셋)으로 갱신. 2026-10-18 v2.2: 1.3·3.4 공유 Form XObject 정책 확정(편집 제한 L1–L7), 3.1 기존 Redact 주석 정책 확정·저장 방식 강제·저장 벤치마크 결과 요약, 5.4 실측 상한, 6절 재산정 메모, 7절 리스크 7·8 추가. 근거 `docs/m0-dod-xobject-redact-save.md`. 2026-10-19 v2.3: 11절 "Chrome 버전 / 검증한 가로채기 경로"(이 PC 열) 실측 기입, 0절 상태·변경 이력 갱신. 2026-10-19 v2.4: 6절 M1 에 텍스트 선택 층·Ctrl+F 작업 추가(Windows 검증 알려진 한계 반영), 4절 `viewer-ui` 책임·6절 재산정 메모·8절 "편집 동작" 축에 같은 항목 추가. 2026-10-19 v2.5: 7절 리스크 7 의 업스트림 보고 상태를 게시됨(mupdf.js#201)으로 갱신. 2026-10-19 v2.6: M0 종료·재산정 반영 — 0절 상태, 3.3 폰트 서브셋(C1), 3.1 redaction 재직렬화(C2), 3.4 공유 Form 코퍼스 결과(C3·C6), 5.1 가로채기 경계 150·DNR 128–149 제한, 5.4 실제 문서 힙 배율(C4), 6절 일정 재산정(M1 4주·M3 5주, MVP 2027-02-28)·M0 DoD 가로채기 행, 7절 리스크 9·10, 8절 코퍼스 방식, 11절 서버 Chrome 실측. 2026-10-19 v2.7: M1 결정 반영 — 3.1 텍스트 제거 경로(SourceMap 기반 제거 기본), 3.3 폴백 폰트만 서브셋 구현, 3.4 A1-1 해소, 5.1 DNR object 포함, 7절 리스크 10 대응, 0절 상태. 근거 `docs/m1-decisions.md`. 그 외 절은 변경 없음 |
 
 확정된 결정
 - 주력 형태: Chrome 확장 우선. 코어는 TypeScript + MuPDF WebAssembly(npm `mupdf`). 데스크톱(Tauri)은 후속.
@@ -84,7 +84,7 @@
   - `garbage=yes` 와 `garbage=compact` 의 피크 힙은 같다(출력은 `yes` 가 46~70 B 크다). `emptyStore()` 는 선형 메모리를 줄이지 못해 상한 대책이 아니다.
 - redaction 은 "선택 글자만 지우는 함수" 가 아니다. `applyRedactions(blackBoxes=false, imageMethod, lineArtMethod, textMethod)` 의 이미지·선화·텍스트 옵션을 **텍스트 교체 용도로 명시 지정** 한다(기본: 텍스트 제거, 선화·이미지 보존).
 - 기존 Redact 주석이 있는 문서 **확정(M0, 2026-10-18, `docs/m0-dod-xobject-redact-save.md` 2절)**: 열기 시 감지·보고(`pdf-ops.listRedactAnnots`, 쪽·개수). 편집용 redaction 은 **새로 만든 주석만 주석 단위 `applyRedaction()`** 으로 적용해 기존 Redact 주석을 적용·삭제·이동하지 않는다(페이지 단위 `applyRedactions()` 는 기존 주석까지 적용해 인접 문단을 지웠다). 편집 전 `assessRedactionImpact` 가 편집 영역과 겹치는 기존 Redact 주석(`warn`: 나중에 그 표시를 적용하면 새 텍스트도 지워짐)과 함께 제거되는 링크 주석(`warn`: MuPDF redaction 은 겹치는 링크를 지움, 복원 여부는 M3 A2-1)을 보고한다. 페이지 단위 적용이 꼭 필요한 작업만 Redact 주석을 임시 분리(`withRedactAnnotsDetached`) 후 실행하며, 분리 전 그 쪽의 `PDFPage` 를 모두 `destroy()` 한다(MuPDF 는 열려 있는 페이지의 `/Annots` 변경을 다시 읽지 않음). 기존 주석 적용 기능은 v1 범위 밖.
-- **페이지 redaction 재직렬화(C2, 실측 2026-10-19)**: MuPDF 페이지 redaction 은 쪽 콘텐츠 전체를 다시 직렬화한다(실제 문서 연산자 906→2,069, 바이트 +37%). 원본 연산자 바이트 위치(SourceMap)가 무효가 되고, `ActualText` Span 이 있는 쪽에서 편집하지 않은 줄이 최대 3.1pt 이동했다(MuPDF 경고 `ActualText with no position`). 텍스트 제거 경로(SourceMap 연산자 바이트 범위 제거 vs redaction 유지 + 경고 시 편집 제한)는 M1 설계 항목으로 결정한다(A7-2, A1-1 과 함께).
+- **페이지 redaction 재직렬화(C2, 실측 2026-10-19)**: MuPDF 페이지 redaction 은 쪽 콘텐츠 전체를 다시 직렬화한다(실제 문서 연산자 906→2,069, 바이트 +37%). 원본 연산자 바이트 위치(SourceMap)가 무효가 되고, `ActualText` Span 이 있는 쪽에서 편집하지 않은 줄이 최대 3.1pt 이동했다(MuPDF 경고 `ActualText with no position`). **텍스트 제거 경로 확정(M1, 2026-10-19, `docs/m1-decisions.md` A7-2)**: SourceMap 기반 제거(`pdf-ops.removeTextShowOps`)를 기본으로 한다. 지울 Tj·TJ·'·" 연산의 바이트만 같은 총 전진량의 숫자 TJ 로 바꿔 뒤 글자 위치와 스트림의 나머지 바이트를 보존한다(코퍼스 100블록: 블록 밖 글자 위치 변화 0, redaction 은 블록 밖 렌더 변화 21/100). MuPDF redaction 은 Form 안·Type3·세로쓰기·폰트 폭 불확실 연산의 대체 경로로만 쓴다.
 
 ### 3.2 undo/redo
 - 모델: **원본 바이트 + 편집 로그(EditOp 리스트) 를 진실 원천** 으로 유지한다. 작업용 문서는 "원본 + 로그 재적용" 으로 재구성 가능해야 한다.
@@ -97,7 +97,7 @@
 | 상황 | 처리 |
 |---|---|
 | 원본 폰트 재사용 가능 + 새 글자 표현 가능(`encodeCharacter(cp) !== 0`) | 원본 폰트 리소스 재사용 |
-| 원본이 서브셋이라 새 글자 없음 | 폴백 폰트 선택 → `new Font(name, bytes)` → `doc.addFont(font)`(Identity-H CID) 로 **폰트 바이트 포함 임베딩** → 저장 시 **폴백 폰트만 서브셋**(A7-1, M1). MuPDF `subsetFonts()` 는 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트 `/Widths` 를 정수로 반올림해 편집하지 않은 쪽 렌더를 바꾸므로(C1, 실측 2026-10-19 pdfTeX 2/19 문서) 쓰지 않는다 |
+| 원본이 서브셋이라 새 글자 없음 | 폴백 폰트 선택 → `new Font(name, bytes)` → `doc.addFont(font)`(Identity-H CID) 로 **폰트 바이트 포함 임베딩** → 저장 시 **폴백 폰트만 서브셋**(A7-1, 구현 `pdf-ops.subsetFontBytes`: 임시 문서에서 서브셋, gid 유지, 2.5 MB → 약 100 KB). MuPDF `subsetFonts()` 는 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트 `/Widths` 를 정수로 반올림해 편집하지 않은 쪽 렌더를 바꾸므로(C1, 실측 2026-10-19 pdfTeX 2/19 문서) 쓰지 않는다 |
 | 원본 폰트의 문자 매핑(CMap/Encoding) 복원 곤란 | 편집 가능 판정 "제한" + 폴백 사용 시 표시 |
 | 저장 후 다른 뷰어 | 모양뿐 아니라 **복사·검색·재추출(ToUnicode)** 검증 |
 
@@ -120,7 +120,7 @@
 - MuPDF `PDFProcessor` / `PDFPage.process` 는 `mutool run` 전용이라 npm WASM 에서 쓸 수 없다 → 자체 구현 범위는 단순 토큰 분리보다 넓다.
 - 공유 Form XObject **확정(M0, 2026-10-18, `docs/m0-dod-xobject-redact-save.md` 1절)**: 여러 페이지/위치에서 재사용되면 원본 수정 시 선택하지 않은 위치까지 바뀌므로, 편집하는 사용 위치는 공유 여부와 무관하게 **항상 새 인스턴스로 교체** 한다. 방식: 원 페이지와 같은 MediaBox·CropBox·Rotate 의 임시 페이지에 선택 위치의 최상위 Form 을 같은 CTM 으로 그리고 주석 단위 redaction(텍스트 제거, 선화·이미지 보존)으로 필터된 인스턴스를 얻은 뒤, 페이지 Resources 를 페이지 전용 사본으로 바꿔 새 이름을 등록하고 페이지 콘텐츠에서 해당 `Do` 의 이름 피연산자 바이트만 교체한다(임시 페이지는 삭제, 잔여 객체는 전체 저장에서 제거). 중첩 사용 위치를 편집하면 상위 체인도 인스턴스화한다. 합성 픽스처 실측: 비선택 위치·다른 쪽 렌더 diff 0 px(MuPDF·Poppler), 원본 객체 변경은 페이지 사전 1개. 실제 코퍼스(6문서 9개 Form) 재실행 9/9 정책 충족(2026-10-19, `docs/m0-corpus-recheck.md` 2.9). Form `/BBox` 는 정규화해 비교한다(비정규화 4/9, C3·A7-3), 새 텍스트 배치 영역은 원 텍스트 위치 ∩ BBox ∩ CropBox 로 제한한다(BBox ⊄ CropBox 2/9, C6·A7-4 M3).
   - v1 **편집 제한**(사유 표시)으로 판정하는 사용 위치: L1 Form 에 자체 `/Resources` 없음(페이지 리소스 상속), L2 `/StructParents`·MCID 포함(태그 PDF, 1.4 태그 정책으로 처리), L3 새 텍스트가 Form BBox 초과(자동 클립 금지와 충돌, BBox 확장 미구현), L4 페이지 콘텐츠 밖 사용(주석 외관 AP·타일링 패턴·Type3 글리프·SMask), L5 재귀 깊이 > 8 또는 순환 참조, L6 토크나이저 실패 또는 이름 피연산자가 Contents 배열 스트림 경계에 걸침, L7 `/OC` 선택적 콘텐츠(경고만).
-  - 주의(A1-1): Form 이 있는 페이지에서 페이지 콘텐츠 텍스트를 직접 redaction 하면(Day 1 경로) MuPDF 가 그 쪽의 모든 Form 사용 위치를 인스턴스화·재직렬화한다. 비편집 위치를 원본 객체로 되돌리는 후처리 또는 임시 페이지 방식으로 통일할지 M1 에서 결정.
+  - A1-1(Form 이 있는 페이지 직접 편집 시 모든 Form 인스턴스화) **해소(M1)**: 텍스트 제거에 페이지 redaction 을 쓰지 않는다(3.1). Form 안 텍스트는 M3 에서 편집 위치 인스턴스 복제 후 복제본 스트림에 SourceMap 기반 제거를 적용하고, `redactFormUsage` 는 대체 경로로 둔다.
 
 ---
 
@@ -157,7 +157,7 @@
 ### 5.1 가로채기(인터셉트)
 - **v1 기준: Chrome 150+ 공개 MIME handler**(Chrome for Testing 150.0.7871.0 이상에서 `chrome.mimeHandler` 실측 2026-10-19, 150.0.7828.0·149 없음. 정식 Chrome 150 확인 전). manifest `mime_types_handler: {"application/pdf": {handler_url, can_embed: true}}`.
 - 조건: `getStreamInfo()` 는 MIME handler 문맥에서 호출한다. `streamUrl` 은 **한 번만 fetch** 하고 `originalUrl` 재요청은 금지한다. 전체 스트림 수신 후 지원 여부를 판정하고, 미지원이면 `abortAndFallbackToNativeHandler()` 를 호출한다. file:// 은 별도 파일 URL 설정이 불필요하다. POST 생성 PDF·일회성 URL 대응은 이 규칙으로 보장한다.
-- 구버전 호환(별도 지원 범위, v1 보장 아님): `declarativeNetRequest` 응답 헤더 조건(`content-type: application/pdf`) 리다이렉트는 **Chrome 128–149 의 제한적 경로** 다(CfT 128·140·149 실측 2026-10-19, `docs/m0-corpus-recheck.md` 4절). 제한: 뷰어가 원 URL 을 다시 받는다(GET 2회), POST·`content-disposition: attachment`·embed·object 는 가로채지 않는다(iframe 만, object 추가는 A5-2 에서 결정), file:// 는 "파일 URL에 대한 액세스 허용" 이 켜져 있어야 동작한다(안내 UI A5-3). 128 미만은 미지원.
+- 구버전 호환(별도 지원 범위, v1 보장 아님): `declarativeNetRequest` 응답 헤더 조건(`content-type: application/pdf`) 리다이렉트는 **Chrome 128–149 의 제한적 경로** 다(CfT 128·140·149 실측 2026-10-19, `docs/m0-corpus-recheck.md` 4절). 제한: 뷰어가 원 URL 을 다시 받는다(GET 2회), POST·`content-disposition: attachment` 는 가로채지 않는다. 규칙 대상 자원에 `object` 를 넣어 embed·iframe·object 를 모두 가로챈다(A5-2, CfT 140·149 실측 2026-10-19), file:// 는 "파일 URL에 대한 액세스 허용" 이 켜져 있어야 동작한다(안내 UI A5-3). 128 미만은 미지원.
 
 ### 5.2 실행 위치·보안
 - MuPDF 와 문서 상태는 **뷰어 소유 module Worker** 에서 관리한다. 확장 서비스 워커는 navigation 폴백과 전역 이벤트만 담당한다. SharedArrayBuffer 불필요(단일 스레드 빌드).
@@ -219,7 +219,7 @@ M0 최종 판정(2026-10-19): 통과 4(텍스트 교체·새 한글 입력·텍�
 7. **MuPDF 1.28.1 결함 F3**(실측 2026-10-18): 압축 필터가 있는 이미지 XObject(JPEG `DCTDecode`, Flate)를 `PDFObject.resolve()` 한 문서를 `garbage=compact`(또는 `deduplicate`)로 저장하면 그 이미지가 스트림 없는 사전으로 기록되어 재열기 시 `object is not a stream` 오류와 이미지 소실이 난다(`destroy()` 해도 같음, `garbage=yes`·garbage 없음은 정상) → **회피 규칙**: 저장할 작업 문서에서 이미지 XObject 를 `resolve()` 하지 않는다(사전 값은 간접 참조 `get()`, 렌더는 `loadImage(ref)`). M1 `PageModel`·`SourceMap` 구현 리뷰 항목으로 고정(A2-3). 대안인 전체 저장 옵션 `garbage=yes` 전환(피크 힙 동일, 출력 46~70 B 증가, Day 1 고정 해시 변경)은 M1 에서 결정(A3-6). 대조 테스트 `tools/spike-m0/test/mupdf-pitfalls.test.ts` 가 MuPDF 동작 변화를 감지한다. 업스트림 보고: 2026-10-19 [ArtifexSoftware/mupdf.js#201](https://github.com/ArtifexSoftware/mupdf.js/issues/201) 게시(A2-4). 1.26.4·1.27.0 미재현·1.28.1 재현(회귀), 원인 분석·수정 제안 포함, 게시 문안·재현 스크립트 `docs/upstream/`.
 8. 대형 문서 전체 저장 실패(WASM 힙 상한, 출력 스트리밍 불가) → 저장 전 예상 피크 힙 경고(3.1), 입력 Stream 열기(M1), 실패 시 Worker 재시작·원본 재열기·편집 로그 재적용 복구(M3), Windows Chrome 실측 후 지원 문서 크기 상한 안내 UI.
 9. **MuPDF `subsetFonts()` 부작용(C1, 실측 2026-10-19)**: 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트 `/Widths` 를 정수 반올림·미사용 글리프 0 으로 다시 써, pdfTeX 문서의 편집하지 않은 쪽이 Poppler·pdf.js 에서 바뀐다(MuPDF 렌더는 동일) → 폴백 폰트만 서브셋(A7-1, M1).
-10. **페이지 redaction 재직렬화(C2)**: 쪽 콘텐츠 전체 재작성으로 원본 바이트 위치가 사라지고 `ActualText` 줄이 이동할 수 있다 → 텍스트 제거 경로 M1 설계 결정(A7-2), `ActualText with no position` 경고를 편집 제한 신호로 사용.
+10. **페이지 redaction 재직렬화(C2)**: 쪽 콘텐츠 전체 재작성으로 원본 바이트 위치가 사라지고 `ActualText` 줄이 이동할 수 있다 → **대응 확정(M1)**: SourceMap 기반 제거를 기본 경로로 채택(3.1), redaction 은 대체 경로에서만 쓰고 그때 `ActualText with no position` 경고를 편집 제한 신호로 사용.
 
 ---
 
