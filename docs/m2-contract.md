@@ -151,6 +151,12 @@ PLAN.md 는 stext 옵션(`segment`, `paragraph-break`, `table-hunt`, `structured
 - 그래서 A7-10 보강 문서 5건 10쪽을 라벨 확정 전까지 알고리즘을 실행하지 않은 채 test 에 넣었다. 하네스는 `test`(23쪽) 외에 `test-docs-unseen`(dev 쪽이 없는 문서)과 `test-unprocessed`(A7-10 5건)를 따로 요약한다. 4.3 목표 판정은 `test` 기준이고, 일반화 판단은 `test-unprocessed` 를 같이 본다.
 - 읽기 순서 τ 는 복원 없이 PageModel 줄 순서만 쓴 기준선 τ(`tauBaseline`)와 함께 보고한다(dev 기준선 0.937).
 
+보강 라운드(2026-10-19 결정, 1차 test 결과는 `docs/m2-accuracy.md` 에 그대로 남긴다):
+
+- 1차 test 에서 목표 미달이 나오면, 실패 유형을 담은 조정용 쪽(dev2, split `dev`)을 dev 문서에서 추가 라벨링하고 dev·dev2 로만 고친다.
+- 판정은 dev 쪽이 없는 문서(1차 `test-docs-unseen` 문서)의 새 쪽으로 만든 2차 보류 세트(split `test2`)로 한 번 한다. test2 쪽은 라벨 확정과 최종 측정 전까지 알고리즘을 실행하지 않는다.
+- 목표 수치(4.3)는 바꾸지 않는다. 1차 test 는 실패 분석을 본 뒤라 보강 후 수치는 참고로만 적는다.
+
 
 - 라벨 쪽을 문서 유형별로 나눠 약 2/3 를 `dev`, 1/3 을 `test` 로 정한다(라벨 파일 `split`).
 - 상수 조정과 실패 분석은 `dev` 로만 한다. `test` 는 마일스톤 끝 측정에서 한 번 보고한다.
