@@ -429,6 +429,31 @@ describe('ViewerController · 레이아웃 오버레이', () => {
     expect(host.getPageLayout).toHaveBeenCalledTimes(2);
   });
 
+  it('쪽을 옮긴 뒤 늦게 온 레이아웃 응답은 버리고, 로딩 중 끄면 그리지 않는다', async () => {
+    const slow = deferred<DocumentPageLayout>();
+    let first = true;
+    const host = fakeHost({
+      getPageLayout: vi.fn((i: number) => {
+        if (first) {
+          first = false;
+          return slow.promise;
+        }
+        return Promise.resolve(emptyLayout(i));
+      }),
+    });
+    const c = make(host);
+    await c.start();
+    c.toggleLayout();
+    await flush();
+    await c.nextPage();
+    expect(c.getState().layout).toMatchObject({ status: 'ready', pageIndex: 1 });
+    slow.resolve(emptyLayout(0));
+    await flush();
+    expect(c.getState().layout).toMatchObject({ status: 'ready', pageIndex: 1 });
+    c.toggleLayout();
+    expect(c.getState().layoutEnabled).toBe(false);
+  });
+
   it('미구현 예외면 레이아웃만 비활성화하고 텍스트 층은 그대로 둔다', async () => {
     const host = fakeHost({
       getPageLayout: vi.fn(async () => {
