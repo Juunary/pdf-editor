@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ExtractRequest,
   PageInfo,
+  PageLinkage,
   PageModel,
   RenderRequest,
   RenderedPage,
@@ -343,6 +344,21 @@ describe('ViewerController · 디버그 오버레이', () => {
     expect(c.getState().debugEnabled).toBe(false);
     await c.nextPage();
     expect(host.linkPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('getSourceMap 은 linkPage 가 끝난 뒤 부른다(세션 캐시 map 의 unmatched 표시를 받기 위해)', async () => {
+    const link = deferred<PageLinkage>();
+    const host = fakeHost({ linkPage: vi.fn(() => link.promise) });
+    const c = make(host);
+    await c.start();
+    c.toggleDebug();
+    await flush();
+    expect(host.linkPage).toHaveBeenCalledWith(0);
+    expect(host.getSourceMap).not.toHaveBeenCalled();
+    link.resolve(makeLinkage(makePageModel(['AB']), [0, 0]));
+    await flush();
+    expect(host.getSourceMap).toHaveBeenCalledTimes(1);
+    expect(c.getState().debug).toMatchObject({ status: 'ready', pageIndex: 0 });
   });
 
   it('꺼 둔 상태에서는 연동 호출을 하지 않는다', async () => {
