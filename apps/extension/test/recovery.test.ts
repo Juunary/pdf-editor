@@ -325,12 +325,15 @@ describe('ResilientPdf', () => {
     expect(seen).toEqual([{ pageIndex: 2 }]);
   });
 
-  it('Redact 보고 RPC 가 없으면 null', async () => {
+  it('Redact 보고가 실패하면 null, 성공하면 요약', async () => {
     const w1 = fakeWorker();
     const { pdf } = setup([w1]);
     await pdf.open(bytes());
-    expect(await pdf.listRedactAnnots()).toBeNull();
+    w1.api.listRedactAnnots = vi.fn(async () => {
+      throw new Error('보고 실패');
+    });
+    expect(await pdf.tryListRedactAnnots()).toBeNull();
     w1.api.listRedactAnnots = vi.fn(async () => ({ total: 2, pages: [0, 3] }));
-    expect(await pdf.listRedactAnnots()).toEqual({ total: 2, pages: [0, 3] });
+    expect(await pdf.tryListRedactAnnots()).toEqual({ total: 2, pages: [0, 3] });
   });
 });

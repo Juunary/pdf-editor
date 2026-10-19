@@ -418,11 +418,11 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   void reportRedactAnnots();
 }
 
-/** 열기 시 Redact 주석 보고(A2-2). core 에 보고 RPC 가 없으면(`listRedactAnnots`) 진단 로그만 남긴다. */
+/** 열기 시 Redact 주석 보고(A2-2). 보고를 받지 못하면 진단 로그만 남긴다. */
 async function reportRedactAnnots(): Promise<void> {
-  const report = await pdf.listRedactAnnots();
+  const report = await pdf.tryListRedactAnnots();
   if (report === null) {
-    diag.add('redact-report-unavailable', 'core 에 listRedactAnnots RPC 가 없음(A2-2)');
+    diag.add('redact-report-unavailable', 'listRedactAnnots 실패(A2-2)');
     return;
   }
   diag.add('redact-report', report);
@@ -495,10 +495,13 @@ async function main(): Promise<void> {
   diag.add('source', describeSource(source));
 
   if (source.bytes) {
+    // Chrome 기본 PDF 뷰어처럼 열자마자 Ctrl+A·C·F 가 뷰어로 오게 한다. MIME handler 뷰어는 PDF URL
+    // 페이지의 하위 프레임이라 포커스를 직접 가져와야 한다. 임베디드 문맥은 바깥 페이지 포커스를 빼앗지 않는다.
+    // 열기 전에 가져온다: controller.start() 는 편집 가능 판정(폴백 폰트 적재 포함)까지 기다려 늦게 끝나므로,
+    // 그 뒤에 포커스를 가져오면 텍스트 층이 뜬 직후의 단축키를 놓친다(M3 통합 e2e, 2026-10-20).
+    if (source.kind === 'mime-handler-top') window.focus();
     try {
       await openBytes(source.bytes, fileLabel(source.displayUrl));
-      // Chrome 기본 PDF 뷰어처럼 열자마자 Ctrl+A·C·F 가 뷰어로 오게 한다. MIME handler 뷰어는 PDF URL
-      // 페이지의 하위 프레임이라 포커스를 직접 가져와야 한다. 임베디드 문맥은 바깥 페이지 포커스를 빼앗지 않는다.
       if (source.kind === 'mime-handler-top') window.focus();
     } catch (e) {
       diag.add('open-error', String(e));

@@ -1,7 +1,6 @@
 /**
- * M3 통합 시 켜는 e2e(실제 core 편집 RPC 필요). 지금은 core(S3)·pdf-ops(S1)·reflow(S2)가 m3 에 머지되지 않아 `test.skip` 이다.
- * 켜는 방법: 아래 `test.skip(true, …)` 한 줄을 지우고 실제 값(기대 텍스트·p95 기준)을 측정해 조정한다(docs/m3-viewer-ui.md 5절).
- * 본문은 가짜 호스트로 검증한 같은 DOM 식별자(`#pe-edit-*`)와 `?e2e` 이음매(`window.__pe`)를 쓴다. 통합 전에는 실행한 적이 없다.
+ * M3 통합 e2e(실제 core 편집 RPC). 2026-10-20 m3 통합에서 켰다(docs/m3-viewer-ui.md 5절, docs/m3-integration.md).
+ * 본문은 가짜 호스트로 검증한 같은 DOM 식별자(`#pe-edit-*`)와 `?e2e` 이음매(`window.__pe`)를 쓴다.
  */
 import {
   chromium,
@@ -18,8 +17,6 @@ import { fileURLToPath } from 'node:url';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
-const REASON =
-  'core 편집 RPC(S3)·pdf-ops(S1)·reflow(S2)가 m3 에 머지된 뒤 켠다 — docs/m3-viewer-ui.md 5절';
 
 interface PeWindow {
   __pe: {
@@ -32,8 +29,6 @@ interface PeWindow {
 }
 
 test.describe('통합(실제 core 편집 RPC 필요)', () => {
-  test.skip(true, REASON);
-
   let context: BrowserContext;
   let userDataDir: string;
   let extensionId: string;
@@ -63,7 +58,8 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await expect(page.locator('#status')).toHaveAttribute('data-state', 'rendered', {
       timeout: 30_000,
     });
-    await expect(page.locator('#pe-notice')).not.toContainText('문단 편집'); // 편집이 켜져 있어야 한다
+    // 편집이 켜져 있어야 한다(기능이 꺼지면 #pe-notice 에 "문단 편집" 안내가 생긴다).
+    await expect(page.locator('#pe-notice', { hasText: '문단 편집' })).toHaveCount(0);
     return page;
   }
 
@@ -176,16 +172,36 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
   });
 
   test('Worker 치명 오류 → 복구 → replayEdits 결과 = 복구 전 화면(D6, A3-3)', async () => {
+    // 복구는 활성 로그만 다시 적용하고 undo 이력은 잃는다(계약 D6). 그래서 편집 두 번 뒤 undo 의 렌더에서 트랩을 내고,
+    // 복구 결과가 첫 편집만 반영한 화면과 같은지 본다(비어 있지 않은 로그의 재적용).
     const page = await open(SAMPLE);
     const p = await firstEditable(page);
-    await page.mouse.dblclick(p.x, p.y);
     const client = await cdp(page);
+    const canvas = () =>
+      page.evaluate(() =>
+        (document.getElementById('page-canvas') as HTMLCanvasElement).toDataURL(),
+      );
+
+    await page.mouse.dblclick(p.x, p.y);
+    await expect(page.locator('#pe-edit-layer')).toBeVisible();
     await client.send('Input.insertText', { text: '복구' });
     await page.keyboard.press('Escape');
     await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
-    const before = await page.evaluate(() =>
-      (document.getElementById('page-canvas') as HTMLCanvasElement).toDataURL(),
-    );
+    await expect(page.locator('#pe-doc-undo')).toBeEnabled();
+    const afterFirst = await canvas();
+
+    // 커밋 뒤 쪽 편집 가능 정보가 다시 올 때까지 기다린다(그 전 더블클릭은 대상 문단을 모른다).
+    // 마우스가 이미 그 자리에 있으면 이동 이벤트가 없어 테두리가 갱신되지 않으므로 비켰다가 다시 올린다.
+    await page.mouse.move(1, 1);
+    await page.mouse.move(p.x, p.y, { steps: 3 });
+    await expect(page.locator('#pe-edit-hover[data-editable="1"]')).toBeVisible();
+    await page.mouse.dblclick(p.x, p.y);
+    await expect(page.locator('#pe-edit-layer')).toBeVisible();
+    await client.send('Input.insertText', { text: '둘째' });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
+    expect(await canvas()).not.toBe(afterFirst);
+
     // 다음 renderPage 가 wasm 트랩(RuntimeError)을 내도록 지금 Worker 핸들을 감싼다.
     await page.evaluate(() => {
       const handle = (window as unknown as PeWindow).__pe.pdf.current as { api: unknown };
@@ -209,16 +225,12 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
       );
     });
     await page.click('#pe-doc-undo');
-    await page.click('#pe-doc-redo');
     await expect(page.locator('#notice-bar [data-notice="recovered"]')).toBeVisible({
       timeout: 30_000,
     });
     await page.waitForFunction(
       () => (window as unknown as PeWindow).__pe.controller.getState().edit.session === null,
     );
-    const after = await page.evaluate(() =>
-      (document.getElementById('page-canvas') as HTMLCanvasElement).toDataURL(),
-    );
-    expect(after).toBe(before);
+    await expect.poll(canvas, { timeout: 30_000 }).toBe(afterFirst);
   });
 });

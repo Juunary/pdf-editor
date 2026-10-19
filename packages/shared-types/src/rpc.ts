@@ -36,6 +36,13 @@ export interface OpenResult {
   inputMode: InputMode;
 }
 
+/** 기존 Redact 주석 요약(pdf-ops listRedactAnnots 의 수·쪽). */
+export interface RedactAnnotSummary {
+  total: number;
+  /** Redact 주석이 있는 쪽(0부터). */
+  pages: number[];
+}
+
 export interface PageInfo {
   pageIndex: number;
   /** `Page.getBounds()`, 페이지 공간. */
@@ -96,6 +103,8 @@ export interface PdfWorkerApi {
     pageIndex: number,
     paragraphId: number,
     revision: number,
+    /** first.region 렌더 배율. 없으면 마지막 쪽 전체 렌더 배율, 그것도 없으면 2(계약 수정 4). */
+    renderScale?: number,
   ): Promise<BeginEditResult>;
   /** 리플로우 → 편집 블록 교체 → 변경 영역 렌더. */
   updateParagraphDraft(draftId: string, input: DraftInput): Promise<DraftUpdate>;
@@ -106,6 +115,8 @@ export interface PdfWorkerApi {
   undo(): Promise<EditHistoryState>;
   redo(): Promise<EditHistoryState>;
   getEditHistory(): Promise<EditHistoryState>;
+  /** 문서의 기존 Redact 주석 수·쪽(A2-2 열기 시 보고, 계약 수정 4). */
+  listRedactAnnots(): Promise<RedactAnnotSummary>;
   /** 새로 연 문서에 로그를 다시 적용한다(Worker 복구, 계약 D6). */
   replayEdits(ops: EditOp[]): Promise<EditHistoryState>;
 }

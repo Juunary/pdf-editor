@@ -257,7 +257,11 @@ export class EditEngine {
     pageIndex: number,
     paragraphId: number,
     revision: number,
+    renderScale?: number,
   ): Promise<BeginEditResult> {
+    if (renderScale !== undefined && !(renderScale > 0)) {
+      throw new RangeError('renderScale 은 0 보다 커야 함');
+    }
     await this.#prepareEdit();
     this.#requireNoDraft('beginParagraphEdit');
     if (revision !== this.#revision) throw new StaleRevisionError(revision, this.#revision);
@@ -295,7 +299,11 @@ export class EditEngine {
         unionRect(plan.target.bbox, composed.summary.contentBox),
         REGION_MARGIN_PT,
       );
-      const region = this.#host.renderRegion(pageIndex, this.#host.renderScale, clip);
+      const region = this.#host.renderRegion(
+        pageIndex,
+        renderScale ?? this.#host.renderScale,
+        clip,
+      );
       this.#draft = draft;
       // 제거·삽입으로 문서를 바꾼 순간 MuPDF 가 redo 단계를 버렸다(취소해도 돌아오지 않는다).
       this.#redo = [];

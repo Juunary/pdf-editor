@@ -46,8 +46,13 @@ export function createPdfWorkerApi(session = new PdfSession()): PdfWorkerApi {
     planParagraphEdit: (pageIndex, paragraphId) =>
       session.planParagraphEdit(pageIndex, paragraphId),
     getPageEdits: (pageIndex) => session.getPageEdits(pageIndex),
-    async beginParagraphEdit(pageIndex, paragraphId, revision) {
-      const result = await session.beginParagraphEdit(pageIndex, paragraphId, revision);
+    async beginParagraphEdit(pageIndex, paragraphId, revision, renderScale) {
+      const result = await session.beginParagraphEdit(
+        pageIndex,
+        paragraphId,
+        revision,
+        renderScale,
+      );
       return Comlink.transfer(result, [result.first.region.rgba.buffer]);
     },
     async updateParagraphDraft(draftId, input) {
@@ -60,5 +65,6 @@ export function createPdfWorkerApi(session = new PdfSession()): PdfWorkerApi {
     redo: () => session.redo(),
     getEditHistory: () => session.getEditHistory(),
     replayEdits: (ops) => session.replayEdits(ops),
+    listRedactAnnots: async () => session.listRedactAnnots(),
   };
 }

@@ -6,9 +6,11 @@ import {
   decideSaveMethod,
   estimateSaveHeap,
   linkPage,
+  listRedactAnnots,
 } from '@pdf-editor/pdf-ops';
 import { reconstructPage } from '@pdf-editor/layout-recon';
 import type {
+  RedactAnnotSummary,
   BeginEditResult,
   CommitResult,
   DraftInput,
@@ -382,8 +384,15 @@ export class PdfSession {
     pageIndex: number,
     paragraphId: number,
     revision: number,
+    renderScale?: number,
   ): Promise<BeginEditResult> {
-    return this.#engine.beginParagraphEdit(pageIndex, paragraphId, revision);
+    return this.#engine.beginParagraphEdit(pageIndex, paragraphId, revision, renderScale);
+  }
+
+  /** 기존 Redact 주석 수·쪽(A2-2). 문서를 바꾸지 않는다. */
+  listRedactAnnots(): RedactAnnotSummary {
+    const report = listRedactAnnots(this.document);
+    return { total: report.total, pages: report.pages };
   }
 
   async updateParagraphDraft(draftId: string, input: DraftInput): Promise<DraftUpdate> {

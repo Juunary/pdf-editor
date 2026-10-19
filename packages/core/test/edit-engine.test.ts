@@ -66,10 +66,11 @@ describe('판정 RPC', () => {
     s.close();
   });
 
-  it('기본 어댑터(S1·S2 미병합)는 "미구현" 예외를 그대로 전달한다', async () => {
+  it('기본 어댑터(실제 pdf-ops·reflow, M3 통합)로 판정한다', async () => {
     const s = new PdfSession();
     s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
-    await expect(s.getPageEditability(0)).rejects.toThrow('미구현');
+    const editability = await s.getPageEditability(0);
+    expect(editability.paragraphs.some((p) => p.editable)).toBe(true);
     s.close();
   });
 
