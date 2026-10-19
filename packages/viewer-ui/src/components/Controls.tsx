@@ -9,6 +9,7 @@ const FEATURE_LABELS: Record<FeatureName, string> = {
   text: '텍스트 선택',
   search: '검색',
   debug: '연결 디버그',
+  layout: '레이아웃',
 };
 
 interface Props {
@@ -47,6 +48,7 @@ export function Controls({ controller }: Props) {
 
   const searchReason = featureDisabledReason(state, 'search');
   const debugReason = featureDisabledReason(state, 'debug');
+  const layoutReason = featureDisabledReason(state, 'layout');
   const disabledOwn = (Object.keys(FEATURE_LABELS) as FeatureName[]).filter(
     (f) => state.disabled[f] !== null,
   );
@@ -122,6 +124,17 @@ export function Controls({ controller }: Props) {
         onClick={() => controller.toggleDebug()}
       >
         연결 디버그
+      </button>
+      <button
+        id="pe-layout-toggle"
+        type="button"
+        class="pe-btn"
+        title={layoutReason ?? '레이아웃 오버레이(문단·표·도형·읽기 순서)'}
+        aria-pressed={state.layoutEnabled}
+        disabled={layoutReason !== null}
+        onClick={() => controller.toggleLayout()}
+      >
+        레이아웃
       </button>
       {disabledOwn.length > 0 && (
         <span

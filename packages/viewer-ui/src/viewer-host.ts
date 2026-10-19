@@ -6,7 +6,13 @@ import type { PdfWorkerApi } from '@pdf-editor/shared-types';
 
 export type ViewerHost = Pick<
   PdfWorkerApi,
-  'getPageInfo' | 'renderPage' | 'extractPage' | 'getSourceMap' | 'linkPage' | 'searchText'
+  | 'getPageInfo'
+  | 'renderPage'
+  | 'extractPage'
+  | 'getSourceMap'
+  | 'linkPage'
+  | 'searchText'
+  | 'getPageLayout'
 > & {
   /** 진단 로그(예: 확장 뷰어의 DiagLog). 기능 비활성화·오류를 여기에 남긴다. */
   log(event: string, data?: unknown): void;
