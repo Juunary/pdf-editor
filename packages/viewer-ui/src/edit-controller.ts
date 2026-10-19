@@ -255,6 +255,7 @@ export class EditController {
         caret,
       );
       this.ctx.patch({ session: this.session.view() });
+      this.session.start();
       this.ctx.logEvent('edit-begin', {
         pageIndex,
         paragraphId,
