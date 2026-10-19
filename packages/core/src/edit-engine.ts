@@ -93,6 +93,8 @@ interface LogEntry {
   op: EditOp;
   warnings: EditWarning[];
   summary: ReflowSummary;
+  /** 편집 블록에 폴백 폰트 글리프를 실제로 썼다(공백만 폴백이어도, 경고 유무와 별개). 저장 서브셋·font-embed 기준. */
+  usesFallback: boolean;
 }
 
 interface Draft {
@@ -109,6 +111,7 @@ interface Draft {
   format: ParagraphFormat;
   summary: ReflowSummary;
   warnings: EditWarning[];
+  usesFallback: boolean;
   /** 갱신 실패 뒤 직전 상태로 되돌리지 못했다. 취소만 할 수 있다. */
   broken: boolean;
 }
@@ -116,6 +119,7 @@ interface Draft {
 interface Composed {
   summary: ReflowSummary;
   warnings: EditWarning[];
+  usesFallback: boolean;
 }
 
 export class EditEngine {
@@ -291,6 +295,7 @@ export class EditEngine {
         format: plan.format,
         summary: composed.summary,
         warnings: composed.warnings,
+        usesFallback: composed.usesFallback,
         broken: false,
       };
       this.#blocks.set(pageIndex, this.#adapter.listEditBlocks(doc, pageIndex));
@@ -363,6 +368,7 @@ export class EditEngine {
     draft.format = input.format;
     draft.summary = composed.summary;
     draft.warnings = composed.warnings;
+    draft.usesFallback = composed.usesFallback;
     this.#host.invalidateAround(draft.pageIndex);
     const clip = inflateRect(unionRect(previous, composed.summary.contentBox), REGION_MARGIN_PT);
     const region = this.#host.renderRegion(draft.pageIndex, input.renderScale, clip);
@@ -386,7 +392,12 @@ export class EditEngine {
       runs: draft.runs,
       format: draft.format,
     };
-    const entry: LogEntry = { op, warnings: draft.warnings, summary: draft.summary };
+    const entry: LogEntry = {
+      op,
+      warnings: draft.warnings,
+      summary: draft.summary,
+      usesFallback: draft.usesFallback,
+    };
     // Info 기록은 이 편집 작업 안에서 한다: 저널에 기록되어 undo·redo 와 함께 움직이고, 저장 작업은 문서를 바꾸지
     // 않아도 된다(바꾸면 redo 단계가 사라진다, docs/m3-core.md 2.4).
     this.#writeMetadata([...this.#active(), entry]);
@@ -515,7 +526,12 @@ export class EditEngine {
     }
     const prepared = this.#adapter.prepareParagraphEdit(ctx, plan, op.id);
     const composed = this.#compose(ctx, plan, prepared, paragraphId, op.runs, op.format);
-    this.#base.push({ op, warnings: composed.warnings, summary: composed.summary });
+    this.#base.push({
+      op,
+      warnings: composed.warnings,
+      summary: composed.summary,
+      usesFallback: composed.usesFallback,
+    });
     this.#touched([pageIndex], false);
   }
 
@@ -532,11 +548,14 @@ export class EditEngine {
     };
   }
 
-  /** 로그가 더하는 저장 변경 종류(계약 D9). 폴백 폰트를 쓴 활성 편집이 있으면 `font-embed`. */
+  /**
+   * 로그가 더하는 저장 변경 종류(계약 D9). 폴백 폰트 글리프를 실제로 쓴 활성 편집이 있으면 `font-embed`.
+   * runSave 의 서브셋 교체와 같은 기준이다(`font-fallback` 경고는 공백 폴백을 세지 않아 기준으로 쓰지 않는다).
+   */
   changeKinds(): ChangeKind[] {
     const entries = this.#active();
     if (entries.length === 0) return [];
-    return entries.some((e) => hasWarning(e, 'font-fallback'))
+    return entries.some((e) => e.usesFallback)
       ? ['content-stream', 'font-embed']
       : ['content-stream'];
   }
@@ -556,7 +575,7 @@ export class EditEngine {
     this.#requireNoDraft('save');
     if (!this.#journalOn) return fn();
     const doc = this.#doc;
-    const usesFallback = this.#active().some((e) => hasWarning(e, 'font-fallback'));
+    const usesFallback = this.#active().some((e) => e.usesFallback);
     doc.beginOperation('save');
     let result: T;
     try {
@@ -843,6 +862,13 @@ export class EditEngine {
       areaLimit: plan.areaLimit,
     });
     this.#adapter.writeEditBlock(ctx, prepared, runs, format, result, fonts);
+    // 폴백 사용은 쓴 글리프로 정한다: 폴백 face 로 배정된 구간의 글리프가 배치 결과에 하나라도 있으면 사용.
+    const fallbackKeys = new Set(
+      segments.flatMap((seg) => (seg.face?.kind === 'fallback' ? [seg.face.key] : [])),
+    );
+    const usesFallback =
+      fallbackKeys.size > 0 &&
+      result.lines.some((line) => line.some((g) => fallbackKeys.has(g.faceKey)));
     const warnings = mergeWarnings(
       plan.warnings,
       fontWarnings,
@@ -854,7 +880,7 @@ export class EditEngine {
         originalBox: plan.target.bbox,
       }),
     );
-    return { summary: result.summary, warnings };
+    return { summary: result.summary, warnings, usesFallback };
   }
 }
 

@@ -4,7 +4,8 @@
  * 원본 폰트로 쓸 수 있는 조건(모두)
  * - (iv) Type1·MMType1·TrueType·Type0(가로쓰기), MuPDF 가 로드할 수 있고 폭이 정확함.
  * - (i) 문자 → 코드 역매핑: ToUnicode(bfchar·bfrange) 또는 단순 폰트 Encoding(기본 인코딩 + Differences 글리프 이름).
- *   후보가 여럿이면 이 쪽에서 쓰인 코드를 우선한다.
+ *   후보가 여럿이면 판정 시점 쪽 상태(SourceMap)에서 쓰인 코드를 우선한다(세션 이력과 무관, 재적용 결정성).
+ *   역매핑 키는 NFC 이고, 없으면 기본 글자 + 결합 문자(NFD)로 찾는다.
  * - (ii) 임베디드 폰트는 그 코드의 글리프가 실제로 그려진다(렌더 탐침: 임시 문서에 폰트를 옮겨 글리프 id 와 잉크를
  *   확인). MuPDF·Word 류 서브셋은 안 쓰는 글리프의 외곽선만 비우므로 gid 존재로 판정하지 않는다. 공백류는 제외.
  * - (iii) 명세 폭 > 0(결합 문자 제외).
@@ -45,6 +46,18 @@ export function clusters(text: string): { start: number; end: number; text: stri
 
 export const isWhitespaceCluster = (c: string) => /^\s+$/u.test(c);
 const isCombining = (cp: number) => /\p{M}/u.test(String.fromCodePoint(cp));
+const isMarkChar = (c: string) => /^\p{M}$/u.test(c);
+
+/** 원본 폰트 클러스터 판정: 글리프와, 기본 글자만 쓰고 뺀 결합 문자. */
+interface Decision {
+  glyphs: EncodedGlyph[];
+  missing: string[];
+}
+
+interface CodeView {
+  used: Set<number>;
+  decided: Map<string, Decision | null>;
+}
 
 const hex = (b: Uint8Array) => Array.from(b, (v) => v.toString(16).padStart(2, '0')).join('');
 
@@ -285,9 +298,14 @@ export class OriginalFont {
   readonly descent: number;
   readonly face: FontFace;
   private readonly reverse = new Map<string, { code: number; bytes: Uint8Array }[]>();
-  private readonly used = new Set<number>();
   private readonly glyphOk = new Map<number, boolean>();
-  private readonly decided = new Map<string, EncodedGlyph[] | null>();
+  /**
+   * 쪽 상태(SourceMap)별 후보 우선순위·판정. 같은 SourceMap 이면 세션 이력과 관계없이 같은 코드를 고른다
+   * (재적용 결정성, docs/m3-integration.md 8절 M3). 처음 만든 쪽의 사용 코드를 다른 쪽·나중 상태에 쓰지 않는다.
+   */
+  private readonly views = new WeakMap<SourceMap, CodeView>();
+  private readonly noMapView: CodeView = { used: new Set(), decided: new Map() };
+  private view: CodeView = this.noMapView;
   private probeDoc: mupdf.PDFDocument | null = null;
   private probeFont: mupdf.PDFObject | null = null;
 
@@ -373,20 +391,57 @@ export class OriginalFont {
     });
   }
 
-  /** 이 쪽에서 쓰인 코드(후보 우선순위). */
-  noteUsedCodes(map: SourceMap, fontObjectNumber: number | null): void {
-    if (fontObjectNumber === null) return;
-    for (const op of map.ops) {
-      if (op.text?.fontObjectNumber !== fontObjectNumber) continue;
-      for (const g of op.text.glyphs) this.used.add(g.code);
+  /**
+   * 배정할 쪽 상태를 고른다. 후보가 여럿이면 이 SourceMap(판정 시점 쪽 상태)에서 쓰인 코드를 우선한다. 같은 쪽
+   * 상태면 같은 결과다(초안 ctx·재적용 ctx 는 모두 제거 전 쪽 상태다).
+   */
+  useMap(map: SourceMap | null, fontObjectNumber: number | null): void {
+    if (!map || fontObjectNumber === null) {
+      this.view = this.noMapView;
+      return;
     }
+    let v = this.views.get(map);
+    if (!v) {
+      v = { used: new Set(), decided: new Map() };
+      for (const op of map.ops) {
+        if (op.text?.fontObjectNumber !== fontObjectNumber) continue;
+        for (const g of op.text.glyphs) v.used.add(g.code);
+      }
+      this.views.set(map, v);
+    }
+    this.view = v;
   }
 
   private candidates(text: string): { code: number; bytes: Uint8Array }[] {
     const list = this.reverse.get(text) ?? [];
+    const used = this.view.used;
     return [...list].sort(
-      (a, b) => Number(this.used.has(b.code)) - Number(this.used.has(a.code)) || a.code - b.code,
+      (a, b) => Number(used.has(b.code)) - Number(used.has(a.code)) || a.code - b.code,
     );
+  }
+
+  /**
+   * 클러스터를 코드로 바꿀 방법(앞에서부터 시도). 역매핑 키는 NFC 다. NFC 키가 없거나 그 글리프가 없으면 기본 글자 +
+   * 결합 문자(NFD 분해)를 따로 찾는다. 한글 음절처럼 분해 결과가 결합 문자가 아니면 분해하지 않는다.
+   */
+  private alternatives(t: string): string[][] {
+    const nfc = t.normalize('NFC');
+    const out: string[][] = [];
+    if (this.reverse.has(nfc)) out.push([nfc]);
+    const nfd = [...nfc.normalize('NFD')];
+    if (nfd.length > 1 && nfd.slice(1).every(isMarkChar)) out.push(nfd);
+    if (out.length === 0) out.push([...nfc]);
+    return out;
+  }
+
+  private pick(p: string): EncodedGlyph | null {
+    const ws = isWhitespaceCluster(p);
+    const c = this.candidates(p).find(
+      (e) => this.widthOk(e.code, p) && (ws || !this.embedded || this.glyphOk.get(e.code) === true),
+    );
+    if (!c) return null;
+    const cid = this.pdf.cid(c.code);
+    return { code: c.bytes, gid: cid, width: this.pdf.advanceSpec(cid) };
   }
 
   private widthOk(code: number, text: string): boolean {
@@ -401,44 +456,65 @@ export class OriginalFont {
   /** 클러스터들을 미리 판정한다(필요한 글리프는 한 번의 렌더 탐침으로). */
   prepare(texts: Iterable<string>): void {
     if (this.unusable !== null) return;
+    const decided = this.view.decided;
     const pending = new Map<number, Uint8Array>();
-    const plans: { text: string; parts: string[] }[] = [];
+    const plans: { text: string; alts: string[][] }[] = [];
     for (const t of new Set(texts)) {
-      if (this.decided.has(t)) continue;
-      const parts = this.reverse.has(t) ? [t] : [...t];
-      plans.push({ text: t, parts });
+      if (decided.has(t)) continue;
+      const alts = this.alternatives(t);
+      plans.push({ text: t, alts });
       if (!this.embedded || isWhitespaceCluster(t)) continue;
-      for (const p of parts) {
+      for (const p of alts.flat()) {
         for (const c of this.candidates(p)) {
           if (!this.glyphOk.has(c.code) && this.widthOk(c.code, p)) pending.set(c.code, c.bytes);
         }
       }
     }
     if (pending.size > 0) this.probe([...pending.entries()]);
-    for (const { text, parts } of plans) {
-      const out: EncodedGlyph[] = [];
-      let ok = parts.length > 0;
-      for (const p of parts) {
-        const ws = isWhitespaceCluster(p);
-        const c = this.candidates(p).find(
-          (e) =>
-            this.widthOk(e.code, p) && (ws || !this.embedded || this.glyphOk.get(e.code) === true),
-        );
-        if (!c) {
-          ok = false;
-          break;
-        }
-        const cid = this.pdf.cid(c.code);
-        out.push({ code: c.bytes, gid: cid, width: this.pdf.advanceSpec(cid) });
-      }
-      this.decided.set(text, ok ? out : null);
-    }
+    for (const { text, alts } of plans) decided.set(text, this.decide(alts));
   }
 
+  /**
+   * 방법 하나가 모두 되면 그 글리프. 아니면 기본 글자 + 결합 문자 분해에서 기본 글자만 되는 경우 기본 글자와 되는
+   * 결합 문자만 쓰고 나머지 결합 문자는 missing 으로 돌려준다(기본 글자를 버리지 않는다).
+   */
+  private decide(alts: string[][]): Decision | null {
+    for (const parts of alts) {
+      if (parts.length === 0) continue;
+      const out: EncodedGlyph[] = [];
+      for (const p of parts) {
+        const g = this.pick(p);
+        if (!g) break;
+        out.push(g);
+      }
+      if (out.length === parts.length) return { glyphs: out, missing: [] };
+    }
+    const split = alts.find((a) => a.length > 1 && a.slice(1).every(isMarkChar));
+    if (!split) return null;
+    const base = this.pick(split[0]!);
+    if (!base) return null;
+    const glyphs = [base];
+    const missing: string[] = [];
+    for (const m of split.slice(1)) {
+      const g = this.pick(m);
+      if (g) glyphs.push(g);
+      else missing.push(m);
+    }
+    return { glyphs, missing };
+  }
+
+  /** 클러스터의 원본 글리프. 결합 문자 일부만 빠진 경우도 기본 글자 글리프를 돌려준다(빠진 것은 missingMarks). */
   encode(cluster: string): EncodedGlyph[] | null {
     if (cluster === '\n') return [];
-    if (!this.decided.has(cluster)) this.prepare([cluster]);
-    return this.decided.get(cluster) ?? null;
+    if (!this.view.decided.has(cluster)) this.prepare([cluster]);
+    return this.view.decided.get(cluster)?.glyphs ?? null;
+  }
+
+  /** encode 가 빼고 돌려준 결합 문자(없으면 빈 배열). */
+  missingMarks(cluster: string): string[] {
+    if (cluster === '\n') return [];
+    if (!this.view.decided.has(cluster)) this.prepare([cluster]);
+    return this.view.decided.get(cluster)?.missing ?? [];
   }
 
   /**
@@ -573,9 +649,9 @@ export class FontState {
     let f = this.originals.get(key);
     if (!f) {
       f = new OriginalFont(this.doc, ref, this.cache.load(ref.resolve()), style.fontId);
-      if (map) f.noteUsedCodes(map, ref.isIndirect() ? ref.asIndirect() : null);
       this.originals.set(key, f);
     }
+    f.useMap(map, ref.isIndirect() ? ref.asIndirect() : null);
     return f;
   }
 
@@ -670,11 +746,20 @@ export class FontState {
         let face: FontFace | null;
         if (c.text === '\n') {
           face = prevFace ?? orig?.face ?? null;
-        } else if (orig && orig.unusable === null && orig.encode(c.text)) {
+        } else if (
+          orig &&
+          orig.unusable === null &&
+          orig.encode(c.text) &&
+          orig.missingMarks(c.text).length === 0
+        ) {
           face = orig.face;
         } else if (this.fallbackHas(c.text)) {
           face = this.fallbackFace();
           if (face && !isWhitespaceCluster(c.text)) fallbackChars.add(c.text);
+        } else if (orig && orig.unusable === null && orig.encode(c.text)) {
+          // 결합 문자만 두 폰트에 모두 없다: 기본 글자는 원본으로 쓰고 그 결합 문자만 없음으로 알린다.
+          face = orig.face;
+          for (const m of orig.missingMarks(c.text)) missingChars.add(m);
         } else face = null;
         if (face === null && c.text !== '\n') missingChars.add(c.text);
         prevFace = face;

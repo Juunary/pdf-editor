@@ -344,6 +344,11 @@ export class EditController {
         this.ctx.patch({ notice: '문서를 복구했습니다. 편집을 계속하세요.' });
         return false;
       }
+      if (out.kind === 'kept') {
+        // 마지막 입력을 초안에 반영하지 못해 커밋하지 않았다. 편집기를 열어 둔다(오류는 편집기 정보 줄에도 보인다).
+        this.ctx.patch({ notice: `편집을 반영하지 못했습니다: ${out.error}` });
+        return false;
+      }
       this.endSession();
       if (out.kind === 'committed') {
         this.ctx.log.recordCommit(out.result);
