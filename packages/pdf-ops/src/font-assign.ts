@@ -186,6 +186,32 @@ export function parseToUnicode(data: Uint8Array): ToUnicodeEntry[] {
   return out;
 }
 
+/** ToUnicode CMap 본문(2바이트 코드, bfchar). */
+export function toUnicodeCMap(entries: readonly ToUnicodeEntry[]): string {
+  const hex4 = (n: number) => n.toString(16).padStart(4, '0');
+  const utf16 = (t: string) =>
+    Array.from({ length: t.length }, (_, i) => hex4(t.charCodeAt(i))).join('');
+  const out = [
+    '/CIDInit /ProcSet findresource begin',
+    '12 dict begin',
+    'begincmap',
+    '/CIDSystemInfo <</Registry(Adobe)/Ordering(UCS)/Supplement 0>> def',
+    '/CMapName /Adobe-Identity-UCS def',
+    '/CMapType 2 def',
+    '1 begincodespacerange',
+    '<0000> <FFFF>',
+    'endcodespacerange',
+  ];
+  for (let i = 0; i < entries.length; i += 100) {
+    const chunk = entries.slice(i, i + 100);
+    out.push(`${chunk.length} beginbfchar`);
+    for (const e of chunk) out.push(`<${hex4(e.code)}> <${utf16(e.text)}>`);
+    out.push('endbfchar');
+  }
+  out.push('endcmap', 'CMapName currentdict /CMap defineresource pop', 'end', 'end');
+  return `${out.join('\n')}\n`;
+}
+
 // ---------------------------------------------------------------- 원본 폰트
 
 function encodingTable(name: string): EncodingTable | null {
@@ -764,6 +790,24 @@ export class FontState {
     if (!file.isStream()) return;
     file.writeStream(sub);
     if (!file.get('Length1').isNull()) file.put('Length1', sub.byteLength);
+    // ToUnicode·/W 도 쓴 글리프만 남긴다(전체 16,892자 ToUnicode 가 저장 파일에 약 21 KB).
+    const used = [...this.usedFallbackGids].filter((g) => g > 0).sort((a, b) => a - b);
+    const tu = fb.ref.get('ToUnicode');
+    if (tu.isStream()) {
+      const keep = parseToUnicode(readStreamBytes(tu)).filter((e) =>
+        this.usedFallbackGids.has(e.code),
+      );
+      tu.writeStream(toUnicodeCMap(keep));
+    }
+    const desc = fb.ref.resolve().get('DescendantFonts').get(0);
+    const w = this.doc.newArray();
+    for (const g of used) {
+      const ws = this.doc.newArray();
+      ws.push(fb.pdf.advanceSpec(g));
+      w.push(g);
+      w.push(ws);
+    }
+    desc.put('W', w);
     fb.ref.put(FALLBACK_MARK, this.doc.newName('Subset'));
   }
 }

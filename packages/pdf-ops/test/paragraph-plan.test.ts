@@ -147,6 +147,19 @@ describe('편집 제한(5.1)', () => {
     expect(reasons(plan(pageContext(doc, 0), 'Triangle clip'))).toContain('insertion-clipped');
   });
 
+  it('삽입점의 직사각형 클립이 원 문단 글자를 덮지 않음 → insertion-clipped', () => {
+    const doc = makeDoc([
+      'q 40 190 20 30 re W n BT /F1 12 Tf 45 200 Td (1.) Tj ET Q BT /F1 12 Tf 62 200 Td (rest of the clipped note.) Tj ET',
+    ]);
+    const ctx0 = pageContext(doc, 0);
+    const chars = [...charsOfText(ctx0, '1.'), ...charsOfText(ctx0, 'rest of the clipped note.')];
+    const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, chars, 0)]);
+    const p = planParagraphEdit(ctx, new FontManager(doc, loadFallback), 0);
+    const l = p.limits.find((x) => x.reason === 'insertion-clipped')!;
+    expect(l.detail).toMatch(/직사각형 클립/);
+    expect(l.chars.length).toBeGreaterThan(10);
+  });
+
   it('패턴 채움·SMask 차이 → graphics-state-mismatch', () => {
     const doc = makeDoc(
       [
