@@ -41,12 +41,16 @@
 
 ## 3. 미확인 잔여(사용자 확인 필요)
 
-| # | 항목 | 비고 |
-|---|---|---|
-| U1 | Acrobat Reader 표시·글꼴 속성(Day 1 V2), Redact 표시 "적용 대기" 여부(A2-5) | 설치된 경우 |
-| U2 | 임베디드 MIME handler 문맥 Ctrl+S 재저장·fsaError(Day 1 9.4) | Windows Chrome |
-| U3 | Windows Chrome Worker 대형 문서 전체 저장 피크·시간(Day 1 V4, A3-4) | 100쪽 이상 실제 문서 |
-| U4 | Windows 정식 Chrome 128–149 DNR 경로(A5-4) | 선택. CfT 결과로 대체 가능 |
+| # | 항목 | 비고 | 2026-10-19 Windows 확인(W 번호) |
+|---|---|---|---|
+| U1 | Acrobat Reader 표시·글꼴 속성(Day 1 V2), Redact 표시 "적용 대기" 여부(A2-5) | 설치된 경우 | **미확인**(W7). 이 PC 에 Acrobat Reader 가 설치되어 있지 않다 |
+| U2 | 임베디드 MIME handler 문맥 Ctrl+S 재저장·fsaError(Day 1 9.4) | Windows Chrome | **조건부 통과**(W5, 덮어쓰기 실제 발생 미확인). 다른 이름으로 저장(w5-test.pdf) 후 Ctrl+S 에 상태 표시 "저장됨: 파일 w5-test.pdf (같은 대상 재저장)", 새 파일 미생성(사용자 보고). 파일 1개 11,674 B, 수정 시각 18:24:56 이후 두 번 재확인 시 불변(측정). 권한 재요청 여부·진단 JSON(`save.channel`·`reusedHandle`·`fsaError`) 미확인 → Day 1 로그 A10 |
+| U3 | Windows Chrome Worker 대형 문서 전체 저장 피크·시간(Day 1 V4, A3-4) | 100쪽 이상 실제 문서 | **부분 측정**(W6). 492쪽·297쪽 실제 문서 각 1회: saveMs 219.2·349.2, wasmHeapBytes 69,140,480·85,196,800(측정, 진단 JSON). 탭 메모리·PC 사양·반복 측정 미확인. 출력 크기 1.93·6.12배(A3-7), 힙 배율 과소 추정(A3-8). 세부 `docs/m0-dod-xobject-redact-save.md` 3.3 |
+| U4 | Windows 정식 Chrome 128–149 DNR 경로(A5-4) | 선택. CfT 결과로 대체 가능 | **미확인**(W8). 이 PC 의 Chrome 이 155 뿐이라 수행 불가. A5-4 로 남긴다 |
+
+- 2차 확인 기준(2026-10-19 KST): `m2` 브랜치 110549f 의 확장 dist(`/mnt/nas4/kjune/pdf-editor-m2/apps/extension/dist`)를 Windows 로 복사해 로드. Chrome 155.0.8059.82 공식 빌드 64비트, 가로채기 mime-handler. 문맥은 F1 뷰어 페이지, F2 file:// 직접 열기, F3 `embed-test.html` 임베디드.
+- 근거 표기: "사용자 보고"(사용자가 직접 확인), "측정"(진단 JSON 또는 파일·명령 출력), "화면 판독"(스크린샷을 보고 판단, 정답 라벨과 대조한 것이 아님), "미확인"(수행하지 않았거나 근거 없음, 사유 병기).
+- W1–W3(M1 U5–U7)은 `docs/m1-integration.md` 3절, W4(M2 레이아웃 오버레이)는 `docs/m2-accuracy.md` 7절에 기록했다.
 
 ## 4. v1 범위 변경
 

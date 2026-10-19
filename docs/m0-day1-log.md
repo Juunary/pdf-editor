@@ -182,6 +182,9 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 | A6 | M0 DoD 중 Day 1 범위 밖 항목: 공유 Form XObject 복제 정책, 기존 Redact 주석 문서 처리 UI, 표 셀 교체 **부분 완료 2026-10-18**: 공유 Form XObject 복제 정책·기존 Redact 주석 처리 정책 통과(`docs/m0-dod-xobject-redact-save.md` 1·2절, PLAN.md v2.2 1.3·3.1·3.4). Redact 처리 UI 는 M3(A2-2). 표 셀 교체는 M0 DoD 항목이 아니며 PLAN.md 6절 M4 범위 | M0 후속 | PLAN.md 6절 |
 | A7 | 코퍼스 `fixtures/` 수집(한글 논문·표 중심 재무 문서 등)과 실제 문서 스파이크 재실행 | M0 후속 | PLAN.md 8절 |
 | A8 | 폴백 폰트 배포 용량 검토(현재 2.56 MB 원본, brotli 미측정). 축소안(KS X 1001 2,350자) 비교는 선택 | M5 전 | P1 |
+| A9 | 편집 문단의 읽기·복사 순서(2026-10-19 W1): 스파이크 결과 파일의 전체 복사가 제목 → 인접 영어 문단 → 꼬리말 → 한글 문단 순으로, 화면 순서(제목 → 한글 문단 → 인접 문단 → 꼬리말)와 다르다(사용자 보고). 같은 파일을 pypdfium2 5.14.0(PDFium 156.0.8076.0)으로 추출해도 같은 순서(측정)라 확장 뷰어 결함이 아니라 파일의 성질이다: 스파이크가 새 문단을 쪽 콘텐츠 끝에 덧붙인다. 확장을 끈 Chrome 기본 뷰어에서의 직접 복사 순서는 미확인. 제품에서는 편집한 문단이 복사·읽기 순서에서 원래 자리가 아니라 쪽 끝에 나온다. 새 텍스트 연산을 지운 문단의 원래 위치(SourceMap 의 연산 바이트 위치)에 끼워 넣는 방식을 M3 설계 항목으로 둔다. PLAN.md 1.4 태그 정책 2번("편집 영역의 읽기 순서·구조 연결은 v1 에서 갱신하지 않음")은 구조 트리 기준이며, 태그 없는 문서의 읽기 순서는 콘텐츠 순서로 정해지므로 이 항목은 그 정책과 별개로 필요하다. PLAN.md 본문 범위는 바꾸지 않았다 | M3 설계 | 9절 2차 W1 |
+| A10 | 임베디드 문맥 Ctrl+S 덮어쓰기 재확인(2026-10-19 W5 조건부 통과): 같은 대상 재저장 시 진단 JSON 의 `save.channel`·`reusedHandle`·`fsaError` 와 파일 수정 시각·해시 변화를 함께 기록한다. 편집 없는 문서는 내용이 같아 해시로 구분되지 않으므로 M3 편집 기능 이후 편집한 문서로 확인한다 | 사용자(M3 이후) | 9.4 F3 |
+| A11 | 2026-10-19 W1 미확인 항목 재확인: 영어 검색어 `paragraph` 결과 건수(PDFium 직접 측정 기대값 대소문자 무시 3건·구분 2건), 하이라이트 위치, Enter 순환 | 사용자 | 9절 2차 W1 |
 
 ## 9. Windows 확인 체크리스트
 
@@ -236,9 +239,9 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 | # | 뷰어 | 확인 | 결과 |
 |---|---|---|---|
 | V1 | Chrome 기본 뷰어(확장 끈 상태 또는 다른 프로필) | 한글 문단 표시, 배경·괘선·이미지 유지, Ctrl+F `폴백 폰트` 검색, 문단 복사 → 메모장 붙여넣기 일치 | 통과. `m0-spike-saved.pdf`·`m0-shared-xobject-edited.pdf`·`m0-preexisting-redact-edited.pdf` 3개 표시 정상 (사용자 스크린샷, 확장 끈 상태). shared-xobject: 위 카드 원문 유지, 아래 카드·중첩 배지만 한글 교체, 제목·세로 괘선·꼬리말 유지. preexisting-redact: Redact 상자 2개와 메모 아이콘 유지, R2 상자가 교체 한글 첫 줄과 겹침(정책 초안의 warn 시나리오와 일치). 검색·복사: 확장을 끈 Chrome 기본 뷰어에서 가능 (사용자 보고, 파일·검색어 세부 기록 없음). 독립 측정: PDFium(Python pypdfium2 5.14.0, PDFium 156.0.8076.0, 2026-10-19)으로 3개 파일 추출·검색 → 한글 문단 전문이 정확히 추출되고 한글 검색어가 교체한 쪽에서만 1건씩 검색. 이 수치는 Chrome 155 자체가 아닌 PDFium 156 빌드 결과이며, 스크립트는 저장소에 없고 사용자 PC 임시 폴더에 있음 |
-| V2 | Acrobat Reader(설치 시) | V1 과 동일 + 문서 속성 › 글꼴: `NotoSansKR` "포함된 하위 집합" | 미확인. Acrobat 미실행. A2-5 의 "Acrobat 이 Redact 를 적용 대기로 표시하는지" 도 미확인 |
+| V2 | Acrobat Reader(설치 시) | V1 과 동일 + 문서 속성 › 글꼴: `NotoSansKR` "포함된 하위 집합" | 미확인. Acrobat 미실행. A2-5 의 "Acrobat 이 Redact 를 적용 대기로 표시하는지" 도 미확인. **2차(2026-10-19, W7): 미확인** — 이 PC 에 Acrobat Reader 가 설치되어 있지 않다 |
 | V3 | pdf.js(Firefox 또는 https://mozilla.github.io/pdf.js/web/viewer.html 에 파일 끌어놓기) | V1 과 동일 | 미확인. pdf.js 미실행 |
-| V4 | 확장 뷰어에서 큰 PDF(100쪽 이상 실제 문서) 열기 → 진단 "전체 저장 측정" | 진단 `bench-full-save.saveMs`, `wasmHeapBytes`, 문서 크기·쪽수, PC 사양(CPU·RAM) 기록 | 미확인. 대형 문서 전체 저장 측정 미실행(A3-4 와 함께) |
+| V4 | 확장 뷰어에서 큰 PDF(100쪽 이상 실제 문서) 열기 → 진단 "전체 저장 측정" | 진단 `bench-full-save.saveMs`, `wasmHeapBytes`, 문서 크기·쪽수, PC 사양(CPU·RAM) 기록 | 미확인. 대형 문서 전체 저장 측정 미실행(A3-4 와 함께). **2차(2026-10-19, W6): 부분 측정** — nist-sp800-53r5 492쪽 saveMs 219.2·wasmHeapBytes 69,140,480·출력 11,711,450 B, nasa-se-handbook 297쪽 349.2·85,196,800·23,112,140 B(측정, 진단 JSON 각 1회). PC 사양·반복 측정 미확인. 세부·출력 크기 원인은 `docs/m0-dod-xobject-redact-save.md` 3.3 |
 
 ### 9.4 FSA·downloads(세 문맥)
 
@@ -256,7 +259,7 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 |---|---|---|---|---|---|
 | F1 일반 뷰어 페이지 | FSA 선택기 정상 (사용자 보고). 진단 JSON 미수신 → channel·fsaError 미확인 | 파일 생성 (사용자 보고) | 같은 대상 재저장 정상 (사용자 보고) | 정상 (사용자 보고. 권한 재요청 창 여부의 세부 기록 없음) | downloads 저장 정상 (사용자 보고) |
 | F2 최상위 MIME handler | FSA 선택기 정상, channel `fsa`, fsaError null (측정: 진단 JSON). 선택기를 닫은 2회는 status `cancelled` 이며 downloads 로 넘어가지 않음 | `saved`: test1.pdf, bytes 11674(선택기 사용 9.9초 포함) (측정). 디스크: `C:\Users\harry\Downloads\test1.pdf` 11,674 B, SHA-256 이 원본 m0-sample.pdf 와 동일(913C521A…5144, 편집이 없었으므로 정상), 수정 시각 = 마지막 저장 시각 (측정). worker-save method `incremental`(편집 없음 + canBeSavedIncrementally true) | Ctrl+S: `reusedHandle` true, 238 ms, 선택기 없이 `saved` (측정: 진단 JSON) | 미확인(추정). 두 번째 Ctrl+S 가 238 ms 였으므로 권한 재요청 창은 뜨지 않은 것으로 보이나 사용자에게 직접 확인받지 못함 | "저장됨: chrome.downloads" 표시 (사용자 보고), Downloads 에 m0-sample.pdf 11,674 B 생성 (측정) |
-| F3 임베디드 MIME handler | FSA "다른 이름으로 저장" 선택기 정상 (사용자 보고. OS 의 덮어쓰기 확인 창은 선택기 기본 동작). 진단 JSON 미수신 → fsaError 값 미확인 | 파일 저장 (사용자 보고) | 미확인. Ctrl+S 가 같은 대상에 덮어썼는지 확인 못 함 | 미확인 | downloads 저장 정상. 같은 이름이 있어 `m0-sample (1).pdf` 로 자동 번호(conflictAction uniquify 동작과 일치) (사용자 보고) |
+| F3 임베디드 MIME handler | FSA "다른 이름으로 저장" 선택기 정상 (사용자 보고. OS 의 덮어쓰기 확인 창은 선택기 기본 동작). 진단 JSON 미수신 → fsaError 값 미확인 | 파일 저장 (사용자 보고) | 미확인. Ctrl+S 가 같은 대상에 덮어썼는지 확인 못 함. **2차(2026-10-19, W5): 조건부 통과** — 다른 이름으로 저장(w5-test.pdf) 후 Ctrl+S 에 상태 표시 "저장됨: 파일 w5-test.pdf (같은 대상 재저장)", 새 파일 미생성(사용자 보고). `C:\Users\harry\Downloads\w5-test.pdf` 11,674 B 한 개, 생성 18:24:55·수정 18:24:56, 18:25:22·18:27:17 재확인 시 불변(측정). 두 번째 쓰기가 수정 시각으로 확인되지 않아 실제 덮어쓰기는 미확인(F2 의 test1.pdf 는 재저장 시각이 반영됐었다) | 미확인. 2차(W5)에도 권한 재요청 여부 기록 없음 | downloads 저장 정상. 같은 이름이 있어 `m0-sample (1).pdf` 로 자동 번호(conflictAction uniquify 동작과 일치) (사용자 보고) |
 
 - 기록 주의: 사용자가 처음 "F1" 로 보고한 진단 JSON 은 문맥이 `mime-handler-top`(file:// 직접 열기)이므로 **F2** 로 기록했다. 이 표의 "임베디드 문맥 F3" 은 `docs/m0-dod-xobject-redact-save.md` 의 "MuPDF 결함 F3"(이미지 `resolve()` + compact 저장) 과 이름만 같은 다른 항목이다.
 - 결론(2026-10-19): **세 문맥 모두 FSA 선택기와 downloads 저장 동작.** 임베디드 문맥 F3 에서 교차 출처 SecurityError 는 사용자 보고상 발생하지 않음(진단 JSON 미수신). 임베디드 문맥 F3 의 Ctrl+S 재저장은 미확인.
@@ -269,10 +272,11 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 | 항목 | 내용 |
 |---|---|
 | 검증 환경 | Windows PC, Chrome 155.0.8059.82 공식 빌드 64비트(측정). 진단 JSON 의 UTC 시각은 2026-10-18T19:0x(= 2026-10-19 KST 새벽). 가로채기 경로 MIME handler, DNR 동적 규칙 0개 |
-| 근거 표기 | "사용자 보고" = 사용자가 눈으로 확인한 것, "측정" = Windows PC 의 파일·로그·진단 JSON 에서 직접 확인한 것, "미확인" = 수행하지 않았거나 근거를 받지 못한 것 |
+| 근거 표기 | "사용자 보고" = 사용자가 눈으로 확인한 것, "측정" = Windows PC 의 파일·로그·진단 JSON 에서 직접 확인한 것, "화면 판독" = 스크린샷을 보고 판단한 것(정답 라벨과 대조 아님, 2차부터), "미확인" = 수행하지 않았거나 근거를 받지 못한 것 |
 | 통과 | G1·G2, I1·I2·I3·I5·I6, R1·R2, V1, F1(사용자 보고)·F2(측정)·F3 의 1·2·5 단계 |
 | 미확인 | 임베디드 문맥 F3 의 Ctrl+S 재저장(3·4 단계)과 fsaError 값, F1·F3 진단 JSON, I2 "파일 URL에 대한 액세스 허용" 설정 상태, F2 권한 재요청 창 여부(추정만), I4(로컬 http 임베드), I7(Chrome 128–150 DNR → A5), V2(Acrobat, A2-5 포함), V3(pdf.js), V4(대형 문서 브라우저 측정 → A3-4) |
 | 해당 없음 | G3(이 PC 에 Chrome 128–150 없음) |
+| 2차 확인(2026-10-19 KST, W1–W8) | 확인 빌드 `m2` 110549f dist, Chrome 155.0.8059.82. 통과(사용자 보고): W1 텍스트 선택·복사·한글 검색(F1·F2·F3), W2 object 포커스, W3 여러 임베디드 뷰어. 조건부 통과: W5 임베디드 Ctrl+S(덮어쓰기 미확인). 부분 측정: W6 대형 문서 저장. 화면 판독: W4 레이아웃 오버레이. 미확인: W7(Acrobat 미설치), W8(Chrome 128–149 없음). 추적: U1–U4 `docs/m0-closeout.md` 3절, U5–U7 `docs/m1-integration.md` 3절, W4 `docs/m2-accuracy.md` 7절, 새 Action Item 은 8절 A9–A11 |
 
 알려진 한계(코드 미수정, PLAN.md 미반영, 사용자 결정 대기)
 - 확장 뷰어는 페이지를 캔버스 이미지로만 그리므로 **확장이 켜진 상태에서는 Ctrl+F 검색과 텍스트 선택·복사가 되지 않는다.** 확장 소스에 텍스트 선택 층 코드가 없음을 grep 으로 확인(측정). 사용자 보고로도 "확장 끄면 가능, 켜면 불가". 텍스트 선택 층·Ctrl+F 를 M1 에 추가할지는 사용자 결정 대기(PLAN.md 에는 반영하지 않음).
