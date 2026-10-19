@@ -4,6 +4,7 @@ import { useViewerState } from '../hooks.js';
 import { hitsOnPage } from '../search-nav.js';
 import { DebugInspector, DebugLayer } from './DebugLayer.js';
 import { HighlightLayer } from './HighlightLayer.js';
+import { LayoutLayer } from './LayoutLayer.js';
 import { TextLayer } from './TextLayer.js';
 
 interface Props {
@@ -44,6 +45,7 @@ export function PageSurface({ controller }: Props) {
   const { layout } = view;
   const text = readyValue(state.text, view.pageIndex);
   const debug = state.debugEnabled ? readyValue(state.debug, view.pageIndex) : null;
+  const doc = state.layoutEnabled ? readyValue(state.layout, view.pageIndex) : null;
   const hits = hitsOnPage(state.find, view.pageIndex);
   const size = { width: `${layout.cssWidth}px`, height: `${layout.cssHeight}px` };
 
@@ -62,6 +64,7 @@ export function PageSurface({ controller }: Props) {
       {text && debug && (
         <DebugLayer model={text.model} linkage={debug.linkage} map={debug.map} layout={layout} />
       )}
+      {doc && <LayoutLayer doc={doc} layout={layout} />}
       {text && (
         <TextLayer key={view.pageIndex} model={text.model} order={text.order} layout={layout} />
       )}

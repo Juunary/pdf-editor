@@ -8,6 +8,7 @@
  */
 import type {
   PageInfo,
+  PageLayout as DocumentPageLayout,
   PageLinkage,
   PageModel,
   RenderedPage,
@@ -27,7 +28,7 @@ import {
 } from './search-nav.js';
 import type { ViewerEnvironment, ViewerHost } from './viewer-host.js';
 
-export type FeatureName = 'text' | 'search' | 'debug';
+export type FeatureName = 'text' | 'search' | 'debug' | 'layout';
 
 /** 렌더가 끝난 현재 페이지. 오버레이 배치의 기준이다. */
 export interface PageView {
@@ -63,6 +64,9 @@ export interface ViewerState {
   text: Loadable<TextData>;
   debugEnabled: boolean;
   debug: Loadable<DebugData>;
+  /** 레이아웃 오버레이(M2 getPageLayout: 문단·표·도형·읽기 순서). */
+  layoutEnabled: boolean;
+  layout: Loadable<DocumentPageLayout>;
   /** 영구 비활성화 사유(없으면 null). */
   disabled: Record<FeatureName, string | null>;
   find: FindState;
@@ -131,7 +135,9 @@ export class ViewerController {
       text: { status: 'idle' },
       debugEnabled: false,
       debug: { status: 'idle' },
-      disabled: { text: null, search: null, debug: null },
+      layoutEnabled: false,
+      layout: { status: 'idle' },
+      disabled: { text: null, search: null, debug: null, layout: null },
       find: initialFindState(),
     };
   }
@@ -257,6 +263,7 @@ export class ViewerController {
   private async loadPageData(pageIndex: number): Promise<void> {
     await this.ensureText(pageIndex);
     if (this.state.debugEnabled) await this.ensureDebug(pageIndex);
+    if (this.state.layoutEnabled) await this.ensureLayout(pageIndex);
   }
 
   /** 추출 모델은 배율과 무관하므로, 사용자가 다른 페이지로 옮겼을 때만 응답을 버린다. */
@@ -265,7 +272,7 @@ export class ViewerController {
   }
 
   /** 버린 요청이 남긴 loading 표시를 지워, 나중에 같은 페이지로 돌아왔을 때 다시 불러오게 한다. */
-  private resetStaleLoading(kind: 'text' | 'debug', pageIndex: number): void {
+  private resetStaleLoading(kind: 'text' | 'debug' | 'layout', pageIndex: number): void {
     const current = this.state[kind];
     if (!this.disposed && current.status === 'loading' && current.pageIndex === pageIndex) {
       this.patch({ [kind]: { status: 'idle' } } as Partial<ViewerState>);
@@ -353,6 +360,52 @@ export class ViewerController {
         if (this.isStalePage(pageIndex)) return this.resetStaleLoading('debug', pageIndex);
         this.host.log('link-error', { pageIndex, error: failure.message });
         this.patch({ debug: { status: 'error', pageIndex, message: failure.message } });
+      }
+    }
+  }
+
+  // ── 레이아웃 오버레이 ────────────────────────────────────────────────
+
+  toggleLayout(): void {
+    if (featureDisabledReason(this.state, 'layout')) return;
+    const enabled = !this.state.layoutEnabled;
+    this.patch({ layoutEnabled: enabled });
+    if (enabled) {
+      const pageIndex = this.state.view?.pageIndex ?? this.state.pageIndex;
+      void this.ensureLayout(pageIndex);
+    }
+  }
+
+  private async ensureLayout(pageIndex: number): Promise<void> {
+    if (featureDisabledReason(this.state, 'layout')) return;
+    const current = this.state.layout;
+    if (
+      (current.status === 'ready' || current.status === 'loading') &&
+      current.pageIndex === pageIndex
+    ) {
+      return;
+    }
+    this.patch({ layout: { status: 'loading', pageIndex } });
+    try {
+      const value = await this.host.getPageLayout(pageIndex);
+      if (this.isStalePage(pageIndex)) return this.resetStaleLoading('layout', pageIndex);
+      this.patch({ layout: { status: 'ready', pageIndex, value } });
+    } catch (e) {
+      const failure = classifyFailure(e);
+      if (failure.kind === 'unimplemented') {
+        this.disable('layout', failure.message);
+        this.logOnce('layout-unavailable', 'layout-unavailable', {
+          feature: '레이아웃 오버레이',
+          reason: failure.message,
+        });
+        this.patch({
+          layoutEnabled: false,
+          layout: { status: 'error', pageIndex, message: failure.message },
+        });
+      } else {
+        if (this.isStalePage(pageIndex)) return this.resetStaleLoading('layout', pageIndex);
+        this.host.log('layout-error', { pageIndex, error: failure.message });
+        this.patch({ layout: { status: 'error', pageIndex, message: failure.message } });
       }
     }
   }

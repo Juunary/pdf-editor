@@ -21,7 +21,13 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { PageLinkage, PageModel, SourceMap } from '@pdf-editor/shared-types';
+import type {
+  PageLayout as DocumentPageLayout,
+  PageLinkage,
+  PageModel,
+  SourceMap,
+} from '@pdf-editor/shared-types';
+import { reconstructPage } from '../../../packages/layout-recon/src/reconstruct.js';
 import {
   makeLinkage,
   makePageModel,
@@ -43,8 +49,9 @@ interface HarnessConfig {
   pages: PageModel[];
   maps?: SourceMap[];
   linkages?: PageLinkage[];
+  layouts?: DocumentPageLayout[];
   /** 호스트 호출이 던질 오류 메시지. */
-  failures?: { extract?: string; search?: string; link?: string };
+  failures?: { extract?: string; search?: string; link?: string; layout?: string };
   /** pt → CSS px 고정 배율. */
   cssScale: number;
 }
@@ -130,11 +137,14 @@ const host = {
     if (cfg.failures?.link) throw new Error(cfg.failures.link);
     return cfg.linkages[i];
   },
-  searchText: async (req) => {
+    searchText: async (req) => {
     if (cfg.failures?.search) throw new Error(cfg.failures.search);
     return search(req);
   },
-  log: (event, data) => log.push({ event, data }),
+  getPageLayout: async (i) => {
+    if (cfg.failures?.layout) throw new Error(cfg.failures.layout);
+    return cfg.layouts[i];
+  },log: (event, data) => log.push({ event, data }),
 };
 
 const controller = new ViewerController({
@@ -788,6 +798,50 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await page.keyboard.press('Control+A');
     expect(await copied(page)).toBe(FULL_TEXT);
   });
+
+  test('레이아웃 오버레이: 문단 상자·읽기 순서 번호, 쪽 이동, 오버레이 중 텍스트 선택', async ({
+    page,
+  }, testInfo) => {
+    const layouts = [reconstructPage(PAGE_0), reconstructPage(PAGE_1)];
+    await openHarness(page, baseConfig({ layouts }));
+    await expect(page.locator('#pe-layout-canvas')).toHaveCount(0);
+    await page.locator('#pe-layout-toggle').click();
+    const canvas = page.locator('#pe-layout-canvas');
+    await expect(canvas).toHaveAttribute('data-paragraphs', String(layouts[0]!.paragraphs.length));
+    await expect(canvas).toHaveAttribute('data-order', String(layouts[0]!.readingOrder.length));
+    // 첫 문단 상자 왼쪽 위 모서리 바로 안쪽 픽셀은 본문 색(파랑 계열)이다.
+    const first = layouts[0]!.paragraphs[0]!.bbox;
+    const px = await canvas.evaluate(
+      (c: HTMLCanvasElement, [x, y]: [number, number]) => {
+        const k = c.width / c.getBoundingClientRect().width;
+        return Array.from(
+          c.getContext('2d')!.getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data,
+        );
+      },
+      [(first[0] + 0.3) * 1.5, ((first[1] + first[3]) / 2) * 1.5] as [number, number],
+    );
+    expect(px[3]!).toBeGreaterThan(0);
+    expect(px[2]!).toBeGreaterThan(px[0]!);
+    await page.screenshot({ path: testInfo.outputPath('layout-overlay.png') });
+    await page.keyboard.press('Control+A');
+    expect(await copied(page)).toBe(FULL_TEXT);
+    await page.locator('#pe-next').click();
+    await expect(canvas).toHaveAttribute('data-paragraphs', String(layouts[1]!.paragraphs.length));
+    await page.locator('#pe-layout-toggle').click();
+    await expect(canvas).toHaveCount(0);
+  });
+
+  test('getPageLayout 미구현이면 레이아웃만 비활성화되고 텍스트 선택은 유지된다', async ({
+    page,
+  }) => {
+    await openHarness(page, baseConfig({ failures: { layout: 'M2 미구현: core getPageLayout' } }));
+    await page.locator('#pe-layout-toggle').click();
+    await expect(page.locator('#pe-notice')).toContainText('레이아웃');
+    await expect(page.locator('#pe-layout-toggle')).toBeDisabled();
+    await expect(page.locator('#pe-layout-canvas')).toHaveCount(0);
+    await page.keyboard.press('Control+A');
+    expect(await copied(page)).toBe(FULL_TEXT);
+  });
 });
 
 // ══ 2. 확장 연동 ═════════════════════════════════════════════════════
@@ -1084,6 +1138,19 @@ test(`[통합] Ctrl+F: 한글 검색어(m0-spike-saved.pdf '검색과 복사' 1�
     await page.locator('#pe-find-input').fill('검색과 복사');
     await expect(page.locator('#pe-find-count')).toHaveText('1 / 1');
     await expect(page.locator('#pe-highlights .pe-hl')).toHaveCount(1);
+  });
+});
+
+test(`[통합] 레이아웃 오버레이: Worker getPageLayout 결과로 문단 상자와 읽기 순서를 그린다`, async () => {
+  await withExtension(async (env) => {
+    const page = await openViewer(env, 'm0-sample.pdf');
+    expect(await extractOutcome(page)).toBe('text-layer');
+    await page.locator('#pe-layout-toggle').click();
+    const canvas = page.locator('#pe-layout-canvas');
+    await expect(canvas).toHaveAttribute('data-paragraphs', /^[1-9]\d*$/, { timeout: 20_000 });
+    expect(Number(await canvas.getAttribute('data-order'))).toBeGreaterThan(0);
+    await page.locator('#pe-layout-toggle').click();
+    await expect(canvas).toHaveCount(0);
   });
 });
 
