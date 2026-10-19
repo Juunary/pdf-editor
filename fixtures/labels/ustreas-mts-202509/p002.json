@@ -1,0 +1,200 @@
+{
+ "doc": "ustreas-mts-202509",
+ "pageIndex": 2,
+ "split": "dev",
+ "extract": {
+  "lineCount": 46,
+  "linesSha256": "8d7dbdcbf838b321f62431b64516512cd06ead6207095cfd37c5961b76d2b0cf"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-fin1 (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Highlight 상자(39-45)는 쪽 상단 본문 콜아웃이라 header 가 아니라 heading+body 로 두고 읽기 순서 맨 앞에 둠(추출 순서에서는 마지막). 목차는 항목마다 문단(점선 줄과 'Page N' 이 별도 줄이면 한 문단으로 묶음; 8,9,10 은 한 줄에 쪽 번호 포함). 목차는 표가 아니라 문단으로 처리(가이드: 목차 항목은 줄마다 문단). review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    39
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    40,
+    41
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    42,
+    43,
+    44,
+    45
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    1,
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    3
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    4
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    5,
+    6
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    8
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    9
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    10
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    11
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    12,
+    13,
+    14,
+    15
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    16
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    17,
+    18,
+    19
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    20
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    28
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    29,
+    30,
+    31,
+    32,
+    33,
+    34
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    35
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    36,
+    37
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    38
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

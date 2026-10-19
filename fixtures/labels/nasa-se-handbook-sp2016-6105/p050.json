@@ -1,0 +1,481 @@
+{
+ "doc": "nasa-se-handbook-sp2016-6105",
+ "pageIndex": 50,
+ "split": "test",
+ "extract": {
+  "lineCount": 111,
+  "linesSha256": "3a46f828120c6aab2e74eef6528588e871982ac4dd10aaa8d76339e46db5ca2e"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-bench (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Body text is two columns but one sentence/paragraph flows from the bottom of the left column (line 8) into the top of the right column (line 9, hyphenation 'indepen-/dent'), so lines 3-14 are one paragraph (reading order left column then right). Table: 4 rows (header + 3) x 7 cols, ruled; bbox = outer rules. Last-column cells in rows 1 and 2 (Justification) are empty and have no cell entry. Caption (line 15) is above the table. Footer order: handbook title (2), then page number (0); index 0 is the page number at bottom right. review: paragraph 3-14 split at the column boundary into 3-8 (left column) and 9-14 (right column), kept adjacent in reading order (cross-column rule); table bbox/4x7 grid/cells, caption, header/footer unchanged.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    3,
+    4,
+    5,
+    6,
+    7,
+    8
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    15
+   ]
+  },
+  {
+   "type": "table",
+   "bbox": [
+    51.5,
+    213.5,
+    524.0,
+    593.5
+   ],
+   "rows": 4,
+   "cols": 7,
+   "lines": [
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110
+   ],
+   "cells": [
+    {
+     "row": 0,
+     "col": 0,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      16,
+      17
+     ]
+    },
+    {
+     "row": 0,
+     "col": 1,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      18,
+      19
+     ]
+    },
+    {
+     "row": 0,
+     "col": 2,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      20,
+      21
+     ]
+    },
+    {
+     "row": 0,
+     "col": 3,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      22
+     ]
+    },
+    {
+     "row": 0,
+     "col": 4,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      23,
+      24
+     ]
+    },
+    {
+     "row": 0,
+     "col": 5,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      25
+     ]
+    },
+    {
+     "row": 0,
+     "col": 6,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      26
+     ]
+    },
+    {
+     "row": 1,
+     "col": 0,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      27
+     ]
+    },
+    {
+     "row": 1,
+     "col": 1,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      28
+     ]
+    },
+    {
+     "row": 1,
+     "col": 2,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38
+     ]
+    },
+    {
+     "row": 1,
+     "col": 3,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+     ]
+    },
+    {
+     "row": 1,
+     "col": 4,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      50
+     ]
+    },
+    {
+     "row": 1,
+     "col": 5,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      51,
+      52
+     ]
+    },
+    {
+     "row": 2,
+     "col": 0,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      53
+     ]
+    },
+    {
+     "row": 2,
+     "col": 1,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      54
+     ]
+    },
+    {
+     "row": 2,
+     "col": 2,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63
+     ]
+    },
+    {
+     "row": 2,
+     "col": 3,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70
+     ]
+    },
+    {
+     "row": 2,
+     "col": 4,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      71
+     ]
+    },
+    {
+     "row": 2,
+     "col": 5,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      72,
+      73
+     ]
+    },
+    {
+     "row": 3,
+     "col": 0,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      74
+     ]
+    },
+    {
+     "row": 3,
+     "col": 1,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      75
+     ]
+    },
+    {
+     "row": 3,
+     "col": 2,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86
+     ]
+    },
+    {
+     "row": 3,
+     "col": 3,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99
+     ]
+    },
+    {
+     "row": 3,
+     "col": 4,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      100
+     ]
+    },
+    {
+     "row": 3,
+     "col": 5,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      101,
+      102
+     ]
+    },
+    {
+     "row": 3,
+     "col": 6,
+     "rowSpan": 1,
+     "colSpan": 1,
+     "lines": [
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110
+     ]
+    }
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

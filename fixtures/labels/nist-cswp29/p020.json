@@ -1,0 +1,166 @@
+{
+  "doc": "nist-cswp29",
+  "pageIndex": 20,
+  "split": "test",
+  "extract": {
+    "lineCount": 40,
+    "linesSha256": "4e6eec11cd286bce7cb25f1715a3b3f221b05f642671013dd22132530c2e4b34"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-report (Claude subagent)",
+  "reviewedBy": "reviewer-A (Claude Opus subagent, independent)",
+  "notes": "Whitespace-only lines 1,4,5,6 omitted. Lines 8-9 (GOVERN (GV): ...) sit on a yellow band acting as a section divider with the function definition; labeled heading (alternative: body). Bullets and sub-bullets are part of the line text (not separate lines); each bullet and each sub-bullet is one list-item, nesting is flat. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        8,
+        9
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        10,
+        11,
+        12
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        13,
+        14
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        15,
+        16
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        17,
+        18
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        19,
+        20
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        21,
+        22
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        26,
+        27
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        28,
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        30,
+        31
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        32,
+        33
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        34,
+        35
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        36,
+        37
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        38,
+        39
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        7
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

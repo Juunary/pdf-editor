@@ -1,0 +1,84 @@
+{
+ "doc": "zen-ko-report-21333257",
+ "pageIndex": 30,
+ "split": "test2",
+ "extract": {
+  "lineCount": 26,
+  "linesSha256": "38fa75bf444687d2e494d238f86b8777350980b960685562ba845f6ca817108b"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t2 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Korean report, indented first lines mark paragraph starts (4, 8, 14). Paragraph 2-3 continues from the previous page. Bulleted item 21-25 (bullet glyph inside line 21) is one list-item that continues onto the next page (not linked). Header = chapter running title (0), footer = page number (1). review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    2,
+    3
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    4,
+    5,
+    6,
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    8,
+    9,
+    10,
+    11,
+    12,
+    13
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    21,
+    22,
+    23,
+    24,
+    25
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    1
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

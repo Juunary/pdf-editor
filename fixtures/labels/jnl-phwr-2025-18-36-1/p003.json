@@ -1,0 +1,641 @@
+{
+  "doc": "jnl-phwr-2025-18-36-1",
+  "pageIndex": 3,
+  "split": "test",
+  "extract": {
+    "lineCount": 104,
+    "linesSha256": "ee6bd571ee83c7045099f23cefb5e5f824e313f128202d7d6ab44224399d4273"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-jnl (Claude subagent)",
+  "reviewedBy": "reviewer-C (Claude Opus subagent, independent)",
+  "notes": "Two-column body above a full-width band holding Table 2 (with caption above and note below) and Figure 1 (side caption at right of the chart). Paragraph 2-8 continues from previous page. Paragraph 9-15 ends mid-sentence at the column boundary and 16-21 continues it (split at column boundary); 22-29 starts at indented line 22 and continues to the next page. Table 2: 7 rows x 8 cols (header row + 3 stages x 2 rows); header cell 31 spans cols 0-1; stage-name cells (38,52,66) and p-value cells (45,59,73) span 2 rows. Table bbox from rules (50,409)-(544.5,513). Lines 80-81 (table notes a/b/c plus source) labeled footnote, one paragraph. Figure bbox covers plot, rotated y-axis title (raster, no text line), x-axis title and legend (45,566)-(403,734); figure labels = tick labels 84-93 and legend 94-103. Caption 82-83 sits beside the chart (outside the figure bbox); read after the figure. Footer: 1 (page number) and 0 (site/volume), left to right. review: no change.",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        16,
+        17,
+        18,
+        19,
+        20,
+        21
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        30
+      ]
+    },
+    {
+      "type": "table",
+      "bbox": [
+        50,
+        409,
+        545,
+        513
+      ],
+      "rows": 7,
+      "cols": 8,
+      "lines": [
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79
+      ],
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "rowSpan": 1,
+          "colSpan": 2,
+          "lines": [
+            31
+          ]
+        },
+        {
+          "row": 0,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            32
+          ]
+        },
+        {
+          "row": 0,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            33
+          ]
+        },
+        {
+          "row": 0,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            34
+          ]
+        },
+        {
+          "row": 0,
+          "col": 5,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            35
+          ]
+        },
+        {
+          "row": 0,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            36
+          ]
+        },
+        {
+          "row": 0,
+          "col": 7,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            37
+          ]
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "lines": [
+            38
+          ]
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            39
+          ]
+        },
+        {
+          "row": 1,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            40
+          ]
+        },
+        {
+          "row": 1,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            41
+          ]
+        },
+        {
+          "row": 1,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            42
+          ]
+        },
+        {
+          "row": 1,
+          "col": 5,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            43
+          ]
+        },
+        {
+          "row": 1,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            44
+          ]
+        },
+        {
+          "row": 1,
+          "col": 7,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "lines": [
+            45
+          ]
+        },
+        {
+          "row": 2,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            46
+          ]
+        },
+        {
+          "row": 2,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            47
+          ]
+        },
+        {
+          "row": 2,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            48
+          ]
+        },
+        {
+          "row": 2,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            49
+          ]
+        },
+        {
+          "row": 2,
+          "col": 5,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            50
+          ]
+        },
+        {
+          "row": 2,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            51
+          ]
+        },
+        {
+          "row": 3,
+          "col": 0,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "lines": [
+            52
+          ]
+        },
+        {
+          "row": 3,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            53
+          ]
+        },
+        {
+          "row": 3,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            54
+          ]
+        },
+        {
+          "row": 3,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            55
+          ]
+        },
+        {
+          "row": 3,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            56
+          ]
+        },
+        {
+          "row": 3,
+          "col": 5,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            57
+          ]
+        },
+        {
+          "row": 3,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            58
+          ]
+        },
+        {
+          "row": 3,
+          "col": 7,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "lines": [
+            59
+          ]
+        },
+        {
+          "row": 4,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            60
+          ]
+        },
+        {
+          "row": 4,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            61
+          ]
+        },
+        {
+          "row": 4,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            62
+          ]
+        },
+        {
+          "row": 4,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            63
+          ]
+        },
+        {
+          "row": 4,
+          "col": 5,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            64
+          ]
+        },
+        {
+          "row": 4,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            65
+          ]
+        },
+        {
+          "row": 5,
+          "col": 0,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "lines": [
+            66
+          ]
+        },
+        {
+          "row": 5,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            67
+          ]
+        },
+        {
+          "row": 5,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            68
+          ]
+        },
+        {
+          "row": 5,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            69
+          ]
+        },
+        {
+          "row": 5,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            70
+          ]
+        },
+        {
+          "row": 5,
+          "col": 5,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            71
+          ]
+        },
+        {
+          "row": 5,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            72
+          ]
+        },
+        {
+          "row": 5,
+          "col": 7,
+          "rowSpan": 2,
+          "colSpan": 1,
+          "lines": [
+            73
+          ]
+        },
+        {
+          "row": 6,
+          "col": 1,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            74
+          ]
+        },
+        {
+          "row": 6,
+          "col": 2,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            75
+          ]
+        },
+        {
+          "row": 6,
+          "col": 3,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            76
+          ]
+        },
+        {
+          "row": 6,
+          "col": 4,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            77
+          ]
+        },
+        {
+          "row": 6,
+          "col": 5,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            78
+          ]
+        },
+        {
+          "row": 6,
+          "col": 6,
+          "rowSpan": 1,
+          "colSpan": 1,
+          "lines": [
+            79
+          ]
+        }
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footnote",
+      "lines": [
+        80,
+        81
+      ]
+    },
+    {
+      "type": "figure",
+      "bbox": [
+        45,
+        566,
+        403,
+        734
+      ],
+      "labels": [
+        84,
+        85,
+        86,
+        87,
+        88,
+        89,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "caption",
+      "lines": [
+        82,
+        83
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        0
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

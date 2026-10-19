@@ -1,0 +1,150 @@
+{
+ "doc": "jnl-phwr-2025-18-36-1",
+ "pageIndex": 8,
+ "split": "test2",
+ "extract": {
+  "lineCount": 38,
+  "linesSha256": "244a48c254ab895e159248b3c195c28df074069a4492c37bb2291a07fbce9119"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t2 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "English-title first page of the same article. Masthead: 37 article-type label (header); PHWR logo at top-left is a decorative vector graphic. Two-line title 13-14 = one heading; author names 15-17 on one row split by ORCID icons = one paragraph; 18 affiliation. Structured abstract: heading 19, one paragraph per labeled field (20-22 objectives, 23-24 methods, 25-31 results, 32-34 conclusions); 35 key words row. 36 corresponding-author note sits in the front matter ABOVE the introduction (not below the body), so it is labeled body and kept in its visual position (on page 0 the same kind of note is at the page bottom and is labeled footnote). Two-column Introduction: heading 2, left column 3-6 (indent at 3), mid-sentence at the column bottom, continues in right column 7-12 (split at column boundary, adjacent; 7-12 continues onto next page). Footer: 0 site/volume (left), 1 page number (right). review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    37
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    13,
+    14
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    15,
+    16,
+    17
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    18
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    19
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    20,
+    21,
+    22
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    23,
+    24
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    32,
+    33,
+    34
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    35
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    36
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    3,
+    4,
+    5,
+    6
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    1
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

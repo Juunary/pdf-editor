@@ -1,0 +1,92 @@
+{
+ "doc": "zen-beamer-7535020",
+ "pageIndex": 40,
+ "split": "test2",
+ "extract": {
+  "lineCount": 12,
+  "linesSha256": "d3e998fa1a46ba7b00fe98e8f54b91692bc29394578bf71beb62f2fa4c9cf2d5"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-t2 (Claude subagent)",
+ "reviewedBy": "reviewer-E (Claude Opus subagent, independent)",
+ "notes": "Slide: title = heading (0). Left column bullets read first, then the right column. Nested bullets 5, 6, 7 are separate list-items (bullet glyph inside each line). 'Pyramide des donnees' (10) is the title above the pyramid image, labeled caption; the pyramid is one raster figure (image listed twice in packet header, same box) whose text is rasterized, so labels are empty. 11 = slide number (footer). SCIENCE OUVERTE logo at bottom-right is decorative, not a figure. review: no change.",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    1,
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    3,
+    4
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    6
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    8,
+    9
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "caption",
+   "lines": [
+    10
+   ]
+  },
+  {
+   "type": "figure",
+   "bbox": [
+    186,
+    80,
+    350,
+    211
+   ],
+   "labels": []
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    11
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

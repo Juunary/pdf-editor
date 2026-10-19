@@ -8,6 +8,7 @@ import type {
   RenderedPage,
   SearchRequest,
   SearchResult,
+  PageLayout as DocumentPageLayout,
 } from '@pdf-editor/shared-types';
 import {
   ViewerController,
@@ -70,8 +71,24 @@ type FakeHost = ViewerHost & {
   getSourceMap: ReturnType<typeof vi.fn>;
   linkPage: ReturnType<typeof vi.fn>;
   searchText: ReturnType<typeof vi.fn>;
+  getPageLayout: ReturnType<typeof vi.fn>;
   log: ReturnType<typeof vi.fn>;
 };
+
+function emptyLayout(pageIndex: number): DocumentPageLayout {
+  return {
+    pageIndex,
+    bounds: [0, 0, 600, 800],
+    columns: [],
+    paragraphs: [],
+    tables: [],
+    figures: [],
+    readingOrder: [],
+    unassignedLines: [],
+    warnings: [],
+    reconMs: 0,
+  };
+}
 
 function fakeHost(overrides: Partial<ViewerHost> = {}): FakeHost {
   const model = (pageIndex: number): PageModel => ({
@@ -85,6 +102,7 @@ function fakeHost(overrides: Partial<ViewerHost> = {}): FakeHost {
     getSourceMap: vi.fn(async (i: number) => makeSourceMap(model(i), [makeTextOp(0)])),
     linkPage: vi.fn(async (i: number) => makeLinkage(model(i), [0, 0])),
     searchText: vi.fn(async (req: SearchRequest) => searchResult(req.query, [req.startPage ?? 0])),
+    getPageLayout: vi.fn(async (i: number) => emptyLayout(i)),
     log: vi.fn(),
     ...overrides,
   } as FakeHost;
@@ -392,6 +410,66 @@ describe('ViewerController · 디버그 오버레이', () => {
     expect(c.getState().text).toMatchObject({ status: 'ready', pageIndex: 1 });
     await c.goToPage(0);
     expect(c.getState().text).toMatchObject({ status: 'ready', pageIndex: 0 });
+  });
+});
+
+describe('ViewerController · 레이아웃 오버레이', () => {
+  it('켜면 getPageLayout 을 불러오고 쪽 이동 때 새 쪽을 불러온다. 끄면 부르지 않는다', async () => {
+    const host = fakeHost();
+    const c = make(host);
+    await c.start();
+    expect(host.getPageLayout).not.toHaveBeenCalled();
+    c.toggleLayout();
+    await flush();
+    expect(c.getState().layout).toMatchObject({ status: 'ready', pageIndex: 0 });
+    await c.nextPage();
+    expect(c.getState().layout).toMatchObject({ status: 'ready', pageIndex: 1 });
+    c.toggleLayout();
+    await c.nextPage();
+    expect(host.getPageLayout).toHaveBeenCalledTimes(2);
+  });
+
+  it('쪽을 옮긴 뒤 늦게 온 레이아웃 응답은 버리고, 로딩 중 끄면 그리지 않는다', async () => {
+    const slow = deferred<DocumentPageLayout>();
+    let first = true;
+    const host = fakeHost({
+      getPageLayout: vi.fn((i: number) => {
+        if (first) {
+          first = false;
+          return slow.promise;
+        }
+        return Promise.resolve(emptyLayout(i));
+      }),
+    });
+    const c = make(host);
+    await c.start();
+    c.toggleLayout();
+    await flush();
+    await c.nextPage();
+    expect(c.getState().layout).toMatchObject({ status: 'ready', pageIndex: 1 });
+    slow.resolve(emptyLayout(0));
+    await flush();
+    expect(c.getState().layout).toMatchObject({ status: 'ready', pageIndex: 1 });
+    c.toggleLayout();
+    expect(c.getState().layoutEnabled).toBe(false);
+  });
+
+  it('미구현 예외면 레이아웃만 비활성화하고 텍스트 층은 그대로 둔다', async () => {
+    const host = fakeHost({
+      getPageLayout: vi.fn(async () => {
+        throw new Error('M2 미구현: core getPageLayout');
+      }),
+    });
+    const c = make(host);
+    await c.start();
+    c.toggleLayout();
+    await flush();
+    const s = c.getState();
+    expect(s.layoutEnabled).toBe(false);
+    expect(s.disabled.layout).not.toBeNull();
+    expect(s.text.status).toBe('ready');
+    c.toggleLayout();
+    expect(c.getState().layoutEnabled).toBe(false);
   });
 });
 

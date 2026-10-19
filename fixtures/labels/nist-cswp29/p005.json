@@ -1,0 +1,151 @@
+{
+  "doc": "nist-cswp29",
+  "pageIndex": 5,
+  "split": "dev",
+  "extract": {
+    "lineCount": 42,
+    "linesSha256": "cab51837ba51506202f466ce1aef8246661a872d2ac8cff72f84455c08e54c89"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-d1 (Claude subagent)",
+  "reviewedBy": "reviewer-D (Claude Opus subagent, independent)",
+  "notes": "Whitespace-only lines 1,4,5 omitted. Left header block: doc id (0) and date (3) separate paragraphs, right running head (2) separate (same as approved p010). Bullet glyph is part of each line's text; each bullet (10-17, 18-19, 20-23, 30-31, 32, 33-34, 35-36, 39-41) is one list-item including wrapped lines. Lines 37-38 are a body sentence introducing the last bullet. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        2
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        7
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        8,
+        9
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        18,
+        19
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        20,
+        21,
+        22,
+        23
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        24,
+        25,
+        26,
+        27,
+        28,
+        29
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        30,
+        31
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        32
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        33,
+        34
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        35,
+        36
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        37,
+        38
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "list-item",
+      "lines": [
+        39,
+        40,
+        41
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "footer",
+      "lines": [
+        6
+      ]
+    }
+  ],
+  "ignoreLines": []
+}

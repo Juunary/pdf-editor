@@ -1,0 +1,204 @@
+{
+ "doc": "nist-sp800-53r5",
+ "pageIndex": 100,
+ "split": "dev",
+ "extract": {
+  "lineCount": 52,
+  "linesSha256": "38b4cc39ea764b5ff13a58d1b2f1d92b06f7f5ab4d69825294886f11c8206815"
+ },
+ "status": "reviewed",
+ "labeledBy": "labeler-bench (Claude subagent)",
+ "reviewedBy": "reviewer-B (Claude Opus subagent, independent)",
+ "notes": "Line 0 holds two running-head elements (left: NIST SP 800-53, Rev. 5; right: SECURITY AND PRIVACY CONTROLS...) in one extracted line (bbox overruns page width); labeled as one header paragraph. Line 1 (underscore rule) = header decoration. Line 5 (rotated margin DOI notice) = header. Lines 3 and 10 are whitespace-only and omitted. AU-9 (line 8) and its title (line 9) are separate extracted lines on one baseline; labeled as a single heading. Lines 6 and 7 are the tail of the previous control (withdrawn enhancement / References), each its own paragraph. Control letters a./b. are inside the list-item lines. Enhancement title lines (26, 39, 51) = heading. Line 4 ' PAGE 74' and line 2 'CHAPTER THREE' are separate footer paragraphs. Line 51 enhancement (3) heading is the last line; its body continues on the next page. review: no change",
+ "items": [
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    0
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    1
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "header",
+   "lines": [
+    5
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    6
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    7
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    8,
+    9
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    11
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    12,
+    13
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "list-item",
+   "lines": [
+    14,
+    15
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    23,
+    24
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    25
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    26
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    27
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    38
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    39
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    40,
+    41,
+    42
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "body",
+   "lines": [
+    50
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "heading",
+   "lines": [
+    51
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    2
+   ]
+  },
+  {
+   "type": "paragraph",
+   "role": "footer",
+   "lines": [
+    4
+   ]
+  }
+ ],
+ "ignoreLines": []
+}

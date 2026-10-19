@@ -1,0 +1,309 @@
+{
+  "doc": "arxiv-2609.09268",
+  "pageIndex": 3,
+  "split": "dev",
+  "extract": {
+    "lineCount": 155,
+    "linesSha256": "dbc33e3a7117d4675b67dfaf0ac4a13e97dfd1b2eaae8eb04d8c3909300fa120"
+  },
+  "status": "reviewed",
+  "labeledBy": "labeler-d2 (Claude subagent)",
+  "reviewedBy": "reviewer-D (Claude Opus subagent, independent)",
+  "notes": "쪽 번호(0)=header. 줄 1 은 앞 쪽에서 이어지는 문단의 끝(수식 (8) 앞). 표시 수식 (8)=2-3, (9)=15-25, (10)=31-34, (11)=35-48, (12)=56-78, (13)=124-132, (14)=134-143 각각 번호 포함 other 한 문단. 수식 앞뒤로 갈라진 문장은 수식 앞/뒤 별개 문단(4-9 'where...', 26-30 'where...', 79-87 'where...', 133 'as', 144-150 'In this representation...'). 인라인 수식 조각(합 기호·첨자 줄)은 해당 문장 문단에 포함. 줄 102+103, 112+113, 93+94, 17+18 등은 한 시각 줄. 문단 90-91(왼쪽 열)은 92-100(오른쪽 열)로 이어짐: 열 경계에서 나눠 이웃 배치. 151-154 는 다음 쪽으로 이어짐. 줄 5/6 의 큰 합 기호는 4-9 문단에 포함. review: no change",
+  "items": [
+    {
+      "type": "paragraph",
+      "role": "header",
+      "lines": [
+        0
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        1
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        2,
+        3
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        10,
+        11,
+        12,
+        13,
+        14
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        26,
+        27,
+        28,
+        29,
+        30
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        31,
+        32,
+        33,
+        34
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        49,
+        50,
+        51,
+        52,
+        53
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        54,
+        55
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        79,
+        80,
+        81,
+        82,
+        83,
+        84,
+        85,
+        86,
+        87
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "heading",
+      "lines": [
+        88,
+        89
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        90,
+        91
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        132
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        133
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "other",
+      "lines": [
+        134,
+        135,
+        136,
+        137,
+        138,
+        139,
+        140,
+        141,
+        142,
+        143
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        144,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150
+      ]
+    },
+    {
+      "type": "paragraph",
+      "role": "body",
+      "lines": [
+        151,
+        152,
+        153,
+        154
+      ]
+    }
+  ],
+  "ignoreLines": []
+}
