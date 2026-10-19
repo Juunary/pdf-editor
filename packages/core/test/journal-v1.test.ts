@@ -235,6 +235,60 @@ function ensureNothing(doc: mupdf.PDFDocument): void {
   expect(doc.getTrailer().get('Info').isNull()).toBe(true);
 }
 
+describe('V1: undo 뒤 redo 단계 보존', () => {
+  /** 작업 둘을 커밋하고 하나를 undo 한 문서(redo 가능). */
+  function undone(): { doc: mupdf.PDFDocument; pageObj: mupdf.PDFObject } {
+    const doc = openPlain();
+    ensureInfoDictionary(doc);
+    doc.enableJournal();
+    const page = doc.loadPage(0);
+    const pageObj = page.getObject();
+    for (const key of ['A', 'B']) {
+      doc.beginOperation(`edit-${key}`);
+      pageObj.put(key, doc.newInteger(1));
+      doc.endOperation();
+    }
+    doc.undo();
+    page.destroy();
+    return { doc, pageObj };
+  }
+  const redoable = (doc: mupdf.PDFDocument): boolean => doc.canRedo();
+
+  it('변경 없는 작업(판정 probe)을 열고 버리거나 닫아도 redo 가 남는다', () => {
+    const { doc } = undone();
+    expect(redoable(doc)).toBe(true);
+    doc.beginOperation('probe');
+    doc.abandonOperation();
+    expect(redoable(doc)).toBe(true);
+    doc.beginOperation('empty');
+    doc.endOperation();
+    expect(redoable(doc)).toBe(true);
+    expect(doc.getJournal().steps).toEqual(['edit-A', 'edit-B']);
+  });
+
+  it('작업 안에서 객체를 처음 바꾸면 redo 단계가 사라지고 abandon 해도 돌아오지 않는다', () => {
+    const { doc, pageObj } = undone();
+    doc.beginOperation('draft');
+    pageObj.put('C', doc.newInteger(1));
+    doc.abandonOperation();
+    expect(redoable(doc)).toBe(false);
+    expect(doc.getJournal()).toEqual({ position: 1, steps: ['edit-A'] });
+  });
+
+  it('저장 작업 안에서 Info 를 바꾸면(계약 D9 순서) undo 직후 저장이 redo 를 잃는다', () => {
+    const wrapped = (change: boolean): boolean => {
+      const { doc } = undone();
+      doc.beginOperation('save');
+      if (change) doc.getTrailer().get('Info').put('PdfEditorEdits', doc.newString('pages=1'));
+      doc.saveToBuffer(SAVE).destroy();
+      doc.abandonOperation();
+      return redoable(doc);
+    };
+    expect(wrapped(false)).toBe(true);
+    expect(wrapped(true)).toBe(false);
+  });
+});
+
 describe('V1: 계약 시나리오', () => {
   it('폴백을 넣은 초안 취소 뒤 새 편집', () => {
     const doc = openPlain();
