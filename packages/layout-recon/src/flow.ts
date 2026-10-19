@@ -223,11 +223,14 @@ export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
   const regionW = right - left;
   // 줄마다 국소 통계: 앞뒤 4줄 중 왼쪽 끝이 3em 안이거나 가로로 70% 이상 겹치는 줄(같은 열의 본문)로
   // 오른쪽 끝·왼쪽 끝·양쪽 정렬 여부를 정한다. 넓은 제목·초록과 좁은 단 본문이 한 영역에 쌓여도
-  // 본문 줄을 넓은 줄 기준으로 "짧다"고 보지 않는다.
+  // 본문 줄을 넓은 줄 기준으로 "짧다"고 보지 않는다. 창은 영역 가장자리에서도 같은 크기(앞뒤 4줄 + 자신)로
+  // 유지한다(안쪽으로 민다): 잘리면 줄 수가 적고 짧은 줄만 남아 오른쪽 끝이 낮게 잡힌다.
+  const localSpan = 2 * C.localHalfWindow + 1;
   const localStats = us.map((u, i) => {
     const em = u.size;
+    const lo = Math.max(0, Math.min(i - C.localHalfWindow, us.length - localSpan));
     const group = us.filter((v, j) => {
-      if (Math.abs(i - j) > 4) return false;
+      if (j < lo || j >= lo + localSpan) return false;
       if (Math.abs(v.bbox[0] - u.bbox[0]) <= 3 * em) return true;
       const ov = Math.min(u.bbox[2], v.bbox[2]) - Math.max(u.bbox[0], v.bbox[0]);
       // 넓은 쪽 폭 기준(좁은 단 줄을 감싸는 넓은 줄은 같은 열로 보지 않는다).

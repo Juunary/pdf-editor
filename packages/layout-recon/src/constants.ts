@@ -11,6 +11,8 @@ export const C = {
   marginGapEm: 1.2,
   /** 같은 행 줄 조각을 합치는 최대 간격(글자 크기 배수). */
   rowJoinGapEm: 1.3,
+  /** 영역 안 문단 나누기의 국소 통계 창: 대상 줄 앞뒤 줄 수. */
+  localHalfWindow: 4,
   /** 같은 행 판정: 세로 겹침이 낮은 쪽 높이의 이 비율 이상. */
   sameRowOverlap: 0.5,
   /** 영역 쌓기: x 겹침이 좁은 쪽 폭의 이 비율 이상. */

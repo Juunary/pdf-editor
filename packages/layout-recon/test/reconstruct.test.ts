@@ -97,6 +97,29 @@ describe('reconstructPage', () => {
     expect(layout.paragraphs.every((p) => p.role === 'list-item')).toBe(true);
   });
 
+  it('들쭉날쭉한 항목 목록: 영역 앞쪽 줄도 열 폭 기준으로 줄 끝을 판정한다(W4-4)', () => {
+    // 달력형 목록: 날짜(굵게) / 행사명(굵게) / 담당자(굵게) / 장소. 영역 맨 앞 줄의 국소 창이 가장자리에서
+    // 잘려 긴 줄(6·8번)을 담지 못하면 오른쪽 끝이 낮게 잡혀, 행사명 줄을 "끝까지 찬 줄" 로 보고 담당자
+    // 줄을 잇던 결함이 있었다.
+    const b = { bold: true };
+    const lines: LineSpec[] = [
+      { x: 54, y: 100, text: 'May 14-16, 2024', ...b },
+      { x: 54, y: 112, text: 'CERES Science Team Meeting', ...b },
+      { x: 54, y: 124, text: 'POC: norman.g.loeb@nasa.gov', ...b },
+      { x: 54, y: 136, text: 'Hampton, VA' },
+      { x: 54, y: 156.6, text: 'June 3-6, 2024', ...b },
+      { x: 54, y: 168.6, text: 'OMI-TROPOMI Science Team', ...b },
+      { x: 54, y: 180.6, text: 'Pyeongchang-gun, Gangwon-do, South Korea' },
+      { x: 54, y: 201.2, text: 'April 14-19, 2024', ...b },
+      { x: 54, y: 213.2, text: 'European Geosciences Union (EGU) General Assembly', ...b },
+      { x: 54, y: 225.2, text: 'Vienna, Austria' },
+    ];
+    const model = buildModel({ lines });
+    const layout = reconstructPage(model);
+    checkInvariants(model, layout);
+    expect(layout.paragraphs.map((p) => p.lines)).toEqual(lines.map((_, i) => [i]));
+  });
+
   it('위첨자 조각과 목차 쪽 번호를 같은 줄로 합친다', () => {
     const model = buildModel({
       lines: [
