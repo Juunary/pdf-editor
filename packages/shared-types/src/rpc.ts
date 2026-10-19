@@ -1,5 +1,16 @@
 /** 뷰어 → 뷰어 소유 module Worker RPC 계약(Comlink, PLAN.md 5.2). */
 import type { Rect } from './geometry.js';
+import type {
+  BeginEditResult,
+  CommitResult,
+  DraftInput,
+  DraftUpdate,
+  EditHistoryState,
+  EditOp,
+  PageEditInfo,
+  PageEditability,
+  ParagraphEditPlan,
+} from './edit.js';
 import type { ExtractRequest, PageModel } from './page-model.js';
 import type { PageLayout } from './page-layout.js';
 import type { SaveRequest, SavePlan, SaveResult } from './save.js';
@@ -38,6 +49,8 @@ export interface RenderRequest {
   pageIndex: number;
   /** 1 = 72dpi. 뷰어는 devicePixelRatio 를 곱해 넘긴다. */
   scale: number;
+  /** 이 영역(페이지 공간)만 렌더한다(M3 편집 미리보기). 없으면 쪽 전체. */
+  clip?: Rect;
 }
 
 export interface RenderedPage {
@@ -47,6 +60,8 @@ export interface RenderedPage {
   /** RGBA, 불투명 흰 배경. 길이 = width * height * 4. Worker 에서 transfer 로 넘긴다. */
   rgba: Uint8ClampedArray<ArrayBuffer>;
   renderMs: number;
+  /** 실제로 렌더한 영역(페이지 공간, 픽셀 격자에 맞춘 값). 쪽 전체면 null. */
+  clip: Rect | null;
 }
 
 export interface PdfWorkerApi {
@@ -66,4 +81,31 @@ export interface PdfWorkerApi {
   planSave(request: SaveRequest): Promise<SavePlan>;
   save(request: SaveRequest): Promise<SaveResult>;
   close(): Promise<void>;
+
+  // M3 문단 편집(docs/m3-contract.md 4절). 초안은 문서당 최대 1개.
+  /** 쪽의 흐름 문단별 편집 가능 여부(마우스 오버 표시용 일괄 판정). */
+  getPageEditability(pageIndex: number): Promise<PageEditability>;
+  /** 편집 가능 판정·시작 텍스트·영역. 문서를 바꾸지 않는다. */
+  planParagraphEdit(pageIndex: number, paragraphId: number): Promise<ParagraphEditPlan>;
+  /** 이 쪽의 편집 블록. */
+  getPageEdits(pageIndex: number): Promise<PageEditInfo>;
+  /**
+   * 저널 작업을 열고 제거·삽입을 적용한 초안을 만든다. revision 이 현재와 다르거나 편집할 수 없으면 예외.
+   */
+  beginParagraphEdit(
+    pageIndex: number,
+    paragraphId: number,
+    revision: number,
+  ): Promise<BeginEditResult>;
+  /** 리플로우 → 편집 블록 교체 → 변경 영역 렌더. */
+  updateParagraphDraft(draftId: string, input: DraftInput): Promise<DraftUpdate>;
+  /** 저널 작업을 닫고 EditOp 를 로그에 넣는다. */
+  commitParagraphEdit(draftId: string): Promise<CommitResult>;
+  /** 초안을 버린다. */
+  cancelParagraphEdit(draftId: string): Promise<EditHistoryState>;
+  undo(): Promise<EditHistoryState>;
+  redo(): Promise<EditHistoryState>;
+  getEditHistory(): Promise<EditHistoryState>;
+  /** 새로 연 문서에 로그를 다시 적용한다(Worker 복구, 계약 D6). */
+  replayEdits(ops: EditOp[]): Promise<EditHistoryState>;
 }

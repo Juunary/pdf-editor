@@ -102,6 +102,30 @@ export interface TextShowInfo {
   /** Tr 0–7. */
   renderMode: number;
   glyphs: SourceGlyph[];
+  /** 연산자 실행 직전 텍스트 줄 행렬 Tlm(M3 BT 나누기용, pdf-ops 인터프리터가 채운다). */
+  tlm?: Matrix;
+}
+
+/** 연산 실행 시점 그래픽 상태 요약(M3 편집 블록 쓰기용, pdf-ops 인터프리터가 채운다). */
+export interface SourceOpState {
+  /** 효력 있는 채움 색 설정 연산(cs·sc·scn·g·rg·k) id. 기본값이면 null. */
+  fillColorOps: number[];
+  /** 효력 있는 gs 연산 id(바깥 → 안). */
+  extGStateOps: number[];
+  /** 활성 클립 중 직사각형으로 계산한 것의 교집합(페이지 공간). 직사각형이 아닌 클립이 있으면 null. 클립 없으면 쪽 경계. */
+  clipRect: [number, number, number, number] | null;
+}
+
+/** 열린 marked content(바깥 → 안). */
+export interface OpenMarkedContent {
+  /** BMC·BDC 연산 id. */
+  opId: number;
+  tag: string;
+  mcid: number | null;
+  /** 속성에 /ActualText 가 있음. */
+  actualText: boolean;
+  /** 그 BMC·BDC 가 BT 안에서 열렸음. */
+  insideText: boolean;
 }
 
 export interface SourceOp {
@@ -138,6 +162,10 @@ export interface SourceOp {
   paintSeq?: number[];
   /** 이 연산을 편집할 때의 제한 사유. 없으면 빈 배열. */
   limits: EditLimitReason[];
+  /** M3: 실행 시점 그래픽 상태 요약(pdf-ops 인터프리터가 채운다). */
+  state?: SourceOpState;
+  /** M3: 열린 marked content(mcids 의 상세, pdf-ops 인터프리터가 채운다). */
+  markedContent?: OpenMarkedContent[];
 }
 
 export interface SourceMapError {

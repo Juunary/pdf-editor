@@ -27,6 +27,16 @@ export interface SaveRequest {
   changes: ChangeKind[];
 }
 
+/** 저장할 편집 요약(M3, docs/m3-contract.md 5.8). */
+export interface SaveEditSummary {
+  /** 편집한 쪽(0부터). */
+  pages: number[];
+  /** 태그 쪽에서 구조 연결이 끊긴 편집 문단 수. */
+  structureUnlinked: number;
+  /** /Metadata 에 PDF/A 선언이 있음. */
+  pdfaDeclared: boolean;
+}
+
 /** 저장 전 판정(뷰어가 경고·중단을 결정한다). */
 export interface SavePlan {
   method: SaveMethod;
@@ -35,6 +45,8 @@ export interface SavePlan {
   reason: string;
   canBeSavedIncrementally: boolean;
   heap: SaveHeapEstimate;
+  /** 편집이 없으면 null. */
+  edits: SaveEditSummary | null;
 }
 
 export interface SaveResult {
