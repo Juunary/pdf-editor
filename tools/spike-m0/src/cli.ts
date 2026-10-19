@@ -9,6 +9,7 @@
 //   pnpm --filter @pdf-editor/spike-m0 spike:corpus   # 실제 코퍼스 재실행 → out/m0-corpus/corpus-result.json
 //     (-- --no-subset --out out/m0-corpus-nosubset: 저장 전 subsetFonts() 생략 대조 실행)
 //   pnpm --filter @pdf-editor/spike-m0 spike:pdfjs    # pdf.js(pdfjs-dist) 확인 → out/m0-corpus/pdfjs-result.json
+//   pnpm --filter @pdf-editor/spike-m0 spike:objstms  # 전체 저장 objstms 검증(A3-7) → out/m0-dod/objstms/objstms-result.json
 //
 // 피크 메모리를 섞지 않기 위해 측정 대상(스파이크 변형·벤치마크)은 각각 별도 Node 프로세스로
 // 실행한다. WASM 선형 메모리는 줄지 않으므로 프로세스 종료 시점 값이 그 작업의 최대치다.
@@ -31,6 +32,7 @@ import {
 } from './dod-cli.js';
 import { runCorpusChild, runCorpusCli } from './corpus-cli.js';
 import { buildSamplePdf, buildSyntheticPdf } from './fixture.js';
+import { runObjstmsChild, runObjstmsCli } from './objstms-check.js';
 import { runPdfjsCli } from './pdfjs-check.js';
 import { runIncrementalControls, runSpike, SEARCH_TERMS, REPLACEMENT_TEXT } from './spike.js';
 
@@ -317,6 +319,11 @@ else if (child?.startsWith('corpus-'))
     FONTS.ttf,
     !process.argv.includes('--no-subset'),
   );
+else if (child?.startsWith('objstms-'))
+  runObjstmsChild(child, arg('--spec')!).catch((e: unknown) => {
+    console.error(e);
+    process.exit(1);
+  });
 else if (child) runChild(child, arg('--out')!);
 else if (process.argv.includes('--write-fixtures')) writeFixtures();
 else if (process.argv.includes('--xobject')) runXObjectCli(dodPaths());
@@ -335,6 +342,17 @@ else if (process.argv.includes('--corpus')) {
       process.exit(1);
     },
   );
+} else if (process.argv.includes('--objstms')) {
+  runObjstmsCli({
+    root: ROOT,
+    out: join(ROOT, arg('--out') ?? 'out/m0-dod/objstms'),
+    ttf: FONTS.ttf,
+    tmp: arg('--tmp') ?? os.tmpdir(),
+    only: arg('--only')?.split(',') ?? null,
+  }).catch((e: unknown) => {
+    console.error(e);
+    process.exit(1);
+  });
 } else if (process.argv.includes('--save-bench')) {
   runSaveBenchCli(dodPaths(), (arg('--large-pages') ?? '500,700,900').split(',').map(Number));
 } else runParent();

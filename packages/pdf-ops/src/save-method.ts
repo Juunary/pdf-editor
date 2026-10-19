@@ -27,12 +27,14 @@ export interface SaveDecision {
 }
 
 /**
- * 전체 저장 옵션: 미사용 객체 제거(번호 유지) + 스트림 압축(A3-6, 2026-10-19 결정).
+ * 전체 저장 옵션: 미사용 객체 제거(번호 유지) + 스트림 압축(A3-6) + 객체 스트림·xref 스트림(A3-7, 2026-10-19 결정).
  * `garbage=compact`(번호 압축)·`deduplicate` 는 쓰지 않는다. MuPDF 1.28.x 는 이미지 XObject 를 `resolve()` 한
  * 문서를 compact 저장하면 그 이미지 스트림을 잃는다(ArtifexSoftware/mupdf.js#201). `garbage=yes` 는 이 경로를
- * 타지 않고, 피크 WASM 힙은 compact 와 같으며 출력만 수십 바이트 크다(docs/m0-dod-xobject-redact-save.md 3.3).
+ * 타지 않고, 피크 WASM 힙은 compact 와 같으며 출력만 수십 바이트 크다. `objstms` 가 없으면 객체 스트림 구조 원본이
+ * 풀린 채 저장되어 출력이 입력의 최대 6.12배가 된다. `objstms` 를 더한 출력은 객체 단위·3개 엔진 렌더가 같고
+ * PDF-1.4 원본의 헤더를 1.5 로 올린다(docs/m0-dod-xobject-redact-save.md 3.3).
  */
-export const FULL_SAVE_OPTIONS = 'garbage=yes,compress';
+export const FULL_SAVE_OPTIONS = 'garbage=yes,compress,objstms';
 export const INCREMENTAL_SAVE_OPTIONS = 'incremental';
 
 /**
