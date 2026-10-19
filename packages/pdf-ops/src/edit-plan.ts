@@ -24,19 +24,19 @@ import { parseContentOpsLenient } from './content-stream.js';
 import {
   concat,
   determinant,
-  fmt9,
+  fmtExact,
   formKey,
   intersect,
   invert,
+  latin1String,
   lookupResource,
   overlaps,
-  preTranslate,
   resourceChain,
   StreamCache,
   transformRect,
   union,
 } from './edit-common.js';
-import { effectiveGs, extGStateOf, readColorOp, sameSMask } from './edit-style.js';
+import { extGStateOf, readColorOp, samePdfValue } from './edit-style.js';
 import type { FontCache } from './pdf-fonts.js';
 import type { EditBlockRef, ParagraphEditContext } from './paragraph-edit.js';
 import { listRedactAnnots } from './redact-existing.js';
@@ -47,7 +47,6 @@ import {
   type ShowAnalysis,
   type SkipInfo,
 } from './show-ops.js';
-import { formatNumber } from './text-ops.js';
 
 /** 블록 스트림 사전의 /PdfEditorFormat(계약 D3·5.3). */
 export interface BlockFormat {
@@ -127,6 +126,15 @@ export interface AnalyzeEnv {
   links: Rect[];
   redacts: Rect[];
   formats: Map<number, BlockFormat | null>;
+  /** (Form 경로, 폰트 리소스 이름) → 폰트 리소스 값. */
+  fontRefs: Map<string, mupdf.PDFObject | null>;
+  /** gs 연산 id → 그 사전의 /SMask(키가 없으면 undefined). */
+  gsSMask: Map<number, mupdf.PDFObject | undefined>;
+  /** 색 연산 id → 패턴 채움 여부. */
+  patternOps: Map<number, boolean>;
+  /** glyphSeq → PageModel 글자, 글자 → 문단 id(ActualText 판정, 처음 쓸 때 만든다). */
+  charOfSeq: Map<number, number> | null;
+  paraOfChar: Map<number, number> | null;
 }
 
 const BLOCKING: Partial<Record<EditLimitReason, string>> = {
@@ -178,6 +186,11 @@ export function makeEnv(ctx: ParagraphEditContext, fonts: FontCache): AnalyzeEnv
     links,
     redacts,
     formats: new Map(),
+    fontRefs: new Map(),
+    gsSMask: new Map(),
+    patternOps: new Map(),
+    charOfSeq: null,
+    paraOfChar: null,
   };
 }
 
@@ -216,9 +229,14 @@ const visibleGlyph = (op: SourceOp, g: number) =>
   op.text.renderMode !== 7;
 
 function opFont(env: AnalyzeEnv, op: SourceOp): mupdf.PDFObject | null {
+  if (!op.text) return null;
+  const key = `${keyOf(op.formPath)}|${op.text.fontResource}`;
+  if (env.fontRefs.has(key)) return env.fontRefs.get(key)!;
   const chain = resourceChain(env.ctx.doc, env.ctx.pageIndex, op.formPath);
-  const f = op.text ? lookupResource(chain, 'Font', op.text.fontResource) : null;
-  return f && f.resolve().isDictionary() ? f : null;
+  const f = lookupResource(chain, 'Font', op.text.fontResource);
+  const v = f && f.resolve().isDictionary() ? f : null;
+  env.fontRefs.set(key, v);
+  return v;
 }
 
 /** 연산을 명세 폭으로 분석한다(폰트 찾기 포함). */
@@ -353,9 +371,13 @@ function analyzeChars(
     for (const mc of op.markedContent ?? []) if (mc.actualText && mc.opId >= 0) atOps.add(mc.opId);
   }
   if (atOps.size > 0) {
-    const charOfSeq = new Map(ctx.model.chars.map((c, i) => [c.glyphSeq, i]));
-    const paraOf = new Map<number, number>();
-    for (const q of ctx.layout.paragraphs) for (const c of q.chars) paraOf.set(c, q.id);
+    const charOfSeq = (env.charOfSeq ??= new Map(ctx.model.chars.map((c, i) => [c.glyphSeq, i])));
+    let paraOf = env.paraOfChar;
+    if (!paraOf) {
+      paraOf = new Map<number, number>();
+      for (const q of ctx.layout.paragraphs) for (const c of q.chars) paraOf.set(c, q.id);
+      env.paraOfChar = paraOf;
+    }
     const touchedIds = new Set(touched.map((o) => o.id));
     for (const bdc of atOps) {
       let partial = false;
@@ -574,8 +596,13 @@ function readingOrderWarning(a: EditAnalysis): EditWarning {
 }
 
 /**
- * BT 시작부터 나누는 지점까지 텍스트 줄 행렬과 변위를 따라가 `BT <Tlm> Tm [n] TJ` 를 만든다(계약 D3 규칙 2).
- * 나누는 지점: target.glyph 가 null 이면 target.op 바로 앞, 아니면 그 연산의 target.glyph 글리프 앞.
+ * BT 시작부터 나누는 지점까지 텍스트 줄 행렬과 변위를 따라가 편집 블록 호출 뒤 이어 쓸 `BT … [n] TJ` 를 만든다
+ * (계약 D3 규칙 2). 나누는 지점: target.glyph 가 null 이면 target.op 바로 앞, 아니면 그 연산의 target.glyph 글리프 앞.
+ *
+ * 줄 행렬(Tlm)은 계산값 하나(`<Tlm> Tm`)로 쓰지 않고, 마지막 Tm(없으면 BT)부터의 줄 설정 연산을 원 피연산자 그대로
+ * 같은 순서로 다시 실행한다: Tm·Td 는 원 바이트, TD 는 `tx ty Td`(TL 부수 효과 없음), T*·'·" 의 줄 이동은
+ * `0 -TL Td`(TL 을 알면) 또는 `T*`. 같은 연산을 같은 순서로 실행해야 엔진별 부동소수 누적까지 원래와 같아진다
+ * (실측: pdf.js 는 `<Tlm> Tm` 이면 뒤 줄 글리프의 안티에일리어싱이 달라짐, Poppler 는 합친 Td 하나면 달라짐).
  * 계산할 수 없으면 사유.
  */
 function simulateLine(
@@ -584,55 +611,69 @@ function simulateLine(
   target: { op: SourceOp; glyph: number | null },
   removal: Map<number, OpRemoval>,
 ): { resume: string } | { error: string } {
-  let tlm: Matrix = [1, 0, 0, 1, 0, 0];
-  let tlmText: string | null = '1 0 0 1 0 0';
+  let replay: string[] = [];
   let d = 0;
+  let shows: SourceOp[] = [];
   let tl: number | null = null;
   let tfs: number | null = null;
   let th = 1;
+  const opText = (o: SourceOp) => latin1String(env.streams.opBytes(o)).replace(/\s+/g, ' ').trim();
   const nums = (o: SourceOp) => {
     const p = parseContentOpsLenient(env.streams.opBytes(o)).ops[0];
     return p ? p.operands.filter((t) => t.kind === 'number').map((t) => t.value as number) : [];
   };
-  const sameM = (a: Matrix, b: Matrix) => a.every((v, i) => Math.abs(v - b[i]!) < 1e-6);
-  for (const o of btOps) {
-    if (o.id > target.op.id) break;
+  const upto = btOps.filter((o) => o.id <= target.op.id);
+  /** o 다음, 나누는 지점 전까지 TL 을 바꾸는 연산이 있는가. */
+  const tlChangesAfter = (o: SourceOp) =>
+    upto.some((x) => x.id > o.id && x.id < target.op.id && (x.op === 'TL' || x.op === 'TD'));
+  /** o 다음 텍스트 표시 연산의 TL(그사이 TL 변경이 없을 때). */
+  const leadingAhead = (o: SourceOp): number | null => {
+    for (const x of btOps) {
+      if (x.id <= o.id) continue;
+      if (x.op === 'TL' || x.op === 'TD') return null;
+      if (x.text) return x.text.leading;
+    }
+    return null;
+  };
+  const nextLine = (o: SourceOp): string | null => {
+    const known = tl ?? leadingAhead(o);
+    if (known !== null) return `0 ${fmtExact(-known)} Td`;
+    return tlChangesAfter(o) ? null : 'T*';
+  };
+  for (const o of upto) {
     const isTarget = o.id === target.op.id;
     if (isTarget && target.glyph === null) {
       if (o.text) {
         tfs = o.text.fontSize;
         th = o.text.horizontalScale;
-        if (!sameM(tlm, o.text.tlm ?? tlm)) tlmText = null;
-        tlm = o.text.tlm ?? tlm;
       }
       break;
     }
     switch (o.op) {
       case 'Td':
+        replay.push(opText(o));
+        shows = [];
+        break;
       case 'TD': {
-        const [tx = 0, ty = 0] = nums(o);
-        tlm = preTranslate(tlm, tx, ty);
-        if (o.op === 'TD') tl = -ty;
-        tlmText = null;
-        d = 0;
+        const [tx, ty] = nums(o);
+        if (tx === undefined || ty === undefined) return { error: 'TD 피연산자 부족' };
+        replay.push(`${opText(o).replace(/\s*TD$/, '')} Td`);
+        tl = -ty;
+        shows = [];
         break;
       }
-      case 'Tm': {
-        const v = nums(o);
-        if (v.length < 6) return { error: 'Tm 피연산자 부족' };
-        tlm = v.slice(0, 6) as Matrix;
-        const bytes = env.streams.opBytes(o);
-        const text = String.fromCharCode(...bytes).replace(/\s*Tm\s*$/, '');
-        tlmText = text.replace(/\s+/g, ' ').trim();
-        d = 0;
+      case 'Tm':
+        if (nums(o).length < 6) return { error: 'Tm 피연산자 부족' };
+        replay = [opText(o)];
+        shows = [];
+        break;
+      case 'T*': {
+        const line = nextLine(o);
+        if (line === null) return { error: 'T* 의 TL 을 알 수 없음' };
+        replay.push(line);
+        shows = [];
         break;
       }
-      case 'T*':
-        if (tl === null) return { error: 'T* 의 TL 을 알 수 없음' };
-        tlm = preTranslate(tlm, 0, -tl);
-        tlmText = null;
-        d = 0;
-        break;
       case 'TL':
         tl = nums(o)[0] ?? 0;
         break;
@@ -644,33 +685,33 @@ function simulateLine(
         break;
       default:
         if (o.kind !== 'text-show' || !o.text) break;
-        tl = o.text.leading;
         tfs = o.text.fontSize;
         th = o.text.horizontalScale;
-        if (o.text.tlm && !sameM(tlm, o.text.tlm)) {
-          tlm = o.text.tlm;
-          tlmText = null;
-        }
         if (o.op === "'" || o.op === '"') {
-          tlm = preTranslate(tlm, 0, -tl);
-          tlmText = null;
-          d = 0;
+          tl = o.text.leading;
+          const line = nextLine(o);
+          if (line === null) return { error: "' 의 TL 을 알 수 없음" };
+          replay.push(line);
+          shows = [];
         }
-        {
-          const r = removal.get(o.id);
-          const an = r?.analysis ?? analyzeOp(env, o);
-          if (isSkip(an)) return { error: `변위 계산 불가: ${an.detail}` };
-          d += isTarget ? displacementBefore(an, target.glyph!) : an.total;
-        }
+        tl = o.text.leading;
+        // 변위는 마지막 줄 설정 연산 뒤의 표시 연산만 필요하다(아래에서 한 번에 계산).
+        shows.push(o);
     }
     if (isTarget) break;
+  }
+  for (const o of shows) {
+    const r = removal.get(o.id);
+    const an = r?.analysis ?? analyzeOp(env, o);
+    if (isSkip(an)) return { error: `변위 계산 불가: ${an.detail}` };
+    d += o.id === target.op.id ? displacementBefore(an, target.glyph!) : an.total;
   }
   let tj = '';
   if (Math.abs(d) > 1e-9) {
     if (!tfs || !th) return { error: 'Tfs·Th 가 0 이라 위치를 되돌릴 수 없음' };
-    tj = ` [${formatNumber((-1000 * d) / (tfs * th))}] TJ`;
+    tj = ` [${fmtExact((-1000 * d) / (tfs * th))}] TJ`;
   }
-  return { resume: `BT ${tlmText ?? tlm.map(fmt9).join(' ')} Tm${tj}` };
+  return { resume: ['BT', ...replay].join(' ') + tj };
 }
 
 /** 삽입점 그래픽 상태 판정(D3): 특이 CTM, 클립, 패턴 채움, SMask. 영역 상한도 정한다. */
@@ -692,11 +733,31 @@ function checkInsertionState(
       a.chars,
     );
   } else a.areaLimit = intersect(ctx.model.bounds, clip as Rect);
-  const insGs = effectiveGs(
-    (ins.stateOp.state?.extGStateOps ?? [])
-      .map((id) => extGStateOf(ctx, id, env.streams))
-      .filter((d): d is mupdf.PDFObject => d !== null),
-  );
+  // 판정에는 효력 있는 SMask 만 필요하다(gs 연산별로 한 번 읽는다. 쪽 끝까지 누적되는 gs 목록을 매번 합치지 않는다).
+  const smaskOf = (ids: readonly number[]): mupdf.PDFObject | undefined => {
+    let v: mupdf.PDFObject | undefined;
+    for (const id of ids) {
+      if (!env.gsSMask.has(id)) {
+        const d = extGStateOf(ctx, id, env.streams);
+        const m = d?.get('SMask');
+        env.gsSMask.set(id, m && !m.isNull() ? m : undefined);
+      }
+      const m = env.gsSMask.get(id);
+      if (m !== undefined) v = m;
+    }
+    return v && !(v.isName() && v.asName() === 'None') ? v : undefined;
+  };
+  const isPattern = (id: number) => {
+    let v = env.patternOps.get(id);
+    if (v === undefined) {
+      const cop = ctx.map.ops[id];
+      const spec = cop ? readColorOp(ctx.doc, ctx.pageIndex, cop, env.streams.opBytes(cop)) : null;
+      v = spec?.pattern !== null && spec?.pattern !== undefined;
+      env.patternOps.set(id, v);
+    }
+    return v;
+  };
+  const insMask = smaskOf(ins.stateOp.state?.extGStateOps ?? []);
   for (const run of a.paragraph.styleRuns) {
     const sc = a.paragraph.chars[run.start];
     if (sc === undefined) continue;
@@ -704,9 +765,7 @@ function checkInsertionState(
     const op = opId >= 0 ? ctx.map.ops[opId] : undefined;
     if (!op) continue;
     for (const id of op.state?.fillColorOps ?? []) {
-      const cop = ctx.map.ops[id];
-      const spec = cop ? readColorOp(ctx.doc, ctx.pageIndex, cop, env.streams.opBytes(cop)) : null;
-      if (spec?.pattern !== null && spec?.pattern !== undefined) {
+      if (isPattern(id)) {
         limits.add(
           'graphics-state-mismatch',
           '패턴 채움 글자(블록으로 옮기면 패턴 위치가 어긋남)',
@@ -714,12 +773,7 @@ function checkInsertionState(
         );
       }
     }
-    const srcGs = effectiveGs(
-      (op.state?.extGStateOps ?? [])
-        .map((id) => extGStateOf(ctx, id, env.streams))
-        .filter((d): d is mupdf.PDFObject => d !== null),
-    );
-    if (!sameSMask(srcGs, insGs)) {
+    if (!samePdfValue(smaskOf(op.state?.extGStateOps ?? []), insMask)) {
       limits.add('graphics-state-mismatch', '원 글자와 삽입점의 소프트 마스크(SMask)가 다름', [sc]);
     }
   }

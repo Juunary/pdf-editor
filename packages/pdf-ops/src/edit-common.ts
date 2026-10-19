@@ -89,6 +89,19 @@ export function fmt9(v: number): string {
   return s === '-0' ? '0' : s;
 }
 
+/** 왕복 정확 표기(가장 짧은 십진 표기, 지수 표기 없이). */
+export function fmtExact(v: number): string {
+  if (!Number.isFinite(v) || v === 0) return '0';
+  let s = String(v);
+  if (/e/i.test(s)) {
+    s =
+      Math.abs(v) < 1
+        ? v.toFixed(20).replace(/0+$/, '').replace(/\.$/, '')
+        : BigInt(Math.round(v)).toString();
+  }
+  return s === '-0' ? '0' : s;
+}
+
 export const latin1Bytes = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
 export const latin1String = (b: Uint8Array) => {
   let s = '';

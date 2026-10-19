@@ -450,10 +450,13 @@ export class OriginalFont {
         return row * cols + col;
       };
       const device = new mupdf.Device({
-        fillText: (text, _ctm, cs) => {
+        fillText: (text, ctm, cs) => {
           text.walk({
             showGlyph: (_f, trm, gid) => {
-              const k = cellOf(trm[4], trm[5] - 10);
+              // trm 원점은 CTM 적용 전(사용자 공간)이다. 장치 공간(y 아래)으로 옮겨 칸을 찾는다.
+              const x = trm[4] * ctm[0] + trm[5] * ctm[2] + ctm[4];
+              const y = trm[4] * ctm[1] + trm[5] * ctm[3] + ctm[5];
+              const k = cellOf(x, y - 10);
               if (k >= 0 && k < gids.length && gids[k] === -1) gids[k] = gid;
             },
           });
