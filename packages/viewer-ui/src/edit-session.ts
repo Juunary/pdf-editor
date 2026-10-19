@@ -103,6 +103,9 @@ interface Frame {
   t0: number;
 }
 
+/** 반응 시간 표본 보관 상한(긴 편집에서 무한히 늘지 않게). */
+const MAX_LATENCY_SAMPLES = 2000;
+
 const RECOVERED_NOTICE =
   '작업 모듈이 중단되어 문서를 복구했습니다. 편집 중이던 문단을 다시 열었고, 복구 전 되돌리기 이력은 사라졌습니다.';
 
@@ -333,6 +336,7 @@ export class EditSession {
     const end = this.deps.now();
     const ms = end - region.t0;
     this.latencies.push(ms);
+    if (this.latencies.length > MAX_LATENCY_SAMPLES) this.latencies.shift();
     try {
       performance.measure('pe-edit-latency', { start: region.t0, end });
     } catch {
