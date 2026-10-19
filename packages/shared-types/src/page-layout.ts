@@ -38,7 +38,7 @@ export interface LayoutParagraph {
    */
   text: string;
   role: ParagraphRole;
-  /** PageLayout.columns 인덱스. 표·도형 안 문단은 -1. */
+  /** PageLayout.columns 인덱스. 머리·꼬리·표 안·도형 라벨 문단은 -1. */
   column: number;
   /** 표 안 문단이면 LayoutTable.id. */
   table: number | null;

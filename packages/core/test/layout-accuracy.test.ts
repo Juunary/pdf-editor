@@ -27,6 +27,18 @@ import {
  * layout-recon 은 vitest.config.ts 별칭으로 소스를 쓴다. 결과에 커밋 SHA·작업 트리 변경 여부를 남긴다.
  * test 요약은 전체(test)와 문서 단위 보류(test-docs-unseen: dev 쪽이 없는 문서의 test 쪽)로 나눠 낸다.
  */
+/**
+ * 최종 측정 전까지 복원 알고리즘을 한 번도 실행하지 않은 문서(A7-10 보강, docs/m2-contract.md 4.4).
+ * 개발 중 예측을 본 적이 없는 깨끗한 보류 세트로 따로 요약한다.
+ */
+const UNPROCESSED_DOCS = new Set([
+  'kogl-nabo-rnd107',
+  'kogl-nabo-finstmt2025',
+  'kogl-mods-cpi-202609',
+  'jnl-phwr-2025-18-36-1',
+  'jnl-jdis-2026-2-2-7',
+]);
+
 const corpus = process.env.LAYOUT_CORPUS_DIR;
 const out = process.env.LAYOUT_ACC_OUT;
 const split = process.env.LAYOUT_ACC_SPLIT ?? 'dev';
@@ -121,6 +133,7 @@ describe.skipIf(!corpus)('M2 정확도 하네스', () => {
       dev: (r) => r.split === 'dev',
       test: (r) => r.split === 'test',
       'test-docs-unseen': (r) => r.split === 'test' && !devDocs.has(r.doc),
+      'test-unprocessed': (r) => r.split === 'test' && UNPROCESSED_DOCS.has(r.doc),
       all: () => true,
     };
     const summaries = Object.fromEntries(
