@@ -944,6 +944,32 @@ export function offsetMap(
   return out;
 }
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/**
+ * 시작 상태 텍스트를 NFC 로 맞춘다(편집기·역매핑 키가 NFC 다. ToUnicode 가 분해형(NFD)인 원문도 같은 텍스트 커밋에서
+ * 글자를 잃지 않게). 클러스터 단위로 정규화하고, 정규화한 클러스터의 모든 위치는 원래 클러스터의 첫 원본 글자
+ * (없으면 -1)를 가리킨다.
+ */
+export function normalizeStartState(state: StartState): StartState {
+  const src = state.charIndexOfOffset;
+  const map: number[] = [];
+  let offset = 0;
+  const runs = state.runs.map((run) => {
+    let text = '';
+    for (const g of graphemes.segment(run.text)) {
+      const n = g.segment.normalize('NFC');
+      let ci = -1;
+      for (let j = 0; j < g.segment.length && ci < 0; j++) ci = src[offset + g.index + j] ?? -1;
+      for (let j = 0; j < n.length; j++) map.push(ci);
+      text += n;
+    }
+    offset += run.text.length;
+    return { ...run, text };
+  });
+  return { ...state, runs, charIndexOfOffset: map };
+}
+
 export function originalStartState(
   ctx: ParagraphEditContext,
   paragraph: LayoutParagraph,
@@ -1012,7 +1038,8 @@ export function blockStartState(ctx: ParagraphEditContext, a: EditAnalysis): Sta
   const fmt = a.blockFormat;
   const chars = a.chars;
   const extracted = chars.map((c) => ctx.model.chars[c]!.text).join('');
-  const strip = (s: string) => s.replace(/\s+/gu, '');
+  // 쓴 텍스트는 NFC, 추출 텍스트는 ToUnicode 그대로(NFD 일 수 있음)라 NFC 로 비교한다.
+  const strip = (s: string) => s.replace(/\s+/gu, '').normalize('NFC');
   const first = chars[0] ?? 0;
   const ch0 = ctx.model.chars[first];
   const plainStyle = {

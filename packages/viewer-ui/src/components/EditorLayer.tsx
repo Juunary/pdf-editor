@@ -327,6 +327,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
       data-draft-id={session.draftId}
       data-updating={session.updating ? '1' : '0'}
       data-committing={session.committing ? '1' : '0'}
+      aria-busy={session.committing ? 'true' : 'false'}
       data-composing={editor.composition ? '1' : '0'}
     >
       <div
@@ -446,6 +447,11 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
         {isTaggedPlan(plan) && (
           <div id="pe-edit-tagged-note" class="pe-edit-tagged">
             {TAGGED_NOTICE}
+          </div>
+        )}
+        {session.committing && (
+          <div id="pe-edit-busy" class="pe-edit-notice-line" role="status">
+            편집을 반영하는 중입니다. 끝날 때까지 입력은 받지 않습니다.
           </div>
         )}
         {session.error && (

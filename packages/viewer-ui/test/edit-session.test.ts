@@ -295,6 +295,71 @@ describe('종료', () => {
     ).toBe('ab cd efgh한');
   });
 
+  it('마지막 갱신이 실패했으면 커밋 전에 현재 상태를 다시 보내고, 성공한 뒤 커밋한다(리뷰 M2)', async () => {
+    const { session, host } = await start({ caret: 10 });
+    session.typeText('a');
+    await session.settle();
+    host.failNext('updateParagraphDraft', new Error('boom'));
+    session.typeText('b');
+    await session.settle();
+    expect(session.view().error).toBe('boom');
+    const out = await session.commit();
+    expect(out.kind).toBe('committed');
+    if (out.kind === 'committed') {
+      expect(out.result.op.runs.map((r) => r.text).join('')).toBe('ab cd efghab');
+    }
+  });
+
+  it('다시 보내기도 실패하면 커밋하지 않고 편집기를 열어 둔 채 오류를 표시한다(리뷰 M2)', async () => {
+    const { session, host } = await start({ caret: 10 });
+    session.typeText('a');
+    await session.settle();
+    host.failNext('updateParagraphDraft', new Error('boom'));
+    session.typeText('b');
+    await session.settle();
+    host.failNext('updateParagraphDraft', new Error('again'));
+    const out = await session.commit();
+    expect(out).toEqual({ kind: 'kept', error: 'again' });
+    expect(host.count('commitParagraphEdit')).toBe(0);
+    expect(session.view().error).toBe('again');
+    expect(session.view().committing).toBe(false);
+    expect(session.view().editor.text).toBe('ab cd efghab');
+    // 편집기는 열려 있어 입력·커밋을 계속할 수 있다.
+    session.typeText('c');
+    const second = await session.commit();
+    expect(second.kind).toBe('committed');
+    if (second.kind === 'committed') {
+      expect(second.result.op.runs.map((r) => r.text).join('')).toBe('ab cd efghabc');
+    }
+  });
+
+  it('커밋 RPC 처리 중 입력은 받지 않고 committing 으로 표시한다(리뷰 M2)', async () => {
+    const { session, host, views } = await start({ caret: 10 });
+    session.typeText('a');
+    await session.settle();
+    const release = host.hold('commitParagraphEdit');
+    const done = session.commit();
+    await vi.waitFor(() => expect(host.count('commitParagraphEdit')).toBe(1));
+    expect(session.view().committing).toBe(true);
+    session.typeText('z');
+    session.paste('PP');
+    session.backspace();
+    session.compositionStart();
+    session.compositionUpdate('한');
+    session.compositionEnd('한');
+    session.setFormat({ align: 'center' });
+    expect(session.view().editor.text).toBe('ab cd efgha');
+    expect(session.view().format.align).not.toBe('center');
+    release();
+    const out = await done;
+    expect(out.kind).toBe('committed');
+    if (out.kind === 'committed') {
+      expect(out.result.op.runs.map((r) => r.text).join('')).toBe('ab cd efgha');
+    }
+    expect(views.some((v) => v.committing)).toBe(true);
+    expect(host.count('updateParagraphDraft')).toBe(1);
+  });
+
   it('취소는 대기 입력을 버리고 취소 RPC 를 보낸다', async () => {
     const { session, host } = await start({ caret: 10 });
     session.typeText('x');

@@ -134,6 +134,56 @@ describe('원본 폰트 역매핑(i)·형식(iv)', () => {
   });
 });
 
+describe('리뷰 반영(docs/m3-integration.md 8절)', () => {
+  it('M3: 후보 우선순위는 배정하는 쪽 상태로 정한다(먼저 다른 쪽을 배정한 이력과 무관)', () => {
+    const doc = makeDoc([
+      'BT /F1 12 Tf 50 200 Td (Used \\310 code here.) Tj ET',
+      'BT /F1 12 Tf 50 200 Td (Plain A text here.) Tj ET',
+    ]);
+    const f1 = doc.findPage(0).get('Resources').get('Font').get('F1');
+    f1.delete('ToUnicode');
+    const enc = doc.newDictionary();
+    enc.put('BaseEncoding', doc.newName('WinAnsiEncoding'));
+    const diff = doc.newArray();
+    diff.push(200);
+    diff.push(doc.newName('A'));
+    enc.put('Differences', diff);
+    f1.put('Encoding', enc);
+    const c0 = pageContext(doc, 0);
+    const c1 = pageContext(doc, 1);
+    const codeOf = (fm: FontManager, ctx: ParagraphEditContext, needle: string) => {
+      const seg = fm.assign(ctx, 'A', runsOf(ctx, needle, 'A')).segments[0]!;
+      const src = seg.face!.source;
+      return src.kind === 'pdf-widths' ? [...src.encode('A')![0]!.code] : null;
+    };
+    const withHistory = new FontManager(doc, fallbackFor(doc));
+    expect(codeOf(withHistory, c1, 'Plain')).toEqual([65]);
+    expect(codeOf(withHistory, c0, 'Used')).toEqual([200]);
+    const fresh = new FontManager(doc, fallbackFor(doc));
+    expect(codeOf(fresh, c0, 'Used')).toEqual([200]);
+  });
+
+  it('H1: NFC 입력은 분해형 ToUnicode 키로, 없는 결합 문자는 기본 글자를 남기고 그 문자만 없음', () => {
+    const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Accent sample text.) Tj ET']);
+    const f1 = doc.findPage(0).get('Resources').get('Font').get('F1');
+    const cmap =
+      '/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /X def ' +
+      '1 begincodespacerange <00> <FF> endcodespacerange 1 beginbfrange <20> <7E> <0020> endbfrange ' +
+      '1 beginbfchar <E9> <00650301> endbfchar endcmap CMapName currentdict /CMap defineresource pop end end';
+    f1.put('ToUnicode', doc.addStream(cmap, doc.newDictionary()));
+    const ctx = pageContext(doc, 0);
+    const fm = new FontManager(doc, fallbackFor(doc));
+    const runs = runsOf(ctx, 'Accent', 'café q\u0301');
+    expect(faces(fm, ctx, runs)).toBe('oooooo');
+    const { segments, warnings } = fm.assign(ctx, runs[0]!.text, runs);
+    const src = segments[0]!.face!.source;
+    expect(src.kind === 'pdf-widths' ? [...src.encode('é')![0]!.code] : null).toEqual([0xe9]);
+    expect(src.kind === 'pdf-widths' ? src.encode('q\u0301')!.length : null).toBe(1);
+    expect(warnings.map((w) => w.kind)).toEqual(['glyph-missing']);
+    expect(warnings[0]!.message).toContain('\u0301');
+  });
+});
+
 describe('외곽선(ii)·폭(iii) 판정과 V4(렌더 결과와 같음)', () => {
   it('서브셋이 외곽선만 비운 글리프는 gid 가 있어도 원본으로 쓰지 않는다(세 엔진 잉크로 확인)', async () => {
     const chars = '가나다라마abcxyz';

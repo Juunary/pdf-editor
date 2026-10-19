@@ -371,6 +371,14 @@ export class EditSession {
 
   // ── 텍스트 편집 ──────────────────────────────────────────────────────
 
+  /**
+   * 커밋·취소 RPC 처리 중에는 텍스트·형식 입력을 받지 않는다(view.committing 으로 표시). 받으면 모델에만 들어가고
+   * core 초안에는 가지 않아 커밋 결과에서 빠진다. 캐럿 이동·선택은 텍스트를 바꾸지 않아 막지 않는다.
+   */
+  private busy(): boolean {
+    return this.committing || this.closed;
+  }
+
   private afterTextChange(changed: boolean): void {
     this.goalX = null;
     if (changed) this.touch();
@@ -378,18 +386,22 @@ export class EditSession {
   }
 
   typeText(text: string): void {
+    if (this.busy()) return;
     this.run(() => this.afterTextChange(this.model.insertText(text)), false);
   }
 
   paste(text: string): void {
+    if (this.busy()) return;
     this.run(() => this.afterTextChange(this.model.paste(text)), false);
   }
 
   backspace(byWord = false): void {
+    if (this.busy()) return;
     this.run(() => this.afterTextChange(this.model.deleteBackward(byWord)), false);
   }
 
   deleteKey(byWord = false): void {
+    if (this.busy()) return;
     this.run(() => this.afterTextChange(this.model.deleteForward(byWord)), false);
   }
 
@@ -400,6 +412,7 @@ export class EditSession {
 
   /** 잘라내기: 선택 텍스트를 돌려주고 지운다. */
   cut(): string {
+    if (this.busy()) return '';
     const text = selectedText(this.model.state);
     if (text === '') return '';
     this.run(() => this.afterTextChange(this.model.deleteSelection()), false);
@@ -407,16 +420,19 @@ export class EditSession {
   }
 
   undo(): void {
+    if (this.busy()) return;
     this.run(() => this.afterTextChange(this.model.undo()), false);
   }
 
   redo(): void {
+    if (this.busy()) return;
     this.run(() => this.afterTextChange(this.model.redo()), false);
   }
 
   // ── IME ──────────────────────────────────────────────────────────────
 
   compositionStart(): void {
+    if (this.busy()) return;
     this.run(() => {
       this.model.compositionStart();
       this.goalX = null;
@@ -425,6 +441,7 @@ export class EditSession {
   }
 
   compositionUpdate(text: string): void {
+    if (this.busy()) return;
     this.run(() => {
       this.model.compositionUpdate(text);
       this.goalX = null;
@@ -433,6 +450,7 @@ export class EditSession {
   }
 
   compositionEnd(text?: string): void {
+    if (this.busy()) return;
     this.run(() => {
       this.model.compositionEnd(text);
       this.goalX = null;
@@ -540,6 +558,7 @@ export class EditSession {
   // ── 형식(영역·초과 선택) ─────────────────────────────────────────────
 
   setFormat(patch: Partial<ParagraphFormat>): void {
+    if (this.busy()) return;
     this.format = { ...this.format, ...patch };
     this.touch();
   }
@@ -562,15 +581,23 @@ export class EditSession {
     | { kind: 'committed'; result: CommitResult }
     | { kind: 'cancelled'; history: EditHistoryState }
     | { kind: 'restarted' }
+    | { kind: 'kept'; error: string }
   > {
+    this.finishComposition();
     this.committing = true;
     this.emit();
     try {
-      this.finishComposition();
       await this.idle();
       if (!this.isDirty()) {
         const history = await this.cancelRpc();
         return { kind: 'cancelled', history };
+      }
+      // 마지막 갱신이 실패했거나 마지막 입력이 아직 처리된 프레임이 아니면 core 초안은 화면 텍스트와 다르다. 현재
+      // 상태를 다시 보내고 성공해야만 커밋한다(실패하면 편집기를 열어 둔 채 오류를 표시한다).
+      if (this.error !== null || this.shown.seq !== this.seq) {
+        const sent = await this.resend();
+        if (sent === 'restarted') return { kind: 'restarted' };
+        if (sent !== 'ok') return { kind: 'kept', error: sent.error };
       }
       try {
         const result = await this.deps.rpc.commitParagraphEdit(this.draftId);
@@ -584,6 +611,27 @@ export class EditSession {
     } finally {
       this.committing = false;
       this.emit();
+    }
+  }
+
+  /** 커밋 전 현재 상태 다시 보내기. Worker 복구면 초안을 다시 시작한다. */
+  private async resend(): Promise<'ok' | 'restarted' | { error: string }> {
+    const frame = this.buildFrame();
+    this.pendingT0 = null;
+    try {
+      const update = await this.deps.rpc.updateParagraphDraft(this.draftId, frame.input);
+      if (this.closed) return { error: '편집 세션이 닫혔습니다' };
+      this.apply(frame, update);
+      return 'ok';
+    } catch (e) {
+      if (isWorkerRecovered(e)) {
+        await this.restart();
+        return 'restarted';
+      }
+      const failure = classifyFailure(e);
+      this.error = failure.message;
+      this.deps.log('edit-update-error', { error: failure.message, atCommit: true });
+      return { error: failure.message };
     }
   }
 

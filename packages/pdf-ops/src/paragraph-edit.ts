@@ -33,6 +33,7 @@ import {
   analyzeParagraph,
   blockStartState,
   makeEnv,
+  normalizeStartState,
   originalStartState,
   type AnalyzeEnv,
 } from './edit-plan.js';
@@ -67,7 +68,9 @@ function planOne(
   const { ctx } = env;
   const a = analyzeParagraph(env, paragraphId);
   const editable = a.limits.length === 0;
-  const start = a.block ? blockStartState(ctx, a) : originalStartState(ctx, a.paragraph);
+  const start = normalizeStartState(
+    a.block ? blockStartState(ctx, a) : originalStartState(ctx, a.paragraph),
+  );
   const ins = a.insertion;
   const insertion: InsertionInfo | null = !editable
     ? null
