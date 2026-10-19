@@ -1,8 +1,10 @@
 import * as mupdf from 'mupdf';
 import {
+  FULL_SAVE_OPTIONS,
   STREAM_INPUT_PEAK_HEAP_RATIO,
   buildSourceMap,
   decideSaveMethod,
+  estimateSaveHeap,
   linkPage,
 } from '@pdf-editor/pdf-ops';
 import { reconstructPage } from '@pdf-editor/layout-recon';
@@ -33,10 +35,12 @@ import type {
   SearchResult,
   SourceMap,
 } from '@pdf-editor/shared-types';
+import { defaultEditAdapter, type EditAdapter } from './edit-adapter.js';
+import { EditEngine, EditStateError, type EditHost } from './edit-engine.js';
 import { extractPageModel } from './extract.js';
 import { openPdf } from './open.js';
 import { pageRotation } from './page-geometry.js';
-import { renderPageRgba } from './render.js';
+import { renderPageRegionRgba, renderPageRgba } from './render.js';
 import { searchDocument } from './search.js';
 import { wasmHeapBytes } from './wasm-module.js';
 
@@ -68,11 +72,17 @@ export interface PdfSessionOptions {
    * (docs/m3-contract.md 5.7). 확장은 번들 파일을, Node 테스트는 assets/fonts 파일을 읽는다.
    */
   loadFallbackFont?: () => Promise<Uint8Array>;
+  /** pdf-ops·reflow 편집 함수 경계(docs/m3-core.md 3절). 기본은 실제 구현, 테스트는 가짜를 넣는다. */
+  editAdapter?: EditAdapter;
+  /** 편집 id·초안 id 생성(기본 `crypto.randomUUID()`). 테스트에서 고정한다. */
+  createId?: () => string;
 }
 
-/** 계약 커밋의 연결부: M3 편집 RPC 는 S3(core) 작업이 구현한다. */
-function m3Unimplemented(name: string): never {
-  throw new Error(`M3 미구현: core.${name}`);
+/** 쪽 전체 렌더를 한 번도 하지 않았을 때의 변경 영역 렌더 배율(`beginParagraphEdit` 첫 미리보기). */
+const DEFAULT_RENDER_SCALE = 2;
+
+function noDocument(): never {
+  throw new Error('열린 문서 없음');
 }
 
 /**
@@ -87,6 +97,11 @@ export class PdfSession {
   #pageCache = new Map<string, PageModel>();
   #sourceMapCache = new Map<number, SourceMap>();
   #layoutCache = new Map<number, PageLayout>();
+  #linkageCache = new Map<number, { map: SourceMap; linkage: PageLinkage }>();
+  #edit: EditEngine | null = null;
+  #lastRenderScale = DEFAULT_RENDER_SCALE;
+  /** 이 세션에서 전체 저장을 한 번이라도 했다(A3-9: 이후 저장도 전체 저장). */
+  #fullSaved = false;
 
   constructor(options: PdfSessionOptions = {}) {
     this.#options = options;
@@ -114,6 +129,13 @@ export class PdfSession {
     this.#original = original;
     this.#doc = doc;
     this.#inputMode = inputMode;
+    this.#fullSaved = false;
+    this.#lastRenderScale = DEFAULT_RENDER_SCALE;
+    this.#edit = new EditEngine(this.#editHost(doc), {
+      adapter: this.#options.editAdapter ?? defaultEditAdapter,
+      loadFallbackFont: this.#options.loadFallbackFont,
+      createId: this.#options.createId,
+    });
     const page = doc.loadPage(0);
     const [x0, y0, x1, y1] = page.getBounds();
     page.destroy();
@@ -141,11 +163,27 @@ export class PdfSession {
     }
   }
 
+  /**
+   * 쪽 렌더. `clip`(페이지 공간)이 있으면 그 영역만 렌더하고 `RenderedPage.clip` 에 픽셀 격자에 맞춘 실제 영역을
+   * 돌려준다(M3 편집 미리보기). 편집 초안이 열려 있으면 초안 상태의 문서를 그린다(docs/m3-contract.md D7).
+   */
   renderPage({ pageIndex, scale, clip }: RenderRequest): RenderedPage {
-    if (clip) m3Unimplemented('renderPage(clip)');
     const page = this.document.loadPage(pageIndex);
     try {
       const t0 = performance.now();
+      if (clip) {
+        const region = renderPageRegionRgba(page, scale, clip);
+        const { width, height, rgba } = region;
+        return {
+          pageIndex,
+          width,
+          height,
+          rgba,
+          renderMs: performance.now() - t0,
+          clip: region.clip,
+        };
+      }
+      this.#lastRenderScale = scale;
       const { width, height, rgba } = renderPageRgba(page, scale);
       return { pageIndex, width, height, rgba, renderMs: performance.now() - t0, clip: null };
     } finally {
@@ -181,9 +219,11 @@ export class PdfSession {
       this.#pageCache.clear();
       this.#sourceMapCache.clear();
       this.#layoutCache.clear();
+      this.#linkageCache.clear();
       return;
     }
     this.#layoutCache.delete(pageIndex);
+    this.#linkageCache.delete(pageIndex);
     for (const key of [...this.#pageCache.keys()]) {
       if (key.startsWith(`${pageIndex}:`)) this.#pageCache.delete(key);
     }
@@ -222,22 +262,67 @@ export class PdfSession {
     return map;
   }
 
-  /** 캐시한 추출 모델과 원본 연결 정보를 매칭한다(원본 연결 정보에 `unmatched` 표시). */
+  /**
+   * 캐시한 추출 모델과 원본 연결 정보를 매칭한다(원본 연결 정보에 `unmatched` 표시). 쪽마다 캐시하고 같은
+   * 객체를 돌려준다(`invalidatePageCache` 로 비운다).
+   */
   linkPage(pageIndex: number): PageLinkage {
-    return linkPage(this.extractPage({ pageIndex }), this.getSourceMap(pageIndex));
+    // 원본 연결 정보가 캐시에서 빠져 다시 만들어졌으면 매칭도 다시 한다(`unmatched` 표시는 그 객체에 붙는다).
+    const map = this.getSourceMap(pageIndex);
+    const cached = touch(this.#linkageCache, pageIndex);
+    if (cached && cached.map === map) return cached.linkage;
+    const linkage = linkPage(this.extractPage({ pageIndex }), map);
+    remember(this.#linkageCache, pageIndex, { map, linkage });
+    return linkage;
+  }
+
+  /**
+   * 문서가 바뀐 쪽의 캐시를 비운다. 이웃 쪽 레이아웃(머리·꼬리 반복 판정이 이 쪽 추출 모델을 쓴다, M2)도
+   * ±2쪽까지 비운다(docs/m3-contract.md 5.7).
+   */
+  invalidateAround(pageIndex: number): void {
+    this.invalidatePageCache(pageIndex);
+    for (const k of [-2, -1, 1, 2]) this.#layoutCache.delete(pageIndex + k);
   }
 
   searchText(request: SearchRequest): SearchResult {
     return searchDocument(this.document, request);
   }
 
+  /**
+   * 저장 전 판정. 로그가 더하는 변경 종류(`content-stream`·`font-embed`)를 `changes` 에 합치고 편집 요약
+   * (`SavePlan.edits`)을 채운다. 편집을 커밋·재적용한 문서와 전체 저장을 한 번이라도 한 세션은 전체 저장이다
+   * (docs/m3-contract.md D9·A3-9). 초안이 열려 있으면 예외.
+   */
   planSave({ changes }: SaveRequest): SavePlan {
+    const edit = this.#edit;
+    if (edit?.hasDraft) {
+      throw new EditStateError(
+        '편집 초안이 열려 있어 저장할 수 없습니다. 먼저 커밋하거나 취소하세요.',
+      );
+    }
     const canBeSavedIncrementally = this.document.canBeSavedIncrementally();
-    const decision = decideSaveMethod(changes, canBeSavedIncrementally, {
+    const size = {
       inputBytes: this.originalBytes.byteLength,
       // Stream 입력은 입력 크기만큼의 힙을 쓰지 않으므로 실측 배율이 낮다(docs/m0-dod-xobject-redact-save.md 3.3).
       ...(this.#inputMode === 'stream' ? { ratio: STREAM_INPUT_PEAK_HEAP_RATIO } : {}),
-    });
+    };
+    const merged = [...new Set([...changes, ...(edit?.changeKinds() ?? [])])];
+    let decision = decideSaveMethod(merged, canBeSavedIncrementally, size);
+    if (
+      decision.method === 'incremental' &&
+      (this.#fullSaved || edit?.edited || edit?.hasNewObjects)
+    ) {
+      // 증분 구간에는 되돌린(undo) 객체의 흔적이 남을 수 있고 xref 형식도 섞인다(A3-9). 전체 저장으로 올린다.
+      decision = {
+        method: 'full',
+        options: FULL_SAVE_OPTIONS,
+        reason: this.#fullSaved
+          ? '세션에서 전체 저장을 한 번 했음(A3-9)'
+          : '편집을 시작한 문서(되돌린 객체 흔적·미사용 폴백 폰트, D9)',
+        heap: estimateSaveHeap('full', size),
+      };
+    }
     if (!decision.heap) throw new Error('예상 피크 힙 계산 실패');
     return {
       method: decision.method,
@@ -245,18 +330,25 @@ export class PdfSession {
       reason: decision.reason,
       canBeSavedIncrementally,
       heap: decision.heap,
-      // M3 편집 요약은 S3(core) 작업이 로그에서 채운다(docs/m3-contract.md 5.8).
-      edits: null,
+      edits: edit?.editSummary() ?? null,
     };
   }
 
+  /** 저장. 편집 RPC 를 쓴 문서는 저널 작업으로 감싼다(`EditEngine.runSave`, D9). 초안이 열려 있으면 예외. */
   save(request: SaveRequest): SaveResult {
     const doc = this.document;
     const plan = this.planSave(request);
     const t0 = performance.now();
-    const buffer = doc.saveToBuffer(plan.options);
-    const bytes = buffer.asUint8Array().slice();
-    buffer.destroy();
+    const write = (): Uint8Array<ArrayBuffer> => {
+      const buffer = doc.saveToBuffer(plan.options);
+      try {
+        return buffer.asUint8Array().slice();
+      } finally {
+        buffer.destroy();
+      }
+    };
+    const bytes = this.#edit ? this.#edit.runSave(write) : write();
+    if (plan.method === 'full') this.#fullSaved = true;
     return {
       bytes,
       method: plan.method,
@@ -268,61 +360,87 @@ export class PdfSession {
     };
   }
 
-  // M3 문단 편집(docs/m3-contract.md 4절·5.7). 계약 커밋에서는 연결부만 둔다.
+  // M3 문단 편집(docs/m3-contract.md 4절·5.7). 상태는 EditEngine 이 맡는다(docs/m3-core.md).
 
-  async getPageEditability(_pageIndex: number): Promise<PageEditability> {
-    void this.#options;
-    return m3Unimplemented('getPageEditability');
+  get #engine(): EditEngine {
+    return this.#edit ?? noDocument();
   }
 
-  async planParagraphEdit(_pageIndex: number, _paragraphId: number): Promise<ParagraphEditPlan> {
-    return m3Unimplemented('planParagraphEdit');
+  async getPageEditability(pageIndex: number): Promise<PageEditability> {
+    return this.#engine.getPageEditability(pageIndex);
   }
 
-  async getPageEdits(_pageIndex: number): Promise<PageEditInfo> {
-    return m3Unimplemented('getPageEdits');
+  async planParagraphEdit(pageIndex: number, paragraphId: number): Promise<ParagraphEditPlan> {
+    return this.#engine.planParagraphEdit(pageIndex, paragraphId);
+  }
+
+  async getPageEdits(pageIndex: number): Promise<PageEditInfo> {
+    return this.#engine.getPageEdits(pageIndex);
   }
 
   async beginParagraphEdit(
-    _pageIndex: number,
-    _paragraphId: number,
-    _revision: number,
+    pageIndex: number,
+    paragraphId: number,
+    revision: number,
   ): Promise<BeginEditResult> {
-    return m3Unimplemented('beginParagraphEdit');
+    return this.#engine.beginParagraphEdit(pageIndex, paragraphId, revision);
   }
 
-  async updateParagraphDraft(_draftId: string, _input: DraftInput): Promise<DraftUpdate> {
-    return m3Unimplemented('updateParagraphDraft');
+  async updateParagraphDraft(draftId: string, input: DraftInput): Promise<DraftUpdate> {
+    return this.#engine.updateParagraphDraft(draftId, input);
   }
 
-  async commitParagraphEdit(_draftId: string): Promise<CommitResult> {
-    return m3Unimplemented('commitParagraphEdit');
+  async commitParagraphEdit(draftId: string): Promise<CommitResult> {
+    return this.#engine.commitParagraphEdit(draftId);
   }
 
-  async cancelParagraphEdit(_draftId: string): Promise<EditHistoryState> {
-    return m3Unimplemented('cancelParagraphEdit');
+  async cancelParagraphEdit(draftId: string): Promise<EditHistoryState> {
+    return this.#engine.cancelParagraphEdit(draftId);
   }
 
   async undo(): Promise<EditHistoryState> {
-    return m3Unimplemented('undo');
+    return this.#engine.undo();
   }
 
   async redo(): Promise<EditHistoryState> {
-    return m3Unimplemented('redo');
+    return this.#engine.redo();
   }
 
   async getEditHistory(): Promise<EditHistoryState> {
-    return m3Unimplemented('getEditHistory');
+    return this.#engine.getEditHistory();
   }
 
-  async replayEdits(_ops: EditOp[]): Promise<EditHistoryState> {
-    return m3Unimplemented('replayEdits');
+  async replayEdits(ops: EditOp[]): Promise<EditHistoryState> {
+    return this.#engine.replayEdits(ops);
+  }
+
+  /** 편집 엔진에 빌려주는 쪽 캐시·렌더. */
+  #editHost(doc: mupdf.PDFDocument): EditHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    return {
+      document: doc,
+      pageState: (pageIndex) => ({
+        model: this.extractPage({ pageIndex }),
+        map: this.getSourceMap(pageIndex),
+        linkage: this.linkPage(pageIndex),
+        layout: this.getPageLayout(pageIndex),
+      }),
+      invalidateAround: (pageIndex) => this.invalidateAround(pageIndex),
+      renderRegion: (pageIndex, scale, clip) => this.renderPage({ pageIndex, scale, clip }),
+      get renderScale() {
+        return self.#lastRenderScale;
+      },
+    };
   }
 
   close(): void {
     this.#pageCache.clear();
     this.#sourceMapCache.clear();
     this.#layoutCache.clear();
+    this.#linkageCache.clear();
+    this.#edit?.dispose();
+    this.#edit = null;
     this.#doc?.destroy();
     this.#doc = null;
     this.#original = null;
