@@ -17,15 +17,15 @@
 | D9 저장 | `beginOperation('save')` → `finalizeForSave`(폴백 사용 시) → `saveToBuffer` → `abandonOperation`. **Info 기록은 계약과 달리 커밋 작업 안에서 한다**(2.4). `SavePlan.edits`·`changes` 합산·전체 저장 승격 구현 |
 | 5.7 | 커밋·취소·갱신·undo·redo 때 쪽 캐시 무효화(±2쪽 레이아웃 포함), 초안 상태 기준 렌더·추출·검색, 편집 블록 목록 재구성 |
 | 영역 렌더 | `RenderRequest.clip`·`RenderedPage.clip` 구현(픽셀 격자 정렬) |
-| 폴백 로더 | `loadFallbackFont` 를 첫 편집 계열 호출에서 await, FontManager 에는 동기 로더로 전달 |
-| D6 복구 | `replayEdits` 는 저널을 끈 상태로 적용한 뒤 저널을 켠다. 재적용 결정성 비교 틀(`snapshot`) 작성 |
-| V1 전반 | 확인됨. 단 **계약 D4·D9 와 어긋나는 MuPDF 동작 3건**을 발견하고 core 에서 우회·보정했다(2.2–2.4, 5절) |
+| 폴백 로더·저널 켜기 | `loadFallbackFont` 를 첫 편집 계열 호출에서 await. **저널은 첫 `beginParagraphEdit`(또는 `replayEdits`)에서 켜고, 켜기 직전(작업 밖)에 Info 사전 생성과 폴백 폰트 `embedFont` 를 한 번 한다**(계약 수정 1, 2026-10-19 반영). FontManager 에는 `FallbackFontSource{bytes(), ref()}` 로 넘긴다 |
+| D6 복구 | `replayEdits` 는 Info·폴백 폰트를 먼저 만들고(기준 문서) 저널을 끈 상태로 적용한 뒤 저널을 켠다. 재적용 결정성 비교 틀(`snapshot`) 작성 |
+| V1 전반 | 확인됨. 계약 D4·D9 와 어긋나는 MuPDF 동작 3건을 발견했다(2.2–2.4, 5절). D4·D9 Info 생성은 계약 수정 1 로 해소했고(저널 밖 한 번 생성으로 일치), 2.4(redo)는 core 보정이 남는다 |
 | V8 | 확인됨. 문단 영역 렌더는 코퍼스 48쪽에서 중앙값 2 ms, 쪽별 p95 최대 77 ms(2.6) |
-| 미완 | 실제 pdf-ops·reflow 연결 검증, V1 후반(재적용 결과 비교), S1 FontManager 와의 폴백 수명 확인은 통합 단계(4절) |
+| 미완 | 실제 pdf-ops·reflow 연결 검증, V1 후반(재적용 결과 비교), S1 FontManager 가 `FallbackFontSource.ref()` 만 쓰는지 확인은 통합 단계(4절) |
 
 ## 2. 실측 (2026-10-19, 서버 Node 22.18, mupdf 1.28.1)
 
-재현 코드: `packages/core/test/journal-v1.test.ts`(MuPDF 만 사용, 10건), `packages/core/test/edit-save-replay.test.ts`(core 경유, 17건), `packages/core/scripts/measure-m3.mjs`.
+재현 코드: `packages/core/test/journal-v1.test.ts`(MuPDF 만 사용, 14건), `packages/core/test/edit-save-replay.test.ts`(core 경유, 23건), `packages/core/scripts/measure-m3.mjs`.
 
 ### 2.1 V1 전반 결과
 
@@ -34,26 +34,28 @@
 | 편집 블록 Form 추가 + 쪽 콘텐츠 스트림 교체 + 쪽 Resources 등록 → undo/redo | 통과. undo 로 잉크 픽셀·객체·Resources·Contents 가 작업 전 상태, redo 로 복원. 작업 중 `canUndo()`·`getJournal()` 은 예외(`Can't undo/redo during an operation`), 저널이 켜진 뒤 작업 밖 객체 추가는 예외(`Can't add a journal fragment absent an operation`) | journal-v1 1번 |
 | 같은 블록 스트림을 한 작업 안에서 20번 쓰기 | 저널 단계 1개. undo 는 작업 전 내용으로. 중간 내용은 저널이 보유하지 않음 | journal-v1 2번, 2.5 |
 | 렌더·구조화 텍스트·`loadPage` | 저널 단계를 만들지 않음 | journal-v1 3번 |
-| 폰트 추가 후 abandon 또는 undo | 객체가 xref 에서 사라짐. **같은 바이트로 다시 `addFont` 하면 끊긴 참조가 돌아옴**(2.2). 바이트에 salt 를 덧붙이면 새 객체 | journal-v1 4번 |
-| 폴백을 넣은 초안 취소 뒤 새 편집 | salt 적용 시 통과(저장·재열기 뒤 글자·잉크 일치). core 경유 시험도 통과 | journal-v1 7번, save-replay 2번 |
-| 폴백을 넣은 편집 undo 뒤 새 편집 → 저장 | salt 적용 시 통과 | journal-v1 8번, save-replay 3번 |
-| D9 저장 순서 뒤 undo/redo | 통과. 감싼 저장은 저널 단계를 만들지 않고(`position 1, steps ['edit']` 유지) 저장 직후 첫 undo 가 유효. 출력에는 Info 기록·폴백 서브셋(4,083,596 B → 1/10 미만)이 들어가고 작업 문서는 전체 폰트 유지. 저장 작업 안에서 Info 를 바꾸는 계약 순서는 undo 직후 저장에서 redo 를 잃는다(2.4) | journal-v1 9번·13번, save-replay |
-| 감싸지 않은 `objstms` 저장 | 저널에 `Save document` 단계가 생기고 저장 직후 첫 undo 가 화면을 바꾸지 못함(D9 가 필요한 이유) | journal-v1 10번 |
+| 폰트 추가 후 abandon 또는 undo | 객체가 xref 에서 사라짐. **같은 바이트로 다시 `addFont` 하면 끊긴 참조가 돌아옴**(2.2). 그래서 폴백 폰트는 저널 밖에서 한 번만 만든다 | journal-v1 4·5번 |
+| 폴백을 넣은 초안 취소 뒤 새 편집 | 통과(폴백 폰트를 저널을 켜기 전에 한 번 넣음. 취소·undo 뒤에도 같은 객체가 살아 있고 저장·재열기 뒤 글자·잉크 일치). core 경유 시험도 통과 | journal-v1 11번, save-replay 2번 |
+| 폴백을 넣은 편집 undo 뒤 새 편집 → 저장 | 통과(같은 폴백 객체 유지, 저장 파일에 폴백 폰트 1개) | journal-v1 12번, save-replay 3번 |
+| D9 저장 순서 뒤 undo/redo | 통과. 감싼 저장은 저널 단계를 만들지 않고(`position 1, steps ['edit']` 유지) 저장 직후 첫 undo 가 유효. 출력에는 Info 기록·폴백 서브셋(4,083,596 B → 1/10 미만)이 들어가고 작업 문서는 전체 폰트 유지. 저장 작업 안에서 Info 를 바꾸는 계약 순서는 undo 직후 저장에서 redo 를 잃는다(2.4) | journal-v1 13번, save-replay |
+| 감싸지 않은 `objstms` 저장 | 저널에 `Save document` 단계가 생기고 저장 직후 첫 undo 가 화면을 바꾸지 못함(D9 가 필요한 이유) | journal-v1 14번 |
 
-### 2.2 발견 1: 폰트 리소스 표가 되돌린 폰트의 끊긴 참조를 돌려줌 (계약 D4 불일치)
+### 2.2 발견 1: 폰트 리소스 표가 되돌린 폰트의 끊긴 참조를 돌려줌 (계약 D4 불일치 → 계약 수정 1 로 해소)
 
 - 현상(MuPDF 1.28.1): `doc.addFont(new Font(name, bytes))` 는 폰트 바이트 다이제스트를 키로 문서의 폰트 리소스 표를 조회하고, 있으면 그 객체를 돌려준다. 저널 `abandonOperation`·`undo` 가 폰트 객체를 xref 에서 지워도 표 항목은 남는다. 같은 바이트로 다시 넣으면 같은 객체 번호(관측: 7 0 R)가 돌아오지만 객체는 없다.
-- 증상: `ref.get('Type')` = null, `ref.put(...)` = `not a dict (null)`, 그 참조를 리소스에 넣은 채 저장하면 `TypeError`. 같은 이름·같은 `mupdf.Font` 객체를 쓰든 이름만 바꾸든 동일. 폰트가 이미 문서에 있고 유효하면(커밋된 편집이 넣은 것) 같은 객체를 정상 반환한다.
-- 계약 D4 의 "assign 때마다 객체가 있는지 확인하고 없으면 현재 작업 안에서 다시 넣는다"만으로는 위 두 V1 시나리오가 실패한다.
-- 우회(core, `edit-util.ts` `saltedFontBytes`): FontManager 에 넘기는 동기 로더가 부를 때마다 폴백 바이트 끝에 4바이트 카운터를 덧붙인 사본을 돌려준다(첫 호출은 원본 그대로). 다이제스트가 달라져 새 객체가 생긴다. TrueType 은 마지막 테이블 뒤 여분 바이트를 무시하고 서브셋(`subsetFontBytes`)은 gid 를 유지하므로 렌더·추출이 같다(save-replay 시험에서 재열기 뒤 글자 확인).
-- S1(pdf-ops FontManager)에 대한 요구: ① 폴백 폰트를 다시 넣을 때마다 `loadFallback()` 을 호출하고 그 바이트로 `new Font` 를 만든다. ② 바이트나 `mupdf.Font` 를 캐시해 재사용하지 않는다. 이 둘이 깨지면 core 의 salt 가 무효가 된다. 대안은 FontManager 가 직접 salt 하는 것이다. 메인 세션에 2026-10-19 통보했다.
+- 증상: `ref.get('Type')` = null, `ref.put(...)` = `not a dict (null)`, 그 참조를 리소스에 넣은 채 저장하면 `TypeError`. 같은 이름·같은 `mupdf.Font` 객체를 쓰든 이름만 바꾸든 동일. 폰트가 이미 문서에 있고 유효하면 같은 객체를 정상 반환한다.
+- 원래 계약 D4 의 "assign 때마다 객체가 있는지 확인하고 없으면 현재 작업 안에서 다시 넣는다"만으로는 V1 두 시나리오(폴백 초안 취소 뒤 새 편집, 폴백 편집 undo 뒤 새 편집)가 실패한다.
+- **계약 수정 1(메인 세션, m3 커밋 2cc9982)**: 폴백 폰트를 저널 작업 안에서 넣지 않는다. core 가 첫 `beginParagraphEdit` 에서 저널을 켜기 직전(작업 밖)에 `embedFont` 를 한 번 하고, 그 객체를 `FallbackFontSource.ref()` 로 FontManager 에 넘긴다. 저널 밖 객체라 취소·undo 로 사라지지 않고, 쓰지 않았으면 저장의 `garbage=yes` 가 뺀다. (core 가 먼저 쓰던 바이트 덧붙이기 우회는 취소마다 폰트 전체(약 4 MB)를 새로 넣게 되어 쓰지 않는다. 제거했다.)
+- 구현: `EditEngine.#prepareEdit` → `#prepareDocument`(Info 보장 + `embedFont(doc, 'NotoSansKR', bytes)`, 폰트 사전에 `/PdfEditorFallback true` 표지) → `#startJournal`. 판정 RPC 는 저널·폴백 폰트 없이 돈다(`ref()` = null). `loadFallbackFont` 가 없으면 임베딩하지 않고 `ref()` 는 null 로 남는다.
+- 시험으로 고정: 판정만으로는 폴백 폰트·Info 가 생기지 않고 첫 시작에서 한 번 생긴다, 취소·undo·redo 뒤에도 같은 객체 번호, 저장 파일의 폴백 폰트는 쓴 경우에만 1개(쓰지 않았으면 0개), MuPDF 의 끊긴 참조 동작은 `journal-v1` 이 카나리아로 고정한다. MuPDF 를 올릴 때 이 시험이 깨지면 동작이 바뀐 것이다.
+- 비용: 편집을 시작한 문서는 폴백 폰트 4 MB 가 작업 문서 힙에 들어간다(셰이핑용 `Font` 객체 별도). 판정만 한 문서는 해당 없음.
 
 ### 2.3 발견 2: Info 를 작업 안에서 만들면 취소·undo 때 trailer 가 끊김 (계약 D9 불일치)
 
 - 현상: `trailer.put('Info', ref)` 는 저널에 기록되지 않는다. 작업 안에서 Info 객체를 만들고 `abandonOperation`(또는 커밋 뒤 undo)하면 Info 객체만 사라지고 trailer `/Info` 는 끊긴 참조로 남는다(`get('Info').isIndirect()` true, `resolve()` null). 계약 11절은 저장 작업 안에서 만든 경우만 확인했고, 첫 편집 작업 안에서 만들어도 같다.
 - 이미 있는 Info 사전의 키 추가는 저널에 기록된다. 작업 안의 `recordEditMetadata` 는 abandon 뒤 원상태로 돌아오고, 커밋한 작업 안의 기록은 undo·redo 와 함께 움직인다.
-- 처리(core): Info 가 없으면 **저널을 켜기 직전(작업 밖)** 에 만든다(`ensureInfoDictionary`). 이후 어떤 undo·취소로도 Info 는 사라지지 않는다. 첫 편집 RPC(`getPageEditability`·`planParagraphEdit`·`beginParagraphEdit`) 또는 `replayEdits` 시작에서 한다. 판정만 하고 편집하지 않은 문서에도 빈 Info 사전이 생길 수 있으나 저장 결과에는 무해하다.
-- 함정: 객체를 추가하면 MuPDF 가 새 xref 구간을 만들어 `getTrailer()` 가 새 사전이 된다. **먼저 받아 둔 trailer 에 `put` 하면 현재 trailer 에 반영되지 않는다**(`journal-v1` 6번, Info 는 5번). `trailer.put` 은 `addObject` 뒤에 `getTrailer()` 를 새로 불러 해야 한다. S1 `recordEditMetadata` 도 같은 순서를 지켜야 한다.
+- 처리(core): Info 가 없으면 **저널을 켜기 직전(작업 밖)** 에 만든다(`ensureInfoDictionary`). 이후 어떤 undo·취소로도 Info 는 사라지지 않는다. 첫 `beginParagraphEdit` 또는 `replayEdits` 시작에서 한다(계약 수정 1 이 이 시점을 5.7 에 명시). 판정만 한 문서는 Info 를 만들지 않는다.
+- 함정: 객체를 추가하면 MuPDF 가 새 xref 구간을 만들어 `getTrailer()` 가 새 사전이 된다. **먼저 받아 둔 trailer 에 `put` 하면 현재 trailer 에 반영되지 않는다**(`journal-v1` 7번, Info 는 6번). `trailer.put` 은 `addObject` 뒤에 `getTrailer()` 를 새로 불러 해야 한다. S1 `recordEditMetadata` 도 같은 순서를 지켜야 한다.
 
 ### 2.4 발견 3: 작업 안의 첫 변경이 redo 단계를 버림 (계약 D9 불일치)
 
@@ -121,7 +123,7 @@
 | --- | --- |
 | `src/edit-engine.ts` | `EditEngine`: 저널 작업·로그·초안·저장 감싸기·재적용. 오류 `EditStateError`, `StaleRevisionError` |
 | `src/edit-adapter.ts` | `EditAdapter`(pdf-ops·reflow 편집 함수 경계), `defaultEditAdapter` |
-| `src/edit-util.ts` | 사각형·경고 합성·폴백 salt·PDF/A 선언 검사·Info 보장 |
+| `src/edit-util.ts` | 사각형·경고 합성·PDF/A 선언 검사·Info 보장 |
 | `src/session.ts` | `PdfSession`: 쪽 캐시(linkage 캐시 추가), 영역 렌더, `planSave`·`save`, 편집 RPC 위임 |
 | `src/render.ts` | `renderPageRegionRgba` |
 | `test/fake-edit-adapter.ts` | 가짜 어댑터(실제 MuPDF 문서에 Form 편집 블록을 쓴다) |
@@ -140,13 +142,13 @@
 
 | RPC | 저널 | 캐시·목록 |
 | --- | --- | --- |
-| `getPageEditability`·`planParagraphEdit` | 버리는 작업으로 감싼다(`probe`). 판정이 폴백 폰트를 넣는 등 문서를 바꿔도 `abandonOperation` 으로 되돌린다 | 변경 없음 |
-| `beginParagraphEdit` | revision 확인 → 판정(probe) → `beginOperation('paragraph-edit')` → `prepareParagraphEdit` → 폰트 배정·리플로우·`writeEditBlock` → 첫 미리보기 렌더. 실패하면 `abandonOperation` | 쪽·±2쪽 캐시 무효화, 블록 목록 재구성 |
+| `getPageEditability`·`planParagraphEdit` | 저널이 꺼져 있으면(첫 시작 전) 그대로 부른다. 저널이 켜진 뒤에는 버리는 작업으로 감싼다(`probe`, 판정이 문서를 바꿔도 되돌리는 안전망) | 변경 없음 |
+| `beginParagraphEdit` | revision 확인 → (첫 호출) Info·폴백 폰트 생성 후 저널 켜기 → 판정 → `beginOperation('paragraph-edit')` → `prepareParagraphEdit` → 폰트 배정·리플로우·`writeEditBlock` → 첫 미리보기 렌더. 실패하면 `abandonOperation` | 쪽·±2쪽 캐시 무효화, 블록 목록 재구성 |
 | `updateParagraphDraft` | 열린 작업 안에서 같은 순서로 다시 쓴다. 실패해도 초안은 유지 | 쪽 캐시 무효화 |
 | `commitParagraphEdit` | 같은 작업 안에서 `recordEditMetadata` → `endOperation`. 로그에 `EditOp` 추가, `redo` 비움 | 쪽·±2쪽 캐시 무효화, 블록 목록 재구성 |
 | `cancelParagraphEdit` | `abandonOperation` | 쪽 캐시 무효화, 블록 목록 재구성 |
 | `undo`·`redo` | `doc.undo()`·`doc.redo()` | 영향 쪽 캐시 무효화, 블록 목록 재구성 |
-| `replayEdits` | 저널 끈 채 적용 → `enableJournal()` | 쪽마다 무효화 |
+| `replayEdits` | Info·폴백 폰트 생성 → 저널 끈 채 적용 → `enableJournal()` | 쪽마다 무효화 |
 | 저장 | `beginOperation('save')` → (폴백 사용 시) 서브셋 교체 → 저장 → `abandonOperation` (3.5) | 변경 없음 |
 
 변경 영역 렌더(`DraftUpdate.region`): 갱신 때는 직전·새 `contentBox` 의 합집합 + 2 pt, 시작 때는 원 문단 bbox ∪ 배치 상자 + 2 pt. 배율은 갱신이 `DraftInput.renderScale`, 시작이 마지막 쪽 전체 렌더 배율(없으면 2)이다(5절 3번).
@@ -157,7 +159,7 @@ core 가 pdf-ops·reflow 를 부르는 곳은 `EditAdapter` 하나다. 시그니
 
 | 어댑터 멤버 | 실제 연결 | core 가 부르는 곳 | 가짜 어댑터 구현 |
 | --- | --- | --- | --- |
-| `createFonts(doc, loadFallback)` | `new FontManager(doc, loader)` | 첫 편집 계열 호출 | `FontManager` 하위 클래스. 한글(U+AC00–D7A3)은 폴백(계약 D4 수명 규칙 흉내), U+2603 은 `glyph-missing`, 그 밖은 원본 F1. `finalizeForSave` 는 `subsetFontBytes` 로 FontFile2 교체 |
+| `createFonts(doc, fallback)` | `new FontManager(doc, source)` | 첫 편집 계열 호출 | `FontManager` 하위 클래스. 한글(U+AC00–D7A3)은 폴백(`source.ref()` 객체를 블록 Resources 에 넣음), U+2603 은 `glyph-missing`, 그 밖은 원본 F1. `finalizeForSave` 는 `subsetFontBytes` 로 FontFile2 교체 |
 | `planPageEditability` | pdf-ops | `getPageEditability`(probe) | 문단별 편집 가능 여부(표·도형 `not-flow-paragraph`, 텍스트에 `LOCKED` 포함 `remove-skipped`) |
 | `planParagraphEdit` | pdf-ops | `planParagraphEdit`·`beginParagraphEdit`·재적용 | 문단 텍스트·첫 글자 모양·영역을 계획으로. 이전 편집 블록 위 문단이면 `editedBlock` |
 | `prepareParagraphEdit` | pdf-ops | 초안 시작·재적용 | SourceMap 연산 범위로 쪽 콘텐츠에서 문단 text-show 를 잘라 내고 BT 앞에 `q /EBn Do Q`, 빈 Form(`/PdfEditorEdit`)을 쪽 Resources 에 등록. 재편집이면 제거 없이 기존 블록 |
@@ -189,8 +191,8 @@ save:     [journalOn] beginOperation('save')
 
 ### 3.6 재적용 (D6)
 
-- `replayEdits(ops)` 는 편집 RPC 를 한 번도 부르지 않은 새 문서에서만 허용한다(저널을 끌 수 없으므로 저널이 이미 켜졌으면 `EditStateError`).
-- 순서: 폴백 로드 → Info 보장 → 연산마다 [쪽 상태 → 대상 문단 찾기(쪽 PageModel 의 `glyphSeq` 목록이 `target.glyphSeqs` 와 같은 문단) → 판정 → `prepareParagraphEdit(op.id)` → 폰트 배정·리플로우·`writeEditBlock`(op 의 `runs`·`format`) → 캐시 무효화] → `recordEditMetadata`(전체 한 번) → `enableJournal()`.
+- `replayEdits(ops)` 는 저널이 아직 꺼진 새 문서에서만 허용한다(저널을 끌 수 없으므로 저널이 이미 켜졌으면, 곧 `beginParagraphEdit` 를 부른 적이 있으면 `EditStateError`). 판정 RPC(`getPageEditability`·`planParagraphEdit`)를 먼저 불러도 된다.
+- 순서: 폴백 바이트 로드 → Info 보장·폴백 폰트 임베딩(기준 문서, 재적용한 글자가 폴백 폰트 객체를 쓰므로 적용 전에) → 연산마다 [쪽 상태 → 대상 문단 찾기(쪽 PageModel 의 `glyphSeq` 목록이 `target.glyphSeqs` 와 같은 문단) → 판정 → `prepareParagraphEdit(op.id)` → 폰트 배정·리플로우·`writeEditBlock`(op 의 `runs`·`format`) → 캐시 무효화] → `recordEditMetadata`(전체 한 번) → `enableJournal()`.
 - 재적용한 편집은 `base` 에 들어가 `activeEditIds` 에 나오고 undo 할 수 없다(`canUndo` false). 이후 새 편집은 평소처럼 undo 된다.
 - 실패하면(대상 문단 없음·편집 불가·어댑터 예외) 실패 위치를 `재적용 실패(k/n번째, 편집 id)` 로 알리고, 문서가 일부만 바뀌었으므로 그 세션의 편집 RPC 를 모두 막는다(문서를 다시 열어야 한다).
 - 결정성 틀: `edit-save-replay.test.ts` 의 `snapshot()` 이 쪽 콘텐츠 스트림·편집 블록 스트림 바이트·글자를 모아, 원래 편집 결과 = 재적용 결과 = 두 번째 재적용 결과를 비교한다(가짜 어댑터 기준 통과). 통합 때 같은 틀에 실제 어댑터를 꽂는다.
@@ -198,14 +200,14 @@ save:     [journalOn] beginOperation('save')
 ### 3.7 폴백 폰트 로더
 
 - `loadFallbackFont` 는 `getPageEditability`·`planParagraphEdit`·`beginParagraphEdit`·`replayEdits` 시작에서 await 한다. 동시 호출은 같은 약속을 공유하고 실패는 캐시하지 않는다(다음 호출이 다시 시도).
-- FontManager 에 넘기는 동기 로더는 로드된 바이트를 salt 사본으로 돌려준다(2.2). 로더가 없으면 폴백이 필요한 시점에 `EditStateError`.
+- FontManager 에는 `FallbackFontSource` 를 넘긴다: `bytes()` 는 로드된 바이트(커버리지 판정·셰이핑·서브셋), `ref()` 는 저널을 켜기 직전에 임베딩한 객체(그 전에는 null). `loadFallbackFont` 가 없으면 `bytes()` 가 `EditStateError`.
 
 ### 3.8 계약에 없는 core 의 판단
 
 | 항목 | 내용 |
 | --- | --- |
-| 판정 호출 감싸기 | 판정(`getPageEditability`·`planParagraphEdit`)은 문서를 바꾸지 않아야 하지만 FontManager 가 판정 중 폴백을 넣을 수 있다. 저널이 켜진 문서의 작업 밖 변경은 예외이므로 버리는 작업 안에서 부른다 |
-| 저널 켜는 시점 | 첫 편집 계열 호출(판정 포함). `beginOperation` 이 있어야 판정을 감쌀 수 있기 때문. 편집 안 한 문서의 저장은 영향 없음(3.5) |
+| 판정 호출 감싸기 | 저널이 켜진 뒤의 판정은 버리는 작업으로 감싼다. 계약 수정 1 로 FontManager 가 판정·배정 중 폰트를 넣지 않으므로 안전망이다. 변경이 있었다면 redo 단계가 사라지는 것을 막지 못하나 core 상태는 저널에 맞춘다 |
+| 저널 켜는 시점 | 첫 `beginParagraphEdit`(5.7, 계약 수정 1). 판정만 한 문서는 저널·Info·폴백 폰트가 없고 저장은 증분 그대로 가능. 편집을 시작한 문서는 취소해도 새 객체(미사용 폴백 폰트)가 들어가 있어 증분 저장이 그 객체를 덧붙이므로 전체 저장으로 승격한다 |
 | 경고 `overflow-clipped` | 배치 상자가 `areaLimit` 밖으로 0.5 pt 넘게 나가면 넘친 띠를 `rects` 로. 선택(`keep`·`shrink` 최소·`expand` 상한)과 무관 |
 | 경고 `area-overlaps-content` | 쓴 영역(`ReflowSummary.area`)이 다른 문단·표·도형과 겹치면 겹친 교집합을 `rects` 로. 원 문단 bbox 를 덮는 표·도형(쪽 배경 그림)은 제외. 레이아웃 기반 근사 |
 | 경고 합성 | `font-fallback`·`glyph-missing`·`synthetic-style` 은 FontManager 의 현재 결과로, `overflow-clipped`·`area-overlaps-content` 는 core 판정으로 바꾸고 나머지(링크·태그·ActualText 등)는 계획 단계 경고를 유지. 같은 종류는 하나로 합친다 |
@@ -215,8 +217,8 @@ save:     [journalOn] beginOperation('save')
 ## 4. 통합 때 할 일
 
 1. S1·S2 병합 뒤 `defaultEditAdapter` 로 `edit-engine.test.ts`·`edit-save-replay.test.ts` 의 흐름을 다시 돌린다(가짜 어댑터 의존 단언은 글자 `LOCKED`·`☃`·한글=폴백 규칙뿐). 어댑터 독립 단언(저널·로그·revision·캐시)은 그대로 유효해야 한다.
-2. **S1 FontManager 의 폴백 재추가가 2.2 의 요구를 지키는지 확인**: `loadFallback()` 을 임베딩마다 호출, 바이트·`Font` 비캐시. 지키지 않으면 `save-replay` 의 "폴백 폰트 수명" 3건을 실제 FontManager 로 돌렸을 때 실패한다.
-3. 판정 호출(`planPageEditability`·`planParagraphEdit`)이 문서를 바꾸는지 확인한다. 바꾼다면 core 의 probe 가 가리고 있다. 바꾸지 않는다면 probe 의 비용(작업 열고 닫기)을 줄일지 판단한다.
+2. **S1 FontManager 가 폴백 폰트를 직접 임베딩하지 않고 `FallbackFontSource.ref()` 만 쓰는지** 확인한다(계약 수정 1). `ref()` 는 판정 단계에서 null 이다. 블록 Resources 에는 이 객체를 참조로 넣는다. 위반하면 `save-replay` 의 "폴백 폰트 수명" 시험을 실제 FontManager 로 돌렸을 때 폰트가 둘 이상 생기거나 끊긴 참조가 나온다.
+3. 판정 호출(`planPageEditability`·`planParagraphEdit`)이 문서를 바꾸지 않는지 확인한다(저널이 꺼진 첫 시작 전에는 바꾸면 기준 문서가 바뀐다). 저널이 켜진 뒤의 probe 비용(작업 열고 닫기)을 줄일지 판단한다.
 4. `recordEditMetadata({ pages })` 를 S1 과 맞춘다: 기준(core 는 0부터 쪽 인덱스, 활성 편집 전체를 넘긴다. 계약 5.6 문자열은 1부터), **커밋마다 반복 호출**되므로 같은 입력에 멱등이어야 한다는 점, Info 사전이 이미 있다는 가정, `getTrailer()` 를 객체 추가 뒤에 부르는 순서(2.3), 이미 있는 `/PdfEditorEdits` 값(이전 세션 기록)과 합집합을 만드는 방식. 합집합 때문에 undo 로 편집을 되돌려도 이전 세션의 쪽 번호는 남는다.
 5. V1 후반: 실제 코퍼스 편집 열에서 원래 편집 결과와 `replayEdits` 결과를 비교한다(`snapshot` 틀). 재적용 시간을 재서 D6 체크포인트 간격이 필요한지 정한다.
 6. 판정 시간(5.1: 문단 10 ms, 쪽 100 ms)과 편집 반응 시간(8.4)에서 core 구간(`updateMs`, 영역 렌더 포함)을 분리해 기록한다. 렌더 구간은 2.6 참고.
@@ -228,8 +230,8 @@ save:     [journalOn] beginOperation('save')
 
 | # | 항목 | 내용 | 처리·제안 |
 | --- | --- | --- | --- |
-| 1 | D4 폴백 수명 | `addFont` 가 되돌린 폰트의 끊긴 참조를 돌려준다(2.2) | core 로더 salt 로 우회. S1 요구 2건. **계약 D4 문장 수정 제안**: "폴백 폰트를 다시 넣을 때는 폰트 바이트가 이전과 달라야 한다(MuPDF 폰트 리소스 표). FontManager 는 임베딩마다 다른 바이트로 넣는다" |
-| 2 | D9 Info 생성 | 첫 편집 작업 안에서 만든 Info 는 취소·undo 때 끊긴 참조(2.3) | 저널 켜기 직전(작업 밖)에 만든다. **계약 D9 수정 제안**: "Info 사전이 없으면 저널을 켜기 직전에 만든다" |
+| 1 | D4 폴백 수명 | `addFont` 가 되돌린 폰트의 끊긴 참조를 돌려준다(2.2) | **계약 수정 1 로 해소**: 저널 밖에서 한 번 `embedFont`, `FallbackFontSource`. core 는 이에 맞춰 구현하고 바이트 덧붙이기 우회를 제거했다 |
+| 2 | D9 Info 생성 | 첫 편집 작업 안에서 만든 Info 는 취소·undo 때 끊긴 참조(2.3) | **계약 수정 1 로 해소**: 저널을 켜기 직전(작업 밖)에 만든다 |
 | 2a | D9 Info 기록 위치 | 저장 작업 안에서 Info 를 기록하면 undo 직후 저장이 redo 를 잃는다(2.4) | **커밋 작업 안에서 기록**한다(저널에 남아 undo·redo 와 함께 움직임). **계약 D9·5.6 수정 제안**: 저장 순서는 `beginOperation('save')` → (폴백 사용 시) 서브셋 교체 → `saveToBuffer` → `abandonOperation`, Info `/PdfEditorEdits` 는 편집을 커밋할 때 기록 |
 | 2b | 초안 취소·판정과 redo | 작업 안 첫 변경이 redo 를 버린다. 초안을 시작하면 redo 가 사라지고 취소해도 돌아오지 않는다(2.4) | core 가 redo 스택을 저널에 맞춘다. 뷰어는 초안 시작 시 `canRedo` 가 false 가 됨을 알아야 한다. 계약 D6 에 문장 추가 제안 |
 | 3 | 4절 `beginParagraphEdit` | 시그니처에 렌더 배율이 없는데 반환(`first.region`)은 렌더 결과다 | 마지막 쪽 전체 렌더 배율(없으면 2)을 쓴다. 제안: 선택 인자 `renderScale` 추가(shared-types 변경이라 메인 세션 결정). 뷰어가 다른 배율이 필요하면 바로 `updateParagraphDraft` 를 한 번 더 부르면 된다 |
@@ -245,9 +247,9 @@ save:     [journalOn] beginOperation('save')
 | 파일 | 건수 | 내용 |
 | --- | --- | --- |
 | `test/render-clip.test.ts` | 8(매개변수 포함) | 영역 = 쪽 전체의 같은 위치 픽셀(회전·배율), 격자 정렬, 쪽 경계 자르기, RangeError |
-| `test/journal-v1.test.ts` | 13 | V1 전반(MuPDF 직접): 블록·콘텐츠·리소스·폰트 undo/redo, 폰트 표 끊긴 참조, Info, trailer 함정, redo 단계 보존 3건, 계약 시나리오 3건, 감싸지 않은 저장 |
+| `test/journal-v1.test.ts` | 14 | V1 전반(MuPDF 직접): 블록·콘텐츠·리소스·폰트 undo/redo, 폰트 표 끊긴 참조, Info, trailer 함정, redo 단계 보존 3건, 계약 시나리오 3건, 감싸지 않은 저장 |
 | `test/edit-engine.test.ts` | 33 | 판정·초안·커밋·취소·undo/redo·재편집·상태 규칙·실패 복구(갱신 되돌리기·저널 불일치·목록 실패)·캐시 무효화·경고·저장 방식·수명·구조 연결 문단 수·직접 Info·linkage 캐시 |
-| `test/edit-save-replay.test.ts` | 22 | 폴백 수명 4, D9 저장 7, redo 보존 4, 재적용 6, 재열기 1 |
+| `test/edit-save-replay.test.ts` | 23 | 폴백 수명 5, D9 저장 7, redo 보존 4, 재적용 6, 재열기 1 |
 | `test/edit-walk.test.ts` | 6(시드) | 임의 순서(커밋·취소·undo·redo·저장) 40단계, 매 단계 저널 위치·단계 수 = 로그, 글자 = 모델 |
 | `test/edit-util.test.ts` | 7 | 사각형·경고 판정·경고 합성 |
 
@@ -255,7 +257,7 @@ save:     [journalOn] beginOperation('save')
 
 ## 7. 독립 검토 반영 (2026-10-19, 읽기 전용 Opus 검토 1회)
 
-검토 기준 `a7464f1..c68efeb`(결과: BLOCKER 0, HIGH 1, MEDIUM 2, LOW 6, 해석 차이 6). 조치는 모두 `m3-core` 에 반영했다.
+검토 기준 `a7464f1..c68efeb`(계약 수정 1 이전)(결과: BLOCKER 0, HIGH 1, MEDIUM 2, LOW 6, 해석 차이 6). 조치는 모두 `m3-core` 에 반영했다.
 
 | 검토 항목 | 조치 |
 | --- | --- |
@@ -273,9 +275,9 @@ save:     [journalOn] beginOperation('save')
 
 | # | 내용 |
 | --- | --- |
-| 1 | D9 Info 생성·기록 위치와 4절 "문서를 바꾸지 않는다": 첫 판정이 빈 Info 를 만들 수 있다(2.3) |
+| 1 | D9 Info 기록 위치(2.4)는 아직 계약과 다르다. Info 생성은 계약 수정 1 로 일치 |
 | 2 | 전체 저장 승격(편집 이력이 있으면 전부 되돌려도 전체 저장, 3.5) |
-| 3 | `replayEdits` 는 편집 RPC 전의 문서만(복구 중 마우스 오버 판정이 먼저 불리면 거절되므로 뷰어는 복구 순서를 보장해야 한다) |
+| 3 | `replayEdits` 는 저널이 꺼진 문서만. 계약 수정 1 이후 저널은 첫 `beginParagraphEdit` 에서 켜지므로 복구 중 판정 RPC(마우스 오버)가 먼저 불려도 재적용은 거절되지 않는다 |
 | 4 | `getPageEdits` 는 다른 세션이 만든 블록도 `/BBox` 근사로 돌려준다(`PageEditInfo` 주석은 "같은 세션에서 편집한 문단") |
 | 5 | 5.3 "같은 세션 재편집의 시작 상태 = 마지막 `EditOp` 의 runs·format": core 는 로그를 계획에 반영하지 않고 pdf-ops 계획(`/PdfEditorFormat`)에 맡긴다. `sourceChar` 는 적용 시점 PageModel 인덱스라 옛 로그를 그대로 쓰면 낡은 인덱스를 가리키므로 현재 방식이 맞다. 계약을 "블록 `/PdfEditorFormat` + `sourceChar` 재결정"으로 고치기를 권고 |
 | 6 | Info 기록을 커밋 작업으로 옮긴 것(D9·5.6 의 저장 때 `/ModDate` 갱신과 달라짐): 2.4, 5절 2a |

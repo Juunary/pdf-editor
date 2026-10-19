@@ -24,7 +24,7 @@ function paragraphId(s: PdfSession, original: string): number | undefined {
 
 describe('편집 엔진 임의 순서 걷기', () => {
   it.each([1, 2, 3, 4, 5, 6])('시드 %i: 저널·로그·글자가 매 단계 일치한다', async (seed) => {
-    const { s, adapter } = harness();
+    const { s } = harness();
     const next = lcg(seed);
     // 적용된 편집(undo 스택)과 되돌린 편집(redo 스택). fallback: 한글이 들어간 편집(폴백 폰트 사용).
     type Applied = { k: number; fallback: boolean };
@@ -100,7 +100,6 @@ describe('편집 엔진 임의 순서 걷기', () => {
       if (obj.isDictionary() && !obj.get('PdfEditorFallback').isNull()) live.add(String(n));
     }
     expect(live.size).toBeLessThanOrEqual(1);
-    expect(adapter.probe.embeddedBytes.length).toBeGreaterThanOrEqual(0);
     s.close();
   });
 });

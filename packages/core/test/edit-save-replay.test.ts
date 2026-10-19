@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import { PdfSession } from '../src/index.js';
 import { EditStateError } from '../src/edit-engine.js';
-import { saltedFontBytes } from '../src/edit-util.js';
 import type { EditOp } from '@pdf-editor/shared-types';
 import { createFakeAdapter } from './fake-edit-adapter.js';
 import { buildPdf } from './pdf-fixtures.js';
@@ -17,6 +16,7 @@ import {
   begin,
   draftInput,
   editParagraph,
+  fallbackFonts,
   harness,
   journal,
   text,
@@ -38,43 +38,42 @@ function reopenedText(bytes: Uint8Array): string {
   return t;
 }
 
-/** 폴백 폰트 객체 목록(폰트 사전 /PdfEditorFallback). 픽스처의 F2 도 같은 폰트이지만 표지가 없다. */
-function fallbackFonts(doc: mupdf.PDFDocument): mupdf.PDFObject[] {
-  const found: mupdf.PDFObject[] = [];
-  for (let n = 1; n < doc.countObjects(); n++) {
-    const obj = doc.newIndirect(n);
-    if (obj.isDictionary() && !obj.get('PdfEditorFallback').isNull()) found.push(obj);
-  }
-  return found;
-}
+describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
+  it('폴백 폰트는 첫 시작에서 저널을 켜기 직전(작업 밖)에 한 번 임베딩되고 판정은 문서를 바꾸지 않는다', async () => {
+    const { s } = harness();
+    await s.getPageEditability(0);
+    await s.planParagraphEdit(0, 1);
+    // 판정만으로는 Info·폴백 폰트·저널이 생기지 않는다.
+    expect(s.document.getTrailer().get('Info').isNull()).toBe(true);
+    expect(fallbackFonts(s.document)).toHaveLength(0);
+    expect(s.planSave({ changes: [] }).method).toBe('incremental');
 
-describe('폴백 폰트 수명(V1, 계약 D4)', () => {
-  it('로더는 호출마다 다른 바이트(salt)를 돌려주고 첫 호출만 원본이다', () => {
-    const base = new Uint8Array([1, 2, 3, 4]);
-    expect(saltedFontBytes(base, 0)).toBe(base);
-    const a = saltedFontBytes(base, 1);
-    const b = saltedFontBytes(base, 2);
-    expect(a.length).toBe(8);
-    expect(Array.from(a.subarray(0, 4))).toEqual([1, 2, 3, 4]);
-    expect(Array.from(a.subarray(4))).toEqual([0, 0, 0, 1]);
-    expect(Array.from(b.subarray(4))).toEqual([0, 0, 0, 2]);
-    expect(base.length).toBe(4);
+    const { started } = await begin(s, 1);
+    const fonts = fallbackFonts(s.document);
+    expect(fonts).toHaveLength(1);
+    expect(s.document.getTrailer().get('Info').isDictionary()).toBe(true);
+    await s.cancelParagraphEdit(started.draftId);
+    // 취소해도 폴백 폰트는 저널 밖 객체라 그대로다.
+    expect(fallbackFonts(s.document).map((f) => f.asIndirect())).toEqual(
+      fonts.map((f) => f.asIndirect()),
+    );
+    expect(journal(s)).toEqual({ position: 0, steps: [] });
+    s.close();
   });
 
   it('폴백을 넣은 초안 취소 뒤 새 편집', async () => {
-    const { s, adapter } = harness();
+    const { s } = harness();
     const first = await begin(s, 1);
     await s.updateParagraphDraft(first.started.draftId, draftInput(first.plan, HANGUL_TEXT));
-    expect(adapter.probe.embeddedBytes).toHaveLength(1);
+    const fontNumber = fallbackFonts(s.document)[0]!.asIndirect();
     expect(text(s)).toContain(HANGUL_TEXT);
     await s.cancelParagraphEdit(first.started.draftId);
     expect(journal(s)).toEqual({ position: 0, steps: [] });
 
-    // 취소로 폰트 객체가 사라졌다. 같은 바이트면 MuPDF 가 끊긴 참조를 돌려주므로 다른 바이트(salt)로 다시 넣는다.
+    // 취소 뒤에도 같은 폰트 객체를 쓴다(다시 임베딩하지 않는다).
     const again = await begin(s, 1);
     await s.updateParagraphDraft(again.started.draftId, draftInput(again.plan, HANGUL_TEXT));
-    expect(adapter.probe.embeddedBytes).toHaveLength(2);
-    expect(adapter.probe.embeddedBytes[0]).not.toEqual(adapter.probe.embeddedBytes[1]);
+    expect(fallbackFonts(s.document).map((f) => f.asIndirect())).toEqual([fontNumber]);
     expect(text(s)).toContain(HANGUL_TEXT);
     await s.commitParagraphEdit(again.started.draftId);
 
@@ -85,13 +84,14 @@ describe('폴백 폰트 수명(V1, 계약 D4)', () => {
   });
 
   it('폴백을 넣은 편집 undo 뒤 새 편집 → 저장', async () => {
-    const { s, adapter } = harness();
+    const { s } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
-    expect(adapter.probe.embeddedBytes).toHaveLength(1);
+    const fontNumber = fallbackFonts(s.document)[0]!.asIndirect();
     await s.undo();
-    // undo 로 폰트 객체가 사라졌다(끊긴 참조가 남는 것이 이 시나리오의 위험).
+    // undo 로도 폰트 객체는 남는다(저널 밖 객체).
+    expect(fallbackFonts(s.document).map((f) => f.asIndirect())).toEqual([fontNumber]);
     await editParagraph(s, 2, '다른 문장 입니다');
-    expect(adapter.probe.embeddedBytes).toHaveLength(2);
+    expect(fallbackFonts(s.document).map((f) => f.asIndirect())).toEqual([fontNumber]);
     expect(text(s)).toContain('다른 문장 입니다');
     expect(text(s)).toContain('first paragraph');
 
@@ -108,12 +108,21 @@ describe('폴백 폰트 수명(V1, 계약 D4)', () => {
     s.close();
   });
 
+  it('폴백 폰트를 쓰지 않은 편집만 저장하면 파일에 폴백 폰트가 없다(garbage 가 뺀다)', async () => {
+    const { s } = harness();
+    await editParagraph(s, 1, 'Latin only');
+    expect(fallbackFonts(s.document)).toHaveLength(1);
+    const saved = s.save({ changes: [] });
+    expect(fallbackFonts(reopen(saved.bytes))).toHaveLength(0);
+    expect(reopenedText(saved.bytes)).toContain('Latin only');
+    s.close();
+  });
+
   it('폴백을 쓴 편집 둘을 쌓은 뒤 순서대로 undo → redo, 폰트는 문서에 하나', async () => {
-    const { s, adapter } = harness();
+    const { s } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
     await editParagraph(s, 2, '두 번째 한글');
-    // 둘째 편집은 첫 편집이 넣은 폰트를 재사용한다(객체가 있으므로 다시 넣지 않는다).
-    expect(adapter.probe.embeddedBytes).toHaveLength(1);
+    expect(fallbackFonts(s.document)).toHaveLength(1);
     await s.undo();
     expect(text(s)).toContain(HANGUL_TEXT);
     await s.undo();
@@ -172,7 +181,9 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
 
   it('Info 기록은 undo·redo 와 함께 움직인다', async () => {
     const { s } = harness();
-    await s.getPageEditability(0); // 첫 편집 RPC 가 빈 Info 사전을 만든다
+    // 첫 `beginParagraphEdit` 가 빈 Info 사전을 만든다(저널을 켜기 전).
+    const warmup = await begin(s, 1);
+    await s.cancelParagraphEdit(warmup.started.draftId);
     const info = () => s.document.getTrailer().get('Info').get('PdfEditorEdits');
     expect(info().isNull()).toBe(true);
     await editParagraph(s, 1, 'Latin');
@@ -222,7 +233,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     expect(plan.edits).toBeNull();
     // 편집 이력이 있는(저널이 켜진) 문서는 변경이 없어도 전체 저장이다(증분 구간에 되돌린 객체 흔적 방지).
     expect(plan.method).toBe('full');
-    expect(plan.reason).toContain('편집 이력');
+    expect(plan.reason).toContain('편집을 시작');
     s.close();
   });
 
@@ -420,10 +431,20 @@ describe('replayEdits(D6 복구)', () => {
     s.close();
   });
 
-  it('편집 RPC 를 이미 쓴 세션에서는 거절한다', async () => {
+  it('판정 RPC 뒤에는 허용하고(저널이 아직 꺼져 있음), 편집을 시작한 세션에서는 거절한다', async () => {
+    const live = harness();
+    const ops = await recordOps(live);
     const { s } = harness();
-    await s.getPageEditability(0);
+    await s.getPageEditability(0); // 복구 중 마우스 오버 판정이 먼저 불려도 된다
+    await s.planParagraphEdit(0, 1);
+    await expect(s.replayEdits(structuredClone(ops))).resolves.toMatchObject({ edits: 3 });
     await expect(s.replayEdits([])).rejects.toBeInstanceOf(EditStateError);
+
+    const started = harness();
+    const { started: draft } = await begin(started.s, 1);
+    await started.s.cancelParagraphEdit(draft.draftId);
+    await expect(started.s.replayEdits([])).rejects.toBeInstanceOf(EditStateError);
+    for (const x of [live, started]) x.s.close();
     s.close();
   });
 
