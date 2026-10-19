@@ -68,7 +68,7 @@ let fontRef: mupdf.PDFObject;
 let widths: Map<number, number>;
 let toUnicode: Map<number, string>;
 let preimage: Map<number, number[]>;
-/** 다대일 cmap gid(ToUnicode 가 한 코드 포인트만 돌려줌). */
+/** 다대일 cmap gid(ToUnicode 가 한 코드 포인트만 돌려줌). 계약 수정 2 이후 0개. */
 let conflicts: Map<number, number[]>;
 
 beforeAll(() => {
@@ -103,9 +103,9 @@ describe('V6 폴백 폰트 /W·ToUnicode', () => {
   });
 
   it('모든 글리프의 /W = harfbuzz hmtx 전진량(1/1000 em 반올림 허용)', () => {
-    expect(widths.size).toBe(16_968);
+    expect(widths.size).toBe(16_966);
     let maxDiff = 0;
-    for (let gid = 0; gid < 16_968; gid++) {
+    for (let gid = 0; gid < 16_966; gid++) {
       const w = widths.get(gid);
       expect(w).toBeDefined();
       maxDiff = Math.max(maxDiff, Math.abs((w ?? 0) - hmtx(gid)));
@@ -115,33 +115,23 @@ describe('V6 폴백 폰트 /W·ToUnicode', () => {
     expect(maxDiff).toBe(0);
   });
 
-  it('cmap 의 모든 gid 가 ToUnicode 를 가진다. 일대일 gid 는 정확히 왕복한다', () => {
-    expect(preimage.size).toBe(16_569);
-    let exact = 0;
+  it('cmap 은 일대일이고 모든 cmap gid 가 ToUnicode 로 정확히 왕복한다(계약 수정 2)', () => {
+    expect(preimage.size).toBe(16_567);
+    expect(conflicts.size).toBe(0);
     for (const [gid, cps] of preimage) {
-      const t = toUnicode.get(gid);
-      expect(t).toBeDefined();
-      if (cps.length === 1) {
-        expect(t).toBe(String.fromCodePoint(cps[0] ?? 0));
-        exact++;
-      }
+      expect(toUnicode.get(gid)).toBe(String.fromCodePoint(cps[0] ?? 0));
     }
-    expect(exact).toBe(16_569 - conflicts.size);
+    // 수정 2 이전 서브셋에서 깨졌던 문자(공백 → U+00A0, 하이픈 → U+2011, 호환 자모 → 반각, 통합 한자 → 호환 한자).
+    for (const ch of [' ', '-', 'ㄱ', 'ㅎ', '不', '串', '\u3000', '–', '～']) {
+      expect(toUnicode.get(gidOfCp(ch.codePointAt(0) ?? 0))).toBe(ch);
+    }
+    // 뺀 코드 포인트는 cmap 에 없다(입력되면 glyph-missing, U+00A0 은 입력 정규화에서 공백).
+    for (const cp of [0x00a0, 0x00ad, 0x2011, 0x2003, 0x2012, 0x301c, 0xff40, 0xf967, 0xffa1]) {
+      expect(gidOfCp(cp)).toBe(-1);
+    }
   });
 
-  it('계약 불일치: 다대일 gid 317개는 MuPDF ToUnicode 가 가장 큰 코드 포인트를 고른다', () => {
-    expect(conflicts.size).toBe(317);
-    for (const [gid, cps] of conflicts) {
-      expect(toUnicode.get(gid)).toBe(String.fromCodePoint(Math.max(...cps)));
-    }
-    const pick = (ch: string) => toUnicode.get(preimage.size && gidOfCp(ch.codePointAt(0) ?? 0));
-    expect(pick(' ')).toBe('\u00A0');
-    expect(pick('-')).toBe('\u2011');
-    expect(pick('ㄱ')).toBe('\uFFA1');
-    expect(pick('不')).toBe('\uF967');
-  });
-
-  it('배치 출력: 모든 gid 가 ToUnicode 를 갖고, 다대일 gid 를 뺀 클러스터는 정확히 왕복한다', () => {
+  it('배치 출력: 모든 gid 가 ToUnicode 를 갖고 자기 클러스터로 정확히 왕복한다', () => {
     // NFC 안정 cmap 문자 전부를 한 글자씩 강제 줄바꿈으로 나눠 배치한다(이웃 글자와 클러스터를 만들지 않게).
     const chars = [...preimage.values()]
       .flat()
@@ -156,28 +146,16 @@ describe('V6 폴백 폰트 /W·ToUnicode', () => {
       const t = toUnicode.get(g.gid);
       expect(t).toBeDefined();
       const cluster = text.slice(g.offset, g.offset + g.length);
-      if (t !== cluster) {
-        expect(conflicts.has(g.gid)).toBe(true);
-        mismatched.push(cluster);
-      }
+      if (t !== cluster) mismatched.push(cluster);
     }
+    expect(mismatched).toEqual([]);
     // 쓰지 않은 문자는 기본 무시 문자뿐이다(폴백 폰트로 쓰지 않음).
     const unwritten = chars.filter((ch) => !written.has(ch));
     expect(unwritten.every((ch) => isDefaultIgnorable(ch.codePointAt(0) ?? 0))).toBe(true);
-    // 왕복이 깨지는 문자 = 다대일 gid 의 큰 코드 포인트가 아닌 쪽(NFC 안정, 기본 무시 문자 제외).
-    const expected = [...conflicts.values()].flatMap((cps) =>
-      cps
-        .filter((cp) => cp !== Math.max(...cps) && !isDefaultIgnorable(cp))
-        .map((cp) => String.fromCodePoint(cp))
-        .filter((ch) => ch.normalize('NFC') === ch),
-    );
-    expect(new Set(mismatched)).toEqual(new Set(expected));
-    // 실측(2026-10-19): 316자(ASCII 2·일반 구두점 3·CJK 기호 1·호환 자모 51·CJK 통합 한자 259).
-    expect(mismatched.length).toBe(316);
     expect(glyphs.length).toBe(chars.length - unwritten.length);
   });
 
-  it('MuPDF 추출 왕복(표본 문장): 다대일 gid 문자만 바뀐다', () => {
+  it('MuPDF 추출 왕복(표본 문장): 공백류를 뺀 추출 텍스트 = 입력', () => {
     const text = '한글 PDF 편집기 漢字 不可 ㄱㄴ “quote” — dash € ™ office fi To-day 2026';
     const glyphs = layoutAll(text);
     const H = 200;
@@ -196,18 +174,10 @@ describe('V6 폴백 폰트 /W·ToUnicode', () => {
       .toStructuredText('preserve-whitespace')
       .asText();
     const strip = (s: string) => s.replace(/\s+/g, '');
-    const viaToUnicode = [...text]
-      .map((ch) => {
-        const gid = gidOfCp(ch.codePointAt(0) ?? 0);
-        return conflicts.has(gid) ? (toUnicode.get(gid) ?? ch) : ch;
-      })
-      .join('');
-    expect(strip(out)).toBe(strip(viaToUnicode));
-    // 실측: 不 → U+F967, ㄱ → U+FFA1, - → U+2011 로 추출된다(공백 → U+00A0 은 공백류라 비교에서 빠진다).
-    expect(strip(out)).not.toBe(strip(text));
-    expect(out).toContain('\uF967');
-    expect(out).toContain('\uFFA1');
-    expect(out).toContain('\u2011');
+    expect(strip(out)).toBe(strip(text));
+    // 공백 글리프는 U+0020 으로 추출된다(수정 2 이전에는 U+00A0).
+    expect(out).toContain(' ');
+    expect(out).not.toContain('\u00A0');
   });
 });
 
