@@ -901,6 +901,43 @@ async function textLines(page: Page): Promise<string[]> {
     .evaluateAll((lines) => lines.map((l) => l.textContent ?? ''));
 }
 
+test(`[통합] 파일 선택으로 두 번째 문서를 열면 이전 뷰어를 열기 전에 정리하고 새 문서를 그린다`, async () => {
+  await withExtension(async (env) => {
+    const page = await env.context.newPage();
+    await page.goto(`chrome-extension://${env.extensionId}/viewer.html`);
+    const input = page.locator('#open-file');
+    const rendered = () =>
+      expect(page.locator('#status')).toHaveAttribute('data-state', 'rendered', {
+        timeout: 20_000,
+      });
+    await input.setInputFiles(join(DIST, 'diag/m0-sample.pdf'));
+    await rendered();
+    expect(await extractOutcome(page)).toBe('text-layer');
+
+    await input.setInputFiles(join(DIST, 'diag/m0-spike-saved.pdf'));
+    await expect
+      .poll(async () => (await diagOf(page.mainFrame())).filter((e) => e.event === 'open').length)
+      .toBe(2);
+    await rendered();
+    await expect(page).toHaveTitle('m0-spike-saved.pdf - PDF Editor');
+    await expect
+      .poll(
+        async () =>
+          ((await page.locator('#pe-text-layer').textContent()) ?? '').replace(/\s+/g, ''),
+        { timeout: 15_000 },
+      )
+      .toContain('검색과복사');
+    // 뷰어 DOM 은 하나만 남는다.
+    await expect(page.locator('#pe-text-layer')).toHaveCount(1);
+    const log = await diagOf(page.mainFrame());
+    const events = log.map((e) => e.event);
+    const secondOpen = events.lastIndexOf('open');
+    expect(events.indexOf('viewer-unmount')).toBeGreaterThan(events.indexOf('open'));
+    expect(events.indexOf('viewer-unmount')).toBeLessThan(secondOpen);
+    expect(events.filter((e) => /error/.test(e))).toEqual([]);
+  });
+});
+
 test(`[통합] 선택→복사: Ctrl+A 복사 결과가 m0-sample.pdf 추출 텍스트와 일치한다`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');

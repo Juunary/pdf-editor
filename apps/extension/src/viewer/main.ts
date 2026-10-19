@@ -202,14 +202,19 @@ function onPagePainted(e: PagePaintedEvent): void {
 
 async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   setStatus('opening', `여는 중: ${label}`);
+  // 이전에 연 문서의 뷰어를 먼저 정리한다. Worker 세션은 open 에서 이전 문서를 닫으므로, 그 사이 이전 뷰어가
+  // 렌더·추출을 요청하면 새 문서(또는 닫힌 문서)에 대한 호출이 된다.
+  if (unmountViewer) {
+    unmountViewer();
+    unmountViewer = null;
+    diag.add('viewer-unmount', { reason: 'open' });
+  }
+  firstPaintAnnounced = false;
   const info = await pdf.open(transferBytes(bytes));
   diag.add('open', info);
   documentName = label;
   document.title = `${label} - PDF Editor`;
 
-  // 이전에 연 문서의 뷰어를 정리하고 새 문서로 다시 마운트한다.
-  unmountViewer?.();
-  firstPaintAnnounced = false;
   const controller = new ViewerController({
     host: {
       getPageInfo: (i) => pdf.getPageInfo(i),
