@@ -327,3 +327,39 @@ export function offsetAtPagePoint(
   if (bestChar < 0) return null;
   return point[0] > bestCenter ? last.get(bestChar)! + 1 : first.get(bestChar)!;
 }
+
+/** 점이 놓인 가장 안쪽(면적이 가장 작은) 문단. 없으면 null. */
+export function paragraphAt<T extends { bbox: Rect }>(paragraphs: T[], point: Point): T | null {
+  let best: T | null = null;
+  let bestArea = Infinity;
+  for (const p of paragraphs) {
+    const [x0, y0, x1, y1] = p.bbox;
+    if (point[0] < x0 || point[0] > x1 || point[1] < y0 || point[1] > y1) continue;
+    const area = (x1 - x0) * (y1 - y0);
+    if (area < bestArea) {
+      bestArea = area;
+      best = p;
+    }
+  }
+  return best;
+}
+
+export type HandleName = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+/** 영역 핸들 드래그: 변·모서리를 (dx, dy)pt 만큼 움직인 영역. 상한(limit) 안으로 자르고 최소 크기를 보장한다. */
+export function resizeArea(
+  area: Rect,
+  handle: HandleName,
+  dx: number,
+  dy: number,
+  limit: Rect,
+  minWidth = 20,
+  minHeight = 8,
+): Rect {
+  let [x0, y0, x1, y1] = area;
+  if (handle.includes('w')) x0 = Math.min(Math.max(x0 + dx, limit[0]), x1 - minWidth);
+  if (handle.includes('e')) x1 = Math.max(Math.min(x1 + dx, limit[2]), x0 + minWidth);
+  if (handle.includes('n')) y0 = Math.min(Math.max(y0 + dy, limit[1]), y1 - minHeight);
+  if (handle.includes('s')) y1 = Math.max(Math.min(y1 + dy, limit[3]), y0 + minHeight);
+  return [x0, y0, x1, y1];
+}

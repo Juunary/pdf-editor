@@ -11,9 +11,7 @@ function recoveredError(): Error {
   return e;
 }
 
-async function start(
-  options: { paragraph?: FakeParagraph; caret?: number | null } = {},
-): Promise<{
+async function start(options: { paragraph?: FakeParagraph; caret?: number | null } = {}): Promise<{
   host: FakeEditHost;
   session: EditSession;
   views: EditSessionView[];

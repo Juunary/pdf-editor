@@ -210,3 +210,219 @@
   white-space: pre-wrap;
   pointer-events: none;
 }
+
+/* ── 문단 편집(M3) ───────────────────────────────────────────── */
+.pe-edit-opt {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pe-edit-notice {
+  max-width: 420px;
+  cursor: pointer;
+}
+
+/* 진입: 마우스 오버 테두리와 제한 사유 팝오버 */
+.pe-edit-entry {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pe-edit-hover {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid #2e7d32;
+  background: rgb(46 125 50 / 8%);
+  pointer-events: none;
+}
+.pe-edit-hover[data-editable='0'] {
+  border: 1.5px dashed #ef6c00;
+  background: rgb(239 108 0 / 8%);
+}
+.pe-edit-popover {
+  position: absolute;
+  z-index: 35;
+  max-width: 320px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #2b2f33;
+  color: #eee;
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 50%);
+  pointer-events: auto;
+}
+.pe-edit-popover ul {
+  margin: 4px 0 6px;
+  padding-left: 16px;
+}
+
+/* 편집 층 */
+.pe-edit-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pe-edit-layer > * {
+  position: absolute;
+}
+.pe-edit-hit {
+  cursor: text;
+  pointer-events: auto;
+}
+.pe-edit-area {
+  box-sizing: border-box;
+  border: 1px solid #1a73e8;
+  background: rgb(26 115 232 / 5%);
+  pointer-events: none;
+}
+.pe-edit-area[data-overflow='1'] {
+  border-color: #d93025;
+  background: rgb(217 48 37 / 6%);
+}
+.pe-edit-sel {
+  background: rgb(26 115 232 / 30%);
+  pointer-events: none;
+}
+.pe-edit-fb {
+  box-sizing: border-box;
+  border-bottom: 1.5px dotted #7b1fa2;
+  pointer-events: none;
+}
+.pe-edit-missing {
+  background: #d93025;
+  pointer-events: auto;
+}
+.pe-edit-comp {
+  box-sizing: border-box;
+  border-bottom: 2px solid #111;
+  pointer-events: none;
+}
+.pe-edit-warn-rect {
+  box-sizing: border-box;
+  border: 1px dashed #ef6c00;
+  background: rgb(239 108 0 / 10%);
+  pointer-events: none;
+}
+.pe-edit-overflow-line {
+  height: 0;
+  border-top: 2px dashed #d93025;
+  pointer-events: none;
+}
+.pe-edit-caret {
+  width: 0;
+  border-left: 1.5px solid #111;
+  pointer-events: none;
+  animation: pe-caret-blink 1.1s steps(1) infinite;
+}
+@keyframes pe-caret-blink {
+  0%,
+  60% {
+    opacity: 1;
+  }
+  61%,
+  100% {
+    opacity: 0;
+  }
+}
+.pe-edit-handle {
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  border: 1px solid #1a73e8;
+  background: #fff;
+  pointer-events: auto;
+}
+.pe-edit-handle[data-handle='n'],
+.pe-edit-handle[data-handle='s'] {
+  cursor: ns-resize;
+}
+.pe-edit-handle[data-handle='e'],
+.pe-edit-handle[data-handle='w'] {
+  cursor: ew-resize;
+}
+.pe-edit-handle[data-handle='nw'],
+.pe-edit-handle[data-handle='se'] {
+  cursor: nwse-resize;
+}
+.pe-edit-handle[data-handle='ne'],
+.pe-edit-handle[data-handle='sw'] {
+  cursor: nesw-resize;
+}
+.pe-edit-overflow {
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #2b2f33;
+  color: #eee;
+  font-size: 12px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 50%);
+  pointer-events: auto;
+}
+.pe-edit-overflow-msg {
+  color: #ffb4a8;
+}
+.pe-edit-chip {
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #3c4a2f;
+  color: #cdeea8;
+}
+.pe-edit-info {
+  /* 페이지 글자를 가리지 않도록 화면 오른쪽 아래에 고정한다. */
+  position: fixed !important;
+  right: 12px;
+  bottom: 12px;
+  z-index: 30;
+  max-width: 340px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgb(43 47 51 / 94%);
+  color: #eee;
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: auto;
+}
+.pe-edit-warnings {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.pe-edit-warnings li[data-kind='glyph-missing'],
+.pe-edit-warnings li[data-kind='overflow-clipped'] {
+  color: #ffb4a8;
+}
+.pe-edit-tagged {
+  color: #ffd98a;
+}
+.pe-edit-error {
+  color: #ffb4a8;
+}
+.pe-edit-notice-line {
+  color: #cdeea8;
+}
+.pe-edit-hint {
+  margin-top: 4px;
+  color: #aab;
+  font-size: 11px;
+}
+/* 입력용 숨은 textarea: 캐럿 위치에 두어 IME 후보창이 캐럿 옆에 뜨게 한다. */
+.pe-edit-input {
+  width: 2px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  opacity: 0.01;
+  resize: none;
+  overflow: hidden;
+  pointer-events: none;
+}

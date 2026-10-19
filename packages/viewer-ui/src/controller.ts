@@ -187,14 +187,8 @@ export class ViewerController {
         repaintPage: () => this.patch({ repaintToken: this.state.repaintToken + 1 }),
       });
     } else {
+      // 호스트가 편집 RPC 를 주지 않는 구성(예: 읽기 전용 하니스): 편집 UI 를 만들지 않는다.
       this.edit = null;
-      this.state = {
-        ...this.state,
-        disabled: {
-          ...this.state.disabled,
-          edit: '편집 RPC 를 쓸 수 없습니다(호스트가 제공하지 않음)',
-        },
-      };
     }
   }
 
