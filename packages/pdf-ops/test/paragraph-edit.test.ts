@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import { FontManager } from '../src/index.js';
 import { findParagraph, loadModules, pageContext, reopen } from './helpers/edit-context.js';
-import { editParagraph, loadFallback } from './helpers/edit-driver.js';
+import { editParagraph, fallbackFor } from './helpers/edit-driver.js';
 import {
   bytesOf,
   charsOfText,
@@ -38,7 +38,7 @@ describe('V2 before-bt: 삽입점에 q /이름 Do Q', () => {
     const doc = makeDoc([THREE]);
     const before = bytesOf(doc);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Bravo paragraph');
     const r = editParagraph(
       ctx,
@@ -53,10 +53,10 @@ describe('V2 before-bt: 삽입점에 q /이름 Do Q', () => {
     await expectOrder(after, 0, 'It has two lines.', r.text, 'Charlie paragraph');
   });
 
-  it('제거·삽입으로 바뀐 객체 = 쪽 사전·콘텐츠 스트림·편집 블록(+Info)', () => {
+  it('제거·삽입으로 바뀐 객체 = 쪽 사전·콘텐츠 스트림·편집 블록', () => {
     const doc = makeDoc([THREE, 'BT /F1 12 Tf 50 200 Td (Other page) Tj ET']);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Bravo paragraph');
     const page1 = doc.findPage(1).toString();
     const r = editParagraph(ctx, fm, p.id);
@@ -80,7 +80,7 @@ describe('V2 기하 근접: 같은 MuPDF 블록 안의 두 문단', () => {
     const a = charsOfText(ctx0, 'First block line one,first block line two.');
     const b = charsOfText(ctx0, 'Second part line threesecond part line four.');
     const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, a, 0), paragraphOf(ctx0, b, 1)]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const r = editParagraph(
       ctx,
       fm,
@@ -107,7 +107,7 @@ describe('V3 split-bt: BT 나누기', () => {
     const before = bytesOf(doc);
     const st0 = stextChars(doc, 0);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Target paragraph');
     const r = editParagraph(ctx, fm, p.id, 'Target paragraph was replaced by a sentence.');
     expect(r.plan.insertion?.mode).toBe('split-bt');
@@ -134,7 +134,7 @@ describe('V3 split-bt: BT 나누기', () => {
     const ctx0 = pageContext(doc, 0);
     const target = charsOfText(ctx0, 'Target words');
     const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, target, 0)]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const r = editParagraph(ctx, fm, 0);
     expect(r.plan.insertion?.mode).toBe('split-bt');
     expect(contentOf(doc)).toContain('Do Q BT 0.98 0 0 1.02 50.123456 200.5 Tm');
@@ -153,7 +153,7 @@ describe('V3 split-bt: BT 나누기', () => {
       ...charsOfText(ctx0, 'target second line.'),
     ];
     const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, chars, 0)]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const r = editParagraph(ctx, fm, 0, 'Replaced lines.');
     expect(r.plan.insertion?.mode).toBe('split-bt');
     expect(contentOf(doc)).toContain(
@@ -169,6 +169,48 @@ describe('V3 split-bt: BT 나누기', () => {
       r.result.summary.contentBox,
     ]);
   });
+
+  for (const [label, content, replay] of [
+    [
+      'TD 뒤 TL 변경 → 분할 → T*',
+      'BT /F1 12 Tf 50 260 Td (Kept head line.) Tj 0 -20 TD (Kept second line.) Tj 12 TL (Target words here) Tj T* (Next line after split.) Tj ET',
+      'BT 50 260 Td 0 -20 Td',
+    ],
+    [
+      'T* 사이 TL 변경 → 분할 → T*',
+      'BT /F1 12 Tf 14 TL 50 260 Td (Kept head line.) Tj T* (Kept second line.) Tj 20 TL T* (Target words here) Tj T* (Next line after split.) Tj ET',
+      'BT 50 260 Td 0 -14 Td 0 -20 Td',
+    ],
+    [
+      'BT 앞에서 정한 TL, 분할 앞 TL 변경',
+      '18 TL BT /F1 12 Tf 50 260 Td (Kept head line.) Tj T* (Kept second line.) Tj 11 TL T* (Target words here) Tj T* (Next line after split.) Tj ET',
+      'BT 50 260 Td 0 -18 Td 0 -11 Td',
+    ],
+  ] as const) {
+    it(`TL 보존(계약 수정 3 확인): ${label} — 뒤 줄 위치 그대로, 세 엔진 0 px`, async () => {
+      const doc = makeDoc([content]);
+      const before = bytesOf(doc);
+      const st0 = stextChars(doc, 0);
+      const ctx0 = pageContext(doc, 0);
+      const ctx = withParagraphs(ctx0, [
+        paragraphOf(ctx0, charsOfText(ctx0, 'Target words here'), 0),
+      ]);
+      const fm = new FontManager(doc, fallbackFor(doc));
+      const r = editParagraph(ctx, fm, 0, 'Replaced words');
+      expect(r.plan.insertion?.mode).toBe('split-bt');
+      // TD 는 Td 로, T* 는 그때의 TL 로 바꿔 다시 실행한다(TL 상태는 바꾸지 않아 그 지점 TL 이 그대로 남는다).
+      expect(contentOf(doc)).toContain(`ET q /PEB0 Do Q ${replay}`);
+      const st1 = stextChars(doc, 0);
+      expectSameOrigins(
+        wordOrigins(st0, 'Next line after split.'),
+        wordOrigins(st1, 'Next line after split.'),
+      );
+      await expectNoChangeOutside(before, bytesOf(doc), 0, [
+        ctx.layout.paragraphs[0]!.bbox,
+        r.result.summary.contentBox,
+      ]);
+    });
+  }
 
   for (const [label, content, keep, target, after] of [
     ['Tj', 'BT /F1 12 Tf 50 200 Td (Alpha beta gamma) Tj ET', 'Alpha', 'beta gamma', null],
@@ -202,7 +244,7 @@ describe('V3 split-bt: BT 나누기', () => {
       const ctx0 = pageContext(doc, 0);
       const chars = charsOfText(ctx0, target);
       const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, chars, 0)]);
-      const fm = new FontManager(doc, loadFallback);
+      const fm = new FontManager(doc, fallbackFor(doc));
       const r = editParagraph(ctx, fm, 0, target.toUpperCase());
       expect(r.plan.removal.partialOps).toBe(1);
       expect(r.plan.insertion?.mode).toBe('split-bt');
@@ -254,7 +296,7 @@ describe('Form 안 텍스트: 사용 경로 바이트 복제(D2)', () => {
       const before = bytesOf(doc);
       const page1 = doc.findPage(1).toString();
       const ctx = pageContext(doc, 0);
-      const fm = new FontManager(doc, loadFallback);
+      const fm = new FontManager(doc, fallbackFor(doc));
       const p = findParagraph(ctx, 'Form paragraph text one');
       const formNums = ctx.map.ops
         .find((o) => o.text && o.formPath.length > 0)!
@@ -298,7 +340,7 @@ describe('Form 안 텍스트: 사용 경로 바이트 복제(D2)', () => {
     const before = bytesOf(doc);
     const shared = doc.findPage(0).get('Contents').asIndirect();
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Bravo paragraph');
     const r = editParagraph(ctx, fm, p.id, 'Bravo changed.');
     expect(doc.findPage(1).get('Contents').asIndirect()).toBe(shared);
@@ -317,7 +359,7 @@ describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () =>
     ]);
     const before = bytesOf(doc);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Upright flipped');
     const r = editParagraph(ctx, fm, p.id, 'Upright text after edit.');
     const after = bytesOf(doc);
@@ -347,7 +389,7 @@ describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () =>
       ]);
       const before = bytesOf(doc);
       const ctx = pageContext(doc, 0);
-      const fm = new FontManager(doc, loadFallback);
+      const fm = new FontManager(doc, fallbackFor(doc));
       const p = findParagraph(ctx, 'Rotated page first');
       const r = editParagraph(ctx, fm, p.id, 'Rotated page text edited.');
       const after = bytesOf(doc);
@@ -366,7 +408,7 @@ describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () =>
       'BT 3 Tr /F1 12 Tf 50 270 Td (hidden ocr layer) Tj ET BT /F1 12 Tf 50 200 Td 0 Tr (Visible paragraph text.) Tj ET',
     ]);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Visible paragraph');
     const r = editParagraph(ctx, fm, p.id, 'NEW VISIBLE WORDS');
     const after = bytesOf(doc);
@@ -383,7 +425,7 @@ describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () =>
       'q 40 150 300 80 re W n BT /F1 12 Tf 50 200 Td (Clipped paragraph text.) Tj ET Q',
     ]);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Clipped paragraph');
     const r = editParagraph(ctx, fm, p.id);
     expect(r.plan.areaLimit.map((v) => Math.round(v))).toEqual([40, 70, 340, 150]);
@@ -399,7 +441,7 @@ describe('V5 marked content·ActualText', () => {
         '/P <</MCID 1>> BDC BT /F1 12 Tf 50 160 Td (Tagged paragraph one.) Tj ET EMC',
     ]);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Tagged paragraph zero');
     const r = editParagraph(ctx, fm, p.id, 'Replaced tagged words.');
     expect(r.plan.insertion?.mcidKept).toBe(true);
@@ -418,7 +460,7 @@ describe('V5 marked content·ActualText', () => {
     const ctx = withParagraphs(ctx0, [
       paragraphOf(ctx0, charsOfText(ctx0, 'Target words here'), 0),
     ]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const r = editParagraph(ctx, fm, 0, 'New words');
     expect(r.plan.insertion).toEqual({ container: 'page', mode: 'split-bt', mcidKept: false });
     const kinds = r.plan.warnings.map((w) => w.kind);
@@ -434,7 +476,7 @@ describe('V5 marked content·ActualText', () => {
     const before = bytesOf(doc);
     const ctx0 = pageContext(doc, 0);
     const ctx = withParagraphs(ctx0, [paragraphOf(ctx0, charsOfText(ctx0, 'Target in bmc'), 0)]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const r = editParagraph(ctx, fm, 0, 'Moved text');
     expect(r.plan.insertion).toEqual({ container: 'page', mode: 'split-bt', mcidKept: null });
     expect(contentOf(doc)).toMatch(/ET q \/PEB0 Do Q BT [^]*?\/Artifact BMC/);
@@ -467,7 +509,7 @@ describe('V5 marked content·ActualText', () => {
       );
       expect(shows.some((v) => v)).toBe(true);
       const ctx = pageContext(doc, 0);
-      const fm = new FontManager(doc, loadFallback);
+      const fm = new FontManager(doc, fallbackFor(doc));
       const p = ctx.layout.paragraphs.find((q) => !q.text.includes('Other'))!;
       const r = editParagraph(ctx, fm, p.id, 'Fresh text without actual.');
       expect(r.plan.warnings.map((w) => w.kind)).toContain('actualtext-cleared');
@@ -490,10 +532,11 @@ describe('V5 marked content·ActualText', () => {
 describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () => {
   it('endOperation → undo 로 원상태, redo 로 편집 상태', async () => {
     const doc = makeDoc([THREE]);
-    doc.enableJournal();
     const before = bytesOf(doc);
     const ctx = pageContext(doc, 0);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
+    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
+    doc.enableJournal();
     const p = findParagraph(ctx, 'Bravo paragraph');
     doc.beginOperation('edit');
     const r = editParagraph(ctx, fm, p.id, '브라보 문단을 한글로 바꿈');
@@ -506,11 +549,13 @@ describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () 
     expect(r.warnings.map((w) => w.kind)).toContain('font-fallback');
   });
 
-  it('abandonOperation 으로 초안 취소, 폴백 폰트가 사라져도 다음 편집에서 다시 넣는다', async () => {
+  it('abandonOperation 으로 초안 취소, 작업 밖에서 넣은 폴백 폰트는 남아 다음 편집이 같은 객체를 쓴다', async () => {
     const doc = makeDoc([THREE]);
-    doc.enableJournal();
     const before = bytesOf(doc);
-    const fm = new FontManager(doc, loadFallback);
+    const source = fallbackFor(doc);
+    const fm = new FontManager(doc, source);
+    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
+    doc.enableJournal();
     const ctx = pageContext(doc, 0);
     const p = findParagraph(ctx, 'Bravo paragraph');
     doc.beginOperation('draft');
@@ -522,19 +567,19 @@ describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () 
     doc.endOperation();
     const { pageText } = await import('./helpers/engines.js');
     expect((await pageText('mupdf', bytesOf(doc), 0)).replace(/\s+/g, '')).toContain('새편집한글');
-    // 폴백 폰트 사전은 표시를 갖는다.
+    // 편집 블록은 core 가 넣어 둔 폴백 폰트 객체를 참조한다(FontManager 는 폰트를 넣지 않는다).
     const font = doc.newIndirect(r.prepared.block.objectNumber).get('Resources').get('Font');
-    let marked = 0;
-    font.forEach((v) => {
-      if (v.get('PdfEditorFallback').isBoolean()) marked++;
-    });
-    expect(marked).toBe(1);
+    const refs: number[] = [];
+    font.forEach((v) => void refs.push(v.asIndirect()));
+    expect(refs).toContain(source.ref()!.asIndirect());
+    expect(source.ref()!.resolve().get('Subtype').asName()).toBe('Type0');
   });
 
-  it('폴백을 넣은 편집 undo 뒤 새 편집 → 저장: 폰트 다시 넣음', async () => {
+  it('폴백을 쓴 편집 undo 뒤 새 편집: 폴백 폰트 객체가 그대로 남아 다시 쓴다', async () => {
     const doc = makeDoc([THREE]);
+    const fm = new FontManager(doc, fallbackFor(doc));
+    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
     doc.enableJournal();
-    const fm = new FontManager(doc, loadFallback);
     const p = findParagraph(pageContext(doc, 0), 'Bravo paragraph');
     doc.beginOperation('edit1');
     editParagraph(pageContext(doc, 0), fm, p.id, '첫 편집');
@@ -551,7 +596,7 @@ describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () 
 describe('재편집(rewrite-block)과 편집 블록 목록', () => {
   it('같은 세션: 블록 글자를 포함한 문단 → 블록만 다시 쓴다(Form 중첩 없음)', async () => {
     const doc = makeDoc([THREE]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const ctx = pageContext(doc, 0);
     const p = findParagraph(ctx, 'Bravo paragraph');
     const r1 = editParagraph(ctx, fm, p.id, 'First rewrite of bravo with 한글 words.');
@@ -576,14 +621,14 @@ describe('재편집(rewrite-block)과 편집 블록 목록', () => {
 
   it('재열기 뒤 새 세션: /PdfEditorFormat 으로 시작 상태(모양·형식)를 복원한다', () => {
     const doc = makeDoc([THREE]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const ctx = pageContext(doc, 0);
     const p = findParagraph(ctx, 'Bravo paragraph');
     const r1 = editParagraph(ctx, fm, p.id, 'Saved block text 저장 블록.');
     const doc2 = reopen(doc, 'garbage=yes,compress,objstms');
     const ctx2 = pageContext(doc2, 0);
     expect(ctx2.editBlocks).toHaveLength(1);
-    const fm2 = new FontManager(doc2, loadFallback);
+    const fm2 = new FontManager(doc2, fallbackFor(doc2));
     const p2 = findParagraph(ctx2, 'Saved block text');
     const plan = editParagraph(ctx2, fm2, p2.id, 'Edited again after reopen.').plan;
     expect(plan.insertion?.mode).toBe('rewrite-block');
@@ -597,7 +642,7 @@ describe('재편집(rewrite-block)과 편집 블록 목록', () => {
 
   it('다른 도구가 블록 스트림을 고쳤으면 추출 텍스트 + 블록 상자로 시작한다', () => {
     const doc = makeDoc([THREE]);
-    const fm = new FontManager(doc, loadFallback);
+    const fm = new FontManager(doc, fallbackFor(doc));
     const ctx = pageContext(doc, 0);
     const p = findParagraph(ctx, 'Bravo paragraph');
     const r1 = editParagraph(ctx, fm, p.id, 'Original block words.');

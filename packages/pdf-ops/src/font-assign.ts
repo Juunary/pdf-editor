@@ -9,14 +9,14 @@
  *   확인). MuPDF·Word 류 서브셋은 안 쓰는 글리프의 외곽선만 비우므로 gid 존재로 판정하지 않는다. 공백류는 제외.
  * - (iii) 명세 폭 > 0(결합 문자 제외).
  *
- * 폴백 폰트(Noto Sans KR glyf 서브셋)는 필요할 때 현재 저널 작업 안에서 Type0(Identity-H)로 넣고 폰트 사전에
- * `/PdfEditorFallback true` 를 둔다. 저널 작업을 버리거나 undo 하면 그 객체가 사라지므로 배정마다 그 표시로 존재를
- * 확인하고 없으면 다시 넣는다(캐시는 객체 번호가 아니라 이 확인 결과로 갱신). 저장 작업 안에서만 서브셋으로 바꾼다.
+ * 폴백 폰트(Noto Sans KR glyf 서브셋, cmap 일대일)는 core 가 저널을 켜기 직전(작업 밖)에 한 번 넣는다(계약 D4
+ * 수정 1). FontManager 는 넣지 않고 `FallbackFontSource.ref()` 객체만 편집 블록 Resources 에 참조로 둔다. 커버리지는
+ * 폰트 cmap, 폭·Ascent·Descent 는 같은 바이트를 임시 문서에 `addFont` 한 결과(/W·FontDescriptor)로 정한다. 저장 작업
+ * 안에서만 서브셋으로 바꾼다.
  */
 import * as mupdf from 'mupdf';
 import type { EditWarning, SourceMap } from '@pdf-editor/shared-types';
 import type { EncodedGlyph, FaceSource, FontFace, FontSegment } from '@pdf-editor/reflow';
-import { latin1String } from './edit-common.js';
 import { subsetFontBytes } from './font-embed.js';
 import {
   glyphNameToUnicode,
@@ -29,8 +29,6 @@ import { readStreamBytes } from './mupdf-util.js';
 import { FontCache, type PdfFont } from './pdf-fonts.js';
 import type { ResolvedStyle } from './edit-style.js';
 
-/** 폴백 폰트 표시(폰트 사전 키). 저장용 서브셋으로 바꾸면 /Subset 이 된다. */
-export const FALLBACK_MARK = 'PdfEditorFallback';
 export const FALLBACK_NAME = 'NotoSansKR';
 export const FALLBACK_KEY = 'fallback';
 
@@ -540,25 +538,17 @@ export class OriginalFont {
 
 // ---------------------------------------------------------------- 폴백 폰트
 
-/**
- * MuPDF addFont 의 ToUnicode 는 U+0020 과 U+00A0 이 같은 글리프면 U+00A0 으로 적는다(실측: Noto Sans KR gid 1).
- * 폴백 폰트로 쓴 공백이 NBSP 로 추출되지 않도록 그 항목을 U+0020 으로 고친다.
- */
-function fixSpaceToUnicode(ref: mupdf.PDFObject, font: mupdf.Font): void {
-  const gid = font.encodeCharacter(0x20);
-  const tu = ref.get('ToUnicode');
-  if (gid <= 0 || !tu.isStream()) return;
-  const code = gid.toString(16).padStart(4, '0');
-  const text = latin1String(readStreamBytes(tu));
-  const re = new RegExp(`<${code}>\\s*<00a0>`, 'i');
-  if (!re.test(text)) return;
-  tu.writeStream(text.replace(re, `<${code}> <0020>`));
+/** 폴백 폰트 원천(계약 수정 1, paragraph-edit.ts FallbackFontSource 와 같은 모양). */
+export interface FallbackSource {
+  bytes(): Uint8Array;
+  ref(): mupdf.PDFObject | null;
 }
 
-export interface FallbackFont {
-  num: number;
-  ref: mupdf.PDFObject;
-  pdf: PdfFont;
+/** 폴백 폰트 지표(바이트에서 한 번 계산). */
+interface FallbackMetrics {
+  font: mupdf.Font;
+  /** gid → /W 폭(1/1000 em, MuPDF addFont 가 쓰는 값). */
+  widths: PdfFont;
   face: FontFace;
 }
 
@@ -566,18 +556,13 @@ export interface FallbackFont {
 export class FontState {
   readonly cache: FontCache;
   private readonly originals = new Map<string, OriginalFont>();
-  private fallback: FallbackFont | null = null;
-  private fallbackBytes: Uint8Array | null = null;
-  private fallbackFont: mupdf.Font | null = null;
-  /** 폴백 폰트 사전을 만들어 두는 임시 문서(graftObject 원본). */
-  private stage: mupdf.PDFDocument | null = null;
-  private staged: mupdf.PDFObject | null = null;
+  private metrics: FallbackMetrics | null | undefined;
   /** 이 세션에서 편집 블록에 쓴 폴백 gid(저장 서브셋용). */
   readonly usedFallbackGids = new Set<number>();
 
   constructor(
     readonly doc: mupdf.PDFDocument,
-    private readonly loadFallback: () => Uint8Array,
+    private readonly fallback: FallbackSource,
   ) {
     this.cache = new FontCache(doc);
   }
@@ -598,88 +583,62 @@ export class FontState {
     return this.originals.get(key);
   }
 
-  private bytes(): Uint8Array | null {
-    if (!this.fallbackBytes) {
-      try {
-        this.fallbackBytes = this.loadFallback();
-      } catch {
-        return null;
-      }
+  /**
+   * 폴백 폰트 지표. 같은 바이트를 임시 문서에 addFont 해 /W·Ascent·Descent 를 읽는다(core 의 embedFont 와 같은
+   * MuPDF 함수라 값이 같다). 바이트를 얻지 못하면 null(폴백 없음).
+   */
+  private fallbackMetrics(): FallbackMetrics | null {
+    if (this.metrics !== undefined) return this.metrics;
+    let bytes: Uint8Array;
+    try {
+      bytes = this.fallback.bytes();
+    } catch {
+      this.metrics = null;
+      return null;
     }
-    return this.fallbackBytes;
+    const font = new mupdf.Font(FALLBACK_NAME, bytes);
+    const tmp = new mupdf.PDFDocument();
+    try {
+      const ref = tmp.addFont(font);
+      const widths = new FontCache(tmp).load(ref.resolve());
+      const fd = descriptorOf(ref.resolve());
+      const asc = fd.get('Ascent').isNumber() ? fd.get('Ascent').asNumber() : 880;
+      const desc = fd.get('Descent').isNumber() ? fd.get('Descent').asNumber() : -120;
+      this.metrics = {
+        font,
+        widths,
+        face: {
+          key: FALLBACK_KEY,
+          kind: 'fallback',
+          fontId: null,
+          ascent: asc,
+          descent: desc,
+          source: { kind: 'opentype', bytes, pdfWidth: (gid) => widths.advanceSpec(gid) },
+        },
+      };
+    } finally {
+      // PdfFont 는 폭 표만 JS 로 들고 있어 임시 문서를 닫아도 된다.
+      tmp.destroy();
+    }
+    return this.metrics;
   }
 
-  private mupdfFallback(): mupdf.Font | null {
-    if (!this.fallbackFont) {
-      const b = this.bytes();
-      if (!b) return null;
-      this.fallbackFont = new mupdf.Font(FALLBACK_NAME, b);
-    }
-    return this.fallbackFont;
+  /** 폴백 face(배정·배치용). 폴백 폰트가 없으면 null. */
+  fallbackFace(): FontFace | null {
+    return this.fallbackMetrics()?.face ?? null;
   }
 
-  /** 폴백 폰트가 클러스터의 모든 코드포인트를 갖는가. */
+  /** 폴백 폰트가 클러스터의 모든 코드포인트를 갖는가(폰트 cmap). */
   fallbackHas(cluster: string): boolean {
-    const f = this.mupdfFallback();
+    const f = this.fallbackMetrics()?.font;
     if (!f) return false;
     for (const ch of cluster) if (f.encodeCharacter(ch.codePointAt(0)!) <= 0) return false;
     return true;
   }
 
-  /** 폴백 gid(클러스터가 코드포인트 하나일 때의 cmap gid). */
-  fallbackGid(ch: string): number {
-    return this.mupdfFallback()?.encodeCharacter(ch.codePointAt(0)!) ?? 0;
-  }
-
-  private valid(num: number): boolean {
-    try {
-      const o = this.doc.newIndirect(num);
-      if (!o.isDictionary()) return false;
-      const m = o.get(FALLBACK_MARK);
-      return m.isBoolean() && m.asBoolean();
-    } catch {
-      return false;
-    }
-  }
-
-  /** 현재 문서에 있는 폴백 폰트(넣지 않는다). */
-  currentFallback(): FallbackFont | null {
-    if (this.fallback && !this.valid(this.fallback.num)) this.fallback = null;
-    return this.fallback;
-  }
-
-  /** 폴백 폰트를 확인하고 없으면 지금(현재 저널 작업 안에서) 넣는다. 폰트를 쓸 수 없으면 null. */
-  ensureFallback(): FallbackFont | null {
-    const cur = this.currentFallback();
-    if (cur) return cur;
-    const bytes = this.bytes();
-    const font = this.mupdfFallback();
-    if (!bytes || !font) return null;
-    // MuPDF addFont 는 문서별 폰트 리소스 캐시(폰트 다이제스트 → 객체)를 쓴다. 저널 작업을 버리거나 undo 해 객체가
-    // 사라져도 캐시가 옛 번호를 돌려주므로(실측: 'not a dict (null)'), 임시 문서에 넣은 폰트를 옮겨 넣는다.
-    if (!this.staged) {
-      this.stage = new mupdf.PDFDocument();
-      this.staged = this.stage.addFont(font);
-      fixSpaceToUnicode(this.staged, font);
-    }
-    const ref = this.doc.graftObject(this.staged);
-    ref.put(FALLBACK_MARK, true);
-    const num = ref.asIndirect();
-    // 같은 번호의 이전 폰트(undo 로 사라진 객체)를 캐시에서 쓰지 않도록 새 캐시로 읽는다.
-    const pdf = new FontCache(this.doc).load(ref.resolve());
-    const fd = descriptorOf(ref.resolve());
-    const asc = fd.get('Ascent').isNumber() ? fd.get('Ascent').asNumber() : 880;
-    const desc = fd.get('Descent').isNumber() ? fd.get('Descent').asNumber() : -120;
-    const face: FontFace = {
-      key: FALLBACK_KEY,
-      kind: 'fallback',
-      fontId: null,
-      ascent: asc,
-      descent: desc,
-      source: { kind: 'opentype', bytes, pdfWidth: (gid) => pdf.advanceSpec(gid) },
-    };
-    this.fallback = { num, ref, pdf, face };
-    return this.fallback;
+  /** 문서에 넣어 둔 폴백 폰트 객체(쓰기용). core 가 아직 넣지 않았으면 null. */
+  fallbackRef(): mupdf.PDFObject | null {
+    return this.fallback.ref();
   }
 
   /**
@@ -714,7 +673,7 @@ export class FontState {
         } else if (orig && orig.unusable === null && orig.encode(c.text)) {
           face = orig.face;
         } else if (this.fallbackHas(c.text)) {
-          face = this.ensureFallback()?.face ?? null;
+          face = this.fallbackFace();
           if (face && !isWhitespaceCluster(c.text)) fallbackChars.add(c.text);
         } else face = null;
         if (face === null && c.text !== '\n') missingChars.add(c.text);
@@ -783,32 +742,37 @@ export class FontState {
    * 작업을 버리면 되돌아간다.
    */
   finalizeForSave(): void {
-    const fb = this.currentFallback();
-    const bytes = this.fallbackBytes;
-    if (!fb || !bytes) return;
-    const sub = subsetFontBytes(FALLBACK_NAME, bytes, this.usedFallbackGids);
-    const file = descriptorOf(fb.ref.resolve()).get('FontFile2');
+    const ref = this.fallback.ref();
+    let bytes: Uint8Array;
+    try {
+      bytes = this.fallback.bytes();
+    } catch {
+      return;
+    }
+    if (!ref || !ref.resolve().isDictionary()) return;
+    const used = [...this.usedFallbackGids].filter((g) => g > 0).sort((a, b) => a - b);
+    const desc = ref.resolve().get('DescendantFonts').get(0);
+    const file = desc.get('FontDescriptor').get('FontFile2');
     if (!file.isStream()) return;
+    const sub = subsetFontBytes(FALLBACK_NAME, bytes, used);
     file.writeStream(sub);
     if (!file.get('Length1').isNull()) file.put('Length1', sub.byteLength);
-    // ToUnicode·/W 도 쓴 글리프만 남긴다(전체 16,892자 ToUnicode 가 저장 파일에 약 21 KB).
-    const used = [...this.usedFallbackGids].filter((g) => g > 0).sort((a, b) => a - b);
-    const tu = fb.ref.get('ToUnicode');
+    // ToUnicode·/W 도 쓴 글리프만 남긴다(전체 cmap ToUnicode 가 저장 파일에 약 21 KB).
+    const tu = ref.resolve().get('ToUnicode');
     if (tu.isStream()) {
       const keep = parseToUnicode(readStreamBytes(tu)).filter((e) =>
         this.usedFallbackGids.has(e.code),
       );
       tu.writeStream(toUnicodeCMap(keep));
     }
-    const desc = fb.ref.resolve().get('DescendantFonts').get(0);
+    const widths = new FontCache(this.doc).load(ref.resolve());
     const w = this.doc.newArray();
     for (const g of used) {
       const ws = this.doc.newArray();
-      ws.push(fb.pdf.advanceSpec(g));
+      ws.push(widths.advanceSpec(g));
       w.push(g);
       w.push(ws);
     }
     desc.put('W', w);
-    fb.ref.put(FALLBACK_MARK, this.doc.newName('Subset'));
   }
 }

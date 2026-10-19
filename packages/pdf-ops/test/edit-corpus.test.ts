@@ -10,7 +10,7 @@ import {
   type ParagraphEditContext,
 } from '../src/index.js';
 import { loadModules, pageContext } from './helpers/edit-context.js';
-import { editParagraph, loadFallback } from './helpers/edit-driver.js';
+import { editParagraph, fallbackFor } from './helpers/edit-driver.js';
 import {
   diffOutside,
   pageText,
@@ -79,7 +79,7 @@ async function samplePage(file: string, bytes: Uint8Array, pageIndex: number): P
   const t0 = performance.now();
   const ctx: ParagraphEditContext = pageContext(doc, pageIndex);
   const ctxMs = performance.now() - t0;
-  const fm = new FontManager(doc, loadFallback);
+  const fm = new FontManager(doc, fallbackFor(doc));
   planPageEditability(ctx, fm);
   const t1 = performance.now();
   const pe = planPageEditability(ctx, fm);
@@ -133,7 +133,7 @@ async function samplePage(file: string, bytes: Uint8Array, pageIndex: number): P
       const p = c.layout.paragraphs.find((q) => q.id === id)!;
       res.chars = p.chars.length;
       const te = performance.now();
-      const r = editParagraph(c, new FontManager(d, loadFallback), id);
+      const r = editParagraph(c, new FontManager(d, fallbackFor(d)), id);
       res.editMs = performance.now() - te;
       res.mode = r.plan.insertion?.mode ?? null;
       res.overflow = r.result.summary.overflow;

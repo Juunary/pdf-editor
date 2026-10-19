@@ -213,7 +213,7 @@ export function listEditBlocks(doc: mupdf.PDFDocument, pageIndex: number): EditB
   return listBlocks(doc, pageIndex);
 }
 
-/** 저장 작업(계약 D9) 안에서 Info /PdfEditorEdits 를 기록한다(계약 5.6·D1). Info 사전은 첫 편집 작업에서 만들어 둔다. */
+/** 저장 작업(계약 D9) 안에서 Info /PdfEditorEdits 를 기록한다(계약 5.6·D1). Info 사전은 core 가 저널을 켜기 전에 만들어 둔다(계약 수정 1). */
 export function recordEditMetadata(
   doc: mupdf.PDFDocument,
   info: { pages: number[]; structureNotUpdated: boolean },
@@ -222,18 +222,25 @@ export function recordEditMetadata(
 }
 
 /**
- * 폰트 배정(계약 D4). 문서당 하나. 폴백 폰트는 필요할 때 현재 저널 작업 안에서 임베딩하고, 작업을 버리거나
- * undo 해 객체가 사라졌으면 다시 넣는다(폰트 사전 /PdfEditorFallback 으로 확인). loadFallback 은 core 가 미리
- * await 한 바이트를 돌려주는 동기 로더다.
+ * 폴백 폰트(계약 D4 수정 1). core 가 저널을 켜기 직전(작업 밖)에 한 번 embedFont 해 둔다. 저널 밖 객체라 편집
+ * 취소·undo 로 사라지지 않는다. FontManager 는 직접 embedFont 하지 않는다.
  */
+export interface FallbackFontSource {
+  /** 폰트 바이트(커버리지 판정·셰이핑). core 가 미리 await 해 둔다. */
+  bytes(): Uint8Array;
+  /** 임베딩한 폴백 폰트 객체(Type0). 저널을 켜기 전(판정 단계)에는 null. */
+  ref(): mupdf.PDFObject | null;
+}
+
+/** 폰트 배정(계약 D4). 문서당 하나. */
 export class FontManager {
   readonly #doc: mupdf.PDFDocument;
-  readonly #loadFallback: () => Uint8Array;
+  readonly #fallback: FallbackFontSource;
 
-  constructor(doc: mupdf.PDFDocument, loadFallback: () => Uint8Array) {
+  constructor(doc: mupdf.PDFDocument, fallback: FallbackFontSource) {
     this.#doc = doc;
-    this.#loadFallback = loadFallback;
-    fontStates.set(this, new FontState(this.#doc, this.#loadFallback));
+    this.#fallback = fallback;
+    fontStates.set(this, new FontState(this.#doc, this.#fallback));
   }
 
   /**

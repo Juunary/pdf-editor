@@ -247,9 +247,13 @@ export function writeBlock(
       if (!rs) throw new Error(`모양 원천을 찾지 못함: sourceChar ${run.style.sourceChar}`);
       let fontRef: mupdf.PDFObject;
       if (g.faceKey === FALLBACK_KEY) {
-        const fb = state.ensureFallback();
-        if (!fb) throw new Error('폴백 폰트를 넣지 못함');
-        fontRef = fb.ref;
+        const fb = state.fallbackRef();
+        if (!fb) {
+          throw new Error(
+            '폴백 폰트 객체 없음(FallbackFontSource.ref() 가 null, core 가 저널을 켜기 전에 넣는다)',
+          );
+        }
+        fontRef = fb;
         state.usedFallbackGids.add(g.gid);
       } else {
         fontRef = state.originalByKey(g.faceKey)?.ref ?? rs.fontRef;
