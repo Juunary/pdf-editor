@@ -36,6 +36,7 @@ import {
 import { now } from './clock.js';
 import { OptionalContent } from './optional-content.js';
 import { FontCache, type PdfFont } from './pdf-fonts.js';
+import { loadType3, T3_COLOR, T3_UNCACHEABLE, type Type3Font, type Type3Glyph } from './type3.js';
 
 /**
  * glyphSeq 계수 정책(계약 3.1 결정 대기).
@@ -164,6 +165,8 @@ interface GState {
   font: PdfFont | null;
   /** Tf 리소스가 없거나 MuPDF 가 로드하지 못해 hail-mary 글꼴로 대체됨. */
   fontFallback: boolean;
+  /** Type3 폰트면 글리프 준비 결과(직접 실행 판정용). */
+  type3: Type3Font | null;
   fontResource: string;
   fontSize: number;
   charSpacing: number;
@@ -334,8 +337,16 @@ export class ContentInterpreter {
   private readonly userToPage: Matrix;
   private aborted = false;
   private patternDepth = 0;
-  /** 직접 실행 중인 패턴 셀의 소유 연산(바깥 패턴 기준). */
+  /** 직접 실행 중인 패턴 셀·Type3 글리프의 소유 연산(바깥 기준). */
   private cellOwner: SourceOp | null = null;
+  /**
+   * MuPDF 장치 MASK 플래그(d1 이 켠다). 켜진 동안 색 연산은 색도 바꾸지 않고 텍스트도 플러시하지 않는다
+   * (pdf_run_cs 등의 MASK 검사). Type3 직접 실행 뒤에는 MuPDF 가 장치 플래그를 되돌리므로 글리프 프로시저 안에서만
+   * 유효하다. 페이지 콘텐츠의 d1(비표준)은 페이지 끝까지 남는다.
+   */
+  private deviceMask = false;
+  private readonly type3Cache = new Map<number, Type3Font>();
+  private readonly type3Running = new Set<Type3Font>();
   /** 실행 중인 콘텐츠(지연 플러시의 패턴 리소스 체인용). */
   private cur: ExecCtx | null = null;
 
@@ -353,6 +364,7 @@ export class ContentInterpreter {
       clipDepth: 0,
       font: null,
       fontFallback: false,
+      type3: null,
       fontResource: '',
       fontSize: -1,
       charSpacing: 0,
@@ -509,6 +521,8 @@ export class ContentInterpreter {
   private execOp(ctx: ExecCtx, op: ContentOp): void {
     const rec = this.record(ctx, op);
     const o = readOperands(op.operands);
+    const masked = this.deviceMask && OP_KIND[op.op] === 'color';
+    if (masked) return;
     if (FLUSHING.has(op.op)) this.flushText();
     const gs = this.gs;
     switch (op.op) {
@@ -633,6 +647,7 @@ export class ContentInterpreter {
         const dict = fontObj && fontObj.isDictionary() ? fontObj : null;
         gs.font = this.fonts.load(dict);
         gs.fontFallback = !dict || gs.font.fallbackReason !== undefined;
+        gs.type3 = dict && gs.font.subtype === 'Type3' ? this.type3For(dict, ctx) : null;
         gs.fontResource = name;
         gs.fontSize = num(o, 0);
         break;
@@ -692,6 +707,9 @@ export class ContentInterpreter {
         this.execDo(ctx, rec, op, o);
         break;
       // marked content
+      case 'd1':
+        this.deviceMask = true;
+        break;
       case 'BMC':
         this.marked.push({ mcid: null, oc: false });
         if (this.hidden > 0) this.hidden++;
@@ -730,6 +748,8 @@ export class ContentInterpreter {
       const f = font.get(0);
       this.gs.font = this.fonts.load(f.isDictionary() ? f : null);
       this.gs.fontFallback = !f.isDictionary() || this.gs.font.fallbackReason !== undefined;
+      this.gs.type3 =
+        f.isDictionary() && this.gs.font.subtype === 'Type3' ? this.type3For(f, ctx) : null;
       this.gs.fontResource = '';
       this.gs.fontSize = font.get(1).asNumber();
     }
@@ -1191,20 +1211,122 @@ export class ContentInterpreter {
       box: [box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1],
     };
 
-    // MuPDF pdf_show_char: 실행 단위 플러시와 Type3 모드 보정.
+    // MuPDF pdf_show_char: 실행 단위 플러시, Type3 모드 보정, 캐시 불가 Type3 글리프 직접 실행.
     const render = gs.render;
     const type3 = font.subtype === 'Type3';
+    const t3 = type3 ? gs.type3 : null;
+    const t3glyph = t3?.glyphs.get(cid);
+    let renderDirect = t3glyph !== undefined && (t3glyph.flags & T3_UNCACHEABLE) !== 0;
     const type3hitr = type3 && render >= 4;
-    if (!this.run || render !== this.tosMode || type3hitr) {
+    if (!this.run || render !== this.tosMode || renderDirect || type3hitr) {
       this.flushText();
       this.run = { glyphs: [], owner: rec };
       this.tosMode = render;
     }
     if (type3hitr) this.tosMode -= 4;
     if (type3 && this.tosMode !== 3) this.tosMode = 0;
+    // 색 있는(d0) Type3 글리프는 패턴 색으로 칠하지 않고 직접 실행한다.
+    if (t3glyph && t3glyph.flags & T3_COLOR && gs.fill.kind !== 'color') renderDirect = true;
+    if (renderDirect && this.tosMode !== 3 && t3 && t3glyph) {
+      this.renderType3Direct(rec, t3, t3glyph, trm);
+      // 글리프는 추출용으로 보이지 않게(Tr 3) 보낸다.
+      this.tosMode = 3;
+    }
     this.run.glyphs.push(ref);
     if (this.tosMode & 4) (this.clipAccum ??= []).push(ref);
     this.tm = preTranslate(this.tm, tx, ty);
+  }
+
+  private type3For(dict: mupdf.PDFObject, ctx: ExecCtx): Type3Font | null {
+    const n = objNum(dict);
+    const cached = n !== null ? this.type3Cache.get(n) : undefined;
+    if (cached) return cached;
+    const t3 = loadType3(dict, ctx.resources[0] ?? null);
+    if (n !== null) this.type3Cache.set(n, t3);
+    return t3;
+  }
+
+  /**
+   * 캐시 불가 Type3 글리프의 프로시저를 장치로 직접 실행한다(MuPDF fz_render_t3_glyph_direct → pdf_run_glyph).
+   * 새 처리기와 같이 텍스트 객체·숨김·marked content 는 따로 두고, 현재 gstate(색·선 상태)를 이어 받으며 글꼴은
+   * 비운다. CTM = FontMatrix × 글리프 trm × CTM. 칠하기 번호는 그 텍스트 연산이 소유하고 outside-page-content(L4).
+   */
+  private renderType3Direct(
+    rec: SourceOp | null,
+    t3: Type3Font,
+    glyph: Type3Glyph,
+    trm: Matrix,
+  ): void {
+    if (this.type3Running.has(t3)) return; // MuPDF: recursive type3 font
+    const saved = {
+      gs: this.gs,
+      gstack: this.gstack,
+      tm: this.tm,
+      tlm: this.tlm,
+      run: this.run,
+      tosMode: this.tosMode,
+      clipAccum: this.clipAccum,
+      hidden: this.hidden,
+      marked: this.marked,
+      pathCmds: this.pathCmds,
+      pathRight: this.pathRight,
+      pathCur: this.pathCur,
+      pendingClip: this.pendingClip,
+      cellOwner: this.cellOwner,
+      deviceMask: this.deviceMask,
+    };
+    this.gs = cloneGs(saved.gs);
+    this.gs.font = null;
+    this.gs.type3 = null;
+    this.gs.fontResource = '';
+    this.gs.ctm = concat(concat(t3.matrix, trm), saved.gs.ctm);
+    this.gstack = [];
+    this.tm = [...IDENTITY];
+    this.tlm = [...IDENTITY];
+    this.run = null;
+    this.tosMode = 0;
+    this.clipAccum = null;
+    this.hidden = 0;
+    this.marked = [];
+    this.pathCmds = [];
+    this.pathRight = true;
+    this.pendingClip = null;
+    if (!saved.cellOwner && rec) this.addLimit(rec, 'outside-page-content');
+    this.cellOwner = saved.cellOwner ?? rec;
+    this.type3Running.add(t3);
+    this.exec({
+      bytes: glyph.bytes,
+      segments: [
+        { start: 0, end: glyph.bytes.byteLength, ref: { objectNumber: 0, contentsIndex: null } },
+      ],
+      resources: t3.resources ? [t3.resources] : [],
+      formPath: [],
+      owned: false,
+      parentCtm: [...this.gs.ctm],
+      inheritsResources: false,
+      structParents: false,
+      formOC: false,
+      doOrdinals: [0],
+      depth: 99,
+      opIds: [],
+    });
+    this.type3Running.delete(t3);
+    this.gs = saved.gs;
+    this.gstack = saved.gstack;
+    this.tm = saved.tm;
+    this.tlm = saved.tlm;
+    this.run = saved.run;
+    this.tosMode = saved.tosMode;
+    this.clipAccum = saved.clipAccum;
+    this.hidden = saved.hidden;
+    this.marked = saved.marked;
+    this.pathCmds = saved.pathCmds;
+    this.pathRight = saved.pathRight;
+    this.pathCur = saved.pathCur;
+    this.pendingClip = saved.pendingClip;
+    this.cellOwner = saved.cellOwner;
+    // MuPDF pdf_show_char: 직접 실행 전 장치 플래그를 저장했다가 되돌린다.
+    this.deviceMask = saved.deviceMask;
   }
 
   /** 실행 단위 플러시(MuPDF pdf_flush_text). */

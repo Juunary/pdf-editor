@@ -334,6 +334,110 @@ describe('텍스트 상태와 글리프 원점', () => {
   });
 });
 
+describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
+  /** 코드 65·66 두 글리프 Type3 폰트. procs = [A 프로시저, B 프로시저]. */
+  const type3 = (doc: mupdf.PDFDocument, procs: [string, string], res: Res = {}) =>
+    doc.addObject({
+      Type: 'Font',
+      Subtype: 'Type3',
+      FontBBox: [0, 0, 1000, 1000],
+      FontMatrix: [0.001, 0, 0, 0.001, 0, 0],
+      CharProcs: { a: doc.addStream(procs[0], {}), b: doc.addStream(procs[1], {}) },
+      Encoding: { Type: 'Encoding', Differences: [65, 'a', 'b'] },
+      FirstChar: 65,
+      LastChar: 66,
+      Widths: [600, 700],
+      Resources: res,
+    });
+  const traceMatches = (b: Built) => {
+    const trace: string[] = [];
+    buildSourceMapImpl(b.doc, 0, 8, 'first-arrival', trace);
+    expect(trace.map((t) => t.replace(/:[NR]+$/, ''))).toEqual(deliveryTrace(b.doc.loadPage(0)));
+    return trace;
+  };
+
+  it('d0 + 색 지정 없는 칠하기 = 캐시 불가 → 글리프마다 프로시저 직접 실행 + ignoreText(arXiv pdfTeX 유형)', () => {
+    const b = build('BT /T 20 Tf 50 700 Td (ABA) Tj ET', (doc) => ({
+      Font: {
+        T: type3(doc, ['600 0 d0 0 0 500 500 re f', '700 0 d0 0 0 250 500 re f 0 0 9 9 re f']),
+      },
+    }));
+    expect(traceMatches(b).filter((t) => t !== 'P')).toEqual([
+      'ignore:1:N',
+      'ignore:1:N',
+      'ignore:1:N',
+    ]);
+    const r = match(b);
+    expectFull(r);
+    const tj = textOps(r.map)[0]!;
+    expect(tj.paintSeq).toEqual([0, 1, 2, 3]);
+    expect(tj.limits).toEqual(expect.arrayContaining(['type3-font', 'outside-page-content']));
+  });
+
+  it('d1 + 선 상태 미정 B = 캐시 불가, 글리프 안 MASK 는 직접 실행 뒤 되돌아간다(zen-ko 유형)', () => {
+    const b = build(
+      'BT /T 20 Tf 50 700 Td (AB) Tj ET /Pattern cs /SP scn 10 10 50 50 re f 1 0 0 rg BT /F1 12 Tf 60 600 Td (x) Tj ET',
+      (doc) => ({
+        Font: {
+          F1: doc.addSimpleFont(new mupdf.Font('Helvetica')),
+          T: type3(doc, [
+            '600 0 0 0 500 500 d1 0 0 500 500 re B',
+            '700 0 0 0 500 500 d1 1 0 0 rg 0 0 250 500 re B',
+          ]),
+        },
+        Pattern: { SP: doc.addObject({ Type: 'Pattern', PatternType: 2, Shading: shading }) },
+      }),
+    );
+    // 글리프마다 fillPath+strokePath(B 글리프 안 1 0 0 rg 는 MASK 로 무시). MuPDF 가 직접 실행 뒤 장치 플래그를
+    // 되돌리므로 뒤의 패턴 설정은 적용되어 f 는 clip+fillShade 2개.
+    expect(traceMatches(b)).toEqual([
+      'P',
+      'P',
+      'ignore:1:N',
+      'P',
+      'P',
+      'ignore:1:N',
+      'P',
+      'P',
+      'fill:1:N',
+    ]);
+    expectFull(match(b));
+  });
+
+  it('d1 에서 w·j·d 를 모두 정하고 선을 그리면 캐시 가능, d 가 빠지면 캐시 불가', () => {
+    const b = build('BT /T 20 Tf 50 700 Td (AB) Tj ET', (doc) => ({
+      Font: {
+        T: type3(doc, [
+          '600 0 0 0 500 500 d1 10 w 1 j [] 0 d 0 0 500 500 re B',
+          '700 0 0 0 500 500 d1 10 w 1 j 0 0 250 500 re B',
+        ]),
+      },
+    }));
+    // A 는 캐시 가능(fill), B 는 대시 미정으로 직접 실행(fillPath+strokePath+ignore).
+    expect(traceMatches(b)).toEqual(['fill:1:N', 'P', 'P', 'ignore:1:N']);
+    expectFull(match(b));
+  });
+
+  it('색 있는(d0, 색 지정) 글리프 + 패턴 채움 색 = 직접 실행', () => {
+    const b = build('/Pattern cs /SP scn BT /T 20 Tf 50 700 Td (A) Tj ET', (doc) => ({
+      Font: {
+        T: type3(doc, ['600 0 d0 0 1 0 rg 0 0 500 500 re f', '700 0 d0 0 0 1 rg 0 0 9 9 re f']),
+      },
+      Pattern: { SP: doc.addObject({ Type: 'Pattern', PatternType: 2, Shading: shading }) },
+    }));
+    expect(traceMatches(b)).toEqual(['P', 'ignore:1:N']);
+    expectFull(match(b));
+  });
+
+  it('꺼진 /OC 안에서도 직접 실행 칠하기는 온다(새 처리기는 숨김 카운터가 0)', () => {
+    const b = build('/OC /OC1 BDC BT /T 20 Tf 50 700 Td (AB) Tj ET EMC', (doc) => ({
+      Font: { T: type3(doc, ['600 0 d0 0 0 500 500 re f', '700 0 d0 0 0 250 500 re f']) },
+    }));
+    expect(traceMatches(b)).toEqual(['P', 'ignore:1:N', 'P', 'ignore:1:N']);
+    expectFull(match(b));
+  });
+});
+
 describe('텍스트 렌더 방식(Tr 0–7)과 ET 재전송', () => {
   const cases = [
     '(A) Tj 1 Tr (B) Tj 2 Tr (C) Tj 3 Tr (D) Tj',
