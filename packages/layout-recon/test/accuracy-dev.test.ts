@@ -43,8 +43,12 @@ describe.skipIf(!MODELS)('정확도 개발 측정', () => {
         const neighbors: PageModel[] = [];
         if (nbDir)
           for (const k of [-2, -1, 1, 2]) {
-            const nf = path.join(nbDir, `${doc}-p${String(label.pageIndex + k).padStart(3, '0')}.json`);
-            if (fs.existsSync(nf)) neighbors.push(JSON.parse(fs.readFileSync(nf, 'utf8')) as PageModel);
+            const nf = path.join(
+              nbDir,
+              `${doc}-p${String(label.pageIndex + k).padStart(3, '0')}.json`,
+            );
+            if (fs.existsSync(nf))
+              neighbors.push(JSON.parse(fs.readFileSync(nf, 'utf8')) as PageModel);
           }
         const layout = reconstructPage(model, { neighbors });
         const s = scoreLayout(label, layout);
