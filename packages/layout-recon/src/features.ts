@@ -3,6 +3,7 @@
  * 단어·구간 상자는 글자 quad 의 x 범위로 만든다(가로쓰기 기준). 세로·회전 줄은 horizontal=false.
  */
 import type { PageModel, Rect } from '@pdf-editor/shared-types';
+import { MATH_FONT } from './text-rules.js';
 
 export interface Box {
   x0: number;
@@ -95,7 +96,9 @@ export function lineFeatures(model: PageModel): LineFeature[] {
     const spaceAfter = new Set(line.spaceAfter);
     const cs = chars.map((i) => model.chars[i]!);
     const visible = cs.filter((c) => c.text.trim() !== '');
-    const sizes = visible.map((c) => c.size);
+    // 줄 크기는 수식 글꼴이 아닌 글자 기준(수식 첨자 글자 수가 줄 크기를 끌어내리지 않게).
+    const prose = visible.filter((c) => !MATH_FONT.test(model.fonts[c.fontId]?.name ?? ''));
+    const sizes = (prose.length ? prose : visible).map((c) => c.size);
     const size = median(sizes.length ? sizes : cs.map((c) => c.size));
     const fontCount = new Map<number, number>();
     for (const c of visible) fontCount.set(c.fontId, (fontCount.get(c.fontId) ?? 0) + 1);

@@ -169,7 +169,15 @@ export class PdfSession {
   getPageLayout(pageIndex: number): PageLayout {
     const cached = touch(this.#layoutCache, pageIndex);
     if (cached) return cached;
-    const layout = reconstructPage(this.extractPage({ pageIndex, includePathSegments: true }));
+    // 이웃 쪽(±1·±2) 추출 모델: 러닝헤드·쪽 번호 반복 판정용(계약 2.5). 추출 캐시를 거친다.
+    const count = this.document.countPages();
+    const neighbors = [-2, -1, 1, 2]
+      .map((k) => pageIndex + k)
+      .filter((n) => n >= 0 && n < count)
+      .map((n) => this.extractPage({ pageIndex: n }));
+    const layout = reconstructPage(this.extractPage({ pageIndex, includePathSegments: true }), {
+      neighbors,
+    });
     remember(this.#layoutCache, pageIndex, layout);
     return layout;
   }
