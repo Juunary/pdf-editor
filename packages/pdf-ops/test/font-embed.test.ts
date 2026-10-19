@@ -16,7 +16,7 @@ function gidsFor(text: string): number[] {
   return [...text].filter((c) => c !== ' ').map((c) => font.encodeCharacter(c.codePointAt(0)!));
 }
 
-function renderWith(bytes: Uint8Array, gids: number[]): Uint8Array {
+function renderWith(bytes: Uint8Array, gids: number[]): Uint8ClampedArray {
   const doc = new mupdf.PDFDocument();
   const ref = doc.addFont(new mupdf.Font('NotoSansKR', bytes));
   doc.insertPage(
