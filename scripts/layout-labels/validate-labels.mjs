@@ -56,6 +56,11 @@ for (const rel of files.sort()) {
     if (!['dev', 'test'].includes(label.split)) errs.push(`split ${label.split}`);
     if (!['draft', 'reviewed', 'confirmed'].includes(label.status))
       errs.push(`status ${label.status}`);
+    // 독립 검토: reviewed 이상은 검토자가 있어야 하고 라벨러와 달라야 한다.
+    if (label.status !== 'draft') {
+      if (!label.reviewedBy) errs.push('reviewedBy 없음');
+      else if (label.reviewedBy === label.labeledBy) errs.push('reviewedBy 가 labeledBy 와 같음');
+    }
     (label.items ?? []).forEach((it, k) => {
       if (it.type === 'paragraph') {
         if (!ROLES.has(it.role)) errs.push(`items[${k}] role ${it.role}`);
@@ -65,6 +70,14 @@ for (const rel of files.sort()) {
         if (!(it.rows >= 1 && it.cols >= 1)) errs.push(`items[${k}] rows/cols`);
         if (!Array.isArray(it.bbox) || it.bbox.length !== 4) errs.push(`items[${k}] bbox`);
         it.lines?.forEach((i) => note(i, `items[${k}]`));
+        const slots = new Map();
+        for (const c of it.cells ?? [])
+          for (let r = c.row; r < c.row + (c.rowSpan ?? 1); r++)
+            for (let q = c.col; q < c.col + (c.colSpan ?? 1); q++) {
+              const key = `${r},${q}`;
+              if (slots.has(key)) errs.push(`items[${k}] 셀 겹침 (${key})`);
+              slots.set(key, true);
+            }
         for (const c of it.cells ?? []) {
           for (const i of c.lines ?? [])
             if (!it.lines.includes(i)) errs.push(`items[${k}] 셀 줄 ${i} 이 표 lines 에 없음`);

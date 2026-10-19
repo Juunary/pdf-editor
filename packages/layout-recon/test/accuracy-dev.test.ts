@@ -24,6 +24,8 @@ describe.skipIf(!MODELS)('정확도 개발 측정', () => {
     for (const doc of fs.readdirSync(LABELS).sort()) {
       for (const f of fs.readdirSync(path.join(LABELS, doc)).sort()) {
         const label = JSON.parse(fs.readFileSync(path.join(LABELS, doc, f), 'utf8')) as PageLabel;
+        // 초안(draft) 라벨은 채점하지 않는다(계약 4.1).
+        if (label.status === 'draft') continue;
         if (SPLIT !== 'all' && label.split !== SPLIT) continue;
         const name = `${doc}-${f.replace('.json', '')}`;
         const file = path.join(MODELS!, `${name}.json`);

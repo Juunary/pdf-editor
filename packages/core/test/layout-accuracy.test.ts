@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -22,16 +23,39 @@ import {
  *
  * 라벨은 fixtures/labels/<문서 id>/pNNN.json. reviewed·confirmed 라벨만 채점한다. 추출 지문이 다르면
  * 그 쪽은 채점하지 않고 실패로 보고한다(추출이 바뀌면 라벨을 다시 확인해야 한다).
+ * 기본은 dev 만 채점한다(계약 4.4: test 는 마일스톤 끝에 명시적으로 LAYOUT_ACC_SPLIT=test|all 로 한 번).
+ * layout-recon 은 vitest.config.ts 별칭으로 소스를 쓴다. 결과에 커밋 SHA·작업 트리 변경 여부를 남긴다.
+ * test 요약은 전체(test)와 문서 단위 보류(test-docs-unseen: dev 쪽이 없는 문서의 test 쪽)로 나눠 낸다.
  */
 const corpus = process.env.LAYOUT_CORPUS_DIR;
 const out = process.env.LAYOUT_ACC_OUT;
-const split = process.env.LAYOUT_ACC_SPLIT ?? 'all';
+const split = process.env.LAYOUT_ACC_SPLIT ?? 'dev';
+
+function gitState(): { sha: string; dirty: boolean } {
+  try {
+    const root = resolve(labelsDir, '../..');
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root }).toString().trim();
+    const status = execFileSync(
+      'git',
+      ['status', '--porcelain', '--', 'packages', 'fixtures/labels'],
+      {
+        cwd: root,
+      },
+    )
+      .toString()
+      .trim();
+    return { sha, dirty: status !== '' };
+  } catch {
+    return { sha: 'unknown', dirty: true };
+  }
+}
 const labelsDir = resolve(import.meta.dirname, '../../../fixtures/labels');
 
 interface PageRow {
   name: string;
   split: string;
   status: string;
+  doc: string;
   score: PageScore;
   reconMs: number;
 }
@@ -78,6 +102,7 @@ describe.skipIf(!corpus)('M2 정확도 하네스', () => {
             name,
             split: label.split,
             status: label.status,
+            doc: label.doc,
             score: scoreLayout(label, layout),
             reconMs: layout.reconMs,
           });
@@ -86,13 +111,24 @@ describe.skipIf(!corpus)('M2 정확도 하네스', () => {
     } finally {
       for (const d of docs.values()) d.destroy();
     }
+    const devDocs = new Set<string>();
+    for (const doc of readdirSync(labelsDir))
+      for (const file of readdirSync(join(labelsDir, doc))) {
+        const l = JSON.parse(readFileSync(join(labelsDir, doc, file), 'utf8')) as PageLabel;
+        if (l.split === 'dev') devDocs.add(l.doc);
+      }
+    const groups: Record<string, (r: PageRow) => boolean> = {
+      dev: (r) => r.split === 'dev',
+      test: (r) => r.split === 'test',
+      'test-docs-unseen': (r) => r.split === 'test' && !devDocs.has(r.doc),
+      all: () => true,
+    };
     const summaries = Object.fromEntries(
-      ['dev', 'test', 'all']
-        .filter((s) => split === 'all' || s === split)
-        .map((s) => [
-          s,
-          summarizeScores(rows.filter((r) => s === 'all' || r.split === s).map((r) => r.score)),
-        ]),
+      Object.entries(groups)
+        .filter(
+          ([s]) => split === 'all' || s === split || (split === 'test' && s.startsWith('test')),
+        )
+        .map(([s, pick]) => [s, summarizeScores(rows.filter(pick).map((r) => r.score))]),
     );
     if (out) {
       writeFileSync(
@@ -101,6 +137,8 @@ describe.skipIf(!corpus)('M2 정확도 하네스', () => {
           {
             labelsDir,
             split,
+            git: gitState(),
+            measuredAt: new Date().toISOString(),
             summaries,
             stale,
             reconMs: {
