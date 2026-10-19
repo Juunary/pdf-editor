@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./measure": {
+      "types": "./dist/measure.d.ts",
+      "default": "./dist/measure.js"
     }
   },
   "files": [

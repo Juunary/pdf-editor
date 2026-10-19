@@ -2,7 +2,7 @@ import { extractFileParam } from '../interception.js';
 
 /**
  * 뷰어가 열린 문맥. FSA 가용성 검증(PLAN.md 5.3)을 이 구분으로 기록한다.
- * - mime-handler-top / mime-handler-embedded: Chrome 151+ MIME handler 가 띄운 경우
+ * - mime-handler-top / mime-handler-embedded: Chrome 150+ MIME handler 가 띄운 경우
  * - url-param: DNR 폴백 리다이렉트 또는 `viewer.html?file=` 직접 접근
  * - viewer-page: 확장 페이지로 직접 연 경우(로컬 파일 선택)
  */
