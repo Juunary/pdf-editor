@@ -3,6 +3,10 @@
  * (PLAN.md 4절). MuPDF·DOM 에 의존하지 않는다. 폰트 배정(원본/폴백)은 pdf-ops FontManager 가 정해 넘긴다.
  */
 import type { ParagraphFormat, Rect, ReflowSummary } from '@pdf-editor/shared-types';
+import { layout, OVERFLOW_TOLERANCE } from './layout.js';
+
+export { KINSOKU_HEAD, KINSOKU_TAIL } from './text.js';
+export { OPENTYPE_FEATURES_OFF } from './opentype.js';
 
 /** 원본 폰트에서 한 클러스터를 쓰는 글리프(들). 단위 1/1000 em. */
 export interface EncodedGlyph {
@@ -90,7 +94,18 @@ export interface ReflowResult {
   lines: WritableGlyph[][];
 }
 
-/** 같은 입력이면 같은 결과(계약 5.4 결정성). */
-export function layoutParagraph(_input: ReflowInput): ReflowResult {
-  throw new Error('M3 미구현: reflow.layoutParagraph');
+/** 같은 입력이면 같은 결과(계약 5.4 결정성, summary.reflowMs 제외). 규칙은 docs/m3-reflow.md. */
+export function layoutParagraph(input: ReflowInput): ReflowResult {
+  return layout(input);
+}
+
+/**
+ * 배치 상자가 영역 상한 밖으로 나가 잘리는지(keep 의 overflow-clipped 경고 판단, 계약 5.4). 여유는 초과 판정과 같은 0.5pt.
+ */
+export function isOverflowClipped(summary: ReflowSummary, areaLimit: Rect): boolean {
+  const [x0, y0, x1, y1] = summary.contentBox;
+  const t = OVERFLOW_TOLERANCE;
+  return (
+    x0 < areaLimit[0] - t || y0 < areaLimit[1] - t || x1 > areaLimit[2] + t || y1 > areaLimit[3] + t
+  );
 }
