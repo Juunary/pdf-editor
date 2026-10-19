@@ -21,21 +21,22 @@ const open = (b: Uint8Array) => mupdf.Document.openDocument(b, 'application/pdf'
 function blocksOf(doc: Doc, p: number): { bbox: Rect; lines: number }[] {
   const blocks: { bbox: Rect; lines: number }[] = [];
   let cur: { bbox: Rect; lines: number } | null = null;
-  doc
-    .loadPage(p)
-    .toStructuredText('preserve-whitespace')
-    .walk({
-      beginTextBlock: (bbox) => {
-        cur = { bbox: [bbox[0], bbox[1], bbox[2], bbox[3]], lines: 0 };
-      },
-      beginLine: () => {
-        if (cur) cur.lines++;
-      },
-      endTextBlock: () => {
-        if (cur) blocks.push(cur);
-        cur = null;
-      },
-    });
+  const page = doc.loadPage(p);
+  const st = page.toStructuredText('preserve-whitespace');
+  st.walk({
+    beginTextBlock: (bbox) => {
+      cur = { bbox: [bbox[0], bbox[1], bbox[2], bbox[3]], lines: 0 };
+    },
+    beginLine: () => {
+      if (cur) cur.lines++;
+    },
+    endTextBlock: () => {
+      if (cur) blocks.push(cur);
+      cur = null;
+    },
+  });
+  st.destroy();
+  page.destroy();
   return blocks;
 }
 
@@ -43,9 +44,12 @@ const inside = (r: Rect, x: number, y: number, m = 1) =>
   x >= r[0] - m && x <= r[2] + m && y >= r[1] - m && y <= r[3] + m;
 
 function render(doc: Doc, p: number): mupdf.Pixmap {
-  return doc
-    .loadPage(p)
-    .toPixmap(mupdf.Matrix.scale(SCALE, SCALE), mupdf.ColorSpace.DeviceRGB, false, true);
+  const page = doc.loadPage(p);
+  try {
+    return page.toPixmap(mupdf.Matrix.scale(SCALE, SCALE), mupdf.ColorSpace.DeviceRGB, false, true);
+  } finally {
+    page.destroy();
+  }
 }
 
 function diffOutside(a: mupdf.Pixmap, b: mupdf.Pixmap, r: Rect): number {
@@ -77,14 +81,15 @@ function diffOutside(a: mupdf.Pixmap, b: mupdf.Pixmap, r: Rect): number {
 
 function charsInside(doc: Doc, p: number, r: Rect): number {
   let n = 0;
-  doc
-    .loadPage(p)
-    .toStructuredText('')
-    .walk({
-      onChar: (c, origin) => {
-        if (c.trim() && inside(r, origin[0], origin[1], 0.5)) n++;
-      },
-    });
+  const page = doc.loadPage(p);
+  const st = page.toStructuredText('');
+  st.walk({
+    onChar: (c, origin) => {
+      if (c.trim() && inside(r, origin[0], origin[1], 0.5)) n++;
+    },
+  });
+  st.destroy();
+  page.destroy();
   return n;
 }
 
@@ -97,52 +102,74 @@ interface Row {
   redaction: { diffOutside: number; charsLeft: number; warnings: string[] };
 }
 
+/** 전체 저장 후 바이트를 복사하고 MuPDF 버퍼를 해제한다. */
+function saveBytes(doc: Doc): Uint8Array {
+  const buf = doc.saveToBuffer('garbage=yes,compress');
+  try {
+    return buf.asUint8Array().slice();
+  } finally {
+    buf.destroy();
+  }
+}
+
 function evaluate(file: string, bytes: Uint8Array, p: number, block: { bbox: Rect }): Row | null {
-  const doc = open(bytes);
-  const map = buildSourceMap(doc, p);
-  // 블록 안 글리프만 가진 페이지 콘텐츠 텍스트 연산
-  const ops = map.ops.filter(
-    (o) =>
-      o.kind === 'text-show' &&
-      o.formPath.length === 0 &&
-      (o.text?.glyphs.length ?? 0) > 0 &&
-      o.text!.glyphs.every((g) => inside(block.bbox, g.origin[0], g.origin[1])),
-  );
-  if (ops.length === 0) return null;
-  const before = render(doc, p);
-  const r = removeTextShowOps(
-    doc,
-    map,
-    ops.map((o) => o.id),
-  );
-  const a = open(doc.saveToBuffer('garbage=yes,compress').asUint8Array().slice());
-  const sourceMap = {
-    removed: r.removed.length,
-    skipped: r.skipped.length,
-    diffOutside: diffOutside(before, render(a, p), block.bbox),
-    charsLeft: charsInside(a, p, block.bbox),
+  const owned: { destroy(): void }[] = [];
+  const keep = <T extends { destroy(): void }>(x: T): T => {
+    owned.push(x);
+    return x;
   };
-  const warnings: string[] = [];
-  mupdf.setLog({ warning: (m) => warnings.push(m), error: (m) => warnings.push(m) });
-  const d2 = open(bytes);
-  const page = d2.loadPage(p) as mupdf.PDFPage;
-  const annot = page.createAnnotation('Redact');
-  annot.setRect(block.bbox);
-  annot.applyRedaction(0, 0, 0, 0);
-  const b = open(d2.saveToBuffer('garbage=yes,compress').asUint8Array().slice());
-  mupdf.setLog(null);
-  return {
-    file,
-    page: p,
-    bbox: block.bbox,
-    ops: ops.length,
-    sourceMap,
-    redaction: {
-      diffOutside: diffOutside(before, render(b, p), block.bbox),
-      charsLeft: charsInside(b, p, block.bbox),
-      warnings: [...new Set(warnings)].slice(0, 5),
-    },
-  };
+  try {
+    const doc = keep(open(bytes));
+    const map = buildSourceMap(doc, p);
+    // 블록 안 글리프만 가진 페이지 콘텐츠 텍스트 연산
+    const ops = map.ops.filter(
+      (o) =>
+        o.kind === 'text-show' &&
+        o.formPath.length === 0 &&
+        (o.text?.glyphs.length ?? 0) > 0 &&
+        o.text!.glyphs.every((g) => inside(block.bbox, g.origin[0], g.origin[1])),
+    );
+    if (ops.length === 0) return null;
+    const before = keep(render(doc, p));
+    const r = removeTextShowOps(
+      doc,
+      map,
+      ops.map((o) => o.id),
+    );
+    const a = keep(open(saveBytes(doc)));
+    const sourceMap = {
+      removed: r.removed.length,
+      skipped: r.skipped.length,
+      diffOutside: diffOutside(before, keep(render(a, p)), block.bbox),
+      charsLeft: charsInside(a, p, block.bbox),
+    };
+    const warnings: string[] = [];
+    mupdf.setLog({ warning: (m) => warnings.push(m), error: (m) => warnings.push(m) });
+    const d2 = keep(open(bytes));
+    const page = keep(d2.loadPage(p) as mupdf.PDFPage);
+    const annot = page.createAnnotation('Redact');
+    annot.setRect(block.bbox);
+    annot.applyRedaction(0, 0, 0, 0);
+    const b = keep(open(saveBytes(d2)));
+    mupdf.setLog(null);
+    return {
+      file,
+      page: p,
+      bbox: block.bbox,
+      ops: ops.length,
+      sourceMap,
+      redaction: {
+        diffOutside: diffOutside(before, keep(render(b, p)), block.bbox),
+        charsLeft: charsInside(b, p, block.bbox),
+        warnings: [...new Set(warnings)].slice(0, 5),
+      },
+    };
+  } finally {
+    mupdf.setLog(null);
+    for (const x of owned.reverse()) x.destroy();
+    // 문서마다 쌓이는 폰트·이미지 캐시를 비워 WASM 힙 고갈을 막는다.
+    mupdf.emptyStore();
+  }
 }
 
 describe.skipIf(!dir)(
@@ -162,10 +189,14 @@ describe.skipIf(!dir)(
       const rows: Row[] = [];
       for (const { file, pages } of plan) {
         const bytes = new Uint8Array(readFileSync(join(dir!, file)));
-        const count = open(bytes).countPages();
+        const probe = open(bytes);
+        const count = probe.countPages();
+        probe.destroy();
         for (const p of pages.filter((x) => x < count)) {
           // 여러 줄 블록 우선. 줄마다 블록을 나누는 출력기(docs/m0-corpus-recheck.md C5)는 넓은 한 줄 블록을 쓴다.
-          const all = blocksOf(open(bytes), p);
+          const listing = open(bytes);
+          const all = blocksOf(listing, p);
+          listing.destroy();
           const multi = all.filter((b) => b.lines >= 2);
           const blocks = (
             multi.length > 0
