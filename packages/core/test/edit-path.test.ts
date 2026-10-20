@@ -459,3 +459,34 @@ describe('초안 입력 검증', () => {
     s.close();
   });
 });
+
+describe('R-L3 해제 연결', () => {
+  it('초안이 끝날 때(커밋·취소)와 재적용 뒤 pdf-ops 초안 상태를 버리고, 닫을 때 FontManager 를 해제한다', async () => {
+    const { s, adapter } = open();
+    const [first, second] = seqs(s);
+    const ops: EditOp[] = [(await pathEdit(s, [first!], move(1, 0))).committed.op];
+    expect(adapter.probe.releaseCalls).toBe(1);
+    const plan = await s.planPathEdit(0, [second!]);
+    const started = await s.beginPathEdit(0, [second!], plan.revision);
+    await s.cancelPathEdit(started.draftId);
+    expect(adapter.probe.releaseCalls).toBe(2);
+    ops.push((await editParagraph(s, 0, 'Hello')).op);
+    expect(adapter.probe.releaseCalls).toBe(3);
+    expect(adapter.probe.fontDisposeCalls).toBe(0);
+    s.close();
+    expect(adapter.probe.fontDisposeCalls).toBe(1);
+    expect(adapter.probe.releaseCalls).toBe(4);
+    s.close();
+    expect(adapter.probe.fontDisposeCalls).toBe(1);
+
+    const replayAdapter = createFakeAdapter();
+    const r = new PdfSession({
+      editAdapter: replayAdapter,
+      loadFallbackFont: async () => FONT_BYTES,
+    });
+    r.open(buildPdf([{ content: PATH_PAGE, mediabox: MEDIABOX }]));
+    await r.replayEdits(ops);
+    expect(replayAdapter.probe.releaseCalls).toBe(ops.length);
+    r.close();
+  });
+});

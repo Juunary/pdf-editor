@@ -68,6 +68,10 @@ export interface FakeAdapterProbe {
   failNextPath: { prepare?: boolean; write?: boolean; writeAfter?: boolean };
   /** writePathEdit 결과에 실을 경고(pdf-ops 가 채울 `warnings` 선택 필드 흉내). */
   pathWriteWarnings: EditWarning[] | undefined;
+  /** releaseEdit 호출 수(R-L3 연결 확인). */
+  releaseCalls: number;
+  /** 만든 FontManager 의 dispose 호출 수. */
+  fontDisposeCalls: number;
 }
 
 export interface FakeAdapter extends EditAdapter {
@@ -140,6 +144,11 @@ class FakeFonts extends FontManager {
   }
 
   /** 저장 작업 안에서: 쓴 글리프만 남긴 서브셋으로 FontFile2 를 바꾼다(작업을 버리면 되돌아간다). */
+  override dispose(): void {
+    this.#probe.fontDisposeCalls++;
+    super.dispose();
+  }
+
   override finalizeForSave(): void {
     if (this.#probe.failNext.finalize) {
       this.#probe.failNext.finalize = false;
@@ -178,6 +187,8 @@ export function createFakeAdapter(): FakeAdapter {
     pathWrites: [],
     failNextPath: {},
     pathWriteWarnings: undefined,
+    releaseCalls: 0,
+    fontDisposeCalls: 0,
   };
   /** 패스 편집 준비 때 찍어 둔 원본 스트림(쓰기는 항상 원본 기준 절대 편집). */
   const pathSnapshots = new Map<
@@ -529,6 +540,10 @@ export function createFakeAdapter(): FakeAdapter {
       } finally {
         page.destroy();
       }
+    },
+
+    releaseEdit() {
+      probe.releaseCalls++;
     },
 
     recordEditMetadata(doc, info) {

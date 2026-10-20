@@ -26,11 +26,11 @@ import type {
 } from '@pdf-editor/shared-types';
 import { layoutParagraph, type FontSegment, type ReflowResult } from '@pdf-editor/reflow';
 import { now } from './clock.js';
-import { latestWriteContext, prepareEdit, styleFor } from './edit-apply.js';
+import { latestWriteContext, prepareEdit, releaseWriteContext, styleFor } from './edit-apply.js';
 import { listBlocks, writeBlock } from './edit-block.js';
 import { recordMetadata } from './edit-meta.js';
 import { cellOfParagraph } from './cell-edit.js';
-import { planPathEditability } from './path-edit.js';
+import { planPathEditability, releasePathEdit } from './path-edit.js';
 import {
   analyzeParagraph,
   blockStartState,
@@ -281,7 +281,13 @@ function fitAreaToNaturalLines(
   }
   const text = runs.map((r) => r.text).join('');
   if (text.trim() === '') return format;
-  const { segments } = fonts.assign(ctx, text, runs);
+  // 판정 시점 해석으로 배정한다(지난 초안의 WriteContext 를 쓰지 않게 FontManager.assign 을 거치지 않는다).
+  const { segments } = fontStateOf(fonts).assign(
+    text,
+    runs,
+    (sc) => resolveStyle(ctx, sc),
+    ctx.map,
+  );
   const [x0, y0, x1, y1] = format.area;
   const huge = 1e6;
   const result = layoutParagraph({
@@ -451,4 +457,21 @@ export class FontManager {
   finalizeForSave(): void {
     fontStateOf(this).finalizeForSave();
   }
+
+  /**
+   * 원본 폰트 탐침·폴백 `mupdf.Font` 를 해제한다(R-L3, `FontState.dispose`). 여러 번 불러도 된다. 해제 뒤 assign 등은
+   * 예외. 문서·편집 블록 객체는 건드리지 않는다. core 가 문서를 닫을 때·FontManager 를 바꿀 때 부른다.
+   */
+  dispose(): void {
+    fontStateOf(this).dispose();
+  }
+}
+
+/**
+ * 편집 하나(editId) 또는 문서 전체(editId 생략)의 pdf-ops 초안 상태(문단 WriteContext·패스 준비 상태)를 버린다(R-L3).
+ * core 가 커밋·취소·재적용 뒤와 문서를 닫을 때 부른다. 문서 내용은 바꾸지 않는다.
+ */
+export function releaseEdit(doc: mupdf.PDFDocument, editId?: string): void {
+  releaseWriteContext(doc, editId);
+  releasePathEdit(doc, editId);
 }
