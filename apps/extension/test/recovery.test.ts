@@ -232,6 +232,14 @@ describe('ResilientPdf', () => {
     expect(pdf.recoveryCount).toBe(1);
   });
 
+  it('beginParagraphEdit 는 renderScale 을 Worker 로 넘긴다(R-L1)', async () => {
+    const w1 = fakeWorker();
+    const { pdf } = setup([w1]);
+    await pdf.open(bytes());
+    await pdf.beginParagraphEdit(0, 1, 1, 3);
+    expect(w1.api.beginParagraphEdit).toHaveBeenCalledWith(0, 1, 1, 3);
+  });
+
   it('복구 전 세대 초안으로 온 호출은 새 Worker 로 보내지 않는다', async () => {
     const w1 = fakeWorker({
       getPageInfo: vi.fn(async () => {

@@ -5,6 +5,7 @@ import type {
   Rect,
 } from '@pdf-editor/shared-types';
 import type { PageLayout } from '../layout.js';
+import { gridCells } from '../table-grid.js';
 
 /** 역할별 상자 색(레이아웃 오버레이 범례와 같다). */
 export const ROLE_COLORS: Record<ParagraphRole, string> = {
@@ -55,18 +56,8 @@ export function LayoutLayer({ doc, layout }: Props) {
     }
     for (const t of doc.tables) {
       box(t.bbox, TABLE_COLOR, 2);
-      ctx.lineWidth = 0.75 * px;
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      for (const y of t.rowBounds.slice(1, -1)) {
-        ctx.moveTo(t.bbox[0], y);
-        ctx.lineTo(t.bbox[2], y);
-      }
-      for (const x of t.colBounds.slice(1, -1)) {
-        ctx.moveTo(x, t.bbox[1]);
-        ctx.lineTo(x, t.bbox[3]);
-      }
-      ctx.stroke();
+      // 병합 셀 기준(W4-6): 행·열 경계 전체 선이 아니라 셀(병합이면 병합 범위)마다 상자를 그린다.
+      for (const g of gridCells(t)) box(g.rect, TABLE_COLOR, 0.75);
     }
     for (const f of doc.figures) box(f.bbox, FIGURE_COLOR, 2, [6, 4]);
     // 읽기 순서 번호(최상위 항목 왼쪽 위).
@@ -102,6 +93,7 @@ export function LayoutLayer({ doc, layout }: Props) {
       data-figures={doc.figures.length}
       data-columns={doc.columns.length}
       data-order={doc.readingOrder.length}
+      data-grid-cells={doc.tables.reduce((n, t) => n + gridCells(t).length, 0)}
       style={{ width: `${layout.cssWidth}px`, height: `${layout.cssHeight}px` }}
     />
   );

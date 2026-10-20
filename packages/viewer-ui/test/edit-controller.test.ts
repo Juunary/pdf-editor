@@ -51,8 +51,8 @@ function setup(options: { withEdit?: boolean; paragraphs?: FakeParagraph[] } = {
       : {
           getPageEditability: vi.fn((i: number) => edit.getPageEditability(i)),
           planParagraphEdit: vi.fn((i: number, p: number) => edit.planParagraphEdit(i, p)),
-          beginParagraphEdit: vi.fn((i: number, p: number, r: number) =>
-            edit.beginParagraphEdit(i, p, r),
+          beginParagraphEdit: vi.fn((i: number, p: number, r: number, s?: number) =>
+            edit.beginParagraphEdit(i, p, r, s),
           ),
           updateParagraphDraft: vi.fn((d: string, input: never) =>
             edit.updateParagraphDraft(d, input),
@@ -339,5 +339,52 @@ describe('Worker 복구(D6)', () => {
     await controller.handleWorkerRecovered();
     expect(controller.getState().edit.notice).toContain('되돌리기 이력');
     await vi.waitFor(() => expect(host.renderPage.mock.calls.length).toBe(renders + 1));
+  });
+});
+
+describe('입력 버퍼(M3 이관)', () => {
+  function fakeBuffer(text = '한x') {
+    const calls: string[] = [];
+    return {
+      calls,
+      open: () => void calls.push('open'),
+      take: () => (calls.push('take'), text),
+      close: () => void calls.push('close'),
+    };
+  }
+
+  it('시작과 동시에 모으고(plan 전에 open), 편집기가 열리면 캐럿 위치에 넣는다', async () => {
+    const { controller, host } = await started();
+    const buf = fakeBuffer('한x');
+    controller.edit!.setInputBuffer(buf);
+    const order: string[] = [];
+    (host.planParagraphEdit as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (i: number, p: number) => {
+        order.push(`plan:${buf.calls.join(',')}`);
+        return new FakeEditHost({ paragraphs: PARAGRAPHS }).planParagraphEdit(i, p);
+      },
+    );
+    await controller.edit!.begin(0, 1, [130, 30]);
+    expect(order[0]).toBe('plan:open');
+    const v = controller.getState().edit.session!;
+    expect(v.editor.text.endsWith('한x')).toBe(true);
+    expect(v.dirty).toBe(true);
+    expect(buf.calls).toEqual(['open', 'take']);
+  });
+
+  it('편집기를 열지 못하면(제한 문단) 모은 글자를 버린다', async () => {
+    const { controller } = await started();
+    const buf = fakeBuffer();
+    controller.edit!.setInputBuffer(buf);
+    await controller.edit!.begin(0, 2, null);
+    expect(controller.getState().edit.session).toBeNull();
+    expect(buf.calls).toEqual(['open', 'close']);
+  });
+
+  it('모은 글자가 없으면 텍스트는 그대로(변경 없음)다', async () => {
+    const { controller } = await started();
+    controller.edit!.setInputBuffer(fakeBuffer(''));
+    await controller.edit!.begin(0, 1, null);
+    expect(controller.getState().edit.session?.dirty).toBe(false);
   });
 });

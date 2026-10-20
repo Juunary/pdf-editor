@@ -458,3 +458,164 @@
   outline: 2px solid #8ab4f8;
   outline-offset: 1px;
 }
+
+/* 편집 가능 표시(M4 D6) */
+.pe-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pe-mark-tip {
+  position: absolute;
+  z-index: 34;
+  max-width: 320px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #2b2f33;
+  color: #eee;
+  font-size: 12px;
+  pointer-events: none;
+}
+.pe-mark-tip[data-editable='0'] {
+  background: #5d3a00;
+}
+.pe-marks-legend {
+  position: fixed;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: rgb(43 47 51 / 92%);
+  color: #eee;
+  font-size: 12px;
+  pointer-events: none;
+}
+.pe-legend-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-top: 2px solid #2e7d32;
+}
+.pe-legend-swatch[data-editable='0'] {
+  border-top: 2px dashed #ef6c00;
+}
+
+/* 벡터 패스 편집(M4) */
+.pe-path-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pe-path-member {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed #1565c0;
+  pointer-events: none;
+}
+.pe-path-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px solid #1565c0;
+  background: rgb(21 101 192 / 6%);
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+.pe-path-handle {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  box-sizing: border-box;
+  border: 1.5px solid #1565c0;
+  background: #fff;
+  pointer-events: auto;
+  touch-action: none;
+}
+.pe-path-handle[data-handle='nw'],
+.pe-path-handle[data-handle='se'] {
+  cursor: nwse-resize;
+}
+.pe-path-handle[data-handle='ne'],
+.pe-path-handle[data-handle='sw'] {
+  cursor: nesw-resize;
+}
+.pe-path-handle[data-handle='n'],
+.pe-path-handle[data-handle='s'] {
+  cursor: ns-resize;
+}
+.pe-path-handle[data-handle='e'],
+.pe-path-handle[data-handle='w'] {
+  cursor: ew-resize;
+}
+.pe-path-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.pe-path-lines line {
+  stroke: #1565c0;
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+}
+.pe-path-point {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -5px 0 0 -5px;
+  box-sizing: border-box;
+  border: 1.5px solid #1565c0;
+  background: #fff;
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+.pe-path-point[data-kind='control'] {
+  border-radius: 50%;
+  background: #ffe082;
+}
+.pe-path-panel {
+  position: absolute;
+  z-index: 36;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  max-width: 420px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #2b2f33;
+  color: #eee;
+  font-size: 12px;
+  pointer-events: auto;
+}
+.pe-path-panel label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.pe-path-panel input[type='number'] {
+  width: 56px;
+}
+.pe-path-note,
+.pe-path-error {
+  flex-basis: 100%;
+  margin: 0;
+  padding-left: 16px;
+  color: #ffcc80;
+}
+.pe-path-error {
+  padding-left: 0;
+  color: #ef9a9a;
+}
+.pe-edit-hover[data-cell='1'] {
+  border-width: 2px;
+}
