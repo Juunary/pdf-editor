@@ -356,3 +356,101 @@ describe('마일스톤 리뷰 반영(docs/m3-integration.md 8절)', () => {
     s2.close();
   });
 });
+
+describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
+  it('B1: 커밋한 편집 블록을 레이아웃이 여러 문단으로 나눠도 편집 판정은 블록 하나(상자 = 블록 글자 상자)', async () => {
+    const s = session(source());
+    const { commit } = await edit(s, 'first paragraph', 'Short line one.\nShort line two.');
+    // 전제: 레이아웃 복원은 강제 줄바꿈 뒤 짧은 줄을 다른 문단으로 본다(블록 하나가 문단 둘).
+    const layout = s.getPageLayout(0);
+    expect(layout.paragraphs.filter((p) => p.text.startsWith('Short line')).length).toBe(2);
+    const e = await s.getPageEditability(0);
+    const own = e.paragraphs.filter((p) => p.editedBlock === commit.op.id);
+    expect(own).toHaveLength(1);
+    const lines = layout.paragraphs.filter((p) => p.text.startsWith('Short line'));
+    const [x0, y0, x1, y1] = own[0]!.bbox;
+    for (const p of lines) {
+      expect(p.bbox[0]).toBeGreaterThanOrEqual(x0 - 1);
+      expect(p.bbox[1]).toBeGreaterThanOrEqual(y0 - 1);
+      expect(p.bbox[2]).toBeLessThanOrEqual(x1 + 1);
+      expect(p.bbox[3]).toBeLessThanOrEqual(y1 + 1);
+    }
+    // 그 항목으로 다시 편집하면 대상은 블록 전체다.
+    const plan = await s.planParagraphEdit(0, own[0]!.paragraphId);
+    expect(plan.target.editedBlock).toBe(commit.op.id);
+    expect(plan.runs.map((r) => r.text).join('')).toBe('Short line one.\nShort line two.');
+    s.close();
+  });
+
+  it('자동 확장(계약 5.4 변경): 넘치면 같은 편집 단위 안에서 아래 변이 내려가고, undo·redo·재적용이 같은 결과', async () => {
+    const live = session(source());
+    const long = 'Auto expand keeps every line inside the area. '.repeat(6).trim();
+    const { plan, update, commit } = await edit(live, 'first paragraph', long);
+    // 사용자 영역(op.format.area)은 그대로, 실제로 쓴 영역(reflow.area)만 글 높이까지 내려간다.
+    expect(update.reflow.overflow).toBe(false);
+    expect(update.reflow.area[3]).toBeGreaterThan(plan.format.area[3] + 1);
+    expect(update.reflow.area[3]).toBeCloseTo(update.reflow.contentBox[3], 6);
+    expect(commit.op.format).toEqual(plan.format);
+    expect(commit.op.format).not.toHaveProperty('overflow');
+    const area = (s: PdfSession) => s.getPageEdits(0).then((e) => e.blocks[0]?.area);
+    expect(await area(live)).toEqual(update.reflow.area);
+    const edited = stext(live);
+    // 편집 하나 = undo 한 번(자동 확장이 따로 단계를 만들지 않는다).
+    await live.undo();
+    expect(squash(stext(live))).toContain('firstparagraphlineone');
+    await live.redo();
+    expect(stext(live)).toBe(edited);
+    // 재적용은 같은 영역·같은 텍스트.
+    const replayed = session(source());
+    await replayed.replayEdits([structuredClone(commit.op)]);
+    expect(stext(replayed)).toBe(edited);
+    expect(await area(replayed)).toEqual(update.reflow.area);
+    live.close();
+    replayed.close();
+  });
+
+  it('이전 빌드의 EditOp(format.overflow shrink·fontScale 0.85)도 재적용되고, 축소 없이 자동 확장 결과와 같다', async () => {
+    const live = session(source());
+    const long = 'Legacy shrink op is replayed without shrinking. '.repeat(5).trim();
+    const op = (await edit(live, 'first paragraph', long)).commit.op;
+    const legacy = structuredClone(op) as EditOp & { format: Record<string, unknown> };
+    legacy.format.overflow = 'shrink';
+    legacy.format.fontScale = 0.85;
+    const a = session(source());
+    const b = session(source());
+    await a.replayEdits([legacy]);
+    await b.replayEdits([structuredClone(op)]);
+    expect(stext(a)).toBe(stext(b));
+    expect(stext(a)).toBe(stext(live));
+    const blockA = (await a.getPageEdits(0)).blocks[0]!;
+    const blockB = (await b.getPageEdits(0)).blocks[0]!;
+    expect(blockA).toMatchObject({ area: blockB.area, contentBox: blockB.contentBox });
+    // 다시 쓴 블록의 /PdfEditorFormat 에 이전 필드가 남지 않는다.
+    const saved = a.save({ changes: [] }).bytes;
+    const doc = mupdf.Document.openDocument(saved, 'application/pdf') as mupdf.PDFDocument;
+    let formats = 0;
+    for (let n = 1; n < doc.countObjects(); n++) {
+      const obj = doc.newIndirect(n);
+      if (!obj.isStream() || obj.get('PdfEditorFormat').isNull()) continue;
+      const json = JSON.parse(obj.get('PdfEditorFormat').asString()) as { format: object };
+      expect(json.format).not.toHaveProperty('overflow');
+      expect(json.format).not.toHaveProperty('fontScale');
+      formats++;
+    }
+    expect(formats).toBe(1);
+    doc.destroy();
+    for (const x of [live, a, b]) x.close();
+  });
+
+  it('B1: 블록이 이웃 문단과 한 레이아웃 문단으로 합쳐져도 판정 상자는 블록 글자만 덮는다', async () => {
+    const s = session(source());
+    const long = 'Short line one. Next starts. '.repeat(8).trim();
+    const { commit } = await edit(s, 'first paragraph', long);
+    const e = await s.getPageEditability(0);
+    const own = e.paragraphs.filter((p) => p.editedBlock === commit.op.id);
+    expect(own).toHaveLength(1);
+    // 둘째 문단(기준선 y = 792 − 640 = 152) 줄은 상자 밖이다.
+    expect(own[0]!.bbox[3]).toBeLessThan(150);
+    s.close();
+  });
+});

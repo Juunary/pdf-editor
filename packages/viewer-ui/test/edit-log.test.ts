@@ -13,7 +13,6 @@ const op = (id: string): EditOp => ({
     firstLineIndent: 0,
     lineHeight: 1,
     firstBaselineOffset: 1,
-    overflow: null,
   },
 });
 const history = (activeEditIds: string[]): EditHistoryState => ({

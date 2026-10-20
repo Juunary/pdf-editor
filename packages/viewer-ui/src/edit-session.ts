@@ -555,7 +555,7 @@ export class EditSession {
     this.dragAnchor = null;
   }
 
-  // ── 형식(영역·초과 선택) ─────────────────────────────────────────────
+  // ── 형식(영역) ───────────────────────────────────────────────────────
 
   setFormat(patch: Partial<ParagraphFormat>): void {
     if (this.busy()) return;

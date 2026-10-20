@@ -277,7 +277,7 @@ describe('시작 상태(5.3)', () => {
       ctx.model.chars[pl.charIndexOfOffset[0]!]!.origin[1] - p.bbox[1],
       3,
     );
-    expect(pl.format.overflow).toBeNull();
+    expect(pl.format).not.toHaveProperty('overflow');
   });
 });
 

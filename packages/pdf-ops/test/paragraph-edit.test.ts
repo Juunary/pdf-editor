@@ -640,6 +640,51 @@ describe('재편집(rewrite-block)과 편집 블록 목록', () => {
     expect(plan.charIndexOfOffset.filter((c) => c >= 0).length).toBeGreaterThan(10);
   });
 
+  it('이전 빌드의 /PdfEditorFormat(overflow shrink·fontScale 0.85)도 읽고, 그 필드는 버린다', () => {
+    const doc = makeDoc([THREE]);
+    const fm = new FontManager(doc, fallbackFor(doc));
+    const ctx = pageContext(doc, 0);
+    const p = findParagraph(ctx, 'Bravo paragraph');
+    const r1 = editParagraph(ctx, fm, p.id, 'Legacy block text 이전 블록.');
+    // 이전 빌드가 쓴 모양으로 고친다: format.overflow 'shrink', 축소 배율 0.85.
+    const block = doc.newIndirect(r1.prepared.block.objectNumber);
+    const json = JSON.parse(block.get('PdfEditorFormat').asString()) as Record<string, unknown> & {
+      format: Record<string, unknown>;
+    };
+    expect(json.format).not.toHaveProperty('overflow');
+    json.format.overflow = 'shrink';
+    json.format.fontScale = 0.85;
+    json.fontScale = 0.85;
+    block.put('PdfEditorFormat', doc.newString(JSON.stringify(json)));
+    const doc2 = reopen(doc, 'garbage=yes,compress,objstms');
+    const ctx2 = pageContext(doc2, 0);
+    const fm2 = new FontManager(doc2, fallbackFor(doc2));
+    const p2 = findParagraph(ctx2, 'Legacy block text');
+    const r2 = editParagraph(ctx2, fm2, p2.id);
+    // 블록 형식을 그대로 쓰고(추출 텍스트로 떨어지지 않음), 이전 필드는 없다.
+    expect(r2.plan.insertion?.mode).toBe('rewrite-block');
+    expect(r2.plan.runs.map((x) => x.text).join('')).toBe(r1.text);
+    expect(r2.plan.format).toEqual(r1.plan.format);
+    expect(r2.plan.format).not.toHaveProperty('overflow');
+    expect(r2.plan.format).not.toHaveProperty('fontScale');
+    // 다시 쓴 블록의 /PdfEditorFormat 에도 남지 않는다.
+    const rewritten = JSON.parse(
+      doc2.newIndirect(r2.prepared.block.objectNumber).get('PdfEditorFormat').asString(),
+    ) as { format: Record<string, unknown> };
+    expect(rewritten.format).not.toHaveProperty('overflow');
+    expect(rewritten.format).not.toHaveProperty('fontScale');
+    // 영역이 깨진 형식이면 추출 텍스트 + 블록 상자로 시작한다.
+    const block2 = doc2.newIndirect(r2.prepared.block.objectNumber);
+    const broken = JSON.parse(block2.get('PdfEditorFormat').asString()) as {
+      format: Record<string, unknown>;
+    };
+    broken.format.area = 'expand';
+    block2.put('PdfEditorFormat', doc2.newString(JSON.stringify(broken)));
+    const plan3 = editParagraph(pageContext(doc2, 0), fm2, p2.id).plan;
+    expect(plan3.format.area).not.toEqual(r1.plan.format.area);
+    expect(plan3.format.lineHeight).toBeCloseTo(plan3.runs[0]!.style.size * 1.2, 6);
+  });
+
   it('다른 도구가 블록 스트림을 고쳤으면 추출 텍스트 + 블록 상자로 시작한다', () => {
     const doc = makeDoc([THREE]);
     const fm = new FontManager(doc, fallbackFor(doc));

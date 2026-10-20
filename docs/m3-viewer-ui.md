@@ -20,7 +20,7 @@
 | 키: 화살표(줄 이동은 리플로우 줄 기준)·Home/End·Shift 선택·Ctrl+A·Backspace/Delete·Enter·Ctrl 단어 이동·삭제 | 완료 | `edit-keys.ts`, `edit-session.ts`, `edit-geometry.ts` |
 | 편집 중 글자 단위 undo/redo(I6 단위) | 완료 | `edit-model.ts`(`TextHistory`) |
 | 종료: 바깥 클릭·Esc(조합 아닐 때) = 커밋(변경 없으면 취소), 도구 막대 "편집 취소" | 완료 | `edit-session.ts`, `edit-controller.ts`, `components/Controls.tsx` |
-| 초과 UI 3선택(영역 넓히기 / 글자 줄이기 / 그대로 두기, 같은 선택을 다시 누르면 해제), 초과 표시선 | 완료 | `components/EditorLayer.tsx` |
+| 초과 처리(2026-10-20 사용자 결정으로 변경, 2.9절): 영역 아래 변 자동 확장(리플로우), 영역 상한에 막힌 초과만 초과 표시선 + "되돌리기" | 완료 | `components/EditorLayer.tsx` |
 | 영역 핸들(네 변·네 모서리, `areaLimit` 안, 최소 20×8 pt), 겹침 경고 상자 | 완료 | `edit-geometry.ts`(`resizeArea`), `components/EditorLayer.tsx` |
 | 표시: 폴백 글자 점선 밑줄(토글), 없는 글자 표시, 경고 목록(중복 제거), 태그 쪽 안내, 태그 PDF 편집 막기 설정(기본 끔, D1) | 완료 | `components/EditorLayer.tsx`, `components/Controls.tsx`, `edit-controller.ts` |
 | 편집 밖 문서 undo/redo(Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y, 버튼) | 완료 | `components/Controls.tsx`, `edit-controller.ts` |
@@ -122,6 +122,21 @@ textarea 는 캐럿 위치에 두어(투명, `opacity: 0.01`) IME 후보창이 �
 | harfbuzz wasm | 4.2절 |
 | `verify-dist.mjs` | wasm 은 해시로 식별(MuPDF 항상 1개, harfbuzz 는 reflow 가 `harfbuzzjs` 를 import 할 때 1개, 그 밖은 오류). 폰트 1개 + 해시 일치 + Worker 진입 청크가 그 파일명을 참조. harfbuzz 코드가 `background.js`·`assets/viewer-*` 에 섞이지 않음. reflow 가 `harfbuzzjs` 를 import 하기 전에는 harfbuzz 검사를 건너뛰고 `SKIP` 을 출력한다(import 하는 순간 자동으로 검사한다) |
 
+### 2.9 초과 처리(2026-10-20 사용자 결정, 이 절이 1절 표의 이전 "3선택" 을 대체)
+
+| 항목 | 규칙 |
+| --- | --- |
+| 자동 확장 | 글이 영역 아래로 넘치면 리플로우가 아래 변을 글 높이까지(`areaLimit` 까지) 내린다(`ReflowSummary.area`). 사용자 선택 없음. reflow 가 하므로 커밋·undo·redo·`replayEdits` 가 같은 결과다(같은 편집 단위, 결정적) |
+| 사용자 영역 | `ParagraphFormat.area` 는 사용자가 정한 영역 그대로다(자동 확장으로 바뀌지 않는다). 핸들 드래그의 기준은 화면의 영역(`reflow.area`)이고, 글보다 위로 올리면 다음 프레임에서 글 높이까지 다시 늘어난다 |
+| 글자 줄이기 | 제거(`OverflowChoice`·`ParagraphFormat.overflow`·`ReflowSummary.fontScale` 없음) |
+| 상한에 막힌 초과 | 초과 표시선, 영역 테두리 `data-overflow="1"`, 패널(`#pe-edit-overflow`)에 안내와 "되돌리기"(`#pe-edit-revert`) 하나, 경고 `overflow-clipped` |
+| 되돌리기 | 이전 "그대로 두기" 자리. 도구 막대 "편집 취소" 와 같은 경로(`EditController.cancelActive`)로 이번 편집을 버리고 편집 시작 전 상태로 돌아간다 |
+| 커밋 | 상한에 막힌 초과가 남아도 Esc·바깥 클릭은 커밋한다(`overflow-clipped` 경고 상태, 사용자 결정) |
+| 이웃과 겹침 | 막지 않고 기존 `area-overlaps-content` 경고만 보인다 |
+| 이전 문서·로그 | 이전 빌드가 쓴 `/PdfEditorFormat` 의 `overflow`('expand'·'shrink'·'keep')·`fontScale`, 뷰어 로그 `EditOp.format.overflow` 는 읽을 때 무시한다(pdf-ops `cleanParagraphFormat`). 축소로 쓴 블록도 다시 편집하면 원래 글자 크기 + 자동 확장으로 다시 배치된다 |
+
+e2e(`edit-ui.spec.ts` "초과·영역"): 자동 확장·선택 UI 없음, 핸들로 줄여도 다시 늘어남, 상한 초과 표시·경고·"되돌리기" 하나, 되돌리기 = 취소 경로(캔버스 복원), 상한 초과 Esc 커밋, 영역 핸들(기존).
+
 ## 3. V7 결과(실측, 2026-10-19)
 
 **재현된다.** Playwright 1.64.1 번들 Chromium 156.0.8078.4 에서 `Input.imeSetComposition`·`Input.insertText` 가 composition 이벤트를 만든다(`e2e/ime-cdp.spec.ts` 5건 통과, 일반 textarea 에서 이벤트 순서 기록).
@@ -184,7 +199,7 @@ reflow 가 아직 `harfbuzzjs` 를 import 하지 않아(S2 진행 중) 정식 �
 
 켜지 않는 시험(계속 유지): `edit-ui.spec.ts` 37건(가짜 편집 호스트), `ime-cdp.spec.ts` 5건, `extension-save.spec.ts` 8건, `worker-chrome.spec.ts` 1건.
 
-테스트 작성용 DOM 식별자: `#pe-edit-entry`(`#pe-edit-hover[data-editable]`, `#pe-edit-popover`), `#pe-edit-layer`(`data-draft-id`·`data-updating`·`data-committing`·`data-composing`) > `#pe-edit-area[data-area][data-overflow]`, `#pe-edit-caret[data-offset][data-x][data-line]`, `.pe-edit-sel`, `.pe-edit-comp`, `.pe-edit-fb`, `.pe-edit-missing`, `.pe-edit-handle[data-handle]`, `#pe-edit-overflow [data-choice]`, `#pe-edit-overflow-line`, `#pe-edit-warnings li[data-kind]`, `#pe-edit-tagged-note`, `#pe-edit-input`. 도구 막대: `#pe-doc-undo`·`#pe-doc-redo`·`#pe-edit-cancel`·`#pe-fb-toggle`·`#pe-block-tagged`·`#pe-edit-notice`. 확장: `#notice-bar [data-notice]`, `#app-dialog [data-dialog-button]`. `viewer.html?e2e` 일 때만 `window.__pe`(`pdf`·`editLog`·`controller`) 노출.
+테스트 작성용 DOM 식별자: `#pe-edit-entry`(`#pe-edit-hover[data-editable]`, `#pe-edit-popover`), `#pe-edit-layer`(`data-draft-id`·`data-updating`·`data-committing`·`data-composing`) > `#pe-edit-area[data-area][data-overflow]`, `#pe-edit-caret[data-offset][data-x][data-line]`, `.pe-edit-sel`, `.pe-edit-comp`, `.pe-edit-fb`, `.pe-edit-missing`, `.pe-edit-handle[data-handle]`, `#pe-edit-overflow`(`#pe-edit-revert`), `#pe-edit-overflow-line`, `#pe-edit-warnings li[data-kind]`, `#pe-edit-tagged-note`, `#pe-edit-input`. 도구 막대: `#pe-doc-undo`·`#pe-doc-redo`·`#pe-edit-cancel`·`#pe-fb-toggle`·`#pe-block-tagged`·`#pe-edit-notice`. 확장: `#notice-bar [data-notice]`, `#app-dialog [data-dialog-button]`. `viewer.html?e2e` 일 때만 `window.__pe`(`pdf`·`editLog`·`controller`) 노출.
 
 ## 6. 계약 불일치·확인 요청(메인 세션)
 
@@ -244,3 +259,13 @@ reflow 가 아직 `harfbuzzjs` 를 import 하지 않아(S2 진행 중) 정식 �
 - `apps/extension/src/worker/pdf-worker.ts`(폴백 폰트 로더), `scripts/verify-dist.mjs`, `public/diag/chrome-probe-worker.js`(새, 진단)
 - `apps/extension/test/`: `recovery.test.ts`·`save-plan.test.ts`(새)
 - `apps/extension/e2e/`: `edit-harness.ts`·`edit-ui.spec.ts`·`edit-integration.spec.ts`·`ime-cdp.spec.ts`·`extension-save.spec.ts`·`worker-chrome.spec.ts`(새)
+
+## 11. 페이지 이동 화살표(2026-10-20 사용자 결정 4)
+
+- 표시 방식: 한 번에 한 쪽만 그린다(연속 스크롤 아님). 따라서 화살표는 이전·다음 쪽을 불러오며 스크롤 위치 계산은 없다.
+- 구성: `components/PageArrow.tsx` 를 쪽 컨테이너(`#page-container`, flex) 양옆에 둔다(`mount.tsx`). 칸은 32px + 좌우 여백 8px(`PAGE_ARROW_GUTTER` = 40px)이며, 뷰어는 쪽 맞춤 너비(`availableWidth`)에서 양쪽 두 칸을 뺀다. 화살표는 쪽·텍스트 층·레이아웃 오버레이 바깥에 있고, 칸은 `pointer-events: none`, 버튼만 포인터를 받는다. 세로는 `position: sticky` 로 화면 가운데에 따라온다.
+- 상태: 첫 쪽은 이전, 마지막 쪽은 다음이 비활성(`navDisabled`). 툴바의 쪽 번호·`/ N`·`#pe-prev`/`#pe-next` 와 같은 컨트롤러 상태를 쓴다.
+- 편집 중: `controller.goToPage()` 가 초안을 먼저 `commitActive()` 로 커밋한 뒤 이동한다(커밋이 복구로 편집을 이어 가면 이동하지 않음). 화살표 mousedown 은 편집기의 바깥 클릭 커밋과 같은 경로이고 `data-pe-keep` 이 아니다.
+- 키보드 단축키(←/→)는 두지 않는다(캐럿 이동과 충돌).
+- 제한: 폭이 쪽 최소 너비(320px) + 화살표 칸(80px) + 여백보다 좁으면 기존처럼 가로 스크롤이 생긴다.
+- 시험: `packages/viewer-ui/test/page-nav.test.ts`(`navDisabled`), `apps/extension/e2e/page-nav.spec.ts`(하니스 3쪽 이동·끝 쪽 비활성·편집 중 커밋 후 이동·방향키 무반응·쪽 바깥 배치, 시험에서 만든 3쪽 PDF 로 일반 뷰어·iframe 800/480·embed 이동·배치·텍스트 복사).

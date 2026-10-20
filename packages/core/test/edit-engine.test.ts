@@ -403,7 +403,7 @@ describe('초안 미리보기·경고', () => {
     s.close();
   });
 
-  it('keep 로 영역 밖까지 넘친 글은 overflow-clipped 경고', async () => {
+  it('자동 확장이 영역 상한에 막혀 넘친 글은 초과 유지 + overflow-clipped 경고', async () => {
     const adapter = createFakeAdapter();
     const s = new PdfSession({ editAdapter: adapter, loadFallbackFont: async () => FONT_BYTES });
     s.open(
@@ -414,9 +414,9 @@ describe('초안 미리보기·경고', () => {
     const { plan, started } = await begin(s, 0);
     const update = await s.updateParagraphDraft(started.draftId, {
       ...draftInput(plan, 'keep going and going '.repeat(40)),
-      format: { ...plan.format, overflow: 'keep' },
     });
     expect(update.reflow.overflow).toBe(true);
+    expect(update.reflow.area[3]).toBe(plan.areaLimit[3]);
     expect(update.warnings.map((w) => w.kind)).toContain('overflow-clipped');
     await s.cancelParagraphEdit(started.draftId);
     s.close();

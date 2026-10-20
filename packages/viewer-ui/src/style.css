@@ -85,6 +85,7 @@
 /* ── 페이지 표면 ─────────────────────────────────────────────── */
 .pe-page {
   position: relative;
+  flex: none;
 }
 .pe-page.pe-loading {
   opacity: 0.7;
@@ -368,12 +369,6 @@
 .pe-edit-overflow-msg {
   color: #ffb4a8;
 }
-.pe-edit-chip {
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: #3c4a2f;
-  color: #cdeea8;
-}
 .pe-edit-info {
   /* 페이지 글자를 가리지 않도록 화면 오른쪽 아래에 고정한다. */
   position: fixed !important;
@@ -425,4 +420,41 @@
   resize: none;
   overflow: hidden;
   pointer-events: none;
+}
+
+/* ── 쪽 좌우 화살표 ──────────────────────────────────────────── */
+/* 쪽 컨테이너(flex)의 양쪽 칸. 칸 자체는 포인터를 받지 않고 버튼만 받는다. 뷰어는 쪽 맞춤 너비에서 두 칸을 뺀다. */
+.pe-arrow-slot {
+  flex: none;
+  align-self: stretch;
+  width: 32px;
+  margin: 0 4px;
+  pointer-events: none;
+}
+.pe-arrow {
+  position: sticky;
+  top: calc(50vh - 22px);
+  width: 32px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid #6a6f74;
+  border-radius: 4px;
+  background: #4a4f54;
+  color: #eee;
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pe-arrow:hover:not(:disabled) {
+  background: #5a6066;
+}
+.pe-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.pe-arrow:focus-visible {
+  outline: 2px solid #8ab4f8;
+  outline-offset: 1px;
 }

@@ -53,7 +53,7 @@ export interface FontSegment {
   start: number;
   end: number;
   face: FontFace | null;
-  /** 글자 크기(pt, fontScale 적용 전). */
+  /** 글자 크기(pt). */
   size: number;
   runIndex: number;
   syntheticBold: boolean;
@@ -79,7 +79,7 @@ export interface WritableGlyph {
   gid: number;
   x: number;
   y: number;
-  /** 글자 크기(pt, fontScale 적용 후). */
+  /** 글자 크기(pt). */
   size: number;
   /** PDF 폭(1/1000 em). 뷰어가 이 값으로 다음 글리프를 놓는다. */
   pdfWidth: number;
@@ -100,7 +100,7 @@ export function layoutParagraph(input: ReflowInput): ReflowResult {
 }
 
 /**
- * 배치 상자가 영역 상한 밖으로 나가 잘리는지(keep 의 overflow-clipped 경고 판단, 계약 5.4). 여유는 초과 판정과 같은 0.5pt.
+ * 배치 상자가 영역 상한 밖으로 나가 잘리는지(상한에 막힌 초과의 overflow-clipped 경고 판단, 계약 5.4). 여유는 초과 판정과 같은 0.5pt.
  */
 export function isOverflowClipped(summary: ReflowSummary, areaLimit: Rect): boolean {
   const [x0, y0, x1, y1] = summary.contentBox;

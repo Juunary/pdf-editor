@@ -124,3 +124,92 @@ EDIT_CORPUS_DIR=<코퍼스> NODE_OPTIONS=--max-old-space-size=12288 pnpm --filte
 
 - 남은 제한: 한 클러스터 안에서 기본 글자는 원본, 결합 문자는 폴백으로 나누어 쓰지 않는다. 편집 텍스트가 NFC 라 `é` 처럼 한 위치인 클러스터는 구간(`FontSegment`)으로 나눌 수 없다. 클러스터 전체를 폴백이 가지면 폴백으로 쓴다.
 - shared-types 는 바꾸지 않았다.
+
+## 9. 사용자 확인 후 수정(2026-10-20)
+
+### 9.0 Windows 사용자 확인 결과(2026-10-20)
+
+- 환경(사용자 보고): Chrome 155.0.8059.82, Windows 11 Home 10.0.26200, Intel Core Ultra 5 228V, RAM 31.5 GiB, Microsoft 한글 IME. 빌드 main e76ef99 dist.
+- E1–E12: 아래 B1 외에는 문제 없음(사용자 보고, 항목별 관찰·진단 JSON·저장 파일 속성은 상세 미수신). 측정값은 없다.
+- E12(d) Acrobat 표시: 미확인(미설치).
+- 문제 1건(B1): 초과 상태에서 "영역 넓히기"를 누르면 한 문단이 여러 블록·단으로 갈라져 보임(사용자 보고). 파일·쪽·시점·오버레이 여부는 미수신. 9.1 에서 재현·수정.
+
+### 9.1 사용자 보고 B1: "영역 넓히기" 뒤 한 문단이 여러 블록·단으로 갈라져 보임
+
+상태: **재현·원인 확인·수정함.** 보고 조건(파일·쪽·시점·오버레이)은 알 수 없어 아래 조건을 모두 시도했다.
+
+| 조건 | 결과 |
+| --- | --- |
+| 편집 중(초안) 화면 | 재현 안 됨. 편집 중에는 마우스 오버 테두리·레이아웃 오버레이·텍스트 층을 숨기고(`PageSurface.tsx`), "영역 넓히기" 는 `ReflowSummary.area` 만 바꾼다. 줄 나눔·글리프 위치·편집 블록 내용은 넓히기 전과 같다(줄 폭 불변) |
+| Esc 커밋 뒤 마우스 오버 테두리(`getPageEditability`) | **재현.** 커밋한 편집 블록 하나가 판정 목록에서 레이아웃 문단 여러 개로 나온다 |
+| 저장 → 재열기 뒤 | 같은 현상(편집 블록은 `/PdfEditorEdit` 로 다시 찾고, 레이아웃은 다시 복원) |
+| 레이아웃 오버레이 켬 | 같은 원인으로 문단 상자가 여러 개(오버레이는 M2 레이아웃 그대로) |
+| m0-sample(1단) 첫 문단에 글 추가 | 갈라짐 없음(4개 문단 모두 1개). 강제 줄바꿈 + 짧은 줄("Short line one.⏎Short line two.")이면 2개 |
+| arxiv-2609.09268(2단) 1쪽 문단 6개 | 6개 중 4개가 2–9개로 갈라짐. 넘친 줄이 아래 문단과 겹친 경우 이웃 문단 줄과 섞임(최대 9개) |
+| 코퍼스 24개 파일 첫 쪽, 60자 넘는 편집 가능 문단 최대 5개씩(원문 + 짧은 문장 추가, 넓히기 켬), 46건 | 16건 갈라짐. 이웃과 겹침 없이 갈라진 예: jnl-phwr-2025-18-36-1 #6(2줄 → 2개)·#8(3줄 → 3개), ustreas-mts-202509 #3. 양쪽 정렬 줄이 단어 간격에서 가로로 갈라진 예: jnl-jdis-2026-2-2-7 #6(9줄 → 9개, `[30,694,86,705]`·`[96,694,107,705]`·`[116,694,163,705]` 처럼 한 줄이 세 "단") |
+| "영역 넓히기" 켬·끔 비교(같은 텍스트) | 갈라짐 수가 모든 건에서 같다. 넓히기는 원인이 아니라, 넘칠 만큼 글을 늘린 편집(줄 수 증가)에서 사용자가 함께 누르는 동작이다 |
+
+원인
+
+- 커밋 뒤 쪽 레이아웃은 M2 레이아웃 복원(`layout-recon` `splitParagraphs`)이 쪽 전체를 다시 나눈다. 편집 블록의 줄은 원 문서의 조판과 다르다(왼쪽 정렬 마지막 줄·강제 줄바꿈 뒤 짧은 줄, 원 문단이 한 줄이면 줄 간격 = 글자 크기 × 1.2, 양쪽 정렬 줄의 넓은 단어 간격). 그래서 `pitch`·`sentence-end`·`short-justified` 등의 규칙으로 블록이 여러 문단이 되거나, 넓힌 영역으로 이웃 문단과 붙으면 이웃 줄과 한 문단이 된다.
+- `planPageEditability`(pdf-ops)는 레이아웃 문단마다 항목을 만들고 상자로 레이아웃 문단 bbox 를 썼다. 편집 대상은 블록 글자를 하나라도 포함하면 블록 전체(계약 D3)인데, 테두리는 갈라진 레이아웃 문단마다 따로 그려졌다(이웃 줄이 섞인 문단은 이웃 글자까지 덮음).
+
+수정(`38a5dd6`)
+
+- `packages/pdf-ops/src/paragraph-edit.ts` `planPageEditability`: 편집 블록마다 항목 하나(첫 레이아웃 문단 id), 상자 = 블록 글자 상자(`analyzeBlock`). 같은 블록의 다른 레이아웃 문단은 목록에서 뺀다. 어느 항목으로 편집해도 대상은 블록 전체(기존 D3 규칙 그대로).
+- 시험: core `edit-real.test.ts` "B1" 2건(강제 줄바꿈 블록이 레이아웃 문단 2개여도 판정 1개·상자가 두 줄을 덮음 / 이웃 문단과 한 레이아웃 문단으로 합쳐져도 판정 상자가 블록 글자만 덮음). 수정 전 코드에서 2건 모두 실패 확인. 통합 e2e `edit-integration.spec.ts` "B1"(실제 확장·core: m0-sample 문단을 두 줄로 고쳐 Esc 커밋 → 레이아웃 문단 2개, 두 줄 위 마우스 오버 테두리가 같은 항목이고 두 줄을 덮음).
+
+남은 제한(수정 범위 밖)
+
+| # | 내용 | 처리 |
+| --- | --- | --- |
+| 1 | 레이아웃 오버레이(M2 진단)·텍스트 층 읽기 순서·복사 순서는 레이아웃 복원 결과를 그대로 쓴다. 갈라진 블록의 줄이 다른 문단·단으로 잡히면 복사 순서가 어긋날 수 있다(jnl-jdis #6 의 가로로 갈라진 줄) | 후속: layout-recon 에 편집 블록 묶음 힌트(같은 블록 글자는 한 문단, 다른 출처와 섞지 않음)를 넣을지 메인 세션 결정 |
+| 2 | 넓힌 영역의 줄이 이웃 문단과 한 레이아웃 문단이 되면 그 이웃 문단 글자는 따로 편집할 수 없다(더블클릭 대상이 블록). 겹침은 계약대로 `area-overlaps-content` 경고만 한다 | 사용자 확인 질문 9.4 #1 |
+
+### 9.2 사양 변경(2026-10-20 사용자 결정)
+
+| 변경 | 내용 | 파일 |
+| --- | --- | --- |
+| 1 글자 줄이기 제거 | `OverflowChoice`·`ParagraphFormat.overflow`·`ReflowSummary.fontScale`·reflow 축소 배율 탐색(0.8 ≤ s ≤ 1) 제거 | `packages/shared-types/src/edit.ts`, `packages/reflow/src/layout.ts`·`index.ts` |
+| 2 자동 확장 | 넘치면 reflow 가 아래 변을 글 높이까지(`areaLimit` 까지) 내린다. 사용자 선택 없음. `format.area` 는 사용자 영역 그대로이고 실제로 쓴 영역은 `ReflowSummary.area`. 핸들로 글보다 작게 줄여도 다시 늘어난다. 상한에 막히면 `overflow = true` + `overflow-clipped`. reflow 규칙이라 커밋·undo·redo·재적용이 같은 결과(편집 단위 하나) | `packages/reflow/src/layout.ts` |
+| 3 되돌리기 | 초과 패널은 상한에 막힌 초과에서만 보이고 버튼은 "되돌리기"(`#pe-edit-revert`) 하나. 도구 막대 "편집 취소" 와 같은 `cancelActive` 경로. 상한 초과가 남은 Esc·바깥 클릭 커밋은 허용(경고 상태) | `packages/viewer-ui/src/components/EditorLayer.tsx`, `style.css` |
+
+이전 빌드 문서·로그 호환
+
+- `/PdfEditorFormat` 읽기·쓰기는 `cleanParagraphFormat`(pdf-ops `edit-plan.ts`)으로 현재 필드(`area`·`align`·`firstLineIndent`·`lineHeight`·`firstBaselineOffset`)만 쓴다. 이전 `overflow`('expand'·'shrink'·'keep')·`fontScale` 은 버린다. `area`·`firstBaselineOffset` 이 숫자가 아니면 추출 텍스트 + 블록 상자로 시작한다(기존 5.3 대체 경로).
+- 이전 `EditOp`(`format.overflow: 'shrink'` 등)를 `replayEdits` 하면 reflow 는 그 필드를 보지 않고, 다시 쓴 블록의 `/PdfEditorFormat` 에도 남지 않는다. 결과는 같은 op 에서 필드를 뺀 재적용과 같다.
+- 이전 빌드에서 "글자 줄이기" 로 저장한 블록은 파일에는 축소된 글자로 남아 있고, 다시 편집하면 원래 글자 크기 + 자동 확장으로 다시 배치된다.
+
+시험
+
+| 패키지 | 시험 |
+| --- | --- |
+| reflow `layout.test.ts` | 초과 시 자동 확장·글자 크기 유지, 상한에서 멈춤 + 초과 유지 + `isOverflowClipped`, 넘치지 않으면 영역 불변, 글보다 작은 영역도 글 높이까지, 이전 `overflow`·`fontScale` 필드 무시(결과 동일), 결정성. `bench.test.ts` 축소 측정 → 자동 확장 측정 |
+| pdf-ops `paragraph-edit.test.ts` | 이전 `/PdfEditorFormat`(format.overflow 'shrink', fontScale 0.85, 최상위 fontScale) 재열기 → 블록 형식으로 시작(추출 대체 아님), 이전 필드 없음, 다시 쓴 JSON 에도 없음, 영역이 깨진 형식은 추출 + 블록 상자 |
+| core `edit-real.test.ts` | 자동 확장: 사용자 영역 불변·`reflow.area` = 글 아래·`getPageEdits` 영역, undo 한 번에 원문, redo·재적용 같은 텍스트·영역 / 이전 EditOp(shrink·0.85) 재적용 = 필드 뺀 재적용, 저장 JSON 에 이전 필드 없음. `edit-engine.test.ts` 상한 초과 경고 |
+| viewer-ui `edit-session.test.ts` | 자동 확장(입력 형식에 overflow 없음, 사용자 영역 불변), 핸들로 줄여도 다시 늘어남, 상한 초과 + 경고 |
+| e2e `edit-ui.spec.ts` "초과·영역" | 자동 확장·선택 UI 없음·지우면 원 영역, 핸들로 줄여도 다시 늘어남, 상한 초과 표시·경고·"되돌리기" 하나·넘친 줄 합성, 되돌리기 = 취소 경로(캔버스 복원, 커밋 RPC 없음), 상한 초과 Esc 커밋 |
+
+### 9.3 검증(2026-10-20, 이 worktree `m3-ux`)
+
+| 명령 | 결과 |
+| --- | --- |
+| `pnpm exec turbo run build typecheck test test:e2e --force` | 통과(25개 작업, 캐시 0, 종료 코드 0) |
+| 단위 | shared-types 2, layout-recon 49(3 skip), reflow 55, pdf-ops 388(3 skip), core 219(4 skip), viewer-ui 232, extension 43 |
+| e2e | 87 통과, 2 skip(옵트인 반응 시간 측정·기존 M1 동적 skip) |
+| `pnpm lint`·`pnpm exec prettier --check .` | 통과 |
+
+### 9.4 사용자 확인 질문
+
+| # | 질문 |
+| --- | --- |
+| 1 | 보고한 현상이 커밋(Esc·바깥 클릭) 뒤 마우스를 올렸을 때 테두리가 여러 개로 보인 것인지, 레이아웃 오버레이를 켠 상태였는지(9.1 표). 이번 수정은 마우스 오버 테두리·편집 대상만 고쳤고 레이아웃 오버레이·복사 순서는 그대로다 |
+| 2 | 넓힌 영역이 아래 문단과 겹쳐 그 문단과 합쳐진 경우, 아래 문단을 따로 편집하려면 편집 블록의 영역을 줄여야 한다. 이 동작으로 충분한지, 겹침 자체를 막을지(현재 결정: 경고만) |
+| 3 | 자동 확장이 일어났다는 표시(예: "영역 넓힘" 칩)가 필요한지. 현재는 영역 테두리만 넓어진다 |
+
+### 9.5 메인 세션 반영(2026-10-20 반영함)
+
+- `docs/m3-contract.md` 5.4 표(축소·넓히기·그대로 → 자동 확장·상한 초과), 5.9 "초과 UI" 행, 4절 `edit.ts` 목록의 `OverflowChoice`, D3 `/PdfEditorFormat` 필드 설명(이전 필드 무시). PLAN.md 1.3 초과 처리 문구.
+- `docs/m3-reflow.md` 2.6·요약 표의 `fontScale`·벤치 표, `docs/m3-core.md`·`docs/m3-pdf-ops.md` 의 overflow·fontScale 언급.
+- 5.1 판정 목록이 편집 블록을 한 항목으로 합친다는 규칙(9.1)을 계약 D3 또는 5.1 에 추가.
+- 반영: PLAN.md v2.12 1.3·상태·변경 이력, 계약 수정 5(1.1·4절·5.1·5.4·5.9·변경 이력), `docs/m3-reflow.md`·`docs/m3-core.md`·`docs/m3-pdf-ops.md` 머리말에 대체 안내.
