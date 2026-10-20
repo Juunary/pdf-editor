@@ -9,7 +9,7 @@
 | 입력 | M3 계약(`docs/m3-contract.md`, 수정 1–6)·통합 결과(`docs/m3-integration.md`), M2 계약(PageLayout 표 모델), M1 계약(SourceMap·paintSeq) |
 | 일정 | PLAN.md 6절 계획은 3주(2027-01-18~02-07). 2026-10-20 착수 |
 | 상태 표기 | 확정·권고·결정 대기(M3 계약과 같음) |
-| 변경 이력 | 초판 + 독립 검토 반영(2026-10-20) 수정 1(2026-10-21, 사용자 결정): D1 확정(셀 하나 = 편집 단위), D2 확정(권고안 + 점 단위 편집 + 패스 삭제), `PathEdit.points`·`delete`, 경고 `table-rule-removed` 수정 2(2026-10-21, 작업 보고·통합): 셀 시작 영역 정렬 변·상한·줄 잇기 규칙(S1 구현 기준), `operandRanges` 범위, 괘선 판정(`LayoutTable.paths`)·패스 편집 경고 경로, 원문 자간 시작 상태·영역 가로 보정 |
+| 변경 이력 | 초판 + 독립 검토 반영(2026-10-20) 수정 1(2026-10-21, 사용자 결정): D1 확정(셀 하나 = 편집 단위), D2 확정(권고안 + 점 단위 편집 + 패스 삭제), `PathEdit.points`·`delete`, 경고 `table-rule-removed` 수정 2(2026-10-21, 작업 보고·통합): 셀 시작 영역 정렬 변·상한·줄 잇기 규칙(S1 구현 기준), `operandRanges` 범위, 괘선 판정(`LayoutTable.paths`)·패스 편집 경고 경로, 원문 자간 시작 상태·영역 가로 보정 수정 3(2026-10-21, 통합 확인): 자간은 TJ 위치 차이로 쓰기, `RunStyle.horizontalScale`·`LayoutTable.paths` 타입 표 추가, 판정 시간 예산 정의(쪽 캐시 제외) |
 | 독립 검토 | 2026-10-20 읽기 전용 검토(판정 REVISE: BLOCKER 1·HIGH 6·MEDIUM 8·LOW 9)를 이 판에 반영했다. 실측(MuPDF): 경로 안 끼인 `w`·`Q` 가 새 속성을 무시·상태 누출, 편집 블록 `Do` 가 뒤 패스 paintSeq 를 +1 민다 |
 
 ## 1. 완료 기준과 범위
@@ -101,7 +101,7 @@
 ### D5 셀 초과 처리
 
 - 2026-10-20 사용자 결정(자동 확장·되돌리기·경고 커밋)을 셀에 그대로 적용한다. 셀의 `areaLimit` = 셀 상자 − 여백(변마다 min(원 글자와 경계 간격, 2pt)) ∩ 쪽·클립·Form 상한이므로, 자동 확장은 셀 아래 경계에서 멈춘다. **수정 2**: 상한 = (셀 상자 − 여백) ∪ 원 글자 상자(괘선 표에서 글자가 셀 상자 밖으로 나온 셀이 같은 텍스트로도 초과되던 문제, ustreas-mts 17쪽).
-- 셀 시작 `format.area`: 가로 = 셀 상자 − 여백(줄 폭이 셀 폭이 되게), 세로 = 글자 bbox. 정렬 = 셀 안 좌·우 간격 비교(차 < 1pt 면 가운데, 오른쪽 간격이 작으면 오른쪽). 정렬 전략 표는 열 정렬 키(x0·x1·cx)를 쓴다. M2 한 줄 문단 `align: 'unknown'` 을 셀에서는 쓰지 않는다. **수정 2**: 정렬한 쪽 변은 원 글자 위치에 둔다(왼쪽 정렬이면 왼쪽 변, 오른쪽이면 오른쪽 변, 가운데면 양쪽 같은 간격). 반대 변은 셀 상자 − 여백. 그래야 같은 텍스트 편집에서 글자가 움직이지 않는다. 원문 자간(`Tc`)은 시작 상태 모양에 싣고(`RunStyle.charSpacing`, 통합 때 추가), 쓰기는 블록에 `Tc` 로 쓴다. 글자쌍 커닝(TJ)은 시작 상태에 싣지 않고 영역 가로를 원 줄 자연 폭까지 넓혀 같은 텍스트가 일찍 줄바꿈되지 않게 한다(후속: 커닝 보존).
+- 셀 시작 `format.area`: 가로 = 셀 상자 − 여백(줄 폭이 셀 폭이 되게), 세로 = 글자 bbox. 정렬 = 셀 안 좌·우 간격 비교(차 < 1pt 면 가운데, 오른쪽 간격이 작으면 오른쪽). 정렬 전략 표는 열 정렬 키(x0·x1·cx)를 쓴다. M2 한 줄 문단 `align: 'unknown'` 을 셀에서는 쓰지 않는다. **수정 2**: 정렬한 쪽 변은 원 글자 위치에 둔다(왼쪽 정렬이면 왼쪽 변, 오른쪽이면 오른쪽 변, 가운데면 양쪽 같은 간격). 반대 변은 셀 상자 − 여백. 그래야 같은 텍스트 편집에서 글자가 움직이지 않는다. 원문 자간(`Tc`)은 시작 상태 모양에 싣고(`RunStyle.charSpacing`), 쓰기는 리플로우 글리프 위치 차이를 TJ 숫자로 쓴다(블록은 `0 Tc`, 수정 3). 가로 배율(`Tz`·Tm 가로 축소)은 `RunStyle.horizontalScale` 로 싣고 블록에 `Tz` 로 쓴다(수정 3). 글자쌍 커닝(TJ)은 시작 상태에 싣지 않고 영역 가로를 원 줄 자연 폭까지 넓혀 같은 텍스트가 일찍 줄바꿈되지 않게 한다(후속: 커닝 보존).
 - 정렬 전략 표(괘선 없음)는 셀 경계가 바깥 글자 외곽이므로 바깥 열·행을 이웃 간격 절반 또는 표 상자까지 넓힌 상자를 셀 상자로 쓴다. 넘치면 초과 표시·`overflow-clipped` 경고·"되돌리기", 경고 상태 커밋 허용.
 - 행 높이는 바꾸지 않는다(행 추가·밀어내기는 범위 밖).
 
@@ -117,6 +117,7 @@
 | --- | --- |
 | `edit.ts` | `ParagraphTarget.cell`(셀 대상), `PathTarget`(`fingerprints`)·`PathFingerprint`·`PathEdit`·`EditPathOp`, `EditOp = ReplaceParagraphOp \| EditPathOp`, `PATH_LIMIT_REASONS`·`PathLimit`, `PathEditability`, `PageEditability.paths`, `ParagraphEditability.cell`, `PathEditPlan`, `PathDraftUpdate`, 경고 `color-space-changed` |
 | `rpc.ts` | `planPathEdit`·`beginPathEdit`·`updatePathDraft`·`commitPathEdit`·`cancelPathEdit` |
+| `page-layout.ts` | 수정 3: `LayoutTable.paths`(필수, 두 전략 모두 채움, 괘선 판정은 `lines` 전략만). `edit.ts` 수정 3: `RunStyle.charSpacing?`·`horizontalScale?`(없으면 0·1, 이전 로그 호환) |
 | `source-map.ts` | S1 이 채우는 선택 필드: `SourceOpState.strokeColorOps`·`lineWidthOps`, `SourceOp.pathOps`(칠하기·클립 연산의 구성 연산 id 목록), `SourceOp.operandRanges`(숫자·이름 피연산자 바이트 범위, 수정 2: 패스 구성·색·`w` 연산에만 채움 — 모든 연산에 넣으면 SourceMap 이 커짐) |
 
 - 패스 대상 식별: `PathTarget.paintSeqs` = 칠하기 연산별 첫 paintSeq(편집 적용 시점 PageModel 기준) + `fingerprints`(D4). `PATH_LIMIT_REASONS` 의 `singular-ctm` 은 문단 사유와 같은 이름·같은 뜻이다(서로소 아님).
@@ -149,7 +150,7 @@
 - 대상 아님(판정 목록·오버레이에서 뺌, 제한 표시 아님): 소유 연산이 `S s f F f* B B* b b*` 가 아닌 칠하기(Form `Do` BBox 클립, `sh`, 이미지, 패턴 색 텍스트, Type3 글리프 경로)와 `PathInfo.op` 가 `clip`·`clip-stroke` 인 항목.
 - 경고: `optional-content`, `color-space-changed`(D3), `shared-form`(Form 복제로 이 위치만 바뀜, 정보), `path-clipped`(편집 후 상자가 칠하기 시점 clipRect·Form BBox 밖으로 나감, 초과와 같은 처리), `tagged-structure-unlinked`(태그 쪽 Form 복제로 `/StructParents` 를 지움, M3 D1 과 같음).
 - PLAN.md 3.4 L1(Resources 상속)·L2(MCID)는 패스 편집에 리소스·구조 변경이 없으므로 제한으로 쓰지 않는다(정책 변경, 7절에 반영).
-- 판정 시간: 쪽 패스 전부를 판정해도 쪽당 200 ms 이하(서버 Node, 코퍼스 최대 패스 쪽 기준, 측정 기록).
+- 판정 시간: 쪽 패스 전부를 판정해도 쪽당 200 ms 이하(서버 Node, 코퍼스 최대 패스 쪽 기준, 측정 기록). **수정 3**: 이 예산은 쪽 추출·SourceMap·레이아웃(쪽 캐시가 재사용)을 뺀 판정 시간이다. 통합 실측 최대 패스 쪽(kogl-mods-cpi 4쪽) 전체 1.75 s 는 첫 추출·해석을 포함한 값이다(`docs/m4-integration.md`).
 
 ### 4.3 패스 쓰기(pdf-ops)
 
