@@ -151,26 +151,38 @@ export interface WriteResult {
   writeMs: number;
 }
 
-/** 쪽의 흐름 문단별 편집 가능 여부(계약 5.1 일괄 판정). revision·ms 는 호출자가 채운다. */
+/**
+ * 쪽의 흐름 문단별 편집 가능 여부(계약 5.1 일괄 판정). revision·ms 는 호출자가 채운다.
+ *
+ * 편집 블록은 한 항목이다. 커밋 뒤 레이아웃 복원은 블록의 줄을 다른 문단처럼 다시 나누거나(줄 간격·짧은 줄·강제
+ * 줄바꿈·양쪽 정렬 간격) 이웃 문단 줄과 합칠 수 있다. 그런 레이아웃 문단은 어느 것을 편집해도 대상이 블록 전체이므로
+ * (계약 D3) 블록마다 첫 문단 id 하나만 남기고, 상자는 블록 글자 상자(analyzeBlock)로 한다. 레이아웃 문단 상자를
+ * 그대로 쓰면 한 블록이 여러 테두리로 갈라져 보이거나 이웃 문단까지 덮는다(2026-10-20 사용자 보고, docs/m3-integration.md 9절).
+ */
 export function planPageEditability(
   ctx: ParagraphEditContext,
   fonts: FontManager,
 ): Omit<PageEditability, 'revision' | 'ms'> {
   void fonts;
   const env = makeEnv(ctx, fontCacheOf(ctx.doc));
-  return {
-    pageIndex: ctx.pageIndex,
-    paragraphs: ctx.layout.paragraphs.map((p) => {
-      const plan = planOne(env, p.id, now());
-      return {
-        paragraphId: p.id,
-        bbox: [...p.bbox] as Rect,
-        editable: plan.editable,
-        editedBlock: plan.target.editedBlock,
-        reasons: [...new Set(plan.limits.map((l) => l.reason))],
-      };
-    }),
-  };
+  const paragraphs: PageEditability['paragraphs'] = [];
+  const blocks = new Set<string>();
+  for (const p of ctx.layout.paragraphs) {
+    const plan = planOne(env, p.id, now());
+    const block = plan.target.editedBlock;
+    if (block !== null) {
+      if (blocks.has(block)) continue;
+      blocks.add(block);
+    }
+    paragraphs.push({
+      paragraphId: p.id,
+      bbox: [...(block !== null ? plan.target.bbox : p.bbox)] as Rect,
+      editable: plan.editable,
+      editedBlock: block,
+      reasons: [...new Set(plan.limits.map((l) => l.reason))],
+    });
+  }
+  return { pageIndex: ctx.pageIndex, paragraphs };
 }
 
 /** 편집 가능 판정·시작 텍스트·영역(계약 5.1·5.3). 문서를 바꾸지 않는다. revision 은 호출자가 채운다. */
