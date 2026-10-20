@@ -330,7 +330,7 @@ describe('패스 편집(실제 어댑터, D2·D3·D4)', () => {
     s.close();
   });
 
-  it('선 두께와 삭제(n): 두께는 페이지 공간 pt, 삭제한 패스는 사라지고 나머지는 그대로', async () => {
+  it('선 두께와 삭제: 두께는 페이지 공간 pt, 삭제한 패스는 사라지고 나머지는 그대로', async () => {
     const s = session(pathSource());
     const line = pathAt(s, ...LINE);
     await pathEdit(s, [line.paintSeq], { ...NO_EDIT, lineWidth: 6 });
@@ -339,7 +339,9 @@ describe('패스 편집(실제 어댑터, D2·D3·D4)', () => {
     await pathEdit(s, [pathAt(s, ...RED).paintSeq], { ...NO_EDIT, delete: true });
     expect(painted(s)).toHaveLength(count - 1);
     expect(() => pathAt(s, ...RED)).toThrow();
-    expect(contents(s)).toMatch(/\bn\b/);
+    // 삭제는 구성 ~ 칠하기를 공백으로 바꾼다(짝 없는 n 없음, 리뷰 L1).
+    expect(contents(s)).not.toMatch(/(^|\s)n(\s|$)/);
+    expect(contents(s)).not.toContain('300 600 60 30 re');
     s.close();
   });
 
