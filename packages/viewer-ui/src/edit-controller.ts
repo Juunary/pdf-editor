@@ -195,6 +195,10 @@ export class EditController {
       const value = await this.ctx.rpc.getPageEditability(pageIndex);
       if (this.ctx.isStalePage(pageIndex)) return this.resetLoading(pageIndex);
       this.ctx.patch({ editability: { status: 'ready', pageIndex, value } });
+      // 패스 판정만 실패한 쪽: 문단 편집은 그대로 쓰고 진단 로그만 남긴다.
+      if (value.pathError) {
+        this.ctx.logEvent('path-editability-error', { pageIndex, error: value.pathError });
+      }
       if (this.ctx.getState().history === null) void this.refreshHistory();
     } catch (e) {
       const failure = classifyFailure(e);

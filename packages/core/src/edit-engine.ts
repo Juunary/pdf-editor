@@ -312,10 +312,11 @@ export class EditEngine {
     const t0 = performance.now();
     const ctx = this.#context(pageIndex);
     const fonts = this.#requireFonts();
-    const result = this.#probe(() => ({
-      ...this.#adapter.planPageEditability(ctx, fonts),
-      paths: this.#planPaths(ctx),
-    }));
+    const result = this.#probe(() => {
+      const page = this.#adapter.planPageEditability(ctx, fonts);
+      const paths = this.#planPaths(ctx);
+      return { ...page, ...paths };
+    });
     return { ...result, revision: this.#revision, ms: performance.now() - t0 };
   }
 
@@ -328,10 +329,19 @@ export class EditEngine {
     return { ...plan, revision: this.#revision };
   }
 
-  /** 쪽의 패스 판정 목록(어댑터 결과). 판정 오류는 그대로 올린다. */
-  #planPaths(ctx: ParagraphEditContext): PathEditability[] {
-    return this.#adapter.planPathEditability(ctx);
+  /**
+   * 쪽의 패스 판정 목록(어댑터 결과). 패스 판정 오류는 이 쪽의 패스 편집만 막는다: 빈 목록과 진단 문자열
+   * (`pathError`)을 돌려주고 문단 판정은 그대로 둔다(리뷰 M4).
+   */
+  #planPaths(ctx: ParagraphEditContext): { paths: PathEditability[]; pathError?: string } {
+    try {
+      return { paths: this.#adapter.planPathEditability(ctx) };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { paths: [], pathError: message };
+    }
   }
+
 
   /**
    * 이 쪽의 편집 블록 목록(작업 문서 기준, 쪽마다 캐시). 레이아웃 복원 힌트(docs/m3-integration.md 9.6)용.

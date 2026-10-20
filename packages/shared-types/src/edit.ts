@@ -284,6 +284,10 @@ export interface PageEditability {
   revision: number;
   paragraphs: ParagraphEditability[];
   paths: PathEditability[];
+  /**
+   * 패스 판정 오류(진단용). 패스 판정이 실패하면 `paths` 는 빈 목록이고 문단 판정은 그대로 돌려준다. 정상이면 없음.
+   */
+  pathError?: string;
   ms: number;
 }
 

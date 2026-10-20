@@ -148,7 +148,7 @@ RPC 짝은 초안 종류로 강제한다: 패스 초안 id 로 문단 RPC 를, �
 | 2 | R-M4 경고 전달 | `SavePlan`·`SaveResult` 에 경고 필드가 없다 | 해소(리뷰 M2): shared-types `SavePlan.warnings?`·`SaveResult.warnings?` 추가, 뷰어 확인 창 연결 |
 | 3 | `table-rule-removed`·`color-space-changed` 산출 | 계약은 경고 이름만 정하고 산출 주체가 없다 | core 가 계획(`PaintColor`)·레이아웃으로 근사한다(2.2). pdf-ops 가 같은 종류를 주면 합쳐진다. 근사는 거짓 양성이 있을 수 있다(예: 3 ICC 성분 공간은 Device 근사) |
 | 4 | 셀 재적용 | 계약 4.4 "셀 glyphSeqs 전체 일치" | 순서 무시 집합 일치 + 표 id·행·열 일치로 구현. 순서까지 요구하려면 S1 의 셀 문단 순서 규칙을 확인해야 한다 |
-| 5 | `getPageEditability.paths` 스텁 | pdf-ops 스텁은 "M4 미구현"을 던진다 | 그 메시지만 빈 목록으로 삼키고 다른 오류는 올린다. 통합 때 제거(5절 #2) |
+| 5 | `getPageEditability.paths` 스텁 | pdf-ops 스텁은 "M4 미구현"을 던진다 | 통합 때 스텁 삼킴 제거. 리뷰 M4 뒤로는 모든 패스 판정 오류를 `paths: []` + `PageEditability.pathError`(진단)로 격리하고 문단 판정은 돌려준다 |
 | 6 | `planPathEdit` 의 폴백 폰트 | 문단 판정은 폴백 바이트를 먼저 불러온다 | 패스 계획은 폰트가 필요 없어 불러오지 않는다(마우스 오버마다 4 MB 로드 방지). `beginPathEdit` 은 첫 편집 계열 호출이면 문단과 같이 불러오고 임베딩한 뒤 저널을 켠다(패스가 먼저여도 이후 문단 편집이 폴백을 쓰려면 필요) |
 | 7 | 변경 없는 커밋 | 계약에 없음 | 한 번도 `updatePathDraft` 를 부르지 않은 초안의 커밋은 거절한다(빈 `EditPathOp` 방지). 뷰어는 놓을 때 항상 갱신 후 커밋한다 |
 | 8 | `writePathEdit` 반복 호출 의미 | "같은 초안에서 반복 호출할 수 있다" | 원본 바이트 기준 절대 편집(직전 쓰기와 무관)으로 해석. 실패 복구의 "변경 없음 편집(`transform` 등 모두 null, `delete` false)이 원 바이트로 돌아간다"도 같은 가정이다. S1 확인 필요 |
