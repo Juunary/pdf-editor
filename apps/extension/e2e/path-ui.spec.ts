@@ -455,8 +455,8 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await page.keyboard.up('Shift');
       await expect.poll(() => edits(page)).toBe(1);
       const t = (await pathEdits(page)).at(-1)!.transform!;
-      expect(t[0]).toBeCloseTo(t[3], 6);
-      expect(t[0]).toBeGreaterThan(1);
+      expect(t[0]).toBeCloseTo(t[3]!, 6);
+      expect(t[0]!).toBeGreaterThan(1);
       const info = (await pathInfo(page, 11))!;
       expect(info.bbox[0]).toBeCloseTo(130, 3); // 왼쪽 위 고정
       expect(info.bbox[1]).toBeCloseTo(210, 3);
