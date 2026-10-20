@@ -208,3 +208,109 @@ describe('이웃 쪽 반복 머리·꼬리', () => {
     expect(roles.at(-1)).toBe('footer');
   });
 });
+
+describe('fixedGroups(편집 블록 한 문단, docs/m3-integration.md 9.6)', () => {
+  // 편집 블록 줄: 강제 줄바꿈 뒤 짧은 줄 + 양쪽 정렬 줄의 넓은 단어 간격(한 줄이 조각 둘).
+  const blockLines = (): LineSpec[] => [
+    { x: 72, y: 100, text: 'Short line one.' },
+    { x: 72, y: 112, text: 'Short line two.' },
+    { x: 72, y: 124, text: words(5) },
+    { x: 222, y: 124, text: words(5) }, // 같은 행, 앞 조각과 50pt 간격
+    { x: 72, y: 136, text: 'last line.' },
+  ];
+
+  it('나뉘던 블록 줄이 문단 하나가 된다(줄 위→아래, 같은 행 조각 포함)', () => {
+    const model = buildModel({ lines: blockLines() });
+    const plain = reconstructPage(model);
+    checkInvariants(model, plain);
+    expect(plain.paragraphs.length).toBeGreaterThan(1);
+    const layout = reconstructPage(model, { fixedGroups: [[0, 1, 2, 3, 4]] });
+    checkInvariants(model, layout);
+    expect(layout.paragraphs).toHaveLength(1);
+    const p = layout.paragraphs[0]!;
+    expect(p.lines).toEqual([0, 1, 2, 3, 4]);
+    expect(p.role).toBe('body');
+    expect(p.column).toBe(0);
+    expect(p.lineHeight).toBe(12);
+    expect(p.bbox[0]).toBe(72);
+    expect(p.text.startsWith('Short line one. Short line two.')).toBe(true);
+    expect(layout.readingOrder).toEqual([{ kind: 'paragraph', id: 0 }]);
+  });
+
+  it('주어진 줄 순서와 무관하게 위→아래', () => {
+    const model = buildModel({ lines: blockLines() });
+    const layout = reconstructPage(model, { fixedGroups: [[4, 2, 0, 3, 1]] });
+    checkInvariants(model, layout);
+    expect(layout.paragraphs.map((p) => p.lines)).toEqual([[0, 1, 2, 3, 4]]);
+  });
+
+  it('이웃 문단 줄과 합쳐지던 블록이 떨어진다', () => {
+    // 블록(줄 0–2)과 바로 아래 이웃 문단(줄 3–5)이 같은 줄 간격·같은 모양이라 M2 는 한 문단으로 본다.
+    const model = buildModel({
+      lines: column(72, 100, [words(12), words(12), words(12), words(12), words(12), 'end.']),
+    });
+    const plain = reconstructPage(model);
+    expect(plain.paragraphs.map((p) => p.lines)).toEqual([[0, 1, 2, 3, 4, 5]]);
+    const layout = reconstructPage(model, { fixedGroups: [[0, 1, 2]] });
+    checkInvariants(model, layout);
+    expect(layout.paragraphs.map((p) => p.lines)).toEqual([
+      [0, 1, 2],
+      [3, 4, 5],
+    ]);
+    expect(layout.readingOrder.map((r) => r.id)).toEqual([0, 1]);
+  });
+
+  it('이웃 문단과 겹쳐도(넓힌 영역) 블록 하나·이웃 하나', () => {
+    // 블록 마지막 줄이 이웃 첫 줄과 같은 높이 근처(겹침)에 있다.
+    const model = buildModel({
+      lines: [
+        ...column(72, 100, [words(12), words(12), words(12)]),
+        ...column(72, 128, [words(12), words(12), 'end.']),
+      ],
+    });
+    const layout = reconstructPage(model, { fixedGroups: [[0, 1, 2]] });
+    checkInvariants(model, layout);
+    const sorted = layout.paragraphs.map((p) => p.lines).sort((a, b) => a[0]! - b[0]!);
+    expect(sorted).toEqual([
+      [0, 1, 2],
+      [3, 4, 5],
+    ]);
+  });
+
+  it('두 열: 블록은 왼쪽 열 자리의 읽기 순서·열을 받는다', () => {
+    const left = column(50, 150, [words(9), words(9), 'end.', 'Edited one.', 'Edited two.']);
+    const right = column(320, 150, [words(9), words(9), 'final line.']);
+    const model = buildModel({ lines: [...left, ...right] });
+    const layout = reconstructPage(model, { fixedGroups: [[3, 4]] });
+    checkInvariants(model, layout);
+    const block = layout.paragraphs.find((p) => p.lines.includes(3))!;
+    expect(block.lines).toEqual([3, 4]);
+    const first = layout.paragraphs.find((p) => p.lines.includes(0))!;
+    const rightP = layout.paragraphs.find((p) => p.lines.includes(5))!;
+    expect(block.column).toBe(first.column);
+    expect(rightP.column).not.toBe(block.column);
+    const order = layout.readingOrder.map((r) => r.id);
+    expect(order.indexOf(first.id)).toBeLessThan(order.indexOf(block.id));
+    expect(order.indexOf(block.id)).toBeLessThan(order.indexOf(rightP.id));
+  });
+
+  it('잘못된 번호·빈 묶음·겹친 묶음은 무시(앞 묶음 우선), 묶음 둘은 문단 둘', () => {
+    const model = buildModel({ lines: blockLines() });
+    const layout = reconstructPage(model, {
+      fixedGroups: [[], [0, 1, 99, -1], [1, 2, 3, 4]],
+    });
+    checkInvariants(model, layout);
+    expect(layout.paragraphs.map((p) => p.lines)).toEqual([
+      [0, 1],
+      [2, 3, 4],
+    ]);
+  });
+
+  it('힌트가 없거나 빈 배열이면 M2 결과와 같다', () => {
+    const model = buildModel({ lines: blockLines() });
+    const strip = (l: PageLayout) => ({ ...l, reconMs: 0 });
+    expect(strip(reconstructPage(model, { fixedGroups: [] }))).toEqual(
+      strip(reconstructPage(model)),
+    );
+  });
+});
