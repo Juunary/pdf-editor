@@ -415,3 +415,52 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(pathEditWarnings(ctx, prep).map((w) => w.kind)).toEqual(['table-rule-removed']);
   });
 });
+
+describe('V2·V3 합성(세 엔진)', () => {
+  const content = [
+    '0.2 0.4 0.6 rg 1 0 0 RG 1.5 w',
+    '10.123456789012 20.987654321098 m 120.5 40.25 l 60.333333333333 90.666666666667 30.1 70.2 15 50 c h B',
+    '200 20 m 230 80 260 20 v 290 80 320 20 y S',
+    'q 0.8 0 0 0.8 20 140 cm 0 0 0 rg 0 0 80.123456789 40.987654321 re f Q',
+    '0.5 g 150 150 m 220 150 l 220 220 l h f*',
+  ].join(' ');
+
+  it('V2: 칠하기마다 q … Q 로 감싸도 렌더가 같다', async () => {
+    const doc = makeDoc([content]);
+    const before = bytesOf(doc);
+    const ctx = ctxOf(doc);
+    const ops = ctx.map.ops;
+    const bytes = readStreamBytes(doc.findPage(0).get('Contents'));
+    const reps: { start: number; end: number; text: string }[] = [];
+    for (const p of planPathEditability(ctx)) {
+      const paint = ops[ctx.linkage.pathOp[p.pathIndex]!]!;
+      const first = ops[paint.pathOps![0]!]!;
+      reps.push({ start: first.range[0], end: first.range[0], text: 'q ' });
+      reps.push({ start: paint.range[1], end: paint.range[1], text: ' Q' });
+    }
+    expect(reps).toHaveLength(8);
+    const { applyReplacements } = await import('../src/text-remove.js');
+    doc.findPage(0).get('Contents').writeStream(applyReplacements(bytes, reps));
+    await expectNoChangeOutside(before, bytesOf(doc), 0, []);
+  });
+
+  it('V3: 구성 연산 피연산자를 9자리로 다시 써도 렌더가 같다', async () => {
+    const doc = makeDoc([content]);
+    const before = bytesOf(doc);
+    const ctx = ctxOf(doc);
+    // 같은 좌표는 바뀐 연산이 없어 쓰지 않으므로 1e-12pt 이동(다중 선택)으로 모든 구성 연산을 다시 쓴다.
+    const seqs = planPathEditability(ctx).map((p) => p.paintSeq);
+    const plan = planPathEdit(ctx, seqs);
+    writePathEdit(
+      ctx,
+      preparePathEdit(ctx, plan, 'v3'),
+      edit({ transform: [1, 0, 0, 1, 1e-12, 0] }),
+    );
+    expect(contentText(doc)).toContain('80.1234568 40.9876543 re');
+    expect(contentText(doc)).toContain('230 80 260 20 v 290 80 320 20 y');
+    expect(contentText(doc)).toMatch(
+      /^0\.2 0\.4 0\.6 rg 1 0 0 RG 1\.5 w 10\.1234568 20\.9876543 m/,
+    );
+    await expectNoChangeOutside(before, bytesOf(doc), 0, []);
+  });
+});
