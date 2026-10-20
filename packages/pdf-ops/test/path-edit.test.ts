@@ -414,6 +414,23 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     writePathEdit(ctx, prep, edit({ delete: true }));
     expect(pathEditWarnings(ctx, prep).map((w) => w.kind)).toEqual(['table-rule-removed']);
   });
+
+  it('표 상자와 겹쳐도 LayoutTable.paths 에 없는 패스는 table-rule-removed 를 내지 않는다', () => {
+    // 표 오른쪽 위 모서리를 걸치는 짧은 사선(괘선·배경 사각형이 아님). 이전 규칙(표 상자와 1pt 안 겹침)이면 경고했다.
+    const content = `${gridTable()} 395 205 m 410 190 l S`;
+    const doc = makeDoc([{ content, mediabox: [0, 0, 500, 300] }]);
+    const ctx = ctxOf(doc, 0, true);
+    const [table] = ctx.layout.tables;
+    expect(table!.strategy).toBe('lines');
+    expect(table!.paths).toHaveLength(8);
+    const paths = planPathEditability(ctx);
+    const diagonal = paths.at(-1)!;
+    expect(table!.paths).not.toContain(diagonal.pathIndex);
+    const plan = planPathEdit(ctx, [diagonal.paintSeq]);
+    const prep = preparePathEdit(ctx, plan, 'd');
+    writePathEdit(ctx, prep, edit({ delete: true }));
+    expect(pathEditWarnings(ctx, prep)).toEqual([]);
+  });
 });
 
 describe('V2·V3 합성(세 엔진)', () => {

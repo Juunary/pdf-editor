@@ -82,6 +82,7 @@ const TABLE_LAYOUT = {
       rowBounds: [400, 430, 460, 490],
       colBounds: [20, 120, 220, 320],
       strategy: 'lines',
+      paths: [],
       cells: [
         {
           row: 0,

@@ -11,6 +11,7 @@ const table = (cells: LayoutTable['cells']): LayoutTable => ({
   colBounds: [0, 100, 200, 300],
   cells,
   strategy: 'lines',
+  paths: [],
 });
 
 const cell = (row: number, col: number, rowSpan = 1, colSpan = 1) => ({

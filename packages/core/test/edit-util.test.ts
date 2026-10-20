@@ -120,6 +120,7 @@ describe('coreWarnings', () => {
               colBounds: [],
               cells: [],
               strategy: 'lines',
+              paths: [],
             },
           ],
         },
