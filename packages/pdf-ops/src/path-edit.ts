@@ -59,6 +59,7 @@ import {
   replaceContentsSlot,
   type Replacement,
 } from './text-remove.js';
+import { writeStreamBytes } from './mupdf-util.js';
 
 /** 패스 편집이 바꾸는 객체 번호 목록을 담은 준비 결과. */
 export interface PreparedPathEdit {
@@ -868,7 +869,7 @@ export function preparePathEdit(
     h = {
       key,
       orig,
-      write: (b) => doc.newIndirect(target).writeStream(b),
+      write: (b) => writeStreamBytes(doc.newIndirect(target), b),
       fixed: [],
       res: null,
     };
@@ -903,7 +904,7 @@ export function preparePathEdit(
     h = {
       key,
       orig: streams.get(step.objectNumber).slice(),
-      write: (b) => clone.writeStream(b),
+      write: (b) => writeStreamBytes(clone, b),
       fixed: [],
       res,
     };

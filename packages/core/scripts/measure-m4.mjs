@@ -70,10 +70,13 @@ async function drag(file, pageArg, countArg = '10', stepsArg = '50', scaleArg = 
   const scale = Number(scaleArg);
   const session = new PdfSession();
   session.open(new Uint8Array(readFileSync(file)));
-  const model = session.extractPage({ pageIndex });
   const area = (p) => (p.bbox[2] - p.bbox[0]) * (p.bbox[3] - p.bbox[1]);
-  const chosen = model.paths
-    .filter((p) => p.op === 'fill' || p.op === 'stroke')
+  // 편집 가능 판정을 통과한 패스만(통합 뒤 실제 경로). 판정 시간도 잰다.
+  const te = performance.now();
+  const editability = await session.getPageEditability(pageIndex);
+  const editabilityMs = performance.now() - te;
+  const chosen = editability.paths
+    .filter((p) => p.editable)
     .sort((a, b) => area(b) - area(a))
     .slice(0, count);
   const paintSeqs = chosen.map((p) => p.paintSeq);
@@ -87,15 +90,30 @@ async function drag(file, pageArg, countArg = '10', stepsArg = '50', scaleArg = 
     ]);
   const info = session.getPageInfo(pageIndex);
   const dx = 0.5;
-  const sample = { file, pageIndex, paths: paintSeqs.length, pageWidth: info.width ?? null, steps };
+  const sample = {
+    file,
+    pageIndex,
+    paths: paintSeqs.length,
+    pagePaths: editability.paths.length,
+    pageEditablePaths: editability.paths.filter((p) => p.editable).length,
+    editabilityMs: round(editabilityMs),
+    pageWidth: info.width ?? null,
+    steps,
+  };
 
   let mode = 'real';
   let times = [];
   let commitMs = null;
+  let planMs = null;
+  let beginMs = null;
   try {
+    const tp = performance.now();
     const plan = await session.planPathEdit(pageIndex, paintSeqs);
+    planMs = performance.now() - tp;
     if (!plan.editable) throw new Error(`편집 불가: ${plan.limits.map((l) => l.reason).join(',')}`);
+    const tb = performance.now();
     const started = await session.beginPathEdit(pageIndex, paintSeqs, plan.revision);
+    beginMs = performance.now() - tb;
     for (let k = 1; k <= steps; k++) {
       const t0 = performance.now();
       await session.updatePathDraft(
@@ -130,6 +148,8 @@ async function drag(file, pageArg, countArg = '10', stepsArg = '50', scaleArg = 
         ...(mode === 'proxy'
           ? { writeMs: stats(proxyParts.write), renderMs: stats(proxyParts.render) }
           : {}),
+        planMs: planMs === null ? null : round(planMs),
+        beginMs: beginMs === null ? null : round(beginMs),
         commitMs: commitMs === null ? null : round(commitMs),
       },
       null,
