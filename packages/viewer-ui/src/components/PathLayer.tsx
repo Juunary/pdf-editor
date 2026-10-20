@@ -75,6 +75,8 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
   const gesture = path.gesture;
   const drag = useRef<Drag | null>(null);
   const [, bump] = useState(0);
+  /** 끌기 직후 따라오는 click 이 선택을 바꾸지 않게 한다. */
+  const justDragged = useRef(false);
 
   const selected = useMemo(
     () => candidates.filter((c) => selection?.paintSeqs.includes(c.paintSeq)),
@@ -204,7 +206,20 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
   const onPointerUp = () => {
     const d = drag.current;
     drag.current = null;
+    if (d?.moved) {
+      justDragged.current = true;
+      setTimeout(() => (justDragged.current = false), 0);
+    }
     if (d?.gesture) void paths.commitGesture();
+  };
+  // 선택 상자 위의 Shift+클릭(다중 선택에 더하기·빼기)과 Alt+클릭은 아래 패스에 전달한다.
+  const onBoxClick = (e: MouseEvent) => {
+    if (justDragged.current || (!e.shiftKey && !e.altKey)) return;
+    const page = pageRef.current;
+    if (!page) return;
+    const r = page.getBoundingClientRect();
+    const p = cssToPage(e.clientX - r.left, e.clientY - r.top, layout);
+    void paths.selectAt(view.pageIndex, p, layout.cssScale, e.shiftKey);
   };
 
   const startBox = (kind: 'move' | 'resize', handle: HandleName | null) => (e: PointerEvent) =>
@@ -262,6 +277,7 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
+        onClick={onBoxClick}
       >
         {editable &&
           !path.pointMode &&

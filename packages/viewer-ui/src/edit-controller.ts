@@ -343,12 +343,20 @@ export class EditController {
     }
   }
 
+  private isCellParagraph(paragraphId: number): boolean {
+    const e = this.ctx.getState().editability;
+    return (
+      e.status === 'ready' &&
+      e.value.paragraphs.some((p) => p.paragraphId === paragraphId && p.cell !== null)
+    );
+  }
+
   private showLimits(plan: ParagraphEditPlan): void {
     const details = plan.limits.map((l) => l.detail).filter((d) => d !== '');
     const items = details.length > 0 ? details : plan.limits.map((l) => limitLabel(l.reason));
     this.ctx.patch({
       popover: {
-        kind: plan.target.cell ? 'cell' : 'paragraph',
+        kind: plan.target.cell || this.isCellParagraph(plan.paragraphId) ? 'cell' : 'paragraph',
         pageIndex: plan.pageIndex,
         paragraphId: plan.paragraphId,
         bbox: plan.target.bbox,

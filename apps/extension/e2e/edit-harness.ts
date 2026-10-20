@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import type { PageModel, Rect } from '@pdf-editor/shared-types';
-import type { FakeParagraph } from '../../../packages/viewer-ui/test/fake-edit-host.js';
+import type { FakeParagraph, FakePath } from '../../../packages/viewer-ui/test/fake-edit-host.js';
 import { makePageModel } from '../../../packages/viewer-ui/test/fixtures.js';
 
 const UI_ROOT = fileURLToPath(new URL('../../../packages/viewer-ui/', import.meta.url));
@@ -35,6 +35,10 @@ export interface EditHarnessConfig {
   /** 가짜 호스트 리플로우의 글자 폭 등. */
   layout?: { charWidth?: number; newlineInLine?: boolean };
   pageCount?: number;
+  /** 벡터 패스(M4). 편집은 가짜 호스트가 반영해 돌려준다. */
+  paths?: FakePath[];
+  /** 표 레이아웃(getPageLayout). 없으면 미구현 예외. */
+  layout2?: unknown;
 }
 
 const HARNESS_HTML = `<!doctype html>
@@ -65,7 +69,7 @@ import { FakeEditHost } from '/fake-edit-host.js';
 const cfg = window.__cfg;
 const log = [];
 window.__log = log;
-const fake = new FakeEditHost({ paragraphs: cfg.paragraphs, areaLimit: cfg.areaLimit, layout: cfg.layout });
+const fake = new FakeEditHost({ paragraphs: cfg.paragraphs, areaLimit: cfg.areaLimit, layout: cfg.layout, paths: cfg.paths });
 window.__edit = fake;
 const model = cfg.model;
 const size = { width: model.bounds[2] - model.bounds[0], height: model.bounds[3] - model.bounds[1] };
@@ -78,14 +82,19 @@ const host = {
     window.__renders = (window.__renders || 0) + 1;
     return { pageIndex: req.pageIndex, width, height, rgba: new Uint8ClampedArray(width * height * 4).fill(255), renderMs: 1, clip: null };
   },
-  extractPage: async (req) => ({ ...model, pageIndex: req.pageIndex }),
+  extractPage: async (req) => ({ ...model, pageIndex: req.pageIndex, paths: cfg.paths ? fake.pathInfos() : model.paths }),
   getSourceMap: unimpl('getSourceMap'),
   linkPage: unimpl('linkPage'),
   searchText: unimpl('searchText'),
-  getPageLayout: unimpl('getPageLayout'),
+  getPageLayout: cfg.layout2 ? async (i) => ({ ...cfg.layout2, pageIndex: i }) : unimpl('getPageLayout'),
   getPageEditability: (i) => fake.getPageEditability(i),
   planParagraphEdit: (i, p) => fake.planParagraphEdit(i, p),
   beginParagraphEdit: (i, p, r, s) => fake.beginParagraphEdit(i, p, r, s),
+  planPathEdit: (i, s) => fake.planPathEdit(i, s),
+  beginPathEdit: (i, s, r) => fake.beginPathEdit(i, s, r),
+  updatePathDraft: (d, e, scale) => fake.updatePathDraft(d, e, scale),
+  commitPathEdit: (d) => fake.commitPathEdit(d),
+  cancelPathEdit: (d) => fake.cancelPathEdit(d),
   updateParagraphDraft: (d, input) => fake.updateParagraphDraft(d, input),
   commitParagraphEdit: (d) => fake.commitParagraphEdit(d),
   cancelParagraphEdit: (d) => fake.cancelParagraphEdit(d),
