@@ -199,19 +199,24 @@ describe('편집 제한(5.1)', () => {
     expect(reasons(plan(ctx, 'Masked text'))).toContain('graphics-state-mismatch');
   });
 
-  it('도형 라벨 문단 → not-flow-paragraph, 표 셀 문단은 아님(M4 4.1)', () => {
+  it('표 문단도 not-flow-paragraph 가 아니다(M4 셀 편집, 셀을 못 찾으면 흐름 문단처럼)', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Cell text) Tj ET']);
     const ctx0 = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
-    const label = { ...ctx0.layout.paragraphs[0]!, figure: 0 };
-    expect(reasons(planParagraphEdit(withParagraphs(ctx0, [label]), fm, label.id))).toContain(
-      'not-flow-paragraph',
-    );
-    // 표 문단인데 레이아웃에 셀이 없으면 흐름 문단처럼 판정한다.
     const cell = { ...ctx0.layout.paragraphs[0]!, table: 0 };
     expect(reasons(planParagraphEdit(withParagraphs(ctx0, [cell]), fm, cell.id))).not.toContain(
       'not-flow-paragraph',
     );
+  });
+
+  it('도형 라벨 문단은 편집할 수 있다(도형 오검출로 일반 글자가 막히던 문제, 2026-10-21)', () => {
+    const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Text over a background box) Tj ET']);
+    const ctx0 = pageContext(doc, 0);
+    const para = { ...ctx0.layout.paragraphs[0]!, figure: 0 };
+    const ctx = withParagraphs(ctx0, [para]);
+    const result = planParagraphEdit(ctx, new FontManager(doc, fallbackFor(doc)), para.id);
+    expect(reasons(result)).not.toContain('not-flow-paragraph');
+    expect(result.editable).toBe(true);
   });
 });
 

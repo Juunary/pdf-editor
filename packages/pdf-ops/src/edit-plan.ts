@@ -301,12 +301,13 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
   const limits = new Limits();
   const warnings: EditWarning[] = [];
 
-  // 표 셀(M4 D1): 셀 문단 전부가 대상. 셀을 찾지 못한 표 문단은 흐름 문단처럼 다룬다.
+  // 도형 라벨 문단은 막지 않는다(2026-10-21 사용자 보고, main #6): 도형 검출은 배경 그림·상자·쪽 전체를 도형으로 잡는
+  // 일이 잦아(코퍼스 1·4쪽 흐름 밖 문단 778 중 221 이 도형 라벨, 쪽 면적 54–100% 도형 포함), 일반 글자가 편집되지 않았다.
+  // 표 셀은 M4 D1 에 따라 셀 문단 전부가 대상이다(main 의 "표 셀만 not-flow-paragraph" 규칙은 M4 셀 편집으로 대체).
+  // 셀을 찾지 못한 표 문단은 흐름 문단처럼 다룬다. 그래서 not-flow-paragraph 는 붙지 않는다.
   let target = paragraph;
   let cell: CellTarget | null = null;
-  if (paragraph.figure !== null) {
-    limits.add('not-flow-paragraph', '도형 라벨 문단', []);
-  } else if (paragraph.table !== null) {
+  if (paragraph.table !== null) {
     cell = cellTarget(ctx.model, ctx.layout, paragraphId);
     if (cell) target = cell.paragraph;
   }

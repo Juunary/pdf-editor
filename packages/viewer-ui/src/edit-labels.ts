@@ -9,7 +9,8 @@ export const LIMIT_LABELS: Record<
   ParagraphLimitReason | EditLimitReason | PathLimitReason,
   string
 > = {
-  'not-flow-paragraph': '도형(차트·그림) 안의 글자는 이 버전에서 편집할 수 없습니다.',
+  // M4 부터 판정이 붙이지 않는다(도형 라벨·표 셀 모두 편집 가능). 이전 판정 결과 표시용으로 남긴다.
+  'not-flow-paragraph': '본문 흐름 밖의 글자는 이 버전에서 편집할 수 없습니다.',
   'vertical-or-rotated': '세로쓰기·회전된 글자는 편집할 수 없습니다.',
   'remove-skipped': '원본 글자를 안전하게 지울 수 없는 연산이 있어 편집할 수 없습니다.',
   'mixed-content-sources': '문단 글자가 쪽 본문과 별도 개체(Form)에 걸쳐 있어 편집할 수 없습니다.',
