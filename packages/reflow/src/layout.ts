@@ -185,9 +185,13 @@ function buildItems(text: string, segments: readonly FontSegment[]): Item[] {
         return;
       }
       const em = it.seg.size / 1000;
+      // 자간(Tc)은 글리프마다 전진 뒤에 붙는다. 클러스터 마지막 글리프 뒤 자간은 다음 클러스터와의 간격이라 커닝처럼
+      // 줄 끝에서 뺀다(kernAfter).
+      const cs = it.seg.charSpacing ?? 0;
+      const hs = it.seg.horizontalScale ?? 1;
       it.glyphs = r.glyphs;
-      it.adv = r.advance * em;
-      it.kernAfter = r.kernAfter * em;
+      it.adv = r.advance * em * hs + cs * r.glyphs.length;
+      it.kernAfter = r.kernAfter * em * hs + (r.glyphs.length > 0 ? cs : 0);
     });
     i = j;
   }
@@ -352,6 +356,7 @@ function placeLine(
         size,
       });
       const em = size / 1000;
+      const hs = it.seg.horizontalScale ?? 1;
       let gx = pen;
       for (const g of it.glyphs) {
         writable.push({
@@ -360,15 +365,16 @@ function placeLine(
           faceKey: face.key,
           code: g.code,
           gid: g.gid,
-          x: gx + g.xOffset * em,
+          x: gx + g.xOffset * em * hs,
           y,
           size,
           pdfWidth: g.pdfWidth,
           syntheticBold: it.seg.syntheticBold,
           syntheticItalic: it.seg.syntheticItalic,
           runIndex: it.seg.runIndex,
+          ...(hs !== 1 ? { horizontalScale: hs } : {}),
         });
-        gx += g.advance * em;
+        gx += g.advance * em * hs + (it.seg.charSpacing ?? 0);
       }
       pen += advance;
     }
@@ -377,12 +383,21 @@ function placeLine(
   return { glyphs, writable, x0, x1 };
 }
 
-/** 줄의 글리프 클러스터에서 가장 큰 올림·가장 깊은 내림(pt, 내림 음수). 글리프가 없으면 null. */
+/**
+ * 줄의 글리프 클러스터에서 가장 큰 올림·가장 깊은 내림(pt, 내림 음수). 글리프가 없으면 null.
+ * 공백 클러스터는 공백만 있는 줄에서만 센다: 원본 폰트에 공백 글리프가 없어 폴백으로 간 공백(TeX 폰트 등)이
+ * 폴백 폰트 높이로 줄 상자를 키우지 않게 한다.
+ */
 function lineMetrics(items: readonly Item[], line: LineRange): Metrics | null {
+  return metricsOver(items, line, false) ?? metricsOver(items, line, true);
+}
+
+function metricsOver(items: readonly Item[], line: LineRange, spaces: boolean): Metrics | null {
   let m: Metrics | null = null;
   for (let i = line.a; i < line.b; i++) {
     const it = items[i];
     if (it === undefined || it.kind !== 'glyph' || it.face === null) continue;
+    if ((it.cc.cls === 'SP') !== spaces) continue;
     const fm = faceMetrics(it.face, it.seg.size);
     m =
       m === null

@@ -65,6 +65,32 @@ describe('decideSave', () => {
     expect(d.infos).toHaveLength(1);
   });
 
+  it('core 저장 경고(실패 상태 저장)는 확인 창을 띄우고 맨 앞에 온다', () => {
+    const d = decideSave(
+      plan({
+        warnings: [
+          '편집 엔진 오류 상태에서 저장합니다.',
+          '취소한 초안의 변경이 들어갈 수 있습니다.',
+        ],
+        heap: heap('warn', '힙'),
+        edits: { pages: [0], structureUnlinked: 0, pdfaDeclared: false },
+      }),
+    );
+    expect(d.block).toBeNull();
+    expect(d.warnings).toEqual([
+      '편집 엔진 오류 상태에서 저장합니다.',
+      '취소한 초안의 변경이 들어갈 수 있습니다.',
+      '힙',
+    ]);
+    expect(d.infos).toHaveLength(1);
+    expect(decideSave(plan({ warnings: [] })).warnings).toEqual([]);
+  });
+
+  it('over-limit 이면 core 경고가 있어도 중단한다', () => {
+    const d = decideSave(plan({ warnings: ['x'], heap: heap('over-limit', '한계') }));
+    expect(d.block).toBe('한계');
+  });
+
   it('warn 과 편집 경고가 겹치면 모두 모은다', () => {
     const d = decideSave(
       plan({

@@ -32,6 +32,19 @@ function openFromStream(bytes: Uint8Array, onRead?: (length: number) => void): m
   }
 }
 
+/**
+ * 바이트를 WASM 버퍼로 복사해 연다. mupdf.js 에 Uint8Array 를 그대로 넘기면 임시 Buffer 래퍼의 해제가 GC 에 맡겨져
+ * 문서를 닫아도 바이트 사본이 남는다. 문서가 버퍼 참조를 잡은 뒤 래퍼를 바로 놓는다.
+ */
+function openFromBuffer(bytes: Uint8Array | ArrayBuffer): mupdf.Document {
+  const buffer = new mupdf.Buffer(bytes);
+  try {
+    return mupdf.Document.openDocument(buffer, 'application/pdf');
+  } finally {
+    buffer.destroy();
+  }
+}
+
 /** PDF 바이트를 연다. PDF 가 아니면 예외. */
 export function openPdf(
   bytes: Uint8Array | ArrayBuffer,
@@ -41,7 +54,7 @@ export function openPdf(
   const doc =
     mode === 'stream'
       ? openFromStream(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), options.onRead)
-      : mupdf.Document.openDocument(bytes, 'application/pdf');
+      : openFromBuffer(bytes);
   const pdf = doc.asPDF();
   if (!pdf) {
     doc.destroy();

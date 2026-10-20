@@ -18,9 +18,12 @@ import type {
   ParagraphLimit,
   ParagraphLimitReason,
   Rect,
+  RunStyle,
   SourceOp,
   TextRun,
 } from '@pdf-editor/shared-types';
+import { cellTarget, type CellTarget } from './cell-edit.js';
+import { offsetMap } from './text-map.js';
 import { parseContentOpsLenient } from './content-stream.js';
 import {
   concat,
@@ -59,6 +62,10 @@ export interface BlockFormat {
     bold: boolean;
     italic: boolean;
     color: [number, number, number] | null;
+    /** RunStyle.charSpacing(pt). 0 이면 쓰지 않는다. */
+    charSpacing?: number;
+    /** RunStyle.horizontalScale. 1 이면 쓰지 않는다. */
+    horizontalScale?: number;
     /** 원 폰트 이름(BaseFont). 폴백이면 폴백 폰트 이름. */
     font: string;
     synthetic: { bold: boolean; italic: boolean };
@@ -116,6 +123,8 @@ export interface EditAnalysis {
   actualTextClears: number[];
   /** 복제할 Form 이 /StructParents 를 가져 복제본에서 지운다. */
   structParentsRemoved: boolean;
+  /** 표 셀 대상(M4 D1). paragraph 는 셀 문단을 이은 문단이다. */
+  cell: CellTarget | null;
 }
 
 /** 한 번의 판정(쪽 하나) 안에서 공유하는 상태. */
@@ -292,13 +301,23 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
   const limits = new Limits();
   const warnings: EditWarning[] = [];
 
-  // 도형 라벨 문단은 막지 않는다(2026-10-21 사용자 보고): 도형 검출은 배경 그림·상자·쪽 전체를 도형으로 잡는 일이
-  // 잦아(코퍼스 1·4쪽 흐름 밖 문단 778 중 221 이 도형 라벨, 쪽 면적 54–100% 도형 포함), 일반 글자가 편집되지 않았다.
-  // 진짜 도형의 라벨(축 이름 등)도 문단 편집으로 고칠 수 있다. 세로·회전 글자 등 다른 제한은 그대로 적용된다.
+  // 도형 라벨 문단은 막지 않는다(2026-10-21 사용자 보고, main #6): 도형 검출은 배경 그림·상자·쪽 전체를 도형으로 잡는
+  // 일이 잦아(코퍼스 1·4쪽 흐름 밖 문단 778 중 221 이 도형 라벨, 쪽 면적 54–100% 도형 포함), 일반 글자가 편집되지 않았다.
+  // 표 셀은 M4 D1 에 따라 셀 문단 전부가 대상이다(main 의 "표 셀만 not-flow-paragraph" 규칙은 M4 셀 편집으로 대체).
+  // 셀을 찾지 못한 표 문단은 흐름 문단처럼 다룬다. 그래서 not-flow-paragraph 는 붙지 않는다.
+  let target = paragraph;
+  let cell: CellTarget | null = null;
   if (paragraph.table !== null) {
-    limits.add('not-flow-paragraph', '표 셀 문단(M4)', []);
+    cell = cellTarget(ctx.model, ctx.layout, paragraphId);
+    if (cell) target = cell.paragraph;
   }
-  for (const li of paragraph.lines) {
+  const withCell = (a: EditAnalysis): EditAnalysis => {
+    a.cell = cell;
+    // 편집 블록은 만들 때의 상한(블록 BBox)을 그대로 쓴다(커밋 뒤 셀 상자는 새 글로 다시 계산된다).
+    if (cell && !a.block) a.areaLimit = intersect(a.areaLimit, cell.limit);
+    return a;
+  };
+  for (const li of target.lines) {
     const line = ctx.model.lines[li];
     if (!line) continue;
     const angle = Math.abs(Math.atan2(line.dir[1], line.dir[0]));
@@ -308,16 +327,14 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
   }
 
   // 편집 블록 글자를 포함하면 대상은 블록 전체(계약 D3).
-  for (const c of paragraph.chars) {
+  for (const c of target.chars) {
     const opId = ctx.linkage.charOp[c] ?? -1;
     const op = opId >= 0 ? ctx.map.ops[opId] : undefined;
     const step = op ? blockStepOf(env, op) : null;
-    if (op && step) return analyzeBlock(env, paragraph, step, limits, warnings);
+    if (op && step) return withCell(analyzeBlock(env, target, step, limits, warnings));
   }
 
-  const chars = paragraph.chars;
-  const result = analyzeChars(env, paragraph, chars, limits, warnings);
-  return result;
+  return withCell(analyzeChars(env, target, target.chars, limits, warnings, cell?.members ?? null));
 }
 
 function analyzeChars(
@@ -326,9 +343,11 @@ function analyzeChars(
   chars: number[],
   limits: Limits,
   warnings: EditWarning[],
+  members: ReadonlySet<number> | null,
 ): EditAnalysis {
   const { ctx } = env;
   const ops = ctx.map.ops;
+  const own = members ?? new Set([paragraph.id]);
   const base: EditAnalysis = {
     paragraph,
     chars,
@@ -343,6 +362,7 @@ function analyzeChars(
     areaLimit: [...ctx.model.bounds] as Rect,
     actualTextClears: [],
     structParentsRemoved: false,
+    cell: null,
   };
 
   // 연산 연결·연산 제한.
@@ -419,7 +439,7 @@ function analyzeChars(
           if (g.seq === null || targetSeqs.has(g.seq)) continue;
           const c = charOfSeq.get(g.seq);
           const owner = c === undefined ? undefined : paraOf.get(c);
-          if (owner !== undefined && owner !== paragraph.id) partial = true;
+          if (owner !== undefined && !own.has(owner)) partial = true;
           else {
             extraSeqs.push(g.seq);
             used = true;
@@ -920,6 +940,7 @@ function analyzeBlock(
     areaLimit,
     actualTextClears: [],
     structParentsRemoved: false,
+    cell: null,
   };
 }
 
@@ -931,44 +952,6 @@ export interface StartState {
   runs: TextRun[];
   charIndexOfOffset: number[];
   format: ParagraphFormat;
-}
-
-/** 원 문단 텍스트 위치 → 글자 인덱스(합성 공백 -1). 문단 텍스트와 글자 텍스트를 앞에서부터 맞춘다. */
-export function offsetMap(
-  paragraph: LayoutParagraph,
-  chars: readonly { text: string }[],
-): number[] {
-  const text = paragraph.text;
-  const out = new Array<number>(text.length).fill(-1);
-  let k = 0;
-  const list = paragraph.chars;
-  for (let o = 0; o < text.length;) {
-    while (k < list.length) {
-      const t = chars[list[k]!]?.text ?? '';
-      if (t !== '' && text.startsWith(t, o)) break;
-      // 줄 끝에서 지운 공백 글자·빈 글자는 건너뛴다.
-      if (t.trim() === '') {
-        k++;
-        continue;
-      }
-      break;
-    }
-    const ci = list[k];
-    const t = ci !== undefined ? (chars[ci]?.text ?? '') : '';
-    if (ci !== undefined && t !== '' && text.startsWith(t, o)) {
-      for (let j = 0; j < t.length; j++) out[o + j] = ci;
-      o += t.length;
-      k++;
-    } else if (/\s/u.test(text[o]!)) {
-      o++;
-    } else if (ci !== undefined) {
-      // 맞지 않는 글자(U+FFFD 등): 한 칸씩 맞춘다.
-      out[o] = ci;
-      o++;
-      k++;
-    } else o++;
-  }
-  return out;
 }
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
@@ -997,6 +980,81 @@ export function normalizeStartState(state: StartState): StartState {
   return { ...state, runs, charIndexOfOffset: map };
 }
 
+/** 결정성: 로그·블록 JSON 에 남는 값이라 유효숫자를 고정한다. */
+const round6 = (v: number): number => Number(v.toPrecision(6));
+
+/**
+ * 원본 글자 연산의 글자 공간 → 페이지 공간 가로·세로 배율(Tm × CTM × userToPage). 연산을 찾지 못하면 null.
+ */
+function textScales(
+  ctx: ParagraphEditContext,
+  sourceChar: number,
+): { sx: number; sy: number; tc: number; th: number } | null {
+  const opId = ctx.linkage.charOp[sourceChar] ?? -1;
+  const op = opId >= 0 ? ctx.map.ops[opId] : undefined;
+  const text = op?.text;
+  if (!op || !text) return null;
+  const m = concat(concat(text.tm, op.ctm), ctx.map.userToPage);
+  const sx = Math.hypot(m[0], m[1]);
+  // 세로 배율은 기준선에 수직인 높이(|det| / sx). y 축 길이를 쓰면 기울인 글자(Tm 비틀기)를 가로 축소로 잘못 본다.
+  const sy = Math.abs(m[0] * m[3] - m[1] * m[2]) / sx;
+  if (!(sx > 1e-9) || !(sy > 1e-9) || !Number.isFinite(sx) || !Number.isFinite(sy)) return null;
+  return { sx, sy, tc: text.charSpacing, th: text.horizontalScale };
+}
+
+/**
+ * 원본 글자 연산의 자간(Tc)을 페이지 공간 pt 로(글리프마다 더하는 전진). Tc 는 크기를 곱하지 않은 글자 공간 값이라
+ * 가로 비율(Tz)과 글자 공간 → 페이지 공간 가로 배율을 곱한다. 찾지 못하거나 0 이면 0.
+ */
+export function charSpacingOf(ctx: ParagraphEditContext, sourceChar: number): number {
+  const t = textScales(ctx, sourceChar);
+  if (!t || !t.tc) return 0;
+  const value = round6(t.tc * t.th * t.sx);
+  return Number.isFinite(value) && Math.abs(value) >= 1e-6 ? value : 0;
+}
+
+/**
+ * 원본 글자의 가로 비율(장평): Tz/100 × (글자 공간 가로 배율 / 세로 배율). Tz 뿐 아니라 Tm·CTM 으로 가로만 줄인
+ * 글자(HWP 계열 PDF)도 같은 값으로 나타낸다. 0.1% 안이면 1.
+ */
+export function horizontalScaleOf(ctx: ParagraphEditContext, sourceChar: number): number {
+  const t = textScales(ctx, sourceChar);
+  if (!t || !Number.isFinite(t.th) || !(t.th > 0)) return 1;
+  const value = round6(t.th * (t.sx / t.sy));
+  return Math.abs(value - 1) < 1e-3 ? 1 : value;
+}
+
+/**
+ * 같은 줄의 두 원본 글자 사이에 합성 공백(원본 글자 없음, 추출이 넓은 간격에 넣은 것)이 있는 모양 구간 번호. 줄 사이
+ * 잇기 공백은 세지 않는다.
+ */
+function letterSpacedRuns(
+  ctx: ParagraphEditContext,
+  paragraph: LayoutParagraph,
+  text: string,
+  map: readonly number[],
+  runIdx: readonly number[],
+): Set<number> {
+  const out = new Set<number>();
+  const lineOf = new Map<number, number>();
+  for (const li of paragraph.lines)
+    for (const c of ctx.model.lines[li]?.chars ?? []) lineOf.set(c, li);
+  let prevReal = -1;
+  for (let o = 0; o < text.length; o++) {
+    const ci = map[o] ?? -1;
+    if (ci >= 0) {
+      prevReal = ci;
+      continue;
+    }
+    if (prevReal < 0 || !/\s/u.test(text[o]!)) continue;
+    let next = -1;
+    for (let k = o + 1; k < text.length && next < 0; k++) next = map[k] ?? -1;
+    const line = lineOf.get(prevReal);
+    if (next >= 0 && line !== undefined && lineOf.get(next) === line) out.add(runIdx[o]!);
+  }
+  return out;
+}
+
 export function originalStartState(
   ctx: ParagraphEditContext,
   paragraph: LayoutParagraph,
@@ -1016,9 +1074,14 @@ export function originalStartState(
     prev = v;
   }
   const runs: TextRun[] = [];
-  const styleOf = (ri: number) => {
+  const gapRuns = letterSpacedRuns(ctx, paragraph, text, map, runIdx);
+  const styleOf = (ri: number): RunStyle => {
     const r = paragraph.styleRuns[ri];
     const sc = r ? (paragraph.chars[r.start] ?? paragraph.chars[0]!) : paragraph.chars[0]!;
+    // 넓은 자간(자간 띄어쓰기)은 추출이 글자 사이에 합성 공백을 넣어 이미 간격을 나타낸다. 자간까지 더하면 두 번 벌어진다.
+    const raw = charSpacingOf(ctx, sc);
+    const charSpacing = raw > 0 && gapRuns.has(ri) ? 0 : raw;
+    const horizontalScale = horizontalScaleOf(ctx, sc);
     return {
       sourceChar: sc,
       fontId: r?.fontId ?? ctx.model.chars[sc]?.fontId ?? 0,
@@ -1026,6 +1089,8 @@ export function originalStartState(
       bold: r?.bold ?? false,
       italic: r?.italic ?? false,
       color: r?.color ?? null,
+      ...(charSpacing !== 0 ? { charSpacing } : {}),
+      ...(horizontalScale !== 1 ? { horizontalScale } : {}),
     };
   };
   for (let o = 0; o < text.length; o++) {
@@ -1132,6 +1197,17 @@ export function blockStartState(ctx: ParagraphEditContext, a: EditAnalysis): Sta
         bold: r.bold,
         italic: r.italic,
         color: r.color,
+        ...(typeof r.charSpacing === 'number' &&
+        Number.isFinite(r.charSpacing) &&
+        r.charSpacing !== 0
+          ? { charSpacing: r.charSpacing }
+          : {}),
+        ...(typeof r.horizontalScale === 'number' &&
+        Number.isFinite(r.horizontalScale) &&
+        r.horizontalScale > 0 &&
+        r.horizontalScale !== 1
+          ? { horizontalScale: r.horizontalScale }
+          : {}),
       },
     };
   });

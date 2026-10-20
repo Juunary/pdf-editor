@@ -43,10 +43,12 @@ export interface ReconOptions {
    */
   neighbors?: readonly PageModel[];
   /**
-   * 한 문단으로 고정할 PageModel 줄 묶음(M3 편집 블록, docs/m3-integration.md 9.6). 묶음마다 정확히 흐름 문단 하나가
-   * 되고(역할은 다른 흐름 문단과 같은 규칙, 줄은 위→아래), 그 줄은 표·도형·머리·꼬리·영역 쌓기·문단 나누기에서 뺀다.
-   * 문단은 묶음 줄 상자 합으로 XY-cut 에 들어가 첫 줄 자리의 읽기 순서·열을 받는다. 보이지 않는 줄·가로가 아닌 줄·
-   * 범위 밖 번호는 무시하고, 여러 묶음에 든 줄은 앞 묶음이 갖는다. 없으면 M2 결과와 같다.
+   * 한 문단으로 고정할 PageModel 줄 묶음(M3 편집 블록, docs/m3-integration.md 9.6). 묶음마다 정확히 문단 하나가
+   * 된다(줄은 위→아래). 묶음 줄도 표 감지 입력에 넣고(M4 4.1: 셀 편집 블록이 빠지면 셀이 비고 정렬 전략 표가 깨진다),
+   * 감지 뒤 묶음의 줄이 모두 한 셀에 들면 그 셀 문단 = 묶음 하나(`table` 설정, 같은 셀의 다른 줄은 보통 나누기).
+   * 그 밖의 묶음은 흐름 문단(역할은 다른 흐름 문단과 같은 규칙)이고, 그 줄은 표 셀·도형·머리·꼬리·영역 쌓기·문단
+   * 나누기에서 뺀다. 흐름 묶음 문단은 묶음 줄 상자 합으로 XY-cut 에 들어가 첫 줄 자리의 읽기 순서·열을 받는다.
+   * 보이지 않는 줄·가로가 아닌 줄·범위 밖 번호는 무시하고, 여러 묶음에 든 줄은 앞 묶음이 갖는다. 없으면 M2 결과와 같다.
    */
   fixedGroups?: readonly (readonly number[])[];
 }
@@ -172,15 +174,55 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
   });
   const fixedFeats: LineFeature[][] = [];
   for (const [li, k] of fixedOf) (fixedFeats[k] ??= []).push(feats[li]!);
-  const fixedGroups = fixedFeats.filter((g) => g !== undefined && g.length > 0);
-  const horizontal = visible.filter((f) => f.horizontal && !fixedOf.has(f.index));
+  const horizontal = visible.filter((f) => f.horizontal);
   const rotated = visible.filter((f) => !f.horizontal);
   const pathSummary = summarizePaths(model);
   const bounds = model.bounds;
   const pageH = height(bounds);
 
-  // 3단계: 표.
-  const detected = detectTables(model, horizontal, pathSummary);
+  // 3단계: 표(고정 묶음 줄 포함). 묶음 → 그 줄을 모두 담은 셀(표 번호:셀 번호). 한 셀에 들지 않는 묶음은 빼고
+  // 다시 감지한다(그 묶음 줄이 표 감지를 바꾸지 않게, M3 9.6 결과 유지). 두 번 뒤에도 남으면 그 줄만 셀에서 뺀다.
+  const excluded = new Set<number>();
+  const inputOf = () =>
+    horizontal.filter((f) => {
+      const k = fixedOf.get(f.index);
+      return k === undefined || !excluded.has(k);
+    });
+  let detected = detectTables(model, inputOf(), pathSummary);
+  const groupCell = new Map<number, string>();
+  for (let pass = 0; pass < 3; pass++) {
+    const cellOfLine = new Map<number, string>();
+    detected.forEach((t, ti) =>
+      t.cells.forEach((c, ci) => {
+        for (const li of c.lines) cellOfLine.set(li, `${ti}:${ci}`);
+      }),
+    );
+    groupCell.clear();
+    const spread: number[] = [];
+    fixedFeats.forEach((g, k) => {
+      if (!g || g.length === 0 || excluded.has(k)) return;
+      const keys = new Set(g.map((f) => cellOfLine.get(f.index) ?? ''));
+      const only = [...keys][0]!;
+      if (keys.size === 1 && only !== '') groupCell.set(k, only);
+      else if ([...keys].some((x) => x !== '')) spread.push(k);
+    });
+    if (spread.length === 0 || pass === 2) break;
+    for (const k of spread) excluded.add(k);
+    detected = detectTables(model, inputOf(), pathSummary);
+  }
+  for (const t of detected) {
+    for (const c of t.cells) {
+      c.lines = c.lines.filter((li) => {
+        const k = fixedOf.get(li);
+        return k === undefined || groupCell.has(k);
+      });
+    }
+  }
+  const fixedGroups = fixedFeats.filter(
+    (g, k) => g !== undefined && g.length > 0 && !groupCell.has(k),
+  );
+  const cellGroups = new Map<string, LineFeature[]>();
+  for (const [k, key] of groupCell) cellGroups.set(key, fixedFeats[k]!);
   const tableLines = new Set(detected.flatMap((t) => t.cells.flatMap((c) => c.lines)));
   const excludedPaths = new Set(detected.flatMap((t) => t.paths));
 
@@ -346,23 +388,31 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
     } else if (it.kind === 'table') {
       const t = detected[it.index]!;
       const tableId = tables.length;
-      const cells = t.cells.map((c) => {
-        const cellFeats = c.lines.map((li) => feats[li]!);
+      const cells = t.cells.map((c, ci) => {
+        const group = cellGroups.get(`${it.index}:${ci}`) ?? null;
+        const groupSet = new Set(group ?? []);
+        const cellFeats = c.lines.map((li) => feats[li]!).filter((f) => !groupSet.has(f));
         const cellUnits = buildUnits(model, cellFeats, fillers, true);
-        const paragraphs: number[] = [];
+        const parts: { top: number; units: Unit[] }[] = [];
         if (cellUnits.length) {
           const region: Region = { units: cellUnits, bbox: c.bbox };
-          for (const us of splitParagraphs(region))
-            paragraphs.push(
-              pushPara(us, {
-                role: 'body',
-                column: -1,
-                table: tableId,
-                figure: null,
-                region: null,
-              }),
-            );
+          for (const us of splitParagraphs(region)) parts.push({ top: us[0]!.bbox[1], units: us });
         }
+        if (group) {
+          // 셀 편집 블록: 묶음 하나 = 셀 문단 하나(같은 행 조각은 잇는다).
+          const us = buildUnits(model, group, fillers, true);
+          if (us.length) parts.push({ top: us[0]!.bbox[1], units: us });
+        }
+        parts.sort((a, b) => a.top - b.top);
+        const paragraphs = parts.map((part) =>
+          pushPara(part.units, {
+            role: 'body',
+            column: -1,
+            table: tableId,
+            figure: null,
+            region: null,
+          }),
+        );
         return {
           row: c.row,
           col: c.col,
@@ -382,6 +432,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
         colBounds: t.colBounds,
         cells,
         strategy: t.strategy,
+        paths: [...t.paths],
       });
       readingOrder.push({ kind: 'table', id: tableId });
     } else {

@@ -125,6 +125,17 @@ EDIT_CORPUS_DIR=<코퍼스> NODE_OPTIONS=--max-old-space-size=12288 pnpm --filte
 - 남은 제한: 한 클러스터 안에서 기본 글자는 원본, 결합 문자는 폴백으로 나누어 쓰지 않는다. 편집 텍스트가 NFC 라 `é` 처럼 한 위치인 클러스터는 구간(`FontSegment`)으로 나눌 수 없다. 클러스터 전체를 폴백이 가지면 폴백으로 쓴다.
 - shared-types 는 바꾸지 않았다.
 
+### 8.1 마일스톤 리뷰의 머지 후 후속 항목(R- 번호, M4 계약 1.2 에서 처리)
+
+| R- | 내용 |
+| --- | --- |
+| R-M4 | 엔진 `#failure` 상태가 되면 저장도 막혀 미저장 편집을 잃는다 |
+| R-L1 | 뷰어 `ResilientPdf.beginParagraphEdit` 가 `renderScale` 을 넘기지 않는다 |
+| R-L2 | 폴백 서브셋 뒤 `/BaseFont` 에 서브셋 태그가 없다 |
+| R-L3 | OriginalFont·폴백 `mupdf.Font`·WriteContext 해제가 없다 |
+| R-L4 | `edit-block.ts` `styleOf` 대체 경로가 바뀐 스트림을 옛 SourceMap 범위로 읽는다 |
+| R-L5 | 폴백 폰트 로드 실패 시 판정 RPC 가 모두 실패해 편집 기능이 꺼진다 |
+
 ## 9. 사용자 확인 후 수정(2026-10-20)
 
 ### 9.0 Windows 사용자 확인 결과(2026-10-20)
@@ -259,3 +270,58 @@ M2 정확도 하네스(`layout-accuracy.test.ts`, dev 30쪽)는 `reconstructPage
 | 2 | 블록 문단 역할은 흐름 문단 규칙이다. 원 문단이 머리·꼬리·표 셀·도형 라벨이었어도 편집 뒤에는 흐름 문단(heading·body 등)이다 |
 | 3 | 넓힌 영역이 이웃 문단과 겹치면 두 문단 상자가 겹쳐 그려진다(문단은 따로). 겹침 자체는 9.4 #2 결정대로 경고만 |
 
+
+## 10. M4 작업 S4: 같은 텍스트 bbox 초과 26/110 진단·R-L3(2026-10-21)
+
+브랜치 `m4-m3fu`(기준 m4 `caa4654`). 계약 `docs/m4-contract.md` 1.2·5.2 작업 S4.
+
+### 10.1 진단 방법
+
+- 대상: 4절 측정(`edit-corpus-after-justify.json`)의 같은 텍스트 편집 110건 중 `overflowInitial` 26건(자동 확장 이후 기준으로는 아래 변이 원 bbox 아래로 내려간 편집).
+- 문단마다 `planParagraphEdit` → `updateParagraphDraft`(계획 runs·format 그대로)를 돌려 원 줄(PageModel 글자 원점)과 reflow 줄(`PlacedLine`)을 비교했다. 원 줄 텍스트의 reflow 자연 폭(줄 끝 공백 제외) − 줄 폭 = 폭 초과량. 글자마다 원 전진(다음 글자 원점 차)과 reflow 전진을 비교해 차이가 고른지(자간), 글자쌍에 몰리는지(커닝)를 나눴다. 원인 후보는 원본 콘텐츠 스트림의 `Tc`·`TJ` 숫자·합자 코드로 확인했다.
+- 진단 스크립트는 저장소에 넣지 않았다(임시 vitest 파일).
+
+### 10.2 분류(26건)
+
+| # | 원인 | 건수 | 문서·쪽·문단 | 근거 | 담당 |
+| --- | --- | --- | --- | --- | --- |
+| C1 | 원본 자간 `Tc`(음수) 미반영. 시작 상태에 자간이 없어 reflow 가 명세 폭으로 놓고 줄이 넓어져 한 줄 더 생김 | 8 | ustreas-mts-202509 4쪽 #0·#80, jnl-phwr-2025-18-36-1 1쪽 #1, nist-sp800-53r5 1쪽 #2, jnl-jdis-2026-2-2-7 1쪽 #1·#4, 4쪽 #0·#1 | 글자마다 전진 차가 고름(ustreas +0.022 pt, phwr +0.067 pt, 표준편차 ≤ 0.002). 스트림 `-0.022 Tc`, `-0.01 Tc`(크기 6.67), `-0.019 Tc`, `-.0498`·`-.092`·`-.128 Tc`. 폭 초과 0.87–48.4 pt | 시작 상태·계약(10.4 제안 1) |
+| C2 | 원본 `TJ` 글자쌍 커닝 미반영 | 9 | fed-h41-current 1쪽 #3, 4쪽 #1, nasa-eo-2023-sepoct 1쪽 #2·#7, nasa-eo-2024-janfeb 1쪽 #2·#7, nasa-eo-2019-maraprl 4쪽 #6(자간 `Tc` 함께), zen-beamer-7535020 1쪽 #1·#2 | 전진 차가 글자쌍에 몰림(`Y` +0.64, `A` +1.04, `T` +1.52 pt 등). 스트림 `[(Over Thirty Y)55 (ears ... NASA)92 (\222)37 ...]TJ`, `[(Factors )46(A)...]TJ`, `[(2. )27(Maturity ...]TJ`. 폭 초과 0.31–28.7 pt | 시작 상태(10.4 제안 2) |
+| C3 | 합자 `fi` 한 글리프를 `f`·`i` 두 글리프로 배치 | 1 | nist-ai-100-1 1쪽 #1 | 스트림 `(Arti\002cial)`(코드 2 = fi 합자). reflow `f` +8.25·`i` −6.89 pt, 합계 +1.37 pt | 시작 상태·font-assign(10.4 제안 3) |
+| C4 | TeX 덧쓰기 악센트(`´` 를 따로 전진하는 글리프로 배치, 4절 확인분) | 3 | zen-beamer-10545284 1쪽 #1·#2, 4쪽 #0 | 시작 텍스트 `pr´actica`·`Jos´e`·`f´ısico`. `´` 의 reflow 전진 +3.65–7.65 pt(원본은 다음 글자와 겹침). 폭 초과 5.9–11.5 pt | 시작 상태(10.4 제안 4) |
+| C5 | 원본 폰트에 공백 글리프가 없어 폴백으로 간 공백(합성 공백)이 폴백 높이(1160·−288)로 줄 상자를 키움 | 3 | arxiv-2609.10511 1쪽 #1, zen-ko-sim-21496576 1쪽 #1·#2 | 줄 나눔은 원본과 같고 contentBox 위 −5.5 pt·아래 +1.0–1.3 pt. 폴백 글리프가 모두 공백 | **reflow, 수정함(10.3)** |
+| C6 | 시작 상태 `format.area` 위 변이 `areaLimit`(삽입점 직사각형 클립) 밖. reflow 가 상한으로 자른 위 변에서 기준선을 재 줄 전체가 0.58 pt 내려감 | 1 | fed-h41-current 1쪽 #2 | area 위 108.36, areaLimit 위 108.94, `firstBaselineOffset` 10.86 → 기준선 119.80(원본 119.22). 타입 주석은 "area 는 areaLimit 안" | 시작 상태(10.4 제안 5) |
+| C7 | 기호 폰트(CMSY7) FontDescriptor `Descent` 가 커서 줄 아래가 내려감 + 위첨자 상승이 시작 상태에 없어 기준선 위로 놓임 | 1 | arxiv-2609.09268 1쪽 #2 | 줄 내림 −6.63 pt(크기 7 × −0.95 em), contentBox 아래 +3.6 pt. 원 줄의 위첨자 `1, 2`·`3`·`∗`·`†` 기준선 96.3, 본문 99.9 | 시작 상태(남은 제한) |
+
+- 합계 26. reflow 원인은 C5 하나다. 나머지 23건은 원본 배치 정보(자간·커닝·합자·악센트 겹침·위첨자 상승·클립 영역)가 시작 상태(`TextRun`·`ParagraphFormat`)에 담기지 않아 생긴다.
+- 원 bbox 폭 = 원 줄 폭이라 폭 초과가 0.31 pt 여도 마지막 단어가 다음 줄로 간다(줄 폭 판정 여유 `FIT_EPSILON` 0.01 pt).
+
+### 10.3 reflow 수정
+
+| 파일 | 수정 |
+| --- | --- |
+| `packages/reflow/src/layout.ts` | `lineMetrics`: 글자가 있는 줄의 올림·내림은 공백 클러스터(`SP`)를 빼고 정한다. 공백만 있는 줄은 공백 폰트 값을 쓴다. 글리프 없는 줄은 기존 캐럿 규칙 |
+| `packages/reflow/test/layout.test.ts` "줄 높이" 2건 | 높은 폰트(1160·−288)의 공백이 낀 줄의 올림·내림·contentBox·영역이 공백 없는 줄과 같음(수정 전 실패 확인), 공백만 있는 줄은 공백 폰트 값 |
+
+- 재측정(4절 하네스, `EDIT_CORPUS_KINDS=same EDIT_CORPUS_ENGINES=mupdf`, 110건, 72 s): 아래 변이 원 bbox 아래로 내려간 편집 26 → **23**(C5 3건 해소, 나머지 23건은 10.2 의 C1·C2·C3·C4·C6·C7 과 같은 목록). 상한 초과 0, 오류 0. 영역 밖 렌더 변화 0 110/110, 새 글자 잉크 109/110, 텍스트(엄격) 102/110 으로 4절 같은 텍스트 행과 같다.
+
+### 10.4 시작 상태·계약 쪽 제안(S1·메인 세션 판단)
+
+| # | 대상 | 제안 | 해소 예상 |
+| --- | --- | --- | --- |
+| 1 | `RunStyle`·`FontSegment`(shared-types·reflow 타입, 계약 변경) + `edit-plan.ts` | 구간에 자간(pt, 원본 `Tc` × 글자 크기 × `Tz`)을 싣고 reflow 가 클러스터 전진에 더한다. 쓰기는 이미 위치 차이를 TJ 숫자로 쓰므로 바뀌지 않는다 | C1 8건 |
+| 2 | `edit-plan.ts` | 같은 텍스트 재현용으로 영역 가로를 원 줄 자연 폭(reflow 셰이퍼 기준)의 최댓값까지 넓힌다(`areaLimit` 안). 커닝을 계약에 넣지 않는 최소 보정. 대안: 원본 TJ 커닝을 글자쌍 조정으로 시작 상태에 싣는다(계약 변경) | C2 9건(폭 초과 0.31–28.7 pt), 제안 1이 없으면 C1 도 |
+| 3 | `edit-plan.ts`·`font-assign.ts` | 원본 합자 글리프(ToUnicode 1코드 → 여러 코드 포인트)를 역매핑에 넣어 `fi` 클러스터열을 원 코드 하나로 쓴다 | C3 1건 |
+| 4 | `edit-plan.ts` | 따로 놓인 덧쓰기 악센트(U+00B4·U+0060·U+00A8·U+02C6·U+02DC 등 간격 문자, 글리프 상자가 다음 글자와 가로로 겹침)를 다음 글자와 합쳐 NFC 로 시작 텍스트를 만든다(`´a` → `á`, `´ı` → `í`). 원본 폰트에 합성 글자가 없으면 폴백(font-assign H1 규칙) | C4 3건 |
+| 5 | `edit-plan.ts` | `format.area = bbox ∩ areaLimit`, `firstBaselineOffset` 는 자른 위 변 기준 | C6 1건 |
+
+- C7(위첨자·아래첨자 상승, 기호 폰트 높이)은 M3·M4 계약 범위 밖이다. 남은 제한으로 둔다.
+
+### 10.5 R-L3 해제
+
+| 파일 | 수정 |
+| --- | --- |
+| `packages/pdf-ops/src/font-assign.ts` | `FontState.dispose()`: 원본 폰트마다 `OriginalFont.destroy()`(탐침 임시 문서와 그 안 폰트 객체), 폴백 `mupdf.Font.destroy()`. 여러 번 불러도 된다. 해제 뒤 `original()`·폴백 조회는 예외. 문서·편집 블록 객체는 건드리지 않는다. `OriginalFont.destroy()` 는 탐침 폰트 객체도 해제하고, 해제 뒤 새 글자는 탐침을 다시 만든다 |
+| `packages/pdf-ops/test/font-assign.test.ts` 3건 | 해제 대상 수(PDFDocument·Font `destroy` 각 1회), 두 번째 호출 무동작, 해제 뒤 예외, 만들지 않은 자원은 해제하지 않음, `OriginalFont.destroy` 반복·재탐침 |
+
+- 연결 남음: `FontState` 는 `paragraph-edit.ts` 의 `FontManager` 가 WeakMap 으로 가진다. `FontManager.dispose()`(→ `fontStateOf(this).dispose()`)는 S1 파일이고, 문서 닫기·엔진 재생성 때 부르는 곳은 core(S2) 다. WriteContext(`edit-apply.ts`) 해제도 S1 범위다.

@@ -5,6 +5,7 @@
  * - 힙 `warn`: 확인 창.
  * - 태그 쪽 편집에서 구조 연결이 끊긴 문단이 있으면 확인 창(D1).
  * - PDF/A 선언 문서의 편집은 "적합성이 깨질 수 있음" 확인 창(5.6).
+ * - core 저장 경고(`SavePlan.warnings`, 편집 엔진 실패 상태 저장 등)는 확인 창(맨 앞).
  * - 편집이 있으면 "편집한 쪽 번호가 파일 정보에 기록됨" 안내(확인 창이 뜰 때 함께 보인다).
  */
 import type { SavePlan } from '@pdf-editor/shared-types';
@@ -21,7 +22,7 @@ export interface SaveDecision {
 const mib = (bytes: number) => `${(bytes / 2 ** 20).toFixed(0)} MiB`;
 
 export function decideSave(plan: SavePlan): SaveDecision {
-  const warnings: string[] = [];
+  const warnings: string[] = [...(plan.warnings ?? [])];
   const infos: string[] = [];
   const { heap, edits } = plan;
   if (heap.level === 'over-limit') {

@@ -1,7 +1,7 @@
 import * as mupdf from 'mupdf';
 import type { Rect } from '@pdf-editor/shared-types';
 import { concatBytes, parseContentOps, spliceBytes } from './content-stream.js';
-import { readStreamBytes } from './mupdf-util.js';
+import { readStreamBytes, writeStreamBytes } from './mupdf-util.js';
 import { ownResources, ownSubdict, putUniqueResource } from './page-content.js';
 import { TEXT_REPLACE_REDACTION, type RedactionOptions } from './redact.js';
 import { formatNumber } from './text-ops.js';
@@ -364,7 +364,7 @@ function replacePageContentName(
  */
 export function appendFormContent(form: mupdf.PDFObject, content: string): void {
   const old = form.readStream().asString();
-  form.writeStream(`q\n${old}\nQ\n${content}`);
+  writeStreamBytes(form, `q\n${old}\nQ\n${content}`);
 }
 
 /** rect(Form 공간)가 Form BBox 를 벗어나는지. */

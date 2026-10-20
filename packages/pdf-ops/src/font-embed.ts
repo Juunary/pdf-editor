@@ -46,6 +46,20 @@ export interface EmbeddedFont {
  * `doc.subsetFonts()` 는 부르지 않는다. MuPDF 1.28.1 은 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트의
  * `/Widths` 를 정수로 반올림해 편집하지 않은 쪽 표시를 바꾼다(docs/m0-corpus-recheck.md C1, A7-1).
  */
+/**
+ * 바이트에서 `mupdf.Font` 를 만든다. mupdf.js 는 Uint8Array 를 받으면 임시 `mupdf.Buffer` 래퍼를 만들고 해제를 GC
+ * (FinalizationRegistry)에 맡겨, 동기 루프·짧은 세션 반복에서 바이트 사본(폴백 폰트 약 4 MB)이 WASM 힙에 남는다(R-L3).
+ * 버퍼를 직접 만들어 폰트가 참조를 잡은 뒤 바로 놓는다.
+ */
+export function fontFromBytes(name: string, bytes: Uint8Array | ArrayBuffer): mupdf.Font {
+  const buffer = new mupdf.Buffer(bytes);
+  try {
+    return new mupdf.Font(name, buffer);
+  } finally {
+    buffer.destroy();
+  }
+}
+
 export function embedFont(
   doc: mupdf.PDFDocument,
   name: string,
@@ -53,7 +67,7 @@ export function embedFont(
   options: { subsetGids?: Iterable<number> } = {},
 ): EmbeddedFont {
   const data = options.subsetGids ? subsetFontBytes(name, bytes, options.subsetGids) : bytes;
-  const font = new mupdf.Font(name, data);
+  const font = fontFromBytes(name, data);
   return { font, ref: doc.addFont(font) };
 }
 
@@ -78,8 +92,9 @@ export function subsetFontBytes(
   }
   const unique = [...new Set(gids)].filter((g) => g > 0).sort((a, b) => a - b);
   const temp = new mupdf.PDFDocument();
+  const font = fontFromBytes(name, bytes);
   try {
-    const ref = temp.addFont(new mupdf.Font(name, bytes));
+    const ref = temp.addFont(font);
     const shown = unique.length > 0 ? `<${glyphHex(unique)}> Tj` : '';
     temp.insertPage(
       -1,
@@ -97,6 +112,7 @@ export function subsetFontBytes(
       buffer.destroy();
     }
   } finally {
+    font.destroy();
     temp.destroy();
   }
 }

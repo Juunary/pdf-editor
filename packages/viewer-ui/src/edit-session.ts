@@ -170,13 +170,14 @@ export class EditSession {
       composition: null,
       reflow: begin.first.reflow,
     };
-    // begin.first.region 은 쓰지 않는다: beginParagraphEdit 에는 렌더 배율 인자가 없어 그 영역이 뷰어 배율과 같다는
-    // 보장이 없다. 시작 직후 start() 가 현재 상태로 갱신을 한 번 보내 올바른 배율의 영역을 받는다.
+    // R-L1(M4): beginParagraphEdit 에 뷰어 렌더 배율을 넘기므로 첫 영역을 그대로 쓴다(시작 갱신 RPC 없음).
+    // seq 0 은 입력이 아니므로 반응 시간 표본에 넣지 않는다(reportPainted).
+    this.region = { seq: 0, rendered: begin.first.region, t0: deps.now() };
   }
 
-  /** 시작 직후 현재 상태(원 텍스트)로 변경 영역을 한 번 받아 뷰어 배율의 미리보기와 리플로우 프레임을 맞춘다. */
+  /** 세션 시작 알림 자리(첫 영역은 begin 결과로 이미 받았다). 호환을 위해 남긴다. */
   start(): void {
-    this.touch();
+    this.emit();
   }
 
   /** 지금 상태의 불변 스냅샷. */
@@ -332,7 +333,7 @@ export class EditSession {
   /** 컴포넌트가 변경 영역을 캔버스에 합성한 직후 호출한다(입력 → 합성 반응 시간 기록, 계약 8.4). */
   reportPainted(seq: number): number | null {
     const region = this.region;
-    if (!region || region.seq !== seq) return null;
+    if (!region || region.seq !== seq || seq === 0) return null;
     const end = this.deps.now();
     const ms = end - region.t0;
     this.latencies.push(ms);

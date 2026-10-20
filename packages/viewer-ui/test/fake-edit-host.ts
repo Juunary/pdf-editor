@@ -15,6 +15,13 @@ import type {
   EditWarning,
   PageEditability,
   ParagraphEditPlan,
+  PathDraftUpdate,
+  PathEdit,
+  PathEditPlan,
+  PathEditability,
+  PathInfo,
+  BeginPathEditResult,
+  Matrix,
   ParagraphFormat,
   ParagraphLimit,
   PlacedGlyph,
@@ -24,7 +31,7 @@ import type {
   RunStyle,
   TextRun,
 } from '@pdf-editor/shared-types';
-import type { EditHostApi } from '../src/viewer-host.js';
+import type { EditHostApi, PathHostApi } from '../src/viewer-host.js';
 
 export interface FakeLayoutOptions {
   charWidth: number;
@@ -180,6 +187,15 @@ export interface FakeParagraph {
   tagged?: boolean;
   charIndexOfOffset?: number[];
   warnings?: EditWarning[];
+  /** 표 셀이면 셀 위치(M4, bbox 는 셀 상자). */
+  cell?: { table: number; row: number; col: number };
+}
+
+/** 가짜 호스트가 편집 결과를 반영해 돌려주는 벡터 패스(PageModel.paths 의 한 PathInfo + 판정). */
+export interface FakePath {
+  info: PathInfo;
+  editable?: boolean;
+  reasons?: string[];
 }
 
 export interface FakeEditOptions {
@@ -187,9 +203,10 @@ export interface FakeEditOptions {
   paragraphs: FakeParagraph[];
   layout?: Partial<FakeLayoutOptions>;
   areaLimit?: Rect;
+  paths?: FakePath[];
 }
 
-type Method = keyof EditHostApi;
+type Method = keyof EditHostApi | keyof PathHostApi;
 
 const STYLE: RunStyle = {
   sourceChar: 0,
@@ -206,7 +223,7 @@ interface Draft {
 }
 
 /** 호출 기록·실패 주입·응답 보류를 지원하는 가짜 편집 호스트. */
-export class FakeEditHost implements EditHostApi {
+export class FakeEditHost implements EditHostApi, PathHostApi {
   readonly calls: { method: string; args: unknown[] }[] = [];
   readonly inputs: DraftInput[] = [];
   revision = 1;
@@ -219,11 +236,29 @@ export class FakeEditHost implements EditHostApi {
   private undone: string[] = [];
   private readonly committedOps = new Map<string, EditOp>();
   private failures = new Map<Method, Error[]>();
+  /** 패스 상태(편집 반영). 초안 중 변경은 커밋 때 반영한다. */
+  private paths: (FakePath & { deleted?: boolean })[];
+  private pathDrafts = new Map<string, { seqs: number[]; edit: PathEdit | null }>();
+  readonly pathEdits: PathEdit[] = [];
   private holds = new Map<Method, { release: () => void; promise: Promise<void> }[]>();
 
   constructor(private readonly options: FakeEditOptions) {
     this.layout = { ...DEFAULT_LAYOUT, ...options.layout };
     this.pageIndex = options.pageIndex ?? 0;
+    this.paths = (options.paths ?? []).map((p) => ({ ...p, info: structuredClone(p.info) }));
+  }
+
+  /** 편집이 반영된 PathInfo 목록(PageModel.paths 용, 삭제된 패스 제외). */
+  pathInfos(): PathInfo[] {
+    return this.paths.filter((p) => !p.deleted).map((p) => p.info);
+  }
+
+  /** 문서가 바깥에서 바뀐 것처럼 같은 paintSeq 패스의 상자를 바꾼다(지문이 달라짐). revision 도 올린다. */
+  shiftPath(paintSeq: number, dx: number): void {
+    const p = this.paths.find((x) => x.info.paintSeq === paintSeq)!;
+    const b = p.info.bbox;
+    p.info = { ...p.info, bbox: [b[0] + dx, b[1], b[2] + dx, b[3]] };
+    this.revision++;
   }
 
   /** 다음 `method` 호출을 이 오류로 실패시킨다. */
@@ -242,6 +277,7 @@ export class FakeEditHost implements EditHostApi {
   /** Worker 가 새로 만들어진 것처럼 초안을 잃고 revision 이 바뀐다(복구 시뮬레이션). */
   simulateRecovery(): void {
     this.drafts.clear();
+    this.pathDrafts.clear();
     this.revision++;
   }
 
@@ -285,7 +321,17 @@ export class FakeEditHost implements EditHostApi {
         editable: p.editable !== false,
         editedBlock: null,
         reasons: (p.reasons ?? []) as never,
+        cell: p.cell ?? null,
       })),
+      paths: this.paths
+        .filter((p) => !p.deleted)
+        .map((p, i): PathEditability => ({
+          pathIndex: i,
+          paintSeq: p.info.paintSeq,
+          bbox: p.info.bbox,
+          editable: p.editable !== false,
+          reasons: (p.reasons ?? []) as never,
+        })),
       ms: 1,
     };
   }
@@ -405,8 +451,9 @@ export class FakeEditHost implements EditHostApi {
     pageIndex: number,
     paragraphId: number,
     revision: number,
+    renderScale = 1,
   ): Promise<BeginEditResult> {
-    await this.enter('beginParagraphEdit', [pageIndex, paragraphId, revision]);
+    await this.enter('beginParagraphEdit', [pageIndex, paragraphId, revision, renderScale]);
     if (revision !== this.revision) throw new Error('revision 이 현재와 다릅니다');
     if (this.drafts.size > 0) throw new Error('초안은 문서당 1개입니다');
     const p = this.paragraph(paragraphId);
@@ -414,7 +461,7 @@ export class FakeEditHost implements EditHostApi {
     if (!plan.editable) throw new Error('편집할 수 없는 문단입니다');
     const draftId = `draft-${++this.draftSeq}`;
     this.drafts.set(draftId, { paragraph: p, input: null });
-    return { draftId, plan, first: this.update(draftId, plan.runs, plan.format, 1) };
+    return { draftId, plan, first: this.update(draftId, plan.runs, plan.format, renderScale) };
   }
 
   async updateParagraphDraft(draftId: string, input: DraftInput): Promise<DraftUpdate> {
@@ -457,6 +504,226 @@ export class FakeEditHost implements EditHostApi {
     return this.history([]);
   }
 
+  // ── M4 벡터 패스 ─────────────────────────────────────────────────────
+
+  private pathBySeq(seq: number) {
+    const p = this.paths.find((x) => x.info.paintSeq === seq && !x.deleted);
+    if (!p) throw new Error(`패스 ${seq} 없음`);
+    return p;
+  }
+
+  private pathTarget(seqs: number[]) {
+    const ps = seqs.map((s) => this.pathBySeq(s));
+    const boxes = ps.map((p) => p.info.bbox);
+    return {
+      pageIndex: this.pageIndex,
+      paintSeqs: seqs,
+      fingerprints: ps.map((p) => ({
+        paintOp: p.info.op === 'stroke' ? 'S' : 'f',
+        constructOpCount: p.info.segments?.length ?? 0,
+        bbox: p.info.bbox,
+        constructHash: String(p.info.paintSeq),
+      })),
+      bbox: [
+        Math.min(...boxes.map((b) => b[0])),
+        Math.min(...boxes.map((b) => b[1])),
+        Math.max(...boxes.map((b) => b[2])),
+        Math.max(...boxes.map((b) => b[3])),
+      ] as Rect,
+    };
+  }
+
+  private pathPlan(seqs: number[]): PathEditPlan {
+    const ps = seqs.map((s) => this.pathBySeq(s));
+    const blocked = ps.filter((p) => p.editable === false);
+    const first = ps[0]!;
+    return {
+      pageIndex: this.pageIndex,
+      revision: this.revision,
+      target: this.pathTarget(seqs),
+      editable: blocked.length === 0,
+      limits: blocked.flatMap((p) =>
+        (p.reasons ?? ['clip-path']).map((r) => ({
+          reason: r as never,
+          detail: `제한(${r}, 테스트)`,
+        })),
+      ),
+      warnings: [],
+      fill: first.info.op === 'fill' ? first.info.color : null,
+      stroke: first.info.op === 'stroke' ? first.info.color : null,
+      lineWidth: first.info.lineWidth,
+      planMs: 1,
+    };
+  }
+
+  async planPathEdit(pageIndex: number, paintSeqs: number[]): Promise<PathEditPlan> {
+    await this.enter('planPathEdit', [pageIndex, paintSeqs]);
+    return this.pathPlan(paintSeqs);
+  }
+
+  async beginPathEdit(
+    pageIndex: number,
+    paintSeqs: number[],
+    revision: number,
+  ): Promise<BeginPathEditResult> {
+    await this.enter('beginPathEdit', [pageIndex, paintSeqs, revision]);
+    if (revision !== this.revision) throw new Error('revision 이 현재와 다릅니다');
+    if (this.drafts.size > 0 || this.pathDrafts.size > 0)
+      throw new Error('초안은 문서당 1개입니다');
+    const plan = this.pathPlan(paintSeqs);
+    if (!plan.editable) throw new Error('편집할 수 없는 패스입니다');
+    const draftId = `pdraft-${++this.draftSeq}`;
+    this.pathDrafts.set(draftId, { seqs: paintSeqs, edit: null });
+    return { draftId, plan };
+  }
+
+  private applyPathEdit(info: PathInfo, edit: PathEdit): PathInfo {
+    const next = structuredClone(info);
+    const map = (p: [number, number]): [number, number] => {
+      const m: Matrix | null = edit.transform;
+      return m ? [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]] : p;
+    };
+    // 가짜 호스트는 ctm 이 항등인 패스만 다룬다(좌표 = 페이지 공간).
+    next.segments =
+      next.segments?.map((s) => {
+        if (s.type === 'M' || s.type === 'L') return { ...s, p: map(s.p) };
+        if (s.type === 'C') return { type: 'C', p1: map(s.p1), p2: map(s.p2), p3: map(s.p3) };
+        return s;
+      }) ?? null;
+    if (edit.points && next.segments) {
+      for (const pt of edit.points) {
+        let n = 0;
+        for (const s of next.segments) {
+          if (s.type === 'M' || s.type === 'L') {
+            if (n++ === pt.index) s.p = pt.to;
+          } else if (s.type === 'C') {
+            if (n++ === pt.index) s.p1 = pt.to;
+            if (n++ === pt.index) s.p2 = pt.to;
+            if (n++ === pt.index) s.p3 = pt.to;
+          }
+        }
+      }
+    }
+    const xs = (next.segments ?? []).flatMap((s) =>
+      s.type === 'M' || s.type === 'L'
+        ? [s.p[0]]
+        : s.type === 'C'
+          ? [s.p1[0], s.p2[0], s.p3[0]]
+          : [],
+    );
+    const ys = (next.segments ?? []).flatMap((s) =>
+      s.type === 'M' || s.type === 'L'
+        ? [s.p[1]]
+        : s.type === 'C'
+          ? [s.p1[1], s.p2[1], s.p3[1]]
+          : [],
+    );
+    if (xs.length > 0)
+      next.bbox = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+    const color = next.op === 'stroke' ? edit.stroke : edit.fill;
+    if (color && next.color)
+      next.color = { ...next.color, space: 'DeviceRGB', values: color, rgb: color };
+    if (edit.lineWidth !== null && next.op === 'stroke') next.lineWidth = edit.lineWidth;
+    return next;
+  }
+
+  async updatePathDraft(
+    draftId: string,
+    edit: PathEdit,
+    renderScale: number,
+  ): Promise<PathDraftUpdate> {
+    await this.enter('updatePathDraft', [draftId, edit, renderScale]);
+    const draft = this.pathDrafts.get(draftId);
+    if (!draft) throw new Error(`초안 ${draftId} 없음`);
+    draft.edit = edit;
+    this.pathEdits.push(edit);
+    const target = this.pathTarget(draft.seqs);
+    const after = edit.delete
+      ? target.bbox
+      : this.applyPathEdit(
+          { ...this.pathBySeq(draft.seqs[0]!).info, segments: rectAsSegments(target.bbox) },
+          edit,
+        ).bbox;
+    const pad = 2;
+    const box: Rect = [
+      Math.min(target.bbox[0], after[0]) - pad,
+      Math.min(target.bbox[1], after[1]) - pad,
+      Math.max(target.bbox[2], after[2]) + pad,
+      Math.max(target.bbox[3], after[3]) + pad,
+    ];
+    const clip: Rect = [
+      Math.floor(box[0] * renderScale) / renderScale,
+      Math.floor(box[1] * renderScale) / renderScale,
+      Math.ceil(box[2] * renderScale) / renderScale,
+      Math.ceil(box[3] * renderScale) / renderScale,
+    ];
+    const width = Math.round((clip[2] - clip[0]) * renderScale);
+    const height = Math.round((clip[3] - clip[1]) * renderScale);
+    const rgba = new Uint8ClampedArray(width * height * 4).fill(255);
+    // 편집 후 상자를 파랗게 칠한다(합성 위치 확인용).
+    if (!edit.delete) {
+      for (
+        let y = Math.round((after[1] - clip[1]) * renderScale);
+        y < Math.round((after[3] - clip[1]) * renderScale);
+        y++
+      ) {
+        for (
+          let x = Math.round((after[0] - clip[0]) * renderScale);
+          x < Math.round((after[2] - clip[0]) * renderScale);
+          x++
+        ) {
+          if (x < 0 || y < 0 || x >= width || y >= height) continue;
+          const i = (y * width + x) * 4;
+          rgba[i] = 0x10;
+          rgba[i + 1] = 0x40;
+          rgba[i + 2] = 0xe0;
+        }
+      }
+    }
+    return {
+      draftId,
+      target,
+      bbox: after,
+      warnings: [],
+      region: {
+        pageIndex: this.pageIndex,
+        width,
+        height,
+        rgba: rgba as Uint8ClampedArray<ArrayBuffer>,
+        renderMs: 1,
+        clip,
+      },
+      updateMs: 1,
+    };
+  }
+
+  async commitPathEdit(draftId: string): Promise<CommitResult> {
+    await this.enter('commitPathEdit', [draftId]);
+    const draft = this.pathDrafts.get(draftId);
+    if (!draft?.edit) throw new Error(`초안 ${draftId} 없음`);
+    this.pathDrafts.delete(draftId);
+    const edit = draft.edit;
+    const target = this.pathTarget(draft.seqs);
+    for (const seq of draft.seqs) {
+      const p = this.pathBySeq(seq);
+      if (edit.delete) p.deleted = true;
+      else p.info = this.applyPathEdit(p.info, edit);
+    }
+    const id = `edit-${++this.editSeq}`;
+    const op: EditOp = { kind: 'edit-path', id, target, edit };
+    this.committedOps.set(id, op);
+    this.active.push(id);
+    this.undone = [];
+    this.revision++;
+    return { op, history: this.history([this.pageIndex]) };
+  }
+
+  async cancelPathEdit(draftId: string): Promise<EditHistoryState> {
+    await this.enter('cancelPathEdit', [draftId]);
+    this.pathDrafts.delete(draftId);
+    return this.history([]);
+  }
+
   async undo(): Promise<EditHistoryState> {
     await this.enter('undo', []);
     const id = this.active.pop();
@@ -477,4 +744,14 @@ export class FakeEditHost implements EditHostApi {
     await this.enter('getEditHistory', []);
     return this.history();
   }
+}
+
+function rectAsSegments(r: Rect): PathInfo['segments'] {
+  return [
+    { type: 'M', p: [r[0], r[1]] },
+    { type: 'L', p: [r[2], r[1]] },
+    { type: 'L', p: [r[2], r[3]] },
+    { type: 'L', p: [r[0], r[3]] },
+    { type: 'Z' },
+  ];
 }
