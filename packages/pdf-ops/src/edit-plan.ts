@@ -292,12 +292,11 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
   const limits = new Limits();
   const warnings: EditWarning[] = [];
 
-  if (paragraph.table !== null || paragraph.figure !== null) {
-    limits.add(
-      'not-flow-paragraph',
-      paragraph.table !== null ? '표 셀 문단(M4)' : '도형 라벨 문단',
-      [],
-    );
+  // 도형 라벨 문단은 막지 않는다(2026-10-21 사용자 보고): 도형 검출은 배경 그림·상자·쪽 전체를 도형으로 잡는 일이
+  // 잦아(코퍼스 1·4쪽 흐름 밖 문단 778 중 221 이 도형 라벨, 쪽 면적 54–100% 도형 포함), 일반 글자가 편집되지 않았다.
+  // 진짜 도형의 라벨(축 이름 등)도 문단 편집으로 고칠 수 있다. 세로·회전 글자 등 다른 제한은 그대로 적용된다.
+  if (paragraph.table !== null) {
+    limits.add('not-flow-paragraph', '표 셀 문단(M4)', []);
   }
   for (const li of paragraph.lines) {
     const line = ctx.model.lines[li];

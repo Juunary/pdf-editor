@@ -199,7 +199,7 @@ describe('편집 제한(5.1)', () => {
     expect(reasons(plan(ctx, 'Masked text'))).toContain('graphics-state-mismatch');
   });
 
-  it('표 셀·도형 라벨 문단 → not-flow-paragraph', () => {
+  it('표 셀 문단 → not-flow-paragraph', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Cell text) Tj ET']);
     const ctx0 = pageContext(doc, 0);
     const para = { ...ctx0.layout.paragraphs[0]!, table: 0 };
@@ -207,6 +207,16 @@ describe('편집 제한(5.1)', () => {
     expect(
       reasons(planParagraphEdit(ctx, new FontManager(doc, fallbackFor(doc)), para.id)),
     ).toContain('not-flow-paragraph');
+  });
+
+  it('도형 라벨 문단은 편집할 수 있다(도형 오검출로 일반 글자가 막히던 문제, 2026-10-21)', () => {
+    const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Text over a background box) Tj ET']);
+    const ctx0 = pageContext(doc, 0);
+    const para = { ...ctx0.layout.paragraphs[0]!, figure: 0 };
+    const ctx = withParagraphs(ctx0, [para]);
+    const result = planParagraphEdit(ctx, new FontManager(doc, fallbackFor(doc)), para.id);
+    expect(reasons(result)).not.toContain('not-flow-paragraph');
+    expect(result.editable).toBe(true);
   });
 });
 
