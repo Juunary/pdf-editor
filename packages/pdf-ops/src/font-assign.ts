@@ -18,7 +18,7 @@
 import * as mupdf from 'mupdf';
 import type { EditWarning, SourceMap } from '@pdf-editor/shared-types';
 import type { EncodedGlyph, FaceSource, FontFace, FontSegment } from '@pdf-editor/reflow';
-import { subsetFontBytes } from './font-embed.js';
+import { fontFromBytes, subsetFontBytes } from './font-embed.js';
 import {
   glyphNameToUnicode,
   MAC_ROMAN_ENCODING,
@@ -678,7 +678,7 @@ export class FontState {
       this.metrics = null;
       return null;
     }
-    const font = new mupdf.Font(FALLBACK_NAME, bytes);
+    const font = fontFromBytes(FALLBACK_NAME, bytes);
     const tmp = new mupdf.PDFDocument();
     try {
       const ref = tmp.addFont(font);

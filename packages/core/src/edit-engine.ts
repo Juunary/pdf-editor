@@ -1036,7 +1036,9 @@ export class EditEngine {
   #prepareDocument(): void {
     ensureInfoDictionary(this.#doc);
     if (!this.#fallbackRef && this.#fallbackBytes) {
-      const { ref } = embedFont(this.#doc, FALLBACK_FONT_NAME, this.#fallbackBytes);
+      const { font, ref } = embedFont(this.#doc, FALLBACK_FONT_NAME, this.#fallbackBytes);
+      // 문서가 폰트 파일 스트림을 가진다. 파싱한 `mupdf.Font` 는 더 쓰지 않으므로 바로 해제한다(R-L3, 순환마다 약 4 MB).
+      font.destroy();
       // 폰트 사전 표지: 문서 안에서 폴백 폰트를 알아본다(저장 파일에서는 서브셋으로 바뀐다).
       ref.put('PdfEditorFallback', this.#doc.newBoolean(true));
       this.#fallbackRef = ref;
