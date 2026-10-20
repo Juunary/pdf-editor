@@ -157,3 +157,41 @@ Playwright(계약 6.2, `e2e/path-latency.spec.ts` 옵트인, kogl-mods-cpi 4쪽,
 | 5 | 뷰어: 문서를 연 직후 패스 모델 재적재와 겹친 첫 Alt+클릭은 선택 없이 끝날 수 있다(e2e 는 재시도). 원인(재적재 계기) 미조사 |
 | 6 | 자간 띄어쓰기 판정은 양수 자간 + 같은 줄 합성 공백 기준이다. 합성 공백이 없는 넓은 양수 자간은 그대로 싣는다 |
 | 7 | 코퍼스 표본 쪽은 S1 표본 쪽을 고정해 썼다(셀 10쪽 중 셀이 있는 8쪽·패스 6쪽). kogl-mods-cpi 표 쪽(17·18쪽)은 편집 가능 셀 0 |
+
+## 8. 리뷰 반영
+
+M4 마일스톤 리뷰(2026-10-21) 지적 반영. 시험 이름은 해당 파일의 `it` 제목이다.
+
+| 지적 | 내용 | 수정 | 시험 |
+| --- | --- | --- | --- |
+| H1 | `/Resources` 없는 Form 안 패스를 고치면 복제본 `/Resources` 가 빈 사전이 되어 pdf.js 가 Form 글자를 대체 폰트로 그림(3215 px 차이) | `path-edit.ts` `formHolder`: 원본 Form 에 `/Resources` 가 없으면 부르는 쪽 유효 Resources(상위 Form 복제본, 없으면 쪽 상속 Resources) 사본을 복제본 소유로 둔다. 편집 가능 유지(차단 사유 추가 안 함) | `pdf-ops/test/path-edit.test.ts` "Resources 없는 Form(쪽 상속)"·"Resources 없는 Form(상위 Form 상속)": 세 엔진(MuPDF·pdf.js·Poppler) 편집 상자 밖 0 px, 복제본 Resources 에 원래 폰트 이름 |
+| M1 | `beginPathEdit` 가 고정 교체 없는 쪽 `/Contents` 칸도 다시 써서 변경 없이 취소해도 redo 가 사라짐 | `preparePathEdit`: 고정 교체가 있는 칸과 Form 복제본만 쓴다. 첫 쓰기는 `writePathEdit` | `core/test/edit-real-m4.test.ts` "redo 보존(리뷰 M1)": 커밋 → undo(canRedo) → 시작 → 갱신 없이 취소 → canRedo 유지·redo 동작. 갱신 뒤 취소는 redo 가 사라짐(문서화된 동작). `docs/m4-core.md` 5절 #7 정정 |
+| M2 | 실패 상태 저장 경고가 사용자에게 가지 않음 | shared-types `SavePlan.warnings?`·`SaveResult.warnings?`. core `saveWarnings()` 두 줄(엔진 오류 사유, 마지막 편집 누락·일부 반영·취소한 초안 변경 포함 가능). 실패 상태 저장도 폴백 서브셋 교체·서브셋 이름 태그(R-L2)를 최선 노력으로 함(오류 무시). 뷰어 `decideSave` 가 core 경고를 확인 창 맨 앞에 넣는다 | `core/test/edit-m3-followup.test.ts` R-M4 경고 2줄·"실패 상태 저장도 폴백 서브셋 교체·이름 태그"(태그 이름, 서브셋 크기 < 원본, 재저장 같은 이름). `extension/test/save-plan.test.ts` "core 저장 경고…확인 창"·"over-limit 이면 core 경고가 있어도 중단" |
+| M3 | 패스 동작의 revision 재시도·복구 재시작이 다시 계획한 대상을 확인하지 않음 | `path-gesture.ts`: 재계획 결과의 `target.paintSeqs`·`fingerprints` 를 직전 계획과 비교(pdf-ops `sameFingerprint` 규칙). 다르면 `PathTargetChangedError` 로 시작·커밋하지 않고, `PathController` 가 선택을 푼다 | `viewer-ui/test/path-controller.test.ts` "revision 재시도에서 대상 지문이 바뀌었으면…"·"Worker 복구 재시작에서 대상 지문이 바뀌었으면…" |
+| M4 | 패스 판정 오류가 `getPageEditability` 전체를 실패시켜 문단 편집까지 막음 | `EditEngine.#planPaths`: 오류를 `paths: []` + `PageEditability.pathError`(shared-types 선택 필드, 진단)로 격리, 문단 판정은 그대로. 뷰어는 `path-editability-error` 진단 로그 | `core/test/edit-path.test.ts` "패스 판정 오류는 패스만 비우고 문단 판정은 돌려준다"(던지는 어댑터 주입)·"정상 판정에는 pathError 가 없다" |
+| L1 | 삭제가 구성 ~ 칠하기를 짝 없는 `n` 으로 바꿈(엄격한 프리플라이트) | 공백 하나로 바꾼다. 뒤 칠하기의 paintSeq 는 하나씩 당겨지고 대상 확인은 지문(D4)이 맡는다(`path-edit.ts` 머리 주석, `docs/m4-pdf-ops.md`·`docs/m4-contract.md` 패스 삭제 항목) | `pdf-ops/test/path-edit.test.ts` "삭제: 구성 ~ 칠하기를 공백으로…"(뒤 패스 재판정·편집 가능)·"삭제: Form 안·q/Q 사이·연속 삭제도…"(세 엔진 0 px). `core/test/edit-real-m4.test.ts` 선 두께와 삭제 |
+| L6 | 뷰어 선 두께 입력이 긋지 않는 패스에도 켜지고, 바뀌는 것 없는 편집도 저널에 남음 | `PathController.selectionPaints()`(패스 모델 `PathInfo.op`)로 채움 색·선 색·선 두께 입력을 켠다. `effectiveEdit()` 가 해당 없는 칠하기·현재 값과 같은 값을 빼고 남는 것이 없으면 초안을 열지 않는다. `PathGesture.commit()` 은 항등 변환 등 무변경 편집을 취소로 처리 | `viewer-ui/test/path-controller.test.ts` "바뀌는 것이 없는 속성 편집은 초안을 열지 않는다"·"선 두께는 긋는 패스에만…"·"제자리로 돌아온 끌기(항등 변환)는…" |
+
+### 8.1 후속(이번에 고치지 않음)
+
+리뷰 보고서의 다음 지적은 기록만 하고 이후 작업으로 둔다. 내용은 리뷰 보고서(메인 세션)를 따른다.
+
+| 지적 | 처리 |
+| --- | --- |
+| L2 | 후속 |
+| L3 | 후속 |
+| L4 | 후속 |
+| L5 | 후속 |
+| L7 | 후속 |
+| L8 | 후속 |
+
+### 8.2 검증
+
+2026-10-21, 이 worktree `m4`, 리뷰 반영 커밋 뒤.
+
+| 명령 | 결과 |
+| --- | --- |
+| `pnpm exec turbo run build typecheck test test:e2e --force` | 통과(25개 작업, 종료 코드 0) |
+| 단위 | shared-types 4, layout-recon 60(3 skip), reflow 60, pdf-ops 443(5 skip), core 278(5 skip), viewer-ui 285, extension 46, spike-m0 33(1 skip) |
+| e2e | 119건 통과, 3건 skip(옵트인 측정·기존 동적 skip) |
+| `pnpm lint`·`pnpm exec prettier --check .` | 통과 |
