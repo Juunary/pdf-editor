@@ -100,6 +100,35 @@ describe('영역·들여쓰기·기준선', () => {
   });
 });
 
+describe('줄 높이', () => {
+  // 원본 폰트에 공백 글리프가 없으면(TeX 폰트 등) 공백만 폴백으로 간다. 폴백 높이(1160·-288)가 줄 상자를 키우면
+  // 같은 텍스트 교체도 원 bbox 를 넘어 자동 확장된다(M3 코퍼스 arxiv-2609.10511 1쪽 #1 등, docs/m3-integration.md 10절).
+  const tall = { ...pdfFace('tall'), ascent: 1160, descent: -288 };
+  const spaced = (text: string, area: [number, number, number, number]): ReflowInput => {
+    const segments = [];
+    let start = 0;
+    for (let i = 1; i <= text.length; i++) {
+      if (i === text.length || (text[i] === ' ') !== (text[start] === ' ')) {
+        segments.push(seg(text[start] === ' ' ? tall : pdfFace(), start, i));
+        start = i;
+      }
+    }
+    return { text, segments, format: format({ area }), areaLimit: [0, 0, 1000, 1000] };
+  };
+
+  it('공백 클러스터의 폰트는 글자가 있는 줄의 올림·내림에 넣지 않는다', () => {
+    const r = layoutParagraph(spaced('ab cd', [0, 0, 100, 10]));
+    expect(r.summary.lines[0]).toMatchObject({ ascent: 8, descent: -2 });
+    expect(r.summary.contentBox).toEqual([0, 0, 22.5, 10]);
+    expect(r.summary).toMatchObject({ overflow: false, area: [0, 0, 100, 10] });
+  });
+
+  it('공백만 있는 줄은 공백 폰트의 올림·내림을 쓴다', () => {
+    const r = layoutParagraph(spaced('ab\n ', [0, 0, 100, 1000]));
+    expect(r.summary.lines[1]).toMatchObject({ ascent: 11.6, descent: -2.88 });
+  });
+});
+
 describe('초과·자동 확장(2026-10-20 사용자 결정)', () => {
   // 한 줄: 기준선 8, 아래 = 10.
   it('마지막 줄 아래가 영역 아래 + 0.5pt 를 넘으면 아래 변을 그만큼 내린다', () => {

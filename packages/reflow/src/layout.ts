@@ -377,12 +377,21 @@ function placeLine(
   return { glyphs, writable, x0, x1 };
 }
 
-/** 줄의 글리프 클러스터에서 가장 큰 올림·가장 깊은 내림(pt, 내림 음수). 글리프가 없으면 null. */
+/**
+ * 줄의 글리프 클러스터에서 가장 큰 올림·가장 깊은 내림(pt, 내림 음수). 글리프가 없으면 null.
+ * 공백 클러스터는 공백만 있는 줄에서만 센다: 원본 폰트에 공백 글리프가 없어 폴백으로 간 공백(TeX 폰트 등)이
+ * 폴백 폰트 높이로 줄 상자를 키우지 않게 한다.
+ */
 function lineMetrics(items: readonly Item[], line: LineRange): Metrics | null {
+  return metricsOver(items, line, false) ?? metricsOver(items, line, true);
+}
+
+function metricsOver(items: readonly Item[], line: LineRange, spaces: boolean): Metrics | null {
   let m: Metrics | null = null;
   for (let i = line.a; i < line.b; i++) {
     const it = items[i];
     if (it === undefined || it.kind !== 'glyph' || it.face === null) continue;
+    if ((it.cc.cls === 'SP') !== spaces) continue;
     const fm = faceMetrics(it.face, it.seg.size);
     m =
       m === null
