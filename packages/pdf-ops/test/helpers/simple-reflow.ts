@@ -31,16 +31,14 @@ export function simpleReflow(
   text: string,
   segments: readonly FontSegment[],
   format: ParagraphFormat,
-  options: { scale?: number } = {},
 ): ReflowResult {
-  const s = options.scale ?? 1;
   const items: Item[] = [];
   const placed: PlacedGlyph[] = [];
   for (const seg of segments) {
     const sub = text.slice(seg.start, seg.end);
     for (const c of segmenter.segment(sub)) {
       const offset = seg.start + c.index;
-      const size = seg.size * s;
+      const size = seg.size;
       if (!seg.face) {
         placed.push({
           offset,
@@ -109,14 +107,14 @@ export function simpleReflow(
   const placedLines: PlacedLine[] = [];
   let box: Rect | null = null;
   lines.forEach((line, li) => {
-    const baseline = area[1] + format.firstBaselineOffset * s + li * format.lineHeight * s;
+    const baseline = area[1] + format.firstBaselineOffset + li * format.lineHeight;
     let px = area[0] + (li === 0 ? Math.max(0, format.firstLineIndent) : 0);
     const start = line[0]?.offset ?? (out.length > 0 ? text.length : 0);
     const wg: WritableGlyph[] = [];
     let x1 = px;
     let maxSize = 0;
     for (const it of line) {
-      const size = it.seg.size * s;
+      const size = it.seg.size;
       maxSize = Math.max(maxSize, size);
       placed.push({
         offset: it.offset,
@@ -183,7 +181,6 @@ export function simpleReflow(
       contentBox: box ?? [area[0], area[1], area[0], area[1]],
       area,
       overflow: box !== null && (box as Rect)[3] > area[3] + 0.5,
-      fontScale: s,
       reflowMs: 0,
     },
     lines: out,

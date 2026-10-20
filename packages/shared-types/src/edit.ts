@@ -42,21 +42,21 @@ export interface TextRun {
 
 export type ParagraphAlign = 'left' | 'right' | 'center' | 'justify';
 
-/** 영역 초과 처리(PLAN.md 1.3): 영역 넓히기 / 글자 줄이기 / 그대로 두기. */
-export type OverflowChoice = 'expand' | 'shrink' | 'keep';
-
+/**
+ * 문단 형식. 영역 초과 처리는 선택이 아니라 리플로우 규칙이다(2026-10-20 사용자 결정): 글이 영역 아래로 넘치면
+ * 아래 변을 필요한 높이까지(areaLimit 까지) 자동으로 내린다(ReflowSummary.area). 이전 빌드가 쓴 overflow·fontScale
+ * 필드(/PdfEditorFormat JSON·EditOp)는 읽을 때 무시한다.
+ */
 export interface ParagraphFormat {
-  /** 배치 영역. 기본 원 문단 bbox, areaLimit 안. */
+  /** 사용자가 정한 배치 영역(기본 원 문단 bbox, areaLimit 안). 실제로 쓴 영역은 ReflowSummary.area. */
   area: Rect;
   align: ParagraphAlign;
   /** 첫 줄 들여쓰기(pt, 음수는 내어쓰기). */
   firstLineIndent: number;
-  /** 기준선 간격(pt, 글자 크기 배율 1 기준). */
+  /** 기준선 간격(pt). */
   lineHeight: number;
-  /** 첫 줄 기준선 − 영역 위쪽(pt, 배율 1 기준). 배율 s 이면 s 배(계약 5.4). */
+  /** 첫 줄 기준선 − 영역 위쪽(pt). */
   firstBaselineOffset: number;
-  /** 아직 고르지 않았으면 null(초과 표시만). shrink 의 배율은 리플로우 출력(ReflowSummary.fontScale)이다. */
-  overflow: OverflowChoice | null;
 }
 
 /** 문단 텍스트 교체. M4 에서 셀·벡터 편집이 더해진다. */
@@ -130,8 +130,8 @@ export type EditWarningKind =
   | 'link-overlap' // 편집 문단과 겹치는 링크(유지)
   | 'redact-overlap' // 겹치는 기존 Redact 주석(나중에 적용하면 새 텍스트도 지워짐)
   | 'optional-content' // 선택적 콘텐츠 안(L7)
-  | 'area-overlaps-content' // 넓힌 영역이 다른 글자·도형과 겹침
-  | 'overflow-clipped'; // keep 으로 넘친 줄이 CropBox·상위 Form BBox 에서 잘림
+  | 'area-overlaps-content' // (자동으로) 넓힌 영역이 다른 글자·도형과 겹침
+  | 'overflow-clipped'; // 영역 상한에 막혀 넘친 줄이 CropBox·상위 Form BBox 에서 잘림
 
 export interface EditWarning {
   kind: EditWarningKind;
@@ -206,7 +206,7 @@ export interface PlacedGlyph {
   y: number;
   /** 전진량(pt, 조정 포함). */
   advance: number;
-  /** 글자 크기(pt, fontScale 적용 후). */
+  /** 글자 크기(pt). */
   size: number;
 }
 
@@ -216,7 +216,7 @@ export interface PlacedLine {
   /** 줄 내용의 왼쪽·오른쪽(줄 끝 공백 제외). 빈 줄은 정렬 기준점. */
   x0: number;
   x1: number;
-  /** 올림(양수)·내림(음수), pt·배율 적용. 줄 상자 = [baseline − ascent, baseline − descent]. */
+  /** 올림(양수)·내림(음수), pt. 줄 상자 = [baseline − ascent, baseline − descent]. */
   ascent: number;
   descent: number;
   /** 이 줄 텍스트 위치 [start, end). 줄들이 텍스트를 빈틈 없이 덮고, 줄 끝 공백·강제 줄바꿈 문자를 포함한다. */
@@ -232,11 +232,10 @@ export interface ReflowSummary {
   glyphs: PlacedGlyph[];
   /** 배치한 글자 상자의 합집합(넘친 줄 포함). */
   contentBox: Rect;
-  /** 실제로 쓴 영역(expand 이면 넓힌 영역). */
+  /** 실제로 쓴 영역: 입력 영역(상한 안), 글이 넘치면 아래 변을 필요한 높이까지 내린 영역(상한까지). */
   area: Rect;
+  /** 상한에 막혀 자동 확장 뒤에도 넘침. */
   overflow: boolean;
-  /** 적용한 글자 크기 배율(shrink 이면 0.8–1, 그 밖 1). */
-  fontScale: number;
   reflowMs: number;
 }
 

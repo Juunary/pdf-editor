@@ -15,7 +15,6 @@ function summary(contentBox: [number, number, number, number], area = contentBox
     contentBox,
     area,
     overflow: false,
-    fontScale: 1,
     reflowMs: 0,
   };
 }

@@ -382,6 +382,66 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     s.close();
   });
 
+  it('자동 확장(계약 5.4 변경): 넘치면 같은 편집 단위 안에서 아래 변이 내려가고, undo·redo·재적용이 같은 결과', async () => {
+    const live = session(source());
+    const long = 'Auto expand keeps every line inside the area. '.repeat(6).trim();
+    const { plan, update, commit } = await edit(live, 'first paragraph', long);
+    // 사용자 영역(op.format.area)은 그대로, 실제로 쓴 영역(reflow.area)만 글 높이까지 내려간다.
+    expect(update.reflow.overflow).toBe(false);
+    expect(update.reflow.area[3]).toBeGreaterThan(plan.format.area[3] + 1);
+    expect(update.reflow.area[3]).toBeCloseTo(update.reflow.contentBox[3], 6);
+    expect(commit.op.format).toEqual(plan.format);
+    expect(commit.op.format).not.toHaveProperty('overflow');
+    const area = (s: PdfSession) => s.getPageEdits(0).then((e) => e.blocks[0]?.area);
+    expect(await area(live)).toEqual(update.reflow.area);
+    const edited = stext(live);
+    // 편집 하나 = undo 한 번(자동 확장이 따로 단계를 만들지 않는다).
+    await live.undo();
+    expect(squash(stext(live))).toContain('firstparagraphlineone');
+    await live.redo();
+    expect(stext(live)).toBe(edited);
+    // 재적용은 같은 영역·같은 텍스트.
+    const replayed = session(source());
+    await replayed.replayEdits([structuredClone(commit.op)]);
+    expect(stext(replayed)).toBe(edited);
+    expect(await area(replayed)).toEqual(update.reflow.area);
+    live.close();
+    replayed.close();
+  });
+
+  it('이전 빌드의 EditOp(format.overflow shrink·fontScale 0.85)도 재적용되고, 축소 없이 자동 확장 결과와 같다', async () => {
+    const live = session(source());
+    const long = 'Legacy shrink op is replayed without shrinking. '.repeat(5).trim();
+    const op = (await edit(live, 'first paragraph', long)).commit.op;
+    const legacy = structuredClone(op) as EditOp & { format: Record<string, unknown> };
+    legacy.format.overflow = 'shrink';
+    legacy.format.fontScale = 0.85;
+    const a = session(source());
+    const b = session(source());
+    await a.replayEdits([legacy]);
+    await b.replayEdits([structuredClone(op)]);
+    expect(stext(a)).toBe(stext(b));
+    expect(stext(a)).toBe(stext(live));
+    const blockA = (await a.getPageEdits(0)).blocks[0]!;
+    const blockB = (await b.getPageEdits(0)).blocks[0]!;
+    expect(blockA).toMatchObject({ area: blockB.area, contentBox: blockB.contentBox });
+    // 다시 쓴 블록의 /PdfEditorFormat 에 이전 필드가 남지 않는다.
+    const saved = a.save({ changes: [] }).bytes;
+    const doc = mupdf.Document.openDocument(saved, 'application/pdf') as mupdf.PDFDocument;
+    let formats = 0;
+    for (let n = 1; n < doc.countObjects(); n++) {
+      const obj = doc.newIndirect(n);
+      if (!obj.isStream() || obj.get('PdfEditorFormat').isNull()) continue;
+      const json = JSON.parse(obj.get('PdfEditorFormat').asString()) as { format: object };
+      expect(json.format).not.toHaveProperty('overflow');
+      expect(json.format).not.toHaveProperty('fontScale');
+      formats++;
+    }
+    expect(formats).toBe(1);
+    doc.destroy();
+    for (const x of [live, a, b]) x.close();
+  });
+
   it('B1: 블록이 이웃 문단과 한 레이아웃 문단으로 합쳐져도 판정 상자는 블록 글자만 덮는다', async () => {
     const s = session(source());
     const long = 'Short line one. Next starts. '.repeat(8).trim();

@@ -22,7 +22,7 @@ function fallback(key: string): FontFace {
   };
 }
 
-function make(face: FontFace, overflow: 'shrink' | null, height: number): ReflowInput {
+function make(face: FontFace, height: number): ReflowInput {
   return {
     text: TEXT,
     segments: [seg(face, 0, TEXT.length)],
@@ -30,7 +30,6 @@ function make(face: FontFace, overflow: 'shrink' | null, height: number): Reflow
       area: [50, 50, 350, 50 + height],
       align: 'justify',
       lineHeight: 14,
-      overflow,
     }),
     areaLimit: [0, 0, 612, 792],
   };
@@ -53,19 +52,19 @@ const fmt = (r: { median: number; p95: number; max: number }) =>
   `median ${r.median.toFixed(3)} ms, p95 ${r.p95.toFixed(3)} ms, max ${r.max.toFixed(3)} ms`;
 
 describe('배치 시간(500자 문단)', () => {
-  it('원본 폰트(pdf-widths)·폴백 폰트(harfbuzz)·shrink 최악', () => {
+  it('원본 폰트(pdf-widths)·폴백 폰트(harfbuzz)·자동 확장', () => {
     expect(TEXT.length).toBe(500);
     // 첫 호출: 4 MB 폴백 폰트를 harfbuzz 로 읽고 cmap 조회를 채운다.
     const t0 = now();
-    const first = layoutParagraph(make(fallback('bench-cold'), null, 1000));
+    const first = layoutParagraph(make(fallback('bench-cold'), 1000));
     const coldMs = now() - t0;
 
-    const orig = measure(make(pdfFace(), null, 1000));
-    const fb = measure(make(fallback('bench'), null, 1000));
-    // 높이 20pt 에 500자: 1.00 → 0.80 의 21개 배율을 모두 시도한다.
-    const shrinkInput = make(fallback('bench'), 'shrink', 20);
-    const shrink = measure(shrinkInput, 50);
-    const shrinkResult = layoutParagraph(shrinkInput);
+    const orig = measure(make(pdfFace(), 1000));
+    const fb = measure(make(fallback('bench'), 1000));
+    // 높이 20pt 에 500자: 넘쳐서 아래 변을 자동으로 내린다.
+    const expandInput = make(fallback('bench'), 20);
+    const expand = measure(expandInput, 50);
+    const expandResult = layoutParagraph(expandInput);
 
     console.log(
       [
@@ -73,11 +72,12 @@ describe('배치 시간(500자 문단)', () => {
         `  폴백 첫 호출(폰트 적재 포함): ${coldMs.toFixed(1)} ms`,
         `  원본 폰트(pdf-widths): ${fmt(orig)}`,
         `  폴백 폰트(harfbuzz): ${fmt(fb)}`,
-        `  폴백 + shrink 21배율: ${fmt(shrink)} (fontScale ${shrinkResult.summary.fontScale})`,
+        `  폴백 + 자동 확장: ${fmt(expand)} (영역 아래 ${expandResult.summary.area[3].toFixed(1)})`,
       ].join('\n'),
     );
-    expect(shrinkResult.summary).toMatchObject({ fontScale: 0.8, overflow: true });
+    expect(expandResult.summary.overflow).toBe(false);
+    expect(expandResult.summary.area[3]).toBeGreaterThan(70);
     expect(fb.median).toBeLessThan(50);
-    expect(shrink.median).toBeLessThan(200);
+    expect(expand.median).toBeLessThan(50);
   });
 });
