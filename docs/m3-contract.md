@@ -9,7 +9,7 @@
 | 입력 | M1 계약(`docs/m1-contract.md`: SourceMap·매칭·좌표계), M1 결정(`docs/m1-decisions.md`: A7-2 SourceMap 기반 제거 등), M2 계약(`docs/m2-contract.md`: PageLayout), 1.2절의 이관 Action Item |
 | 일정 | PLAN.md 6절 계획은 2026-12-14~2027-01-17(5주). 2026-10-19 착수 |
 | 상태 표기 | 확정 = 근거가 있고 바꾸지 않음. 권고 = 메인 세션 결정, 사용자 확인 전. 결정 대기 = 사용자 결정 필요 |
-| 변경 이력 | 수정 1(2026-10-19, S3 core 실측 보고): 폴백 폰트 임베딩과 Info 생성을 저널을 켜기 전 한 번으로 바꿈(D4·D9·5.7), FontManager 생성자를 `FallbackFontSource` 로 바꿈. 수정 2(2026-10-19, S2 reflow 실측 보고): 폴백 서브셋 cmap 을 일대일로 다시 만듦(D12), 입력 정규화에 U+00A0 → U+0020 추가(1.3·5.9) 수정 3(2026-10-19, S1 pdf-ops 실측 보고): BT 나누기의 Tlm 복원을 원 줄 설정 연산 재실행으로(D3 규칙 2), `insertion-clipped` 에 직사각형 클립이 원 글리프를 덮지 않는 경우 추가 수정 4(2026-10-19, S2·S3·S4 보고 정리): Info 기록을 커밋 작업 안으로(D9·5.6), redo 소실 조건(D9), 초안 중 허용 RPC(5.7), 전용 Worker 의 chrome.* 불가(5.7), 리플로우 요약 규약·통합 때 추가할 RPC(4절), 텍스트 판정에서 기본 무시 문자 제외(8.3) 수정 5(2026-10-20, 사용자 결정): 초과 3선택을 자동 확장·되돌리기로 대체, 글자 크기 축소 삭제, 이전 형식 호환(1.1·4절·5.4·5.9), 판정 목록에서 편집 블록 한 항목(5.1, B1) |
+| 변경 이력 | 수정 1(2026-10-19, S3 core 실측 보고): 폴백 폰트 임베딩과 Info 생성을 저널을 켜기 전 한 번으로 바꿈(D4·D9·5.7), FontManager 생성자를 `FallbackFontSource` 로 바꿈. 수정 2(2026-10-19, S2 reflow 실측 보고): 폴백 서브셋 cmap 을 일대일로 다시 만듦(D12), 입력 정규화에 U+00A0 → U+0020 추가(1.3·5.9) 수정 3(2026-10-19, S1 pdf-ops 실측 보고): BT 나누기의 Tlm 복원을 원 줄 설정 연산 재실행으로(D3 규칙 2), `insertion-clipped` 에 직사각형 클립이 원 글리프를 덮지 않는 경우 추가 수정 4(2026-10-19, S2·S3·S4 보고 정리): Info 기록을 커밋 작업 안으로(D9·5.6), redo 소실 조건(D9), 초안 중 허용 RPC(5.7), 전용 Worker 의 chrome.* 불가(5.7), 리플로우 요약 규약·통합 때 추가할 RPC(4절), 텍스트 판정에서 기본 무시 문자 제외(8.3) 수정 5(2026-10-20, 사용자 결정): 초과 3선택을 자동 확장·되돌리기로 대체, 글자 크기 축소 삭제, 이전 형식 호환(1.1·4절·5.4·5.9), 판정 목록에서 편집 블록 한 항목(5.1, B1) 수정 6(2026-10-20, 사용자 답변): 레이아웃 결과에서도 편집 블록은 한 문단(5.1), 겹침 경고만·자동 확장 표시 없음 |
 | 독립 검토 | 2026-10-19 읽기 전용 검토(판정 REVISE: BLOCKER 1·HIGH 6·MEDIUM 9·LOW 12)를 이 판에 반영했다. 저널·폰트·harfbuzz 실측 주장은 메인 세션이 재현했다(11절) |
 
 ## 1. 완료 기준과 범위
@@ -303,7 +303,7 @@
 | `actualtext-partial` | D1 |
 | `singular-ctm`·`insertion-clipped`·`bt-split-unsupported`·`graphics-state-mismatch` | D3 |
 
-- 판정 목록(`getPageEditability`)에서 편집 블록은 레이아웃 문단 수와 무관하게 한 항목이다(첫 레이아웃 문단 id, 상자 = 블록 글자 상자). 커밋 뒤 layout-recon 이 블록 줄을 여러 문단으로 나눠 테두리가 갈라져 보이던 사용자 보고 B1(2026-10-20) 수정.
+- 판정 목록(`getPageEditability`)에서 편집 블록은 레이아웃 문단 수와 무관하게 한 항목이다(첫 레이아웃 문단 id, 상자 = 블록 글자 상자). 커밋 뒤 layout-recon 이 블록 줄을 여러 문단으로 나눠 테두리가 갈라져 보이던 사용자 보고 B1(2026-10-20) 수정. 레이아웃 결과(`getPageLayout`, 레이아웃 오버레이)에서도 편집 블록 줄은 한 문단이다(layout-recon `fixedGroups` 힌트, 줄은 보이는 글자 과반이 속한 블록에 배정). 겹침은 경고만, 자동 확장 표시는 두지 않는다(사용자 답변 2026-10-20).
 - 경고(편집은 가능): `font-fallback`, `glyph-missing`, `synthetic-style`, `tagged-structure-kept`, `tagged-structure-unlinked`, `actualtext-cleared`, `reading-order-approximate`, `link-overlap`, `redact-overlap`(A2-2, `assessRedactionImpact` 를 SourceMap 제거 기준으로 고친 판정), `optional-content`, `area-overlaps-content`, `overflow-clipped`.
 - 판정 시간: 쪽 SourceMap·레이아웃 캐시가 있을 때 문단 하나 10 ms 이하, `getPageEditability` 쪽 하나 100 ms 이하(서버 Node, 측정 기록).
 

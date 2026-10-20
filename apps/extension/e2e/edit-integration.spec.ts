@@ -233,7 +233,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     );
     await expect.poll(canvas, { timeout: 30_000 }).toBe(afterFirst);
   });
-  test('B1(docs/m3-integration.md 9절): 커밋한 블록을 레이아웃이 두 문단으로 나눠도 마우스 오버 테두리는 하나', async () => {
+  test('B1·9.6(docs/m3-integration.md 9절): 커밋한 블록은 레이아웃 문단 하나, 오버레이 상자 하나, 마우스 오버 테두리 하나', async () => {
     const page = await open(SAMPLE);
     const geo = () =>
       page.evaluate(async () => {
@@ -248,10 +248,13 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
             text: p.text,
             x: box.left + ((p.bbox[0]! + p.bbox[2]!) / 2) * scale,
             y: box.top + ((p.bbox[1]! + p.bbox[3]!) / 2) * scale,
+            top: box.top + p.bbox[1]! * scale,
+            bottom: box.top + p.bbox[3]! * scale,
           })),
         };
       });
-    const target = (await geo()).paragraphs.find((p) => p.text.startsWith('This paragraph'))!;
+    const before = (await geo()).paragraphs;
+    const target = before.find((p) => p.text.startsWith('This paragraph'))!;
     // 편집 판정이 올 때까지 기다린다(그 전 더블클릭은 대상 문단을 모른다).
     await page.mouse.move(target.x, target.y, { steps: 3 });
     await expect(page.locator('#pe-edit-hover[data-editable="1"]')).toBeVisible();
@@ -266,13 +269,16 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     );
     await page.keyboard.press('Escape');
     await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
-    // 전제: 레이아웃 복원은 강제 줄바꿈 뒤 짧은 줄을 다른 문단으로 본다.
+    // 9.6: M2 규칙만으로는 강제 줄바꿈 뒤 짧은 줄이 다른 문단이지만, 편집 블록 힌트로 레이아웃 문단 하나다.
     await expect
-      .poll(
-        async () => (await geo()).paragraphs.filter((p) => p.text.startsWith('Short line')).length,
+      .poll(async () =>
+        (await geo()).paragraphs.filter((p) => p.text.includes('Short line')).map((p) => p.text),
       )
-      .toBe(2);
-    const lines = (await geo()).paragraphs.filter((p) => p.text.startsWith('Short line'));
+      .toEqual(['Short line one. Short line two.']);
+    const after = (await geo()).paragraphs;
+    // 문단 하나가 문단 하나로 바뀌었다(다른 문단은 그대로).
+    expect(after).toHaveLength(before.length);
+    const block = after.find((p) => p.text.startsWith('Short line'))!;
     const hoverAt = async (x: number, y: number) => {
       await page.mouse.move(1, 1);
       await page.mouse.move(x, y, { steps: 3 });
@@ -283,11 +289,19 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
         box: (await hover.boundingBox())!,
       };
     };
-    const a = await hoverAt(lines[0]!.x, lines[0]!.y);
-    const b = await hoverAt(lines[1]!.x, lines[1]!.y);
+    const y1 = block.top + 0.25 * (block.bottom - block.top);
+    const y2 = block.top + 0.75 * (block.bottom - block.top);
+    const a = await hoverAt(block.x, y1);
+    const b = await hoverAt(block.x, y2);
     expect(b.id).toBe(a.id);
     // 테두리 하나가 두 줄을 모두 덮는다.
-    expect(a.box.y).toBeLessThan(lines[0]!.y);
-    expect(a.box.y + a.box.height).toBeGreaterThan(lines[1]!.y);
+    expect(a.box.y).toBeLessThan(y1);
+    expect(a.box.y + a.box.height).toBeGreaterThan(y2);
+    // 레이아웃 오버레이: 상자 수(문단 수)가 편집 전과 같다(블록이 상자 여럿으로 갈라지지 않음).
+    await page.mouse.move(1, 1);
+    await page.locator('#pe-layout-toggle').click();
+    const canvas = page.locator('#pe-layout-canvas');
+    await expect(canvas).toBeVisible();
+    await expect(canvas).toHaveAttribute('data-paragraphs', String(before.length));
   });
 });
