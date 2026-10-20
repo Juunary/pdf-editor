@@ -233,4 +233,61 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     );
     await expect.poll(canvas, { timeout: 30_000 }).toBe(afterFirst);
   });
+  test('B1(docs/m3-integration.md 9절): 커밋한 블록을 레이아웃이 두 문단으로 나눠도 마우스 오버 테두리는 하나', async () => {
+    const page = await open(SAMPLE);
+    const geo = () =>
+      page.evaluate(async () => {
+        const pe = (window as unknown as PeWindow).__pe;
+        const layout = (await pe.pdf.getPageLayout!(0)) as {
+          paragraphs: { id: number; text: string; bbox: number[] }[];
+        };
+        const box = document.getElementById('pe-page')!.getBoundingClientRect();
+        const scale = Number(document.getElementById('pe-page')!.dataset.cssScale);
+        return {
+          paragraphs: layout.paragraphs.map((p) => ({
+            text: p.text,
+            x: box.left + ((p.bbox[0]! + p.bbox[2]!) / 2) * scale,
+            y: box.top + ((p.bbox[1]! + p.bbox[3]!) / 2) * scale,
+          })),
+        };
+      });
+    const target = (await geo()).paragraphs.find((p) => p.text.startsWith('This paragraph'))!;
+    // 편집 판정이 올 때까지 기다린다(그 전 더블클릭은 대상 문단을 모른다).
+    await page.mouse.move(target.x, target.y, { steps: 3 });
+    await expect(page.locator('#pe-edit-hover[data-editable="1"]')).toBeVisible();
+    await page.mouse.dblclick(target.x, target.y);
+    await expect(page.locator('#pe-edit-layer')).toBeVisible();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('Short line one.');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('Short line two.');
+    await page.waitForFunction(
+      () => document.getElementById('pe-edit-layer')?.getAttribute('data-updating') === '0',
+    );
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
+    // 전제: 레이아웃 복원은 강제 줄바꿈 뒤 짧은 줄을 다른 문단으로 본다.
+    await expect
+      .poll(
+        async () => (await geo()).paragraphs.filter((p) => p.text.startsWith('Short line')).length,
+      )
+      .toBe(2);
+    const lines = (await geo()).paragraphs.filter((p) => p.text.startsWith('Short line'));
+    const hoverAt = async (x: number, y: number) => {
+      await page.mouse.move(1, 1);
+      await page.mouse.move(x, y, { steps: 3 });
+      const hover = page.locator('#pe-edit-hover');
+      await expect(hover).toBeVisible();
+      return {
+        id: await hover.getAttribute('data-paragraph'),
+        box: (await hover.boundingBox())!,
+      };
+    };
+    const a = await hoverAt(lines[0]!.x, lines[0]!.y);
+    const b = await hoverAt(lines[1]!.x, lines[1]!.y);
+    expect(b.id).toBe(a.id);
+    // 테두리 하나가 두 줄을 모두 덮는다.
+    expect(a.box.y).toBeLessThan(lines[0]!.y);
+    expect(a.box.y + a.box.height).toBeGreaterThan(lines[1]!.y);
+  });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EditSession, type EditSessionView } from '../src/edit-session.js';
 import { WORKER_RECOVERED_ERROR_NAME } from '../src/failure.js';
 import { FakeEditHost, type FakeParagraph } from './fake-edit-host.js';
+import type { Rect } from '@pdf-editor/shared-types';
 
 const PARAGRAPH: FakeParagraph = { id: 3, bbox: [100, 50, 150, 90], text: 'ab cd efgh' };
 
@@ -11,13 +12,18 @@ function recoveredError(): Error {
   return e;
 }
 
-async function start(options: { paragraph?: FakeParagraph; caret?: number | null } = {}): Promise<{
+async function start(
+  options: { paragraph?: FakeParagraph; caret?: number | null; areaLimit?: Rect } = {},
+): Promise<{
   host: FakeEditHost;
   session: EditSession;
   views: EditSessionView[];
   clock: { t: number };
 }> {
-  const host = new FakeEditHost({ paragraphs: [options.paragraph ?? PARAGRAPH] });
+  const host = new FakeEditHost({
+    paragraphs: [options.paragraph ?? PARAGRAPH],
+    ...(options.areaLimit ? { areaLimit: options.areaLimit } : {}),
+  });
   const paragraph = options.paragraph ?? PARAGRAPH;
   const plan = await host.planParagraphEdit(0, paragraph.id);
   const begun = await host.beginParagraphEdit(0, paragraph.id, plan.revision);
@@ -223,22 +229,41 @@ describe('캐럿 이동·포인터', () => {
 });
 
 describe('영역·초과', () => {
-  it('shrink 는 글자 크기 배율을, expand 는 영역 확대를 프레임에 반영한다', async () => {
-    const { session } = await start({
+  it('넘치면 영역 아래 변이 자동으로 내려간다(선택 없음, 사용자 영역은 그대로)', async () => {
+    const { session, host } = await start({
       paragraph: { id: 3, bbox: [100, 50, 150, 70], text: 'ab cd efgh ij kl mn' },
       caret: 19,
     });
-    expect(session.view().shown.reflow.overflow).toBe(true);
-    session.setFormat({ overflow: 'shrink' });
+    const r = session.view().shown.reflow;
+    expect(r.overflow).toBe(false);
+    expect(r.area[3]).toBeGreaterThan(70);
+    expect(r.area[3]).toBeCloseTo(r.contentBox[3], 6);
+    session.typeText(' op');
     await session.settle();
-    expect(session.view().shown.reflow.fontScale).toBeLessThan(1);
-    session.setFormat({ overflow: 'expand' });
+    expect(host.inputs.at(-1)!.format.area).toEqual([100, 50, 150, 70]);
+    expect(host.inputs.at(-1)!.format).not.toHaveProperty('overflow');
+  });
+
+  it('핸들로 영역을 글 높이보다 줄여도 글 높이까지 다시 늘어난다', async () => {
+    const { session } = await start({
+      paragraph: { id: 3, bbox: [100, 50, 150, 70], text: 'ab cd efgh ij kl mn' },
+    });
+    const full = session.view().shown.reflow.area[3];
+    session.setFormat({ area: [100, 50, 150, 58] });
     await session.settle();
     const r = session.view().shown.reflow;
-    expect(r.area[3]).toBeGreaterThan(70);
+    expect(r.area[3]).toBeCloseTo(full, 6);
     expect(r.overflow).toBe(false);
-    session.setFormat({ overflow: 'keep' });
-    await session.settle();
+  });
+
+  it('영역 상한에 막히면 초과 표시와 overflow-clipped 경고가 남는다', async () => {
+    const { session } = await start({
+      paragraph: { id: 3, bbox: [100, 50, 150, 70], text: 'ab cd efgh ij kl mn' },
+      areaLimit: [0, 0, 612, 80],
+    });
+    const r = session.view().shown.reflow;
+    expect(r.overflow).toBe(true);
+    expect(r.area[3]).toBe(80);
     expect(session.view().warnings.map((w) => w.kind)).toContain('overflow-clipped');
   });
 
