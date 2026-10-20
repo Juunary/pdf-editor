@@ -19,6 +19,7 @@ import type {
   DraftUpdate,
   EditHistoryState,
   EditOp,
+  EditPathOp,
   ReplaceParagraphOp,
   EditWarning,
   EditedBlock,
@@ -30,6 +31,8 @@ import type {
   PathDraftUpdate,
   PathEdit,
   PathEditPlan,
+  PathEditability,
+  PathTarget,
   Rect,
   RenderedPage,
   ReflowSummary,
@@ -41,6 +44,7 @@ import type {
   EditBlockRef,
   ParagraphEditContext,
   PreparedEdit,
+  PreparedPathEdit,
 } from './edit-adapter.js';
 import {
   coreWarnings,
@@ -48,12 +52,24 @@ import {
   ensureInfoDictionary,
   inflateRect,
   mergeWarnings,
+  pathCoreWarnings,
+  tagFallbackSubset,
   unionRect,
 } from './edit-util.js';
 import { embedFont, type FallbackFontSource, type FontManager } from '@pdf-editor/pdf-ops';
 
 /** 문서에 임베딩하는 폴백 폰트의 BaseFont 이름(저장 때 서브셋 태그가 붙는다). */
 const FALLBACK_FONT_NAME = 'NotoSansKR';
+
+/** 변경 없음 편집: 갱신 쓰기가 실패했고 직전 편집이 없을 때 원 바이트로 되돌리는 데 쓴다. */
+const IDENTITY_PATH_EDIT: PathEdit = {
+  transform: null,
+  fill: null,
+  stroke: null,
+  lineWidth: null,
+  points: null,
+  delete: false,
+};
 
 /** 변경 영역 렌더에 더하는 여백(pt). 계약 8.3 의 변경 허용 영역 여백과 같다. */
 const REGION_MARGIN_PT = 2;
@@ -98,16 +114,34 @@ function editedBlockOf(op: EditOp): string | null {
   return op.kind === 'replace-paragraph' ? op.target.editedBlock : null;
 }
 
-/** 로그 항목: 커밋된 편집 하나와 그 결과 요약. */
-interface LogEntry {
-  op: EditOp;
+/** 로그 항목: 커밋된 편집 하나와 그 결과. `op.kind` 로 갈린다(docs/m4-contract.md 4.4). */
+interface ParagraphLogEntry {
+  op: ReplaceParagraphOp;
   warnings: EditWarning[];
   summary: ReflowSummary;
   /** 편집 블록에 폴백 폰트 글리프를 실제로 썼다(공백만 폴백이어도, 경고 유무와 별개). 저장 서브셋·font-embed 기준. */
   usesFallback: boolean;
 }
 
-interface Draft {
+/** 패스 편집 항목: 편집 블록·리플로우가 없어 `summary` 도 폴백 폰트 사용도 없다. */
+interface PathLogEntry {
+  op: EditPathOp;
+  warnings: EditWarning[];
+}
+
+type LogEntry = ParagraphLogEntry | PathLogEntry;
+
+function isParagraphEntry(entry: LogEntry): entry is ParagraphLogEntry {
+  return entry.op.kind === 'replace-paragraph';
+}
+
+const usesFallbackOf = (entry: LogEntry): boolean => isParagraphEntry(entry) && entry.usesFallback;
+
+/** 편집이 바꾸는 쪽. 지금은 둘 다 한 쪽이다. undo·redo 의 캐시 무효화·메타 기록이 쓴다. */
+const pagesOf = (op: EditOp): number[] => [op.target.pageIndex];
+
+interface ParagraphDraft {
+  kind: 'paragraph';
   draftId: string;
   pageIndex: number;
   paragraphId: number;
@@ -125,6 +159,29 @@ interface Draft {
   /** 갱신 실패 뒤 직전 상태로 되돌리지 못했다. 취소만 할 수 있다. */
   broken: boolean;
 }
+
+/**
+ * 패스 초안. 쓰기는 항상 원본 바이트 기준 절대 편집이라 갱신은 직전 상태와 무관하게 다시 쓴다.
+ * 시작할 때 `#redo` 를 비우고(MuPDF 가 첫 변경에서 redo 를 버린다) 백업을 둬, 변경 없이 취소하면 되살린다.
+ */
+interface PathDraft {
+  kind: 'path';
+  draftId: string;
+  pageIndex: number;
+  ctx: ParagraphEditContext;
+  plan: Omit<PathEditPlan, 'revision'>;
+  prepared: PreparedPathEdit;
+  opId: string;
+  /** 마지막으로 쓴 편집. 아직 쓰지 않았으면 null(커밋 불가). */
+  edit: PathEdit | null;
+  /** 마지막으로 쓴 뒤의 패스 상자(처음에는 대상 상자). 다음 갱신의 "편집 전" 상자. */
+  bbox: Rect;
+  warnings: EditWarning[];
+  broken: boolean;
+  redoBackup: LogEntry[];
+}
+
+type Draft = ParagraphDraft | PathDraft;
 
 interface Composed {
   summary: ReflowSummary;
@@ -215,7 +272,10 @@ export class EditEngine {
     const t0 = performance.now();
     const ctx = this.#context(pageIndex);
     const fonts = this.#requireFonts();
-    const result = this.#probe(() => this.#adapter.planPageEditability(ctx, fonts));
+    const result = this.#probe(() => ({
+      ...this.#adapter.planPageEditability(ctx, fonts),
+      paths: this.#planPaths(ctx),
+    }));
     return { ...result, revision: this.#revision, ms: performance.now() - t0 };
   }
 
@@ -226,6 +286,19 @@ export class EditEngine {
     const fonts = this.#requireFonts();
     const plan = this.#probe(() => this.#adapter.planParagraphEdit(ctx, fonts, paragraphId));
     return { ...plan, revision: this.#revision };
+  }
+
+  /**
+   * 쪽의 패스 판정 목록(어댑터 결과). pdf-ops 가 "M4 미구현" 이면 빈 목록: 패스 판정이 없어도 문단 판정은 돌아야 한다.
+   * 그 밖의 오류는 그대로 올린다(docs/m4-core.md 5절).
+   */
+  #planPaths(ctx: ParagraphEditContext): PathEditability[] {
+    try {
+      return this.#adapter.planPathEditability(ctx);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('M4 미구현')) return [];
+      throw error;
+    }
   }
 
   /**
@@ -248,7 +321,7 @@ export class EditEngine {
     for (const ref of this.#blocksFor(pageIndex)) {
       const draft = this.#draft;
       if (
-        draft &&
+        draft?.kind === 'paragraph' &&
         draft.pageIndex === pageIndex &&
         draft.prepared.block.objectNumber === ref.objectNumber
       ) {
@@ -262,6 +335,7 @@ export class EditEngine {
       // 재편집은 블록 id 를 그대로 둘 수 있다(op.id 는 새로 만든다). 가장 나중 항목을 쓴다.
       const entry = [...entries]
         .reverse()
+        .filter(isParagraphEntry)
         .find((e) => e.op.id === ref.editId || editedBlockOf(e.op) === ref.editId);
       if (entry) {
         blocks.push({
@@ -305,7 +379,8 @@ export class EditEngine {
     try {
       const prepared = this.#adapter.prepareParagraphEdit(ctx, plan, editId);
       const composed = this.#compose(ctx, plan, prepared, paragraphId, plan.runs, plan.format);
-      const draft: Draft = {
+      const draft: ParagraphDraft = {
+        kind: 'paragraph',
         draftId: this.#newId(),
         pageIndex,
         paragraphId,
@@ -353,7 +428,7 @@ export class EditEngine {
 
   async updateParagraphDraft(draftId: string, input: DraftInput): Promise<DraftUpdate> {
     this.#assertUsable();
-    const draft = this.#requireDraft(draftId);
+    const draft = this.#requireParagraphDraft(draftId);
     if (!(input.renderScale > 0)) throw new RangeError('renderScale 은 0 보다 커야 함');
     if (draft.broken) throw new EditStateError('초안이 손상되어 갱신할 수 없습니다. 취소하세요.');
     const t0 = performance.now();
@@ -405,7 +480,7 @@ export class EditEngine {
 
   async commitParagraphEdit(draftId: string): Promise<CommitResult> {
     this.#assertUsable();
-    const draft = this.#requireDraft(draftId);
+    const draft = this.#requireParagraphDraft(draftId);
     if (draft.broken) throw new EditStateError('초안이 손상되어 커밋할 수 없습니다. 취소하세요.');
     const op: ReplaceParagraphOp = {
       kind: 'replace-paragraph',
@@ -414,7 +489,7 @@ export class EditEngine {
       runs: draft.runs,
       format: draft.format,
     };
-    const entry: LogEntry = {
+    const entry: ParagraphLogEntry = {
       op,
       warnings: draft.warnings,
       summary: draft.summary,
@@ -438,12 +513,15 @@ export class EditEngine {
     return { op, history: this.#history() };
   }
 
-  // ---- M4 패스 편집(docs/m4-contract.md 4.4). 연결용 스텁 ----
+  // ---- M4 패스 편집(docs/m4-contract.md 4.4) ----
 
+  /** 선택한 패스의 편집 계획. 문서를 바꾸지 않는다(저널이 켜졌으면 버리는 작업으로 감싼다). */
   async planPathEdit(pageIndex: number, paintSeqs: number[]): Promise<PathEditPlan> {
-    void pageIndex;
-    void paintSeqs;
-    throw new Error('M4 미구현: core.planPathEdit');
+    this.#assertUsable();
+    this.#requireNoDraft('planPathEdit');
+    const ctx = this.#context(pageIndex);
+    const plan = this.#probe(() => this.#adapter.planPathEdit(ctx, paintSeqs));
+    return { ...plan, revision: this.#revision };
   }
 
   async beginPathEdit(
@@ -451,36 +529,140 @@ export class EditEngine {
     paintSeqs: number[],
     revision: number,
   ): Promise<BeginPathEditResult> {
-    void pageIndex;
-    void paintSeqs;
-    void revision;
-    throw new Error('M4 미구현: core.beginPathEdit');
+    // 첫 편집 계열 호출이 패스여도 폴백 폰트를 저널을 켜기 전에 임베딩해야 이후 문단 편집이 쓸 수 있다.
+    await this.#prepareEdit();
+    this.#requireNoDraft('beginPathEdit');
+    if (revision !== this.#revision) throw new StaleRevisionError(revision, this.#revision);
+    const doc = this.#doc;
+    const ctx = this.#context(pageIndex);
+    const plan = this.#probe(() => this.#adapter.planPathEdit(ctx, paintSeqs));
+    if (!plan.editable) {
+      const reasons = plan.limits.map((l) => l.reason).join(', ');
+      throw new EditStateError(`편집할 수 없는 패스입니다: ${reasons || '사유 없음'}`);
+    }
+    const editId = this.#newId();
+    const redoBackup = this.#redo;
+    doc.beginOperation('path-edit');
+    try {
+      const prepared = this.#adapter.preparePathEdit(ctx, plan, editId);
+      const draft: PathDraft = {
+        kind: 'path',
+        draftId: this.#newId(),
+        pageIndex,
+        ctx,
+        plan,
+        prepared,
+        opId: this.#uniqueOpId(prepared.editId, editId),
+        edit: null,
+        bbox: plan.target.bbox,
+        warnings: [...plan.warnings],
+        broken: false,
+        redoBackup,
+      };
+      this.#host.invalidateAround(pageIndex);
+      this.#draft = draft;
+      // 준비·첫 쓰기가 문서를 바꾸면 MuPDF 가 redo 단계를 버린다. 변경 없이 취소하면 되살린다(`#cancelPath`).
+      this.#redo = [];
+      return { draftId: draft.draftId, plan: { ...plan, revision: this.#revision } };
+    } catch (error) {
+      this.#rollback(pageIndex);
+      throw error;
+    }
   }
 
+  /**
+   * 편집 내용을 스트림에 다시 쓰고(작업 안, 원본 기준 절대 편집이라 반복 호출 가능) 변경 영역(직전 쓴 상자 ∪ 새 상자)을
+   * 렌더한다. 첫 갱신의 직전 상자는 대상 상자다.
+   */
   async updatePathDraft(
     draftId: string,
     edit: PathEdit,
     renderScale: number,
   ): Promise<PathDraftUpdate> {
-    void draftId;
-    void edit;
-    void renderScale;
-    throw new Error('M4 미구현: core.updatePathDraft');
+    this.#assertUsable();
+    const draft = this.#requirePathDraft(draftId);
+    if (!(renderScale > 0)) throw new RangeError('renderScale 은 0 보다 커야 함');
+    if (draft.broken) throw new EditStateError('초안이 손상되어 갱신할 수 없습니다. 취소하세요.');
+    const t0 = performance.now();
+    const previous = draft.bbox;
+    let written: ReturnType<EditAdapter['writePathEdit']>;
+    try {
+      written = this.#adapter.writePathEdit(draft.ctx, draft.prepared, edit);
+    } catch (error) {
+      // 쓰기가 중간에 실패했으면 스트림이 새 내용과 옛 내용 사이에 있을 수 있다. 직전 편집(없으면 변경 없음 상태)을
+      // 다시 써 되돌리고, 그것도 실패하면 이 초안은 취소만 허용한다(커밋하면 로그와 문서가 달라진다).
+      try {
+        if (draft.edit) this.#adapter.writePathEdit(draft.ctx, draft.prepared, draft.edit);
+        else this.#adapter.writePathEdit(draft.ctx, draft.prepared, IDENTITY_PATH_EDIT);
+      } catch {
+        draft.broken = true;
+      }
+      this.#host.invalidateAround(draft.pageIndex);
+      throw error;
+    }
+    draft.edit = edit;
+    draft.bbox = written.bbox;
+    draft.warnings = mergeWarnings(
+      draft.plan.warnings,
+      written.warnings ?? [],
+      pathCoreWarnings(draft.plan, edit, draft.ctx.layout),
+    );
+    this.#host.invalidateAround(draft.pageIndex);
+    const clip = inflateRect(unionRect(previous, written.bbox), REGION_MARGIN_PT);
+    const region = this.#host.renderRegion(draft.pageIndex, renderScale, clip);
+    return {
+      draftId,
+      target: draft.prepared.target,
+      bbox: written.bbox,
+      warnings: draft.warnings,
+      region,
+      updateMs: performance.now() - t0,
+    };
   }
 
   async commitPathEdit(draftId: string): Promise<CommitResult> {
-    void draftId;
-    throw new Error('M4 미구현: core.commitPathEdit');
+    this.#assertUsable();
+    const draft = this.#requirePathDraft(draftId);
+    if (draft.broken) throw new EditStateError('초안이 손상되어 커밋할 수 없습니다. 취소하세요.');
+    if (!draft.edit) {
+      throw new EditStateError('적용된 변경이 없어 커밋할 수 없습니다. 취소하세요.');
+    }
+    const op: EditPathOp = {
+      kind: 'edit-path',
+      id: draft.opId,
+      target: draft.prepared.target,
+      edit: draft.edit,
+    };
+    const entry: PathLogEntry = { op, warnings: draft.warnings };
+    this.#writeMetadata([...this.#active(), entry]);
+    this.#doc.endOperation();
+    this.#draft = null;
+    if (this.#doc.getJournal().position !== this.#undo.length + 1) {
+      this.#failure = '커밋한 편집이 저널에 기록되지 않음';
+      throw new EditStateError(`${this.#failure}. 문서를 다시 열어야 합니다.`);
+    }
+    this.#undo.push(entry);
+    this.#redo = [];
+    this.#edited = true;
+    this.#revision++;
+    this.#touched(pagesOf(op));
+    return { op, history: this.#history() };
   }
 
   async cancelPathEdit(draftId: string): Promise<EditHistoryState> {
-    void draftId;
-    throw new Error('M4 미구현: core.cancelPathEdit');
+    this.#assertUsable();
+    const draft = this.#requirePathDraft(draftId);
+    this.#draft = null;
+    this.#abandonOrFail();
+    // 작업을 버린 뒤에도 MuPDF 에 redo 가 남아 있으면(문서를 바꾸지 않았으면) core 의 redo 도 되살린다.
+    this.#redo = this.#doc.canRedo() ? draft.redoBackup : [];
+    this.#touched([draft.pageIndex]);
+    return this.#history();
   }
 
   async cancelParagraphEdit(draftId: string): Promise<EditHistoryState> {
     this.#assertUsable();
-    const draft = this.#requireDraft(draftId);
+    const draft = this.#requireParagraphDraft(draftId);
     this.#draft = null;
     this.#abandonOrFail();
     this.#reconcileRedo();
@@ -504,7 +686,7 @@ export class EditEngine {
     }
     this.#redo.push(entry);
     this.#revision++;
-    this.#touched([entry.op.target.pageIndex]);
+    this.#touched(pagesOf(entry.op));
     return this.#history();
   }
 
@@ -522,7 +704,7 @@ export class EditEngine {
     }
     this.#undo.push(entry);
     this.#revision++;
-    this.#touched([entry.op.target.pageIndex]);
+    this.#touched(pagesOf(entry.op));
     return this.#history();
   }
 
@@ -559,7 +741,7 @@ export class EditEngine {
         const reason = error instanceof Error ? error.message : String(error);
         throw new EditStateError(`${this.#failure}: ${reason}`);
       }
-      pages.add(op.target.pageIndex);
+      for (const page of pagesOf(op)) pages.add(page);
     }
     if (this.#base.length > 0) {
       try {
@@ -578,8 +760,9 @@ export class EditEngine {
   }
 
   #replayOne(fonts: FontManager, op: EditOp): void {
-    if (op.kind !== 'replace-paragraph') {
-      throw new EditStateError('M4 미구현: core.replayEdits(edit-path)');
+    if (op.kind === 'edit-path') {
+      this.#replayPath(op);
+      return;
     }
     const pageIndex = op.target.pageIndex;
     const ctx = this.#context(pageIndex);
@@ -600,6 +783,35 @@ export class EditEngine {
     this.#touched([pageIndex], false);
   }
 
+  /**
+   * 패스 편집 재적용(계약 4.4): 대상은 `paintSeq` 로 찾고 지문(칠하기 연산 이름·구성 연산 수·상자·구성 연산 해시)이 맞아야
+   * 한다. 안 맞으면 다른 패스를 고치지 않고 실패한다. paintSeq 는 적용 시점 모델 기준이라 로그 순서대로 적용할 때만 유효하다.
+   */
+  #replayPath(op: EditPathOp): void {
+    const pageIndex = op.target.pageIndex;
+    const ctx = this.#context(pageIndex);
+    const plan = this.#adapter.planPathEdit(ctx, op.target.paintSeqs);
+    const mismatch = fingerprintMismatch(op.target, plan.target);
+    if (mismatch) {
+      throw new EditStateError(`재적용 대상 패스가 다름(${pageIndex + 1}쪽): ${mismatch}`);
+    }
+    if (!plan.editable) {
+      const reasons = plan.limits.map((l) => l.reason).join(', ');
+      throw new EditStateError(`편집할 수 없는 패스입니다: ${reasons || '사유 없음'}`);
+    }
+    const prepared = this.#adapter.preparePathEdit(ctx, plan, op.id);
+    const written = this.#adapter.writePathEdit(ctx, prepared, op.edit);
+    this.#base.push({
+      op,
+      warnings: mergeWarnings(
+        plan.warnings,
+        written.warnings ?? [],
+        pathCoreWarnings(plan, op.edit, ctx.layout),
+      ),
+    });
+    this.#touched([pageIndex], false);
+  }
+
   // ---- 저장(D9) ----
 
   /** 활성 편집이 있으면 저장 전 요약(5.8), 없으면 null. */
@@ -607,7 +819,7 @@ export class EditEngine {
     const entries = this.#active();
     if (entries.length === 0) return null;
     return {
-      pages: [...new Set(entries.map((e) => e.op.target.pageIndex))].sort((a, b) => a - b),
+      pages: [...new Set(entries.flatMap((e) => pagesOf(e.op)))].sort((a, b) => a - b),
       structureUnlinked: this.#unlinkedBlocks(entries),
       pdfaDeclared: (this.#pdfa ??= declaresPdfA(this.#doc)),
     };
@@ -620,9 +832,7 @@ export class EditEngine {
   changeKinds(): ChangeKind[] {
     const entries = this.#active();
     if (entries.length === 0) return [];
-    return entries.some((e) => e.usesFallback)
-      ? ['content-stream', 'font-embed']
-      : ['content-stream'];
+    return entries.some(usesFallbackOf) ? ['content-stream', 'font-embed'] : ['content-stream'];
   }
 
   /**
@@ -640,7 +850,7 @@ export class EditEngine {
     this.#requireNoDraft('save');
     if (!this.#journalOn) return fn();
     const doc = this.#doc;
-    const usesFallback = this.#active().some((e) => e.usesFallback);
+    const usesFallback = this.#active().some(usesFallbackOf);
     doc.beginOperation('save');
     let result: T;
     try {
@@ -729,6 +939,22 @@ export class EditEngine {
     const draft = this.#draft;
     if (!draft || draft.draftId !== draftId) {
       throw new EditStateError(`열린 초안이 아닙니다: ${draftId}`);
+    }
+    return draft;
+  }
+
+  #requireParagraphDraft(draftId: string): ParagraphDraft {
+    const draft = this.#requireDraft(draftId);
+    if (draft.kind !== 'paragraph') {
+      throw new EditStateError(`패스 초안입니다(문단 RPC 로 다룰 수 없음): ${draftId}`);
+    }
+    return draft;
+  }
+
+  #requirePathDraft(draftId: string): PathDraft {
+    const draft = this.#requireDraft(draftId);
+    if (draft.kind !== 'path') {
+      throw new EditStateError(`문단 초안입니다(패스 RPC 로 다룰 수 없음): ${draftId}`);
     }
     return draft;
   }
@@ -860,8 +1086,10 @@ export class EditEngine {
 
   /** 구조 연결이 끊긴 편집 문단 수: 같은 블록을 다시 편집한 항목은 마지막 하나만 센다(계약 5.8). */
   #unlinkedBlocks(entries: LogEntry[]): number {
-    const byId = new Map(entries.map((e) => [e.op.id, e]));
-    const rootOf = (e: LogEntry): string => {
+    // 문단 편집은 블록 연쇄의 마지막 항목만, 패스 편집(Form 복제로 /StructParents 를 지움)은 항목마다 센다.
+    const paragraphs = entries.filter(isParagraphEntry);
+    const byId = new Map(paragraphs.map((e) => [e.op.id, e]));
+    const rootOf = (e: ParagraphLogEntry): string => {
       let cur = e;
       const seen = new Set<string>();
       for (
@@ -877,8 +1105,12 @@ export class EditEngine {
       return cur.op.id;
     };
     const latest = new Map<string, LogEntry>();
-    for (const e of entries) latest.set(rootOf(e), e);
-    return [...latest.values()].filter((e) => hasWarning(e, 'tagged-structure-unlinked')).length;
+    for (const e of paragraphs) latest.set(rootOf(e), e);
+    return (
+      [...latest.values()].filter((e) => hasWarning(e, 'tagged-structure-unlinked')).length +
+      entries.filter((e) => !isParagraphEntry(e) && hasWarning(e, 'tagged-structure-unlinked'))
+        .length
+    );
   }
 
   /**
@@ -892,7 +1124,7 @@ export class EditEngine {
   /** 활성 편집(재적용 포함)으로 Info `/PdfEditorEdits` 를 기록한다(계약 5.6). 열린 작업 안이나 저널이 꺼진 때 부른다. */
   #writeMetadata(entries: LogEntry[]): void {
     this.#adapter.recordEditMetadata(this.#doc, {
-      pages: [...new Set(entries.map((e) => e.op.target.pageIndex))].sort((a, b) => a - b),
+      pages: [...new Set(entries.flatMap((e) => pagesOf(e.op)))].sort((a, b) => a - b),
       structureNotUpdated: entries.some(
         (e) => hasWarning(e, 'tagged-structure-kept') || hasWarning(e, 'tagged-structure-unlinked'),
       ),
@@ -957,12 +1189,40 @@ function hasWarning(entry: LogEntry, kind: EditWarning['kind']): boolean {
   return entry.warnings.some((w) => w.kind === kind);
 }
 
+/** 지문 상자 비교 허용 오차(S1 이 1e-3 pt 로 반올림해 채운다). */
+const FINGERPRINT_BOX_TOLERANCE = 2e-3;
+
+/** 로그의 패스 대상과 지금 계획의 대상이 다른 점(없으면 null). paintSeq 는 계획이 로그 값으로 찾은 것이라 지문만 비교한다. */
+export function fingerprintMismatch(logged: PathTarget, current: PathTarget): string | null {
+  if (logged.fingerprints.length !== current.fingerprints.length) {
+    return `칠하기 연산 수 ${logged.fingerprints.length} → ${current.fingerprints.length}`;
+  }
+  for (const [k, want] of logged.fingerprints.entries()) {
+    const got = current.fingerprints[k]!;
+    if (want.paintOp !== got.paintOp)
+      return `${k + 1}번째 칠하기 연산 ${want.paintOp} → ${got.paintOp}`;
+    if (want.constructOpCount !== got.constructOpCount) {
+      return `${k + 1}번째 구성 연산 수 ${want.constructOpCount} → ${got.constructOpCount}`;
+    }
+    if (want.constructHash !== got.constructHash) return `${k + 1}번째 구성 연산 해시 불일치`;
+    if (want.bbox.some((v, i) => Math.abs(v - got.bbox[i]!) > FINGERPRINT_BOX_TOLERANCE)) {
+      return `${k + 1}번째 패스 상자 불일치`;
+    }
+  }
+  return null;
+}
+
+const sortedEqual = (a: number[], b: number[]): boolean =>
+  a.length === b.length &&
+  [...a].sort((x, y) => x - y).every((v, i) => v === [...b].sort((x, y) => x - y)[i]);
+
 /**
  * 로그의 대상 글리프 목록(glyphSeq)과 같은 문단을 현재 쪽 레이아웃에서 찾는다. 재적용은 같은 순서로 하므로
  * 적용 시점의 PageModel 이 같고 글리프 목록이 일치해야 한다(계약 `ParagraphTarget`).
  */
 export function findParagraphId(ctx: ParagraphEditContext, target: ParagraphTarget): number {
   const wanted = target.glyphSeqs;
+  if (target.cell && wanted.length > 0) return findCellParagraphId(ctx, target, target.cell);
   if (wanted.length > 0) {
     for (const paragraph of ctx.layout.paragraphs) {
       if (paragraph.chars.length !== wanted.length) continue;
@@ -973,5 +1233,40 @@ export function findParagraphId(ctx: ParagraphEditContext, target: ParagraphTarg
   }
   throw new EditStateError(
     `재적용 대상 문단을 찾지 못함(${ctx.pageIndex + 1}쪽, 글리프 ${wanted.length}개)`,
+  );
+}
+
+/**
+ * 셀 대상(D1): `glyphSeqs[0]` 을 가진 문단이 속한 표 셀로 넓힌 뒤, 셀 문단 글리프 전체가 로그의 `glyphSeqs` 와 같고 셀
+ * 위치(표·행·열)가 같을 때만 그 문단 id 를 돌려준다. 순서는 따지지 않는다(셀 안 문단 순서는 pdf-ops 시작 상태 규칙이
+ * 정하고, 재적용은 로그의 runs 를 쓰므로 집합 일치가 결정성에 충분하다).
+ */
+function findCellParagraphId(
+  ctx: ParagraphEditContext,
+  target: ParagraphTarget,
+  cell: NonNullable<ParagraphTarget['cell']>,
+): number {
+  const wanted = target.glyphSeqs;
+  const seqOf = (ci: number): number => ctx.model.chars[ci]?.glyphSeq ?? -1;
+  const owner = ctx.layout.paragraphs.find((p) => p.chars.some((ci) => seqOf(ci) === wanted[0]));
+  const table =
+    owner && owner.table !== null ? ctx.layout.tables.find((t) => t.id === owner.table) : null;
+  const found = table?.cells.find((c) => owner && c.paragraphs.includes(owner.id));
+  if (
+    owner &&
+    table &&
+    found &&
+    table.id === cell.table &&
+    found.row === cell.row &&
+    found.col === cell.col
+  ) {
+    const seqs = found.paragraphs.flatMap((id) => {
+      const paragraph = ctx.layout.paragraphs.find((p) => p.id === id);
+      return paragraph ? paragraph.chars.map(seqOf) : [];
+    });
+    if (sortedEqual(seqs, wanted)) return owner.id;
+  }
+  throw new EditStateError(
+    `재적용 대상 셀을 찾지 못함(${ctx.pageIndex + 1}쪽, 표 ${cell.table} ${cell.row}행 ${cell.col}열, 글리프 ${wanted.length}개)`,
   );
 }
