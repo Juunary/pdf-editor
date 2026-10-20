@@ -163,7 +163,7 @@ EDIT_CORPUS_DIR=<코퍼스> NODE_OPTIONS=--max-old-space-size=12288 pnpm --filte
 
 | # | 내용 | 처리 |
 | --- | --- | --- |
-| 1 | 레이아웃 오버레이(M2 진단)·텍스트 층 읽기 순서·복사 순서는 레이아웃 복원 결과를 그대로 쓴다. 갈라진 블록의 줄이 다른 문단·단으로 잡히면 복사 순서가 어긋날 수 있다(jnl-jdis #6 의 가로로 갈라진 줄) | 후속: layout-recon 에 편집 블록 묶음 힌트(같은 블록 글자는 한 문단, 다른 출처와 섞지 않음)를 넣을지 메인 세션 결정 |
+| 1 | 레이아웃 오버레이(M2 진단)·텍스트 층 읽기 순서·복사 순서는 레이아웃 복원 결과를 그대로 쓴다. 갈라진 블록의 줄이 다른 문단·단으로 잡히면 복사 순서가 어긋날 수 있다(jnl-jdis #6 의 가로로 갈라진 줄) | 처리함(9.6): layout-recon `fixedGroups` 힌트로 블록 하나 = 레이아웃 문단 하나 |
 | 2 | 넓힌 영역의 줄이 이웃 문단과 한 레이아웃 문단이 되면 그 이웃 문단 글자는 따로 편집할 수 없다(더블클릭 대상이 블록). 겹침은 계약대로 `area-overlaps-content` 경고만 한다 | 사용자 확인 질문 9.4 #1 |
 
 ### 9.2 사양 변경(2026-10-20 사용자 결정)
@@ -213,3 +213,49 @@ EDIT_CORPUS_DIR=<코퍼스> NODE_OPTIONS=--max-old-space-size=12288 pnpm --filte
 - `docs/m3-reflow.md` 2.6·요약 표의 `fontScale`·벤치 표, `docs/m3-core.md`·`docs/m3-pdf-ops.md` 의 overflow·fontScale 언급.
 - 5.1 판정 목록이 편집 블록을 한 항목으로 합친다는 규칙(9.1)을 계약 D3 또는 5.1 에 추가.
 - 반영: PLAN.md v2.12 1.3·상태·변경 이력, 계약 수정 5(1.1·4절·5.1·5.4·5.9·변경 이력), `docs/m3-reflow.md`·`docs/m3-core.md`·`docs/m3-pdf-ops.md` 머리말에 대체 안내.
+
+### 9.6 레이아웃 오버레이(사용자 답변 2026-10-20)
+
+사용자 답변: B1 에서 본 갈라짐은 레이아웃 오버레이(도구 막대 "레이아웃")를 켠 상태였다. 9.1 수정은 마우스 오버 테두리(`getPageEditability`)만 고쳤으므로 오버레이·읽기 순서·복사 순서는 그대로 갈라져 있었다.
+
+원인
+
+- 오버레이는 `getPageLayout`(core) → `reconstructPage`(layout-recon) 결과를 그대로 그린다(`LayoutLayer.tsx`). 레이아웃 복원은 편집 블록을 모르므로 블록 줄을 M2 규칙(`pitch`·`sentence-end`·`short-justified`, 양쪽 정렬 줄의 단어 간격에서 가로 분리)으로 다시 나누거나 이웃 문단 줄과 합친다(9.1 원인과 같다).
+
+수정
+
+| 파일 | 내용 |
+| --- | --- |
+| `packages/layout-recon/src/reconstruct.ts` | `ReconOptions.fixedGroups?: number[][]`(PageModel 줄 번호 묶음). 묶음마다 흐름 문단 정확히 하나: 묶음 줄은 표·도형 라벨·머리·꼬리·영역 쌓기·문단 나누기에서 빼고, 같은 행 조각은 간격과 무관하게 이어(`buildUnits` joinRow) 줄은 위→아래. 문단은 묶음 상자 합으로 XY-cut 에 들어가 첫 줄 자리의 읽기 순서·열을 받고, 묶음 상자는 영역 쌓기 장애물이라 블록 위·아래 이웃 줄이 블록을 건너 이어지지 않는다. 역할은 다른 흐름 문단과 같은 규칙(`flowRole`), bbox·chars·styleRuns·lineHeight·align 은 `buildParagraph`. 보이지 않는 줄·가로가 아닌 줄·범위 밖 번호는 무시하고, 여러 묶음에 든 줄은 앞 묶음이 갖는다. 힌트가 없거나 빈 배열이면 M2 결과와 같다(순수 함수 유지) |
+| `packages/pdf-ops/src/paragraph-edit.ts` | `editBlockLineGroups(model, map, linkage, blocks)`: 글자의 원본 연산(`linkage.charOp` → `SourceOp.formPath`)에 블록 Form 객체 번호가 있으면 그 블록 글자(analyzeBlock 과 같은 규칙). 줄 단위 배정: 보이는 글자의 과반(절반 초과)이 속한 블록, 과반이 없으면 묶음에 넣지 않는다(보통 복원) |
+| `packages/pdf-ops/src/edit-block.ts` | `listEditBlocks` 가 먼저 리소스 사전(쪽·Form /XObject, 재귀)에서 /PdfEditorEdit Form 을 찾고, 없으면 콘텐츠를 파싱하지 않는다. 코퍼스 72쪽 합계 147 ms → 3.7 ms(쪽당 최대 40 ms → 0.4 ms) |
+| `packages/core/src/session.ts`·`edit-engine.ts` | `getPageLayout` 이 `fixedGroups` 를 넘긴다. 블록 목록은 편집 엔진 캐시(`EditEngine.editBlocks`, 초안 시작·커밋·undo·redo 때 갱신), 블록이 없는 쪽은 원본 연결을 만들지 않는다. 힌트는 레이아웃 캐시와 같이 비워져(`invalidateAround`) 다시 계산된다. 저장 → 재열기 뒤에도 /PdfEditorEdit 로 찾는다 |
+
+`planPageEditability` 의 블록당 한 항목 규칙(9.1)은 그대로 둔다. 레이아웃 문단이 블록당 하나가 되어 항목 id 는 그 문단 id 와 같다.
+
+시험
+
+| 패키지 | 시험 |
+| --- | --- |
+| layout-recon `reconstruct.test.ts` "fixedGroups" 7건 | 강제 줄바꿈·짧은 줄·같은 행 두 조각이 문단 하나(줄 위→아래, 줄 순서 무관), 이웃 문단과 합쳐지던 줄이 떨어짐, 겹친 이웃, 두 단에서 열·읽기 순서, 잘못된 번호·빈 묶음·겹친 묶음, 빈 힌트 = M2 결과. 모두 `validateLayout` 통과 |
+| pdf-ops `edit-block-lines.test.ts` 2건 | 블록 순서·Form 안 블록·블록 밖 줄 제외, 과반 규칙(공백 제외·반반은 제외·연결 실패 글자는 블록 밖) |
+| core `edit-real.test.ts` | B1 2건 갱신(레이아웃 문단 하나·이웃 문단 따로), "9.6 레이아웃" 1건(두 단 쪽, 강제 줄바꿈 + 긴 글 → 레이아웃 문단 하나·같은 열·이웃 문단 그대로, undo 원 문단·redo 다시 하나, 저장 → 재열기 뒤 하나). 힌트를 끈 코드에서 3건 모두 실패 확인 |
+| e2e `edit-integration.spec.ts` "B1·9.6" | 실제 확장: 두 줄로 고쳐 Esc 커밋 → `getPageLayout` 에 블록 문단 하나("Short line one. Short line two."), 문단 수 = 편집 전, 두 줄 마우스 오버 테두리 같은 항목, 레이아웃 오버레이 켬 → `#pe-layout-canvas` `data-paragraphs` = 편집 전 문단 수 |
+
+코퍼스 점검(24개 파일 첫 쪽, 60자 넘는 본문 문단 최대 5개씩, 원문 + " Added short sentence.⏎Hard break line." 커밋, 41건)
+
+| | 블록이 레이아웃 문단 여럿 | 이웃 줄과 한 문단 | `validateLayout` 위반 |
+| --- | --- | --- | --- |
+| 힌트 없음(수정 전) | 33 | 16 | 0 |
+| 힌트 있음 | 0 | 0 | 0 |
+
+M2 정확도 하네스(`layout-accuracy.test.ts`, dev 30쪽)는 `reconstructPage` 를 힌트 없이 부르므로 영향이 없다: 문단 F1 0.8998, P 0.877, R 0.923(docs/m2-accuracy.md 기록과 같음).
+
+남은 제한
+
+| # | 내용 |
+| --- | --- |
+| 1 | 줄 배정은 줄 단위다. MuPDF 가 블록 글자와 다른 글자를 한 줄로 묶고 과반이 블록이면 그 다른 글자도 블록 문단에, 과반이 아니면 블록 글자가 보통 복원으로 간다(코퍼스 점검에서는 없음) |
+| 2 | 블록 문단 역할은 흐름 문단 규칙이다. 원 문단이 머리·꼬리·표 셀·도형 라벨이었어도 편집 뒤에는 흐름 문단(heading·body 등)이다 |
+| 3 | 넓힌 영역이 이웃 문단과 겹치면 두 문단 상자가 겹쳐 그려진다(문단은 따로). 겹침 자체는 9.4 #2 결정대로 경고만 |
+
