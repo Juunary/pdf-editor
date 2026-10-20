@@ -2,6 +2,7 @@
  * 벡터 패스 편집의 순수 기하(M4 계약 4.5, D2): 패스 평탄화·맞음 판정·점 번호·상자 핸들 변환.
  * DOM 에 의존하지 않는다. 좌표는 페이지 공간(pt, y 아래)이다.
  */
+import type { HandleName } from './edit-geometry.js';
 import type {
   Matrix,
   PathEditability,
@@ -10,8 +11,6 @@ import type {
   Point,
   Rect,
 } from '@pdf-editor/shared-types';
-
-export type HandleName = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
 export const HANDLE_NAMES: readonly HandleName[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 

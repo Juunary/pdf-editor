@@ -1,6 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { RefObject } from 'preact';
 import type { Matrix, PageModel, PathEditPlan, Point, Rect } from '@pdf-editor/shared-types';
+import type { HandleName } from '../edit-geometry.js';
 import type { PageView, ViewerController } from '../controller.js';
 import { hexToRgb, pickerValue } from '../path-colors.js';
 import { emptyPathEdit, type PathState } from '../path-controller.js';
@@ -13,7 +14,6 @@ import {
   transformRect,
   translateBox,
   unionRect,
-  type HandleName,
   type PathCandidate,
   type PathPoint,
 } from '../path-geometry.js';

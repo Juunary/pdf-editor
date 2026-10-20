@@ -15,6 +15,7 @@ import type {
 import { offsetAtPagePoint } from './edit-geometry.js';
 import { limitLabel, TAGGED_BLOCKED_LABEL } from './edit-labels.js';
 import type { EditLog } from './edit-log.js';
+import type { InputBufferPort } from './input-buffer.js';
 import { EditSession, isWorkerRecovered, type EditSessionView } from './edit-session.js';
 import { classifyFailure } from './failure.js';
 import {
@@ -130,6 +131,8 @@ export class EditController {
   private ending: Promise<boolean> | null = null;
   /** 벡터 패스 편집(M4). 호스트가 패스 RPC 를 주지 않으면 null. */
   readonly paths: PathController | null;
+  /** 편집기가 열리기 전 입력을 모으는 버퍼(DOM 구현은 마운트가 주입한다). */
+  private buffer: InputBufferPort | null = null;
 
   constructor(private readonly ctx: EditContext) {
     const p = ctx.paths;
@@ -145,6 +148,11 @@ export class EditController {
           patchPath: (partial) => ctx.patch({ path: { ...ctx.getState().path, ...partial } }),
         } satisfies PathContext)
       : null;
+  }
+
+  setInputBuffer(buffer: InputBufferPort | null): void {
+    this.buffer?.close();
+    this.buffer = buffer;
   }
 
   get active(): boolean {
@@ -255,6 +263,9 @@ export class EditController {
     if (this.session || state.starting || state.busy || this.paths?.active) return;
     this.paths?.clear();
     this.ctx.patch({ starting: true, popover: null, notice: null });
+    // 편집기가 열리는 동안(plan → begin) 친 글자를 모은다. 열리면 넣고, 열리지 못하면 버린다.
+    this.buffer?.open();
+    let started = false;
     try {
       let plan = await this.ctx.rpc.planParagraphEdit(pageIndex, paragraphId);
       if (!plan.editable) {
@@ -312,6 +323,12 @@ export class EditController {
       );
       this.ctx.patch({ session: this.session.view() });
       this.session.start();
+      started = true;
+      const buffered = this.buffer?.take() ?? '';
+      if (buffered !== '') {
+        this.session.typeText(buffered);
+        this.ctx.logEvent('edit-input-buffered', { length: buffered.length });
+      }
       this.ctx.logEvent('edit-begin', {
         pageIndex,
         paragraphId,
@@ -321,6 +338,7 @@ export class EditController {
     } catch (e) {
       this.handleFailure(e, '편집을 시작하지 못했습니다');
     } finally {
+      if (!started) this.buffer?.close();
       this.ctx.patch({ starting: false });
     }
   }
