@@ -270,9 +270,38 @@ export class EditEngine {
     return this.#doc.getJournal();
   }
 
+  /**
+   * 문서를 닫을 때(세션 close). pdf-ops 초안 상태와 FontManager(원본 폰트 탐침·폴백 `mupdf.Font`)를 해제한다(R-L3).
+   * 여러 번 불러도 된다.
+   */
   dispose(): void {
+    if (this.#disposed) return;
     this.#disposed = true;
     this.#draft = null;
+    this.#releaseDraftState();
+    this.#disposeFonts();
+  }
+
+  /**
+   * pdf-ops 초안 상태(WriteContext·패스 준비 상태)를 버린다. 문서당 초안은 하나라 초안이 끝날 때(커밋·취소·실패 정리)와
+   * 재적용 뒤에 이 문서의 상태 전부를 버린다. 정리 실패는 편집 결과에 영향이 없어 삼킨다.
+   */
+  #releaseDraftState(): void {
+    try {
+      this.#adapter.releaseEdit(this.#doc);
+    } catch {
+      // 참조만 끊는 정리라 실패해도 다음 동작에 영향이 없다.
+    }
+  }
+
+  #disposeFonts(): void {
+    const fonts = this.#fonts;
+    this.#fonts = null;
+    try {
+      fonts?.dispose();
+    } catch {
+      // 해제 실패는 무시한다(이미 해제됨 등).
+    }
   }
 
   // ---- 판정(문서를 바꾸지 않는다) ----
@@ -503,6 +532,7 @@ export class EditEngine {
     this.#writeMetadata([...this.#active(), entry]);
     this.#doc.endOperation();
     this.#draft = null;
+    this.#releaseDraftState();
     // 작업이 닫혔는데 저널 단계가 늘지 않았으면(닫기 실패 뒤 다시 닫음 등) 로그와 저널이 어긋난 것이다.
     if (this.#doc.getJournal().position !== this.#undo.length + 1) {
       this.#failure = '커밋한 편집이 저널에 기록되지 않음';
@@ -636,6 +666,7 @@ export class EditEngine {
     this.#writeMetadata([...this.#active(), entry]);
     this.#doc.endOperation();
     this.#draft = null;
+    this.#releaseDraftState();
     if (this.#doc.getJournal().position !== this.#undo.length + 1) {
       this.#failure = '커밋한 편집이 저널에 기록되지 않음';
       throw new EditStateError(`${this.#failure}. 문서를 다시 열어야 합니다.`);
@@ -652,6 +683,7 @@ export class EditEngine {
     this.#assertUsable();
     const draft = this.#requirePathDraft(draftId);
     this.#draft = null;
+    this.#releaseDraftState();
     this.#abandonOrFail();
     // 작업을 버린 뒤에도 MuPDF 에 redo 가 남아 있으면(문서를 바꾸지 않았으면) core 의 redo 도 되살린다.
     this.#redo = this.#doc.canRedo() ? draft.redoBackup : [];
@@ -663,6 +695,7 @@ export class EditEngine {
     this.#assertUsable();
     const draft = this.#requireParagraphDraft(draftId);
     this.#draft = null;
+    this.#releaseDraftState();
     this.#abandonOrFail();
     this.#reconcileRedo();
     this.#touched([draft.pageIndex]);
@@ -741,6 +774,7 @@ export class EditEngine {
         throw new EditStateError(`${this.#failure}: ${reason}`);
       }
       for (const page of pagesOf(op)) pages.add(page);
+      this.#releaseDraftState();
     }
     if (this.#base.length > 0) {
       try {
@@ -1032,7 +1066,7 @@ export class EditEngine {
       if (this.#fallbackLoadError !== null) {
         // FontManager 는 폴백 없음 판정을 캐시한다. 늦게 얻었으면 새로 만든다(편집 전이라 상태가 없다).
         this.#fallbackLoadError = null;
-        this.#fonts = null;
+        this.#disposeFonts();
       }
     } catch (error) {
       this.#fallbackLoadError = error instanceof Error ? error.message : String(error);
@@ -1167,6 +1201,7 @@ export class EditEngine {
       // 원래 예외를 우선한다(세션은 이미 사용 불가로 표시했다).
     }
     this.#draft = null;
+    this.#releaseDraftState();
     this.#host.invalidateAround(pageIndex);
     this.#blocks.delete(pageIndex);
   }

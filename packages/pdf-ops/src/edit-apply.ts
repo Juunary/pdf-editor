@@ -85,6 +85,20 @@ export function latestWriteContext(doc: mupdf.PDFDocument): WriteContext | undef
   return latest.get(doc);
 }
 
+/**
+ * 초안의 쓰기 해석을 버린다(R-L3). editId 가 없으면 이 문서의 해석 전부. 커밋·취소·재적용 뒤에 부른다. 해석이 가진
+ * PDFObject(폰트·ExtGState)는 문서 소유라 해제하지 않고 참조만 끊는다.
+ */
+export function releaseWriteContext(doc: mupdf.PDFDocument, editId?: string): void {
+  if (editId === undefined) {
+    contexts.delete(doc);
+    latest.delete(doc);
+    return;
+  }
+  contexts.get(doc)?.delete(editId);
+  if (latest.get(doc)?.editId === editId) latest.delete(doc);
+}
+
 function register(doc: mupdf.PDFDocument, wc: WriteContext): void {
   let m = contexts.get(doc);
   if (!m) {

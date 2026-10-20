@@ -801,6 +801,12 @@ interface PreparedState {
 
 const prepared = new WeakMap<mupdf.PDFDocument, Map<string, PreparedState>>();
 
+/** 패스 초안 준비 상태를 버린다(R-L3). editId 가 없으면 이 문서의 상태 전부. */
+export function releasePathEdit(doc: mupdf.PDFDocument, editId?: string): void {
+  if (editId === undefined) prepared.delete(doc);
+  else prepared.get(doc)?.delete(editId);
+}
+
 function stateOf(doc: mupdf.PDFDocument, editId: string): PreparedState {
   const s = prepared.get(doc)?.get(editId);
   if (!s) throw new Error(`preparePathEdit 결과 없음: ${editId}`);

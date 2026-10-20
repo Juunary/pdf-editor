@@ -16,6 +16,7 @@ import {
   prepareParagraphEdit,
   preparePathEdit,
   recordEditMetadata,
+  releaseEdit,
   writeEditBlock,
   writePathEdit,
 } from '@pdf-editor/pdf-ops';
@@ -51,6 +52,8 @@ export interface EditAdapter {
   writeEditBlock: typeof writeEditBlock;
   listEditBlocks: typeof listEditBlocks;
   recordEditMetadata: typeof recordEditMetadata;
+  /** 초안 하나(editId) 또는 문서 전체의 pdf-ops 초안 상태를 버린다(R-L3). 문서 내용은 바꾸지 않는다. */
+  releaseEdit: typeof releaseEdit;
   layoutParagraph: typeof layoutParagraph;
   /**
    * 세션 로그에 없는 편집 블록(다른 세션이 만든 파일)의 영역을 어림한다(페이지 공간). 모르면 null.
@@ -103,6 +106,7 @@ export const defaultEditAdapter: EditAdapter = {
   writeEditBlock,
   listEditBlocks,
   recordEditMetadata,
+  releaseEdit,
   layoutParagraph,
   blockBounds: formBoundsInPage,
 };
