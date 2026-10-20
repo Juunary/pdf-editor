@@ -12,7 +12,10 @@ import {
 } from '../../src/index.js';
 
 interface CoreExtract {
-  extractPageModel(page: mupdf.PDFPage, request: { pageIndex: number }): PageModel;
+  extractPageModel(
+    page: mupdf.PDFPage,
+    request: { pageIndex: number; includePathSegments?: boolean },
+  ): PageModel;
 }
 interface LayoutRecon {
   reconstructPage(model: PageModel): PageLayout;
@@ -30,13 +33,20 @@ export async function loadModules(): Promise<{ core: CoreExtract; layout: Layout
   return mods;
 }
 
-/** 쪽 상태를 만든다(loadModules 를 먼저 await). */
-export function pageContext(doc: mupdf.PDFDocument, pageIndex: number): ParagraphEditContext {
+/** 쪽 상태를 만든다(loadModules 를 먼저 await). segments: PathInfo.segments 까지 추출(M4 점 편집). */
+export function pageContext(
+  doc: mupdf.PDFDocument,
+  pageIndex: number,
+  options: { segments?: boolean } = {},
+): ParagraphEditContext {
   if (!mods) throw new Error('loadModules() 를 먼저 부른다');
   const page = doc.loadPage(pageIndex);
   let model: PageModel;
   try {
-    model = mods.core.extractPageModel(page, { pageIndex });
+    model = mods.core.extractPageModel(page, {
+      pageIndex,
+      includePathSegments: options.segments === true,
+    });
   } finally {
     page.destroy();
   }
