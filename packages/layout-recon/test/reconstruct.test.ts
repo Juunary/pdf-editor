@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { PageLayout, PageModel } from '@pdf-editor/shared-types';
 import { reconstructPage } from '../src/reconstruct.js';
 import { validateLayout as layoutViolations } from '../src/validate.js';
-import { buildModel, type LineSpec } from './helpers/model-builder.js';
+import { buildModel, gridPaths, type LineSpec, type ModelSpec } from './helpers/model-builder.js';
 
 /** 계약 2.1 불변식(helpers/invariants). */
 function checkInvariants(model: PageModel, layout: PageLayout): void {
@@ -312,5 +312,112 @@ describe('fixedGroups(편집 블록 한 문단, docs/m3-integration.md 9.6)', ()
     expect(strip(reconstructPage(model, { fixedGroups: [] }))).toEqual(
       strip(reconstructPage(model)),
     );
+  });
+});
+
+describe('fixedGroups 셀 편집 블록(M4 4.1·V4)', () => {
+  /** 표 하나의 모양(행·열 수, 전략)과 셀별 문단 수. */
+  const shape = (l: PageLayout) =>
+    l.tables.map((t) => ({
+      strategy: t.strategy,
+      rows: t.rows,
+      cols: t.cols,
+      paragraphs: t.cells.map((c) => c.paragraphs.length),
+    }));
+  /** (행, 열) 셀의 문단. */
+  const cellParas = (l: PageLayout, row: number, col: number) => {
+    const c = l.tables[0]!.cells.find((x) => x.row === row && x.col === col)!;
+    return c.paragraphs.map((id) => l.paragraphs[id]!);
+  };
+
+  // 괘선 3×3 표(행 높이 30). 편집 뒤 셀 (1,1) 은 두 줄 블록이다.
+  const xs = [100, 200, 300, 400];
+  const ys = [100, 130, 160, 190];
+  const gridSpec = (edited: boolean): ModelSpec => {
+    const lines: LineSpec[] = [];
+    for (let r = 0; r < 3; r++)
+      for (let c = 0; c < 3; c++) {
+        if (edited && r === 1 && c === 1) continue;
+        lines.push({ x: xs[c]! + 5, y: ys[r]! + 14, text: `R${r}C${c}` });
+      }
+    if (edited) {
+      lines.push({ x: 205, y: 142, text: 'Edited' }, { x: 205, y: 154, text: 'cell' });
+    }
+    return { lines, paths: gridPaths(xs, ys) };
+  };
+
+  it('괘선 표: 셀 블록 커밋 뒤 표 감지 유지, 그 셀 문단 = 블록 하나(table 설정)', () => {
+    const before = reconstructPage(buildModel(gridSpec(false)));
+    const model = buildModel(gridSpec(true));
+    const block = [8, 9];
+    const layout = reconstructPage(model, { fixedGroups: [block] });
+    checkInvariants(model, layout);
+    expect(shape(layout)).toEqual(shape(before));
+    const [p, ...rest] = cellParas(layout, 1, 1);
+    expect(rest).toEqual([]);
+    expect(p!.lines).toEqual(block);
+    expect(p!.table).toBe(0);
+    expect(p!.column).toBe(-1);
+    expect(p!.text).toBe('Edited cell');
+    // 표 안 문단은 최상위 읽기 순서에 없다.
+    expect(layout.readingOrder).toEqual([{ kind: 'table', id: 0 }]);
+  });
+
+  it('괘선 표: 블록 묶음 없이도 같은 결과면 힌트가 셀 문단을 바꾸지 않는다(한 줄 셀)', () => {
+    const model = buildModel(gridSpec(false));
+    const plain = reconstructPage(model);
+    const hinted = reconstructPage(model, { fixedGroups: [[4]] });
+    checkInvariants(model, hinted);
+    expect(shape(hinted)).toEqual(shape(plain));
+    expect(cellParas(hinted, 1, 1).map((p) => p.lines)).toEqual([[4]]);
+  });
+
+  // 정렬 전략 3행 표(머리 + 3행, 오른쪽 정렬 숫자 2열).
+  const right = (r: number, y: number, text: string): LineSpec => ({
+    x: r - Array.from(text).length * 5,
+    y,
+    text,
+  });
+  const alignedSpec = (cash: string): ModelSpec => ({
+    lines: [
+      right(400, 100, '2025'),
+      right(500, 100, '2024'),
+      { x: 82, y: 114, text: 'Cash and equivalents' },
+      right(400, 114, cash),
+      right(500, 114, '1,100'),
+      { x: 82, y: 128, text: 'Receivables' },
+      right(400, 128, '567'),
+      right(500, 128, '45,600'),
+      { x: 82, y: 142, text: 'Inventory' },
+      right(400, 142, '89'),
+      right(500, 142, '12'),
+    ],
+  });
+
+  it('정렬 전략 3행 표: 숫자 셀 블록 커밋 뒤 표 감지 유지', () => {
+    const before = reconstructPage(buildModel(alignedSpec('1,234')));
+    expect(shape(before)).toEqual([
+      { strategy: 'text', rows: 4, cols: 3, paragraphs: expect.any(Array) },
+    ]);
+    const model = buildModel(alignedSpec('12,345'));
+    const layout = reconstructPage(model, { fixedGroups: [[3]] });
+    checkInvariants(model, layout);
+    expect(shape(layout)).toEqual(shape(before));
+    const [p, ...rest] = cellParas(layout, 1, 1);
+    expect(rest).toEqual([]);
+    expect(p!.lines).toEqual([3]);
+    expect(p!.table).toBe(0);
+    expect(p!.text).toBe('12,345');
+  });
+
+  it('여러 셀에 걸친 묶음은 흐름 문단, 표 감지는 그 줄을 뺀 결과와 같다', () => {
+    const model = buildModel(gridSpec(false));
+    const layout = reconstructPage(model, { fixedGroups: [[3, 4]] });
+    checkInvariants(model, layout);
+    const block = layout.paragraphs.find((p) => p.lines.includes(3))!;
+    expect(block.lines).toEqual([3, 4]);
+    expect(block.table).toBeNull();
+    for (const t of layout.tables)
+      for (const c of t.cells) expect(c.lines.some((li) => li === 3 || li === 4)).toBe(false);
   });
 });
