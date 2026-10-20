@@ -10,19 +10,30 @@ import {
   listEditBlocks,
   planPageEditability,
   planParagraphEdit,
+  planPathEdit,
+  planPathEditability,
   prepareParagraphEdit,
+  preparePathEdit,
   recordEditMetadata,
   writeEditBlock,
+  writePathEdit,
 } from '@pdf-editor/pdf-ops';
 import { layoutParagraph } from '@pdf-editor/reflow';
-import type { Rect } from '@pdf-editor/shared-types';
+import type { EditWarning, Rect } from '@pdf-editor/shared-types';
 
 export type {
   EditBlockRef,
   ParagraphEditContext,
   PreparedEdit,
+  PreparedPathEdit,
   WriteResult,
 } from '@pdf-editor/pdf-ops';
+
+/**
+ * 패스 쓰기 결과. pdf-ops 시그니처(`{ bbox, writeMs }`)에 쓰는 도중 정해지는 경고(`color-space-changed`·`path-clipped`,
+ * 계약 4.2)를 실을 선택 필드를 더했다. pdf-ops 가 채우면 core 가 초안 경고에 합친다(docs/m4-core.md 6절).
+ */
+export type PathWriteResult = ReturnType<typeof writePathEdit> & { warnings?: EditWarning[] };
 
 export interface EditAdapter {
   /** 문서당 하나. `fallback` 은 core 가 미리 await 한 폴백 폰트 바이트와, 저널을 켜기 직전에 임베딩한 객체(그 전에는 null)다. */
@@ -30,6 +41,11 @@ export interface EditAdapter {
   planPageEditability: typeof planPageEditability;
   planParagraphEdit: typeof planParagraphEdit;
   prepareParagraphEdit: typeof prepareParagraphEdit;
+  /** M4 패스 판정·계획·준비·쓰기(docs/m4-contract.md 4.2–4.3). */
+  planPathEditability: typeof planPathEditability;
+  planPathEdit: typeof planPathEdit;
+  preparePathEdit: typeof preparePathEdit;
+  writePathEdit: (...args: Parameters<typeof writePathEdit>) => PathWriteResult;
   writeEditBlock: typeof writeEditBlock;
   listEditBlocks: typeof listEditBlocks;
   recordEditMetadata: typeof recordEditMetadata;
@@ -74,6 +90,10 @@ export const defaultEditAdapter: EditAdapter = {
   planPageEditability,
   planParagraphEdit,
   prepareParagraphEdit,
+  planPathEditability,
+  planPathEdit,
+  preparePathEdit,
+  writePathEdit,
   writeEditBlock,
   listEditBlocks,
   recordEditMetadata,
