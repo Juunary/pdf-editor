@@ -6,6 +6,7 @@ import * as mupdf from 'mupdf';
 import type { PageLayout, PageModel } from '@pdf-editor/shared-types';
 import {
   buildSourceMap,
+  editBlockLineGroups,
   linkPage,
   listEditBlocks,
   type ParagraphEditContext,
@@ -18,7 +19,7 @@ interface CoreExtract {
   ): PageModel;
 }
 interface LayoutRecon {
-  reconstructPage(model: PageModel): PageLayout;
+  reconstructPage(model: PageModel, options?: { fixedGroups?: number[][] }): PageLayout;
 }
 
 const CORE = '@pdf-editor-test/core-extract';
@@ -33,11 +34,14 @@ export async function loadModules(): Promise<{ core: CoreExtract; layout: Layout
   return mods;
 }
 
-/** 쪽 상태를 만든다(loadModules 를 먼저 await). segments: PathInfo.segments 까지 추출(M4 점 편집). */
+/**
+ * 쪽 상태를 만든다(loadModules 를 먼저 await). segments: PathInfo.segments 까지 추출(M4 점 편집·괘선 표 감지).
+ * fixedGroups: core getPageLayout 처럼 편집 블록 줄 묶음을 레이아웃 힌트로 넘긴다(docs/m3-integration.md 9.6).
+ */
 export function pageContext(
   doc: mupdf.PDFDocument,
   pageIndex: number,
-  options: { segments?: boolean } = {},
+  options: { segments?: boolean; fixedGroups?: boolean } = {},
 ): ParagraphEditContext {
   if (!mods) throw new Error('loadModules() 를 먼저 부른다');
   const page = doc.loadPage(pageIndex);
@@ -52,16 +56,14 @@ export function pageContext(
   }
   const map = buildSourceMap(doc, pageIndex);
   const linkage = linkPage(model, map);
-  const layout = mods.layout.reconstructPage(model);
-  return {
-    doc,
-    pageIndex,
+  const editBlocks = listEditBlocks(doc, pageIndex);
+  const layout = mods.layout.reconstructPage(
     model,
-    map,
-    linkage,
-    layout,
-    editBlocks: listEditBlocks(doc, pageIndex),
-  };
+    options.fixedGroups
+      ? { fixedGroups: editBlockLineGroups(model, map, linkage, editBlocks) }
+      : undefined,
+  );
+  return { doc, pageIndex, model, map, linkage, layout, editBlocks };
 }
 
 export function reopen(src: mupdf.PDFDocument, options = ''): mupdf.PDFDocument {

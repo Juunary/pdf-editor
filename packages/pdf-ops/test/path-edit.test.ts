@@ -17,7 +17,7 @@ import { constructPoints } from '../src/path-edit.js';
 import { latin1String } from '../src/edit-common.js';
 import { readStreamBytes } from '../src/mupdf-util.js';
 import { loadModules, pageContext, reopen } from './helpers/edit-context.js';
-import { bytesOf, expectNoChangeOutside, makeDoc } from './helpers/fixtures-m3.js';
+import { bytesOf, expectNoChangeOutside, gridTable, makeDoc } from './helpers/fixtures-m3.js';
 
 beforeAll(async () => {
   await loadModules();
@@ -58,21 +58,6 @@ function apply(
 
 const near = (a: readonly number[], b: readonly number[], tol = 0.01) =>
   a.every((v, i) => Math.abs(v - b[i]!) <= tol);
-
-/** 3×3 괘선 표(쪽 500×300, 페이지 공간 x 100–400, y 100–160). */
-export function gridTable(): string {
-  const xs = [100, 200, 300, 400];
-  const ys = [100, 120, 140, 160];
-  const H = 300;
-  const rules: string[] = [];
-  for (const y of ys) rules.push(`${xs[0]} ${H - y} m ${xs[3]} ${H - y} l S`);
-  for (const x of xs) rules.push(`${x} ${H - ys[0]!} m ${x} ${H - ys[3]!} l S`);
-  const cells: string[] = [];
-  for (let r = 0; r < 3; r++)
-    for (let c = 0; c < 3; c++)
-      cells.push(`BT /F1 10 Tf ${xs[c]! + 5} ${H - (ys[r]! + 14)} Td (R${r}C${c}) Tj ET`);
-  return `0.5 w ${rules.join(' ')} ${cells.join(' ')}`;
-}
 
 describe('인터프리터 선택 필드(계약 3절)', () => {
   it('pathOps·strokeColorOps·lineWidthOps·operandRanges', () => {
