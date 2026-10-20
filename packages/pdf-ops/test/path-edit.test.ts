@@ -389,6 +389,57 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
   });
 
+  it('Resources 없는 Form(쪽 상속): 복제본이 쪽 Resources 사본을 갖고 글자 렌더가 그대로(세 엔진)', async () => {
+    const doc = makeDoc(['q /X0 Do Q'], (d) => ({
+      XObject: {
+        X0: d.addStream('BT /F2 24 Tf 10 50 Td (Hello) Tj ET 0 0 1 rg 10 10 20 20 re f', {
+          Type: 'XObject',
+          Subtype: 'Form',
+          BBox: [0, 0, 200, 100],
+        }),
+      },
+    }));
+    const before = bytesOf(doc);
+    const ctx = ctxOf(doc);
+    const [p] = planPathEditability(ctx);
+    const r = apply(ctx, [p!.paintSeq], edit({ fill: [0, 1, 0] }));
+    const xo = doc.findPage(0).get('Resources').get('XObject');
+    const clone = xo.get('PEF0').resolve();
+    expect(clone.get('Resources').get('Font').get('F2').isNull()).toBe(false);
+    // 복제본 Resources 는 쪽 사전과 다른 객체(쪽에 PEF0 을 등록해도 복제본에는 없다).
+    expect(clone.get('Resources').get('XObject').get('PEF0').isNull()).toBe(true);
+    await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
+  });
+
+  it('Resources 없는 Form(상위 Form 상속): 상위 복제본 Resources 사본을 쓴다(세 엔진)', async () => {
+    const doc = makeDoc(['q /X0 Do Q'], (d, f) => {
+      const inner = d.addStream('BT /FX 24 Tf 10 50 Td (Inner) Tj ET 0 0 1 rg 10 10 20 20 re f', {
+        Type: 'XObject',
+        Subtype: 'Form',
+        BBox: [0, 0, 200, 100],
+      });
+      return {
+        XObject: {
+          X0: d.addStream('BT /FX 18 Tf 10 120 Td (Outer) Tj ET q 1 0 0 1 0 0 cm /In Do Q', {
+            Type: 'XObject',
+            Subtype: 'Form',
+            BBox: [0, 0, 300, 200],
+            Resources: { Font: { FX: f.F1 }, XObject: { In: inner } },
+          }),
+        },
+      };
+    });
+    const before = bytesOf(doc);
+    const ctx = ctxOf(doc);
+    const [p] = planPathEditability(ctx);
+    expect(p!.editable).toBe(true);
+    const r = apply(ctx, [p!.paintSeq], edit({ fill: [0, 1, 0] }));
+    const outer = doc.findPage(0).get('Resources').get('XObject').get('PEF0').resolve();
+    const inner = outer.get('Resources').get('XObject').get('PEF0').resolve();
+    expect(inner.get('Resources').get('Font').get('FX').isNull()).toBe(false);
+    await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
+  });
+
   it('공유 /Contents 스트림은 사본', () => {
     const src = new mupdf.PDFDocument();
     const shared = src.addStream('10 10 20 20 re f', {});

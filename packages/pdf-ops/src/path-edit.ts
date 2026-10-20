@@ -896,9 +896,12 @@ export function preparePathEdit(
       cd.put(key2, v);
     });
     const clone = doc.addStream('', cd);
-    const res = ownResources(doc, clone, null);
-    changed.add(clone.asIndirect());
     const parentRes = parent.res ?? ownPageRes();
+    // /Resources 가 없는 Form 은 부르는 쪽(상위 Form, 없으면 쪽)의 Resources 로 그린다(명세 7.8.3 의 폐기된 상속,
+    // MuPDF·pdf.js·Poppler 모두 따른다). 복제본에 빈 사전을 두면 폰트 등 이름을 찾지 못하므로 부르는 쪽의 유효
+    // Resources 사본을 복제본 소유로 둔다(아래 putUniqueResource 전에 복사해 자기 자신 항목은 들어가지 않는다).
+    const res = ownResources(doc, clone, orig.get('Resources').isNull() ? parentRes : null);
+    changed.add(clone.asIndirect());
     const name = putUniqueResource(ownSubdict(doc, parentRes, 'XObject'), clone, 'PEF');
     parent.fixed.push({ start: step.nameRange[0], end: step.nameRange[1], text: `/${name}` });
     h = {
@@ -946,8 +949,11 @@ export function preparePathEdit(
       segments: info?.segments ?? null,
     };
   });
-  // 복제본은 빈 스트림으로 만들었으므로 고정 교체만으로 한 번 쓴다.
-  for (const h of holders.values()) h.write(applyReplacements(h.orig, h.fixed));
+  // 복제본은 빈 스트림으로 만들었으므로 고정 교체만으로 한 번 쓴다. 고정 교체가 없는 쪽 /Contents 칸은 쓰지 않는다
+  // (첫 쓰기는 writePathEdit). 변경 없이 취소한 초안이 문서를 바꾸지 않아 redo 가 남는다(M4 리뷰 M1).
+  for (const h of holders.values()) {
+    if (h.res !== null || h.fixed.length > 0) h.write(applyReplacements(h.orig, h.fixed));
+  }
 
   let map = prepared.get(doc);
   if (!map) {
