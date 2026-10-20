@@ -2,7 +2,7 @@
  * 문단 편집(M3, docs/m3-contract.md). 편집 계획·리플로우 요약·초안·로그·undo 의 공통 타입.
  * 기하는 페이지 공간(geometry.ts), 길이 pt. 텍스트 위치는 TextRun.text 를 이은 문자열의 UTF-16 위치다.
  */
-import type { Matrix, RGB, Rect } from './geometry.js';
+import type { Matrix, Point, RGB, Rect } from './geometry.js';
 import type { PaintColor } from './page-model.js';
 import type { RenderedPage } from './rpc.js';
 import type { ChangeKind, SaveMethod } from './save.js';
@@ -101,6 +101,13 @@ export interface PathEdit {
   stroke: RGB | null;
   /** 페이지 공간 pt. */
   lineWidth: number | null;
+  /**
+   * 점 단위 편집(한 패스만, 계약 D2): PageModel PathInfo.segments 순서의 점 번호 → 새 위치(페이지 공간).
+   * 점 번호는 segments 를 앞에서부터 센 점(M·L 은 1개, C 는 제어점 2개 + 끝점 1개). null 이면 없음.
+   */
+  points: { index: number; to: Point }[] | null;
+  /** 패스 삭제(계약 D2). true 면 다른 필드는 무시한다. */
+  delete: boolean;
 }
 
 export interface EditPathOp {
@@ -195,7 +202,8 @@ export type EditWarningKind =
   | 'overflow-clipped' // 영역 상한에 막혀 넘친 줄이 CropBox·상위 Form BBox 에서 잘림
   | 'color-space-changed' // 새 색을 쓰려고 색공간을 바꿈(M4 D3)
   | 'shared-form' // 여러 곳이 쓰는 Form 안의 패스, 이 위치만 바뀜(M4)
-  | 'path-clipped'; // 편집 후 패스 상자가 칠하기 시점 클립·Form BBox 밖(M4)
+  | 'path-clipped' // 편집 후 패스 상자가 칠하기 시점 클립·Form BBox 밖(M4)
+  | 'table-rule-removed'; // 표 괘선으로 쓰인 패스를 지움(표 감지가 바뀔 수 있음, M4)
 
 export interface EditWarning {
   kind: EditWarningKind;
