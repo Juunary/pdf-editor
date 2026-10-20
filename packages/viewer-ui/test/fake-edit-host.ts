@@ -253,6 +253,14 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
     return this.paths.filter((p) => !p.deleted).map((p) => p.info);
   }
 
+  /** 문서가 바깥에서 바뀐 것처럼 같은 paintSeq 패스의 상자를 바꾼다(지문이 달라짐). revision 도 올린다. */
+  shiftPath(paintSeq: number, dx: number): void {
+    const p = this.paths.find((x) => x.info.paintSeq === paintSeq)!;
+    const b = p.info.bbox;
+    p.info = { ...p.info, bbox: [b[0] + dx, b[1], b[2] + dx, b[3]] };
+    this.revision++;
+  }
+
   /** 다음 `method` 호출을 이 오류로 실패시킨다. */
   failNext(method: Method, error: Error): void {
     this.failures.set(method, [...(this.failures.get(method) ?? []), error]);

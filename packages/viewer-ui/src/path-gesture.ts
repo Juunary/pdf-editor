@@ -5,12 +5,15 @@
  *   마지막 갱신 뒤 `debounceMs`(200 ms) 정지 때와 `flush()`(놓을 때)만 보낸다.
  * - `commit()` 은 열린 초안에 최신 편집을 보내고 커밋한다. 편집이 한 번도 없으면 취소와 같다.
  * - Worker 복구(`WorkerRecoveredError`)가 나면 같은 대상으로 다시 계획·시작하고 최신 편집을 다시 보낸다.
+ * - 다시 계획(revision 재시도·복구 재시작)한 결과의 대상 지문(`target.fingerprints`)이 직전 계획과 다르면 같은 paintSeq 가
+ *   다른 패스를 가리키는 것이므로 시작하지 않고 `PathTargetChangedError` 로 끝낸다(선택은 호출자가 푼다).
  */
 import type {
   CommitResult,
   EditHistoryState,
   PathEdit,
   PathEditPlan,
+  PathFingerprint,
   RenderedPage,
 } from '@pdf-editor/shared-types';
 import { classifyFailure } from './failure.js';
@@ -51,7 +54,37 @@ export interface PathGestureDeps {
 export type PathCommitOutcome =
   | { kind: 'committed'; result: CommitResult }
   | { kind: 'cancelled'; history: EditHistoryState | null }
-  | { kind: 'failed'; error: string };
+  | { kind: 'failed'; error: string; targetChanged?: boolean };
+
+/** 다시 계획한 대상이 처음 선택한 패스와 다르다(같은 paintSeq 가 다른 패스를 가리킴). */
+export class PathTargetChangedError extends Error {
+  constructor() {
+    super('그 사이 문서가 바뀌어 선택한 패스가 달라졌습니다. 패스를 다시 선택하세요.');
+    this.name = 'PathTargetChangedError';
+  }
+}
+
+/** 지문 비교(pdf-ops `sameFingerprint` 와 같은 규칙: 상자는 2e-3 까지 허용). */
+function sameFingerprint(a: PathFingerprint, b: PathFingerprint): boolean {
+  return (
+    a.paintOp === b.paintOp &&
+    a.constructOpCount === b.constructOpCount &&
+    a.constructHash === b.constructHash &&
+    a.bbox.every((v, i) => Math.abs(v - b.bbox[i]!) <= 2e-3)
+  );
+}
+
+/** 두 계획의 대상(paintSeqs·지문)이 같은지. */
+export function sameTarget(a: PathEditPlan, b: PathEditPlan): boolean {
+  const x = a.target;
+  const y = b.target;
+  return (
+    x.paintSeqs.length === y.paintSeqs.length &&
+    x.paintSeqs.every((s, i) => s === y.paintSeqs[i]) &&
+    x.fingerprints.length === y.fingerprints.length &&
+    x.fingerprints.every((f, i) => sameFingerprint(f, y.fingerprints[i]!))
+  );
+}
 
 const isRevisionError = (e: unknown): boolean => /revision/i.test(classifyFailure(e).message);
 
@@ -68,6 +101,8 @@ export class PathGesture {
   private closed = false;
   private committing = false;
   private error: string | null = null;
+  /** 다시 계획한 대상이 달라 이 동작을 끝냈다(`PathTargetChangedError`). */
+  private targetChanged = false;
   private plan: PathEditPlan;
 
   constructor(
@@ -93,7 +128,7 @@ export class PathGesture {
         );
       } catch (e) {
         if (!isRevisionError(e)) throw e;
-        this.plan = await this.replan();
+        await this.replanSameTarget();
         begun = await this.deps.rpc.beginPathEdit(
           this.pageIndex,
           this.paintSeqs,
@@ -109,6 +144,17 @@ export class PathGesture {
     } finally {
       this.emit();
     }
+  }
+
+  /** 다시 계획한다. 대상 지문이 직전 계획과 다르면 `PathTargetChangedError`. */
+  private async replanSameTarget(): Promise<void> {
+    const next = await this.replan();
+    if (!sameTarget(this.plan, next)) {
+      this.targetChanged = true;
+      this.deps.log('path-target-changed', { paintSeqs: this.paintSeqs });
+      throw new PathTargetChangedError();
+    }
+    this.plan = next;
   }
 
   /** 시작이 끝날 때까지 기다린다(실패하면 던진다). */
@@ -166,7 +212,12 @@ export class PathGesture {
   }
 
   private async drain(): Promise<void> {
-    while (!this.closed && this.latest !== null && this.latest !== this.sent) {
+    while (
+      !this.closed &&
+      !this.targetChanged &&
+      this.latest !== null &&
+      this.latest !== this.sent
+    ) {
       const edit = this.latest;
       try {
         const update = await this.deps.rpc.updatePathDraft(
@@ -181,7 +232,14 @@ export class PathGesture {
       } catch (e) {
         if (this.closed) return;
         if (classifyFailure(e).kind === 'recovered') {
-          await this.restart();
+          try {
+            await this.restart();
+          } catch (re) {
+            if (!(re instanceof PathTargetChangedError)) throw re;
+            this.error = re.message;
+            this.sent = edit;
+            return;
+          }
           continue;
         }
         this.error = classifyFailure(e).message;
@@ -197,7 +255,7 @@ export class PathGesture {
   private async restart(): Promise<void> {
     this.draftId = null;
     this.sent = null;
-    this.plan = await this.replan();
+    await this.replanSameTarget();
     const begun = await this.deps.rpc.beginPathEdit(
       this.pageIndex,
       this.paintSeqs,
@@ -219,6 +277,7 @@ export class PathGesture {
         return { kind: 'cancelled', history };
       }
       await this.flush();
+      if (this.targetChanged) throw new PathTargetChangedError();
       // 마지막 갱신이 실패했으면 커밋하지 않는다(화면과 다른 결과가 저장되는 것을 막는다).
       if (this.error !== null) throw new Error(this.error);
       const result = await this.deps.rpc.commitPathEdit(this.draftId!);
@@ -228,7 +287,9 @@ export class PathGesture {
       if (failure.kind !== 'recovered' && this.draftId !== null) {
         await this.deps.rpc.cancelPathEdit(this.draftId).catch(() => {});
       }
-      return { kind: 'failed', error: failure.message };
+      return this.targetChanged
+        ? { kind: 'failed', error: failure.message, targetChanged: true }
+        : { kind: 'failed', error: failure.message };
     } finally {
       this.close();
     }

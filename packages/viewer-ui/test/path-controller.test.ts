@@ -327,6 +327,38 @@ describe('오류·복구', () => {
     await p.cancelGesture();
   });
 
+  it('revision 재시도에서 대상 지문이 바뀌었으면 시작하지 않고 선택을 푼다', async () => {
+    const { controller, fake } = await started();
+    const p = paths(controller);
+    await p.selectAt(0, [130, 120], 1, false);
+    fake.shiftPath(11, 5); // 같은 paintSeq 가 다른 패스(상자)를 가리킴
+    const g = p.beginGesture()!;
+    await expect(g.ready()).rejects.toThrow('다시 선택');
+    expect(fake.count('beginPathEdit')).toBe(1);
+    await vi.waitFor(() => expect(controller.getState().edit.path.selection).toBeNull());
+    expect(controller.getState().edit.path.gesture).toBeNull();
+    expect(controller.getState().edit.notice).toContain('다시 선택');
+  });
+
+  it('Worker 복구 재시작에서 대상 지문이 바뀌었으면 커밋하지 않고 선택을 푼다', async () => {
+    const { controller, fake } = await started();
+    const p = paths(controller);
+    await p.selectAt(0, [130, 120], 1, false);
+    const g = p.beginGesture()!;
+    await g.ready();
+    const err = new Error('복구');
+    err.name = WORKER_RECOVERED_ERROR_NAME;
+    fake.failNext('updatePathDraft', err);
+    fake.simulateRecovery();
+    fake.shiftPath(11, 5);
+    g.update(emptyPathEdit({ transform: [1, 0, 0, 1, 3, 0] }));
+    expect(await p.commitGesture()).toBe(false);
+    expect(fake.count('beginPathEdit')).toBe(1);
+    expect(fake.count('commitPathEdit')).toBe(0);
+    expect(controller.getState().edit.path.selection).toBeNull();
+    expect(controller.getState().edit.notice).toContain('다시 선택');
+  });
+
   it('갱신 중 Worker 복구: 같은 대상을 다시 시작하고 최신 편집을 다시 보낸다', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
