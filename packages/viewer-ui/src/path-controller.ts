@@ -9,15 +9,18 @@ import type {
   CommitResult,
   EditHistoryState,
   PageModel,
+  PaintColor,
   PathEdit,
   PathEditPlan,
   Point,
+  RGB,
 } from '@pdf-editor/shared-types';
 import { limitLabel } from './edit-labels.js';
 import type { EditContext, EditLoadable } from './edit-controller.js';
 import { classifyFailure } from './failure.js';
 import { buildCandidates, pickPath, STROKE_HIT_PX, type PathCandidate } from './path-geometry.js';
 import {
+  isNoopPathEdit,
   PathGesture,
   PathTargetChangedError,
   type PathCommitOutcome,
@@ -303,11 +306,58 @@ export class PathController {
     return true;
   }
 
-  /** 속성·삭제처럼 한 번에 끝나는 편집. */
+  /**
+   * 선택한 패스가 채우는지·긋는지(패스 모델 PathInfo.op 기준). 모델이 아직 없으면 계획(첫 대상)으로 근사한다.
+   * 선 두께·선 색 입력은 긋는 패스가 있을 때만 쓴다(리뷰 L6).
+   */
+  selectionPaints(): { fills: boolean; strokes: boolean } {
+    const sel = this.ctx.getPath().selection;
+    if (!sel) return { fills: false, strokes: false };
+    const chosen = this.candidates(sel.pageIndex).filter((c) => sel.paintSeqs.includes(c.paintSeq));
+    if (chosen.length === sel.paintSeqs.length) {
+      const ops = chosen.flatMap((c) => c.infos.map((i) => i.op));
+      return { fills: ops.includes('fill'), strokes: ops.includes('stroke') };
+    }
+    const plan = sel.plan;
+    return {
+      fills: (plan?.fill ?? null) !== null,
+      strokes: (plan?.stroke ?? null) !== null || (plan?.lineWidth ?? null) !== null,
+    };
+  }
+
+  /**
+   * 속성 편집에서 실제로 바뀌는 부분만 남긴다. 해당하지 않는 칠하기(채움 없는 패스의 채움 색, 긋지 않는 패스의 선 두께)와
+   * 단일 선택의 현재 값과 같은 값은 뺀다. 남는 것이 없으면 null(편집을 열지 않는다, 리뷰 L6).
+   */
+  effectiveEdit(edit: PathEdit): PathEdit | null {
+    const sel = this.ctx.getPath().selection;
+    const plan = sel?.plan ?? null;
+    const single = sel?.paintSeqs.length === 1;
+    const paints = this.selectionPaints();
+    const out: PathEdit = { ...edit };
+    if (out.fill && (!paints.fills || (single && sameColor(out.fill, plan?.fill)))) out.fill = null;
+    if (out.stroke && (!paints.strokes || (single && sameColor(out.stroke, plan?.stroke)))) {
+      out.stroke = null;
+    }
+    if (out.lineWidth !== null) {
+      const cur = plan?.lineWidth ?? null;
+      const same =
+        single && cur !== null && Math.abs(cur - out.lineWidth) <= 1e-6 * Math.max(1, cur);
+      if (!paints.strokes || same) out.lineWidth = null;
+    }
+    return isNoopPathEdit(out) ? null : out;
+  }
+
+  /** 속성·삭제처럼 한 번에 끝나는 편집. 바뀌는 것이 없으면 편집을 열지 않고 true. */
   async applyOnce(edit: PathEdit): Promise<boolean> {
+    const effective = this.effectiveEdit(edit);
+    if (!effective) {
+      this.ctx.logEvent('path-noop', { edit });
+      return true;
+    }
     const g = this.beginGesture();
     if (!g) return false;
-    g.update(edit);
+    g.update(effective);
     return this.commitGesture();
   }
 
@@ -368,4 +418,10 @@ export function emptyPathEdit(partial: Partial<PathEdit> = {}): PathEdit {
 function noteOf(plan: PathEditPlan): string[] {
   const items = plan.limits.map((l) => (l.detail !== '' ? l.detail : limitLabel(l.reason)));
   return items.length > 0 ? [...new Set(items)] : ['이 패스는 편집할 수 없습니다.'];
+}
+
+/** 8비트 반올림으로 같은 색인지(pdf-ops D3 와 같은 규칙). 현재 색을 모르면 다르다. */
+function sameColor(rgb: RGB, cur: PaintColor | null | undefined): boolean {
+  const c = cur?.rgb;
+  return !!c && rgb.every((v, i) => Math.round(v * 255) === Math.round(c[i]! * 255));
 }

@@ -378,6 +378,8 @@ function PathPanel({
   if (!paths) return null;
   const editable = plan?.editable === true;
   const multi = count > 1;
+  // 채움 색은 채우는 패스, 선 색·선 두께는 긋는 패스가 선택에 있을 때만(리뷰 L6).
+  const paints = paths.selectionPaints();
   const [x, y] = pageToCss([box[0], box[3]], layout);
   const [rx] = pageToCss([box[2], box[1]], layout);
   const onColor = (field: 'fill' | 'stroke') => (e: Event) => {
@@ -411,7 +413,7 @@ function PathPanel({
             <input
               id="pe-path-fill"
               type="color"
-              disabled={busy || (!multi && plan.fill === null)}
+              disabled={busy || !paints.fills}
               value={pickerValue(plan.fill)}
               onChange={onColor('fill')}
             />
@@ -421,7 +423,7 @@ function PathPanel({
             <input
               id="pe-path-stroke"
               type="color"
-              disabled={busy || (!multi && plan.stroke === null)}
+              disabled={busy || !paints.strokes}
               value={pickerValue(plan.stroke)}
               onChange={onColor('stroke')}
             />
@@ -433,7 +435,7 @@ function PathPanel({
               type="number"
               min="0"
               step="0.5"
-              disabled={busy || (!multi && plan.lineWidth === null)}
+              disabled={busy || !paints.strokes}
               value={plan.lineWidth === null ? '' : String(Math.round(plan.lineWidth * 100) / 100)}
               onChange={onWidth}
             />
