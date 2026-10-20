@@ -73,7 +73,7 @@ export type EditOp = ReplaceParagraphOp;
 
 /** 문단 단위 편집 제한 사유(연산 단위 사유 EditLimitReason 에 더해, 계약 5.1). */
 export const PARAGRAPH_LIMIT_REASONS = [
-  'not-flow-paragraph', // 표 셀(M4)·도형 라벨
+  'not-flow-paragraph', // 표 셀(M4). 도형 라벨은 2026-10-21 부터 막지 않음
   'vertical-or-rotated', // 세로쓰기·회전 줄
   'remove-skipped', // 제거가 건너뛸 연산 포함(detail = RemoveSkipCode)
   'mixed-content-sources', // 쪽 콘텐츠와 Form, 또는 서로 다른 Form 사용 경로에 걸침
