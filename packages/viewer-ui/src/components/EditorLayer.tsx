@@ -39,16 +39,6 @@ const HANDLES: [HandleName, number, number][] = [
 
 const HANDLE_SIZE = 8;
 
-const CHOICES: { id: 'expand' | 'shrink' | 'keep'; label: string; title: string }[] = [
-  {
-    id: 'expand',
-    label: '영역 넓히기',
-    title: '글자가 들어가도록 영역 아래 변을 내립니다(상한까지)',
-  },
-  { id: 'shrink', label: '글자 줄이기', title: '글자 크기를 줄여 영역에 맞춥니다(최소 80%)' },
-  { id: 'keep', label: '그대로 두기', title: '넘친 줄을 그대로 둡니다(영역 밖은 잘릴 수 있음)' },
-];
-
 /** 같은 경고(종류+메시지)는 한 번만. */
 function mergeWarnings(...lists: EditWarning[][]): EditWarning[] {
   const seen = new Set<string>();
@@ -64,14 +54,15 @@ function mergeWarnings(...lists: EditWarning[][]): EditWarning[] {
 
 /**
  * 편집 층(계약 5.9, D7): 영역 테두리·핸들, 캐럿·선택·조합 밑줄(리플로우 결과로 그림), 폴백·없는 글자 표시,
- * 초과 UI(3선택), 경고 목록, 태그 쪽 안내, 입력용 숨은 textarea.
+ * 초과 표시(영역은 리플로우가 자동으로 넓히고, 상한에 막혀 남은 초과만 표시 + "되돌리기"), 경고 목록, 태그 쪽 안내,
+ * 입력용 숨은 textarea.
  *
  * 캐럿·선택은 "마지막으로 처리된 프레임"(`session.shown`)으로 그려 캔버스에 합성된 글자와 어긋나지 않는다.
  */
 export function EditorLayer({ controller, pageRef, layout, session, fallbackUnderline }: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
-  const { shown, editor, format, plan } = session;
+  const { shown, editor, plan } = session;
   const reflow = shown.reflow;
   const caret = caretBox(reflow, shown.text, shown.caret, shown.affinity);
   const sessionOf = (): EditSession | null => controller.edit?.currentSession() ?? null;
@@ -308,17 +299,9 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
   const fallback = fallbackUnderline ? fallbackSegments(reflow) : [];
   const missing = missingMarks(reflow);
   const warnings = mergeWarnings(plan.warnings, session.warnings);
-  const choice = format.overflow;
-  const showOverflowPanel = reflow.overflow || choice !== null;
   const areaBottomCss = pageToCss([area[0], area[3]], layout);
   const caretCss = caret ? pageToCss([caret.x, caret.top], layout) : null;
   const caretHeightCss = caret ? (caret.bottom - caret.top) * layout.cssScale : 0;
-  const chip =
-    choice === 'shrink' && reflow.fontScale < 1
-      ? `글자 ${Math.round(reflow.fontScale * 100)}%`
-      : choice === 'expand' && reflow.area[3] > format.area[3] + 0.01
-        ? '영역 넓힘'
-        : null;
 
   return (
     <div
@@ -414,33 +397,28 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
           />
         );
       })}
-      {showOverflowPanel && (
+      {reflow.overflow && (
+        // 영역은 글 높이까지 자동으로 넓어진다(계약 5.4, 2026-10-20). 여기 오는 것은 영역 상한(쪽·Form 경계)에 막혀
+        // 남은 초과뿐이다. 그대로 커밋(Esc·바깥 클릭)하면 overflow-clipped 경고 상태로 반영된다(사용자 결정).
         <div
           id="pe-edit-overflow"
           class="pe-edit-overflow"
           data-pe-keep=""
-          data-choice={choice ?? ''}
           style={{ left: `${areaBottomCss[0]}px`, top: `${areaBottomCss[1] + 6}px` }}
         >
-          {reflow.overflow && <span class="pe-edit-overflow-msg">영역을 넘었습니다</span>}
-          {CHOICES.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              class="pe-btn"
-              data-choice={c.id}
-              title={c.title}
-              aria-pressed={choice === c.id}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                sessionOf()?.setFormat({ overflow: choice === c.id ? null : c.id });
-                taRef.current?.focus({ preventScroll: true });
-              }}
-            >
-              {c.label}
-            </button>
-          ))}
-          {chip && <span class="pe-edit-chip">{chip}</span>}
+          <span class="pe-edit-overflow-msg">
+            영역을 넘었습니다(쪽·개체 경계까지 넓혀도 들어가지 않습니다)
+          </span>
+          <button
+            type="button"
+            id="pe-edit-revert"
+            class="pe-btn"
+            title="이번 편집을 버리고 편집을 시작하기 전 상태로 되돌립니다"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => void controller.edit?.cancelActive()}
+          >
+            되돌리기
+          </button>
         </div>
       )}
       <div id="pe-edit-info" class="pe-edit-info" data-pe-keep="">

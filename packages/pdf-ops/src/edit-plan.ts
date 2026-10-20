@@ -13,6 +13,7 @@ import type {
   InsertionInfo,
   LayoutParagraph,
   Matrix,
+  ParagraphAlign,
   ParagraphFormat,
   ParagraphLimit,
   ParagraphLimitReason,
@@ -153,6 +154,33 @@ const BLOCKING: Partial<Record<EditLimitReason, string>> = {
 };
 
 const ROTATION_TOLERANCE = (0.5 * Math.PI) / 180;
+
+const ALIGNS: ReadonlySet<string> = new Set(['left', 'right', 'center', 'justify']);
+
+/**
+ * 형식의 현재 필드만 꺼낸다(/PdfEditorFormat 읽기·쓰기). 이전 빌드가 쓴 `overflow`('expand'·'shrink'·'keep')·
+ * `fontScale` 은 버린다: 초과는 이제 선택이 아니라 영역 자동 확장이고 글자 축소는 없다(2026-10-20 사용자 결정).
+ * 영역이 숫자 4개가 아니거나 첫 기준선 위치가 숫자가 아니면 null(호출자는 추출 텍스트 + 블록 상자로 시작한다).
+ */
+export function cleanParagraphFormat(raw: unknown): ParagraphFormat | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const f = raw as Record<string, unknown>;
+  const area = f.area;
+  const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+  if (!Array.isArray(area) || area.length !== 4 || !area.every(finite)) return null;
+  if (!finite(f.firstBaselineOffset)) return null;
+  const num = (v: unknown, fallback: number): number => (finite(v) ? v : fallback);
+  const lineHeight = num(f.lineHeight, 0);
+  return {
+    area: [...area] as Rect,
+    align:
+      typeof f.align === 'string' && ALIGNS.has(f.align) ? (f.align as ParagraphAlign) : 'left',
+    firstLineIndent: num(f.firstLineIndent, 0),
+    // 0 이하이면 리플로우가 글자 크기 × 1.2 로 정한다(계약 5.4).
+    lineHeight: lineHeight > 0 ? lineHeight : 0,
+    firstBaselineOffset: f.firstBaselineOffset,
+  };
+}
 
 function readJson(obj: mupdf.PDFObject): BlockFormat | null {
   try {
@@ -1028,7 +1056,6 @@ export function originalStartState(
       firstLineIndent: paragraph.firstLineIndent,
       lineHeight: paragraph.lineHeight ?? size * 1.2,
       firstBaselineOffset: baseline - paragraph.bbox[1],
-      overflow: null,
     },
   };
 }
@@ -1065,11 +1092,11 @@ export function blockStartState(ctx: ParagraphEditContext, a: EditAnalysis): Sta
         firstLineIndent: 0,
         lineHeight: size * 1.2,
         firstBaselineOffset: (ch0?.origin[1] ?? box[3]) - box[1],
-        overflow: null,
       },
     };
   };
-  if (!fmt) return fromExtract();
+  const format = fmt ? cleanParagraphFormat(fmt.format) : null;
+  if (!fmt || !format) return fromExtract();
   const text = fmt.runs.map((r) => r.text).join('');
   if (strip(text) !== strip(extracted) || fmt.glyphOffsets.length !== chars.length) {
     return fromExtract();
@@ -1109,5 +1136,5 @@ export function blockStartState(ctx: ParagraphEditContext, a: EditAnalysis): Sta
       },
     };
   });
-  return { runs, charIndexOfOffset: map, format: { ...fmt.format, overflow: fmt.format.overflow } };
+  return { runs, charIndexOfOffset: map, format };
 }

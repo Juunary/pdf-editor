@@ -69,7 +69,7 @@ interface PageSession {
   editor: { text: string; caret: number; anchor: number; composition: [number, number] | null };
   shown: {
     text: string;
-    reflow: { fontScale: number; area: number[]; overflow: boolean; lines: unknown[] };
+    reflow: { area: number[]; overflow: boolean; lines: unknown[] };
   };
   updating: boolean;
   canUndo: boolean;
@@ -88,7 +88,6 @@ interface SessionInfo {
   updating: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  fontScale: number;
   area: number[];
   overflow: boolean;
   lines: number;
@@ -108,7 +107,6 @@ async function session(page: Page): Promise<SessionInfo | null> {
       updating: s.updating,
       canUndo: s.canUndo,
       canRedo: s.canRedo,
-      fontScale: s.shown.reflow.fontScale,
       area: s.shown.reflow.area,
       overflow: s.shown.reflow.overflow,
       lines: s.shown.reflow.lines.length,
@@ -676,62 +674,106 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
   // ── 초과 UI·영역 ───────────────────────────────────────────────────
 
   test.describe('초과·영역', () => {
-    async function overflowed(page: Page): Promise<void> {
+    /** 영역 상한 아래 80pt: 5줄(47글자)은 자동 확장으로도 들어가지 않는다. */
+    async function blocked(page: Page): Promise<void> {
+      errors.length = 0;
+      errors = await openEditHarness(page, config({ areaLimit: [0, 0, 612, 80] }));
+      await page.waitForSelector('#pe-text-layer');
+      await page.waitForFunction(
+        () =>
+          (
+            window as unknown as {
+              __controller: { getState(): { edit: { editability: { status: string } } } };
+            }
+          ).__controller.getState().edit.editability.status === 'ready',
+      );
       await startEdit(page, 10, 0.8);
       await page.keyboard.type('abcdefghijklmnopqrstuvwxyz0123456789'); // 11 + 36 글자 = 5줄
       await settled(page);
     }
 
-    test('초과하면 영역 테두리가 바뀌고 초과 표시와 3선택이 보인다', async ({ page }) => {
-      await overflowed(page);
+    test('넘치면 영역 아래 변이 글 높이까지 자동으로 내려가고 선택 UI 는 없다', async ({
+      page,
+    }) => {
+      await startEdit(page, 10, 0.8);
+      const before = await settled(page);
+      await page.keyboard.type('abcdefghijklmnopqrstuvw'); // 3줄
+      const after = await settled(page);
+      expect(after.lines).toBeGreaterThanOrEqual(3);
+      expect(after.overflow).toBe(false);
+      expect(after.area[3]!).toBeGreaterThan(before.area[3]!);
+      await expect(page.locator('#pe-edit-area')).toHaveAttribute('data-overflow', '0');
+      await expect(page.locator('#pe-edit-overflow-line')).toHaveCount(0);
+      await expect(page.locator('#pe-edit-overflow')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: '영역 넓히기' })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: '글자 줄이기' })).toHaveCount(0);
+      // 테두리(#pe-edit-area)도 넓어진 영역을 그린다: 셋째 줄 기준선(72) 아래까지.
+      const area = (await page.locator('#pe-edit-area').getAttribute('data-area'))!
+        .split(',')
+        .map(Number);
+      expect(area[3]!).toBeGreaterThan(72);
+      // 지우면 다시 원 영역으로 돌아온다(입력마다 같은 규칙).
+      for (let i = 0; i < 23; i++) await page.keyboard.press('Backspace');
+      expect((await settled(page)).area).toEqual(before.area);
+    });
+
+    test('핸들로 아래 변을 글보다 위로 올려도 글 높이까지 다시 늘어난다', async ({ page }) => {
+      const g = await startEdit(page, 10, 0.8);
+      await page.keyboard.type('abcdefghijklmnopqrstuvw'); // 3줄
+      const full = await settled(page);
+      const handle = await page.locator('.pe-edit-handle[data-handle="s"]').boundingBox();
+      const hx = handle!.x + handle!.width / 2;
+      const hy = handle!.y + handle!.height / 2;
+      await page.mouse.move(hx, hy);
+      await page.mouse.down();
+      await page.mouse.move(hx, hy - 40 * g.scale, { steps: 4 });
+      await page.mouse.up();
+      const s = await settled(page);
+      expect(s.overflow).toBe(false);
+      expect(s.area[3]).toBeCloseTo(full.area[3]!, 3);
+    });
+
+    test('영역 상한에 막히면 초과 표시·overflow-clipped 경고와 "되돌리기" 하나만 보인다', async ({
+      page,
+    }) => {
+      await blocked(page);
+      const s = await session(page);
+      expect(s!.overflow).toBe(true);
+      expect(s!.area[3]).toBe(80);
       await expect(page.locator('#pe-edit-area')).toHaveAttribute('data-overflow', '1');
       await expect(page.locator('#pe-edit-overflow-line')).toBeVisible();
       const panel = page.locator('#pe-edit-overflow');
       await expect(panel).toBeVisible();
-      await expect(panel.locator('button')).toHaveText([
-        '영역 넓히기',
-        '글자 줄이기',
-        '그대로 두기',
-      ]);
-    });
-
-    test('글자 줄이기: 배율이 0.8–1, 최소 80%', async ({ page }) => {
-      await overflowed(page);
-      await page.locator('#pe-edit-overflow [data-choice="shrink"]').click();
-      const s = await settled(page);
-      expect(s.fontScale).toBeGreaterThanOrEqual(0.8);
-      expect(s.fontScale).toBeLessThan(1);
-      // 0.8 에서도 넘치는 입력이므로 초과 표시가 유지된다.
-      expect(s.overflow).toBe(true);
-      await expect(page.locator('#pe-edit-overflow .pe-edit-chip')).toContainText('글자');
-    });
-
-    test('영역 넓히기: 영역 아래 변이 내려가고 초과가 사라진다', async ({ page }) => {
-      await startEdit(page, 10, 0.8);
-      await page.keyboard.type('abcdefghijklmnopqrstuvw'); // 3줄
-      const before = await settled(page);
-      expect(before.overflow).toBe(true);
-      await page.locator('#pe-edit-overflow [data-choice="expand"]').click();
-      const after = await settled(page);
-      expect(after.overflow).toBe(false);
-      expect(after.area[3]!).toBeGreaterThan(before.area[3]!);
-      await expect(page.locator('#pe-edit-overflow-line')).toHaveCount(0);
-      await expect(page.locator('#pe-edit-overflow .pe-edit-chip')).toContainText('영역 넓힘');
-      // 같은 선택을 다시 누르면 선택이 해제된다.
-      await page.locator('#pe-edit-overflow [data-choice="expand"]').click();
-      expect((await settled(page)).overflow).toBe(true);
-    });
-
-    test('그대로 두기: 자동 클립 없이 넘친 줄을 두고 경고를 보인다', async ({ page }) => {
-      await overflowed(page);
-      await page.locator('#pe-edit-overflow [data-choice="keep"]').click();
-      const s = await settled(page);
-      expect(s.lines).toBeGreaterThanOrEqual(5);
+      await expect(panel.locator('button')).toHaveText(['되돌리기']);
       await expect(
         page.locator('#pe-edit-warnings li[data-kind="overflow-clipped"]'),
       ).toBeVisible();
-      // 영역 밖 글자도 합성돼 있다(자동 클립 없음): 5번째 줄 기준선 20+12+80 = 112 근처
+      // 넘친 줄도 합성돼 있다(자동 클립 없음): 5번째 줄 기준선 20+12+80 = 112 근처
       expect(await pixel(page, 25, 106)).toEqual([0x22, 0x22, 0x22]);
+    });
+
+    test('되돌리기: 이번 편집을 버리고 편집 시작 전 상태로 돌아간다(편집 취소와 같은 경로)', async ({
+      page,
+    }) => {
+      await blocked(page);
+      expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]); // 둘째 줄 합성됨
+      await page.locator('#pe-edit-revert').click();
+      await ended(page);
+      expect(await hostCalls(page, 'cancelParagraphEdit')).toBe(1);
+      expect(await hostCalls(page, 'commitParagraphEdit')).toBe(0);
+      expect(await pixel(page, 25, 46)).toEqual([255, 255, 255]);
+      expect(await pixel(page, 25, 106)).toEqual([255, 255, 255]);
+      await expect(page.locator('#pe-text-layer')).toBeVisible();
+    });
+
+    test('상한에 막힌 초과가 남아도 Esc 는 커밋한다(overflow-clipped 경고 상태, 사용자 결정)', async ({
+      page,
+    }) => {
+      await blocked(page);
+      await page.keyboard.press('Escape');
+      await ended(page);
+      expect(await hostCalls(page, 'commitParagraphEdit')).toBe(1);
+      expect(await hostCalls(page, 'cancelParagraphEdit')).toBe(0);
     });
 
     test('영역 핸들 8개, 드래그로 영역이 바뀌고 areaLimit 밖으로 못 나간다', async ({ page }) => {

@@ -1,6 +1,7 @@
 import { render } from 'preact';
 import type { ViewerController } from './controller.js';
 import { Controls } from './components/Controls.js';
+import { PageArrow } from './components/PageArrow.js';
 import { PageSurface } from './components/PageSurface.js';
 
 export interface MountTargets {
@@ -19,7 +20,14 @@ const RESIZE_DEBOUNCE_MS = 150;
  */
 export function mountViewer(targets: MountTargets, controller: ViewerController): () => void {
   render(<Controls controller={controller} />, targets.controls);
-  render(<PageSurface controller={controller} />, targets.pages);
+  render(
+    <>
+      <PageArrow controller={controller} dir={-1} />
+      <PageSurface controller={controller} />
+      <PageArrow controller={controller} dir={1} />
+    </>,
+    targets.pages,
+  );
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   const onResize = () => {

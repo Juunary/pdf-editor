@@ -9,7 +9,7 @@
 | 입력 | M1 계약(`docs/m1-contract.md`: SourceMap·매칭·좌표계), M1 결정(`docs/m1-decisions.md`: A7-2 SourceMap 기반 제거 등), M2 계약(`docs/m2-contract.md`: PageLayout), 1.2절의 이관 Action Item |
 | 일정 | PLAN.md 6절 계획은 2026-12-14~2027-01-17(5주). 2026-10-19 착수 |
 | 상태 표기 | 확정 = 근거가 있고 바꾸지 않음. 권고 = 메인 세션 결정, 사용자 확인 전. 결정 대기 = 사용자 결정 필요 |
-| 변경 이력 | 수정 1(2026-10-19, S3 core 실측 보고): 폴백 폰트 임베딩과 Info 생성을 저널을 켜기 전 한 번으로 바꿈(D4·D9·5.7), FontManager 생성자를 `FallbackFontSource` 로 바꿈. 수정 2(2026-10-19, S2 reflow 실측 보고): 폴백 서브셋 cmap 을 일대일로 다시 만듦(D12), 입력 정규화에 U+00A0 → U+0020 추가(1.3·5.9) 수정 3(2026-10-19, S1 pdf-ops 실측 보고): BT 나누기의 Tlm 복원을 원 줄 설정 연산 재실행으로(D3 규칙 2), `insertion-clipped` 에 직사각형 클립이 원 글리프를 덮지 않는 경우 추가 수정 4(2026-10-19, S2·S3·S4 보고 정리): Info 기록을 커밋 작업 안으로(D9·5.6), redo 소실 조건(D9), 초안 중 허용 RPC(5.7), 전용 Worker 의 chrome.* 불가(5.7), 리플로우 요약 규약·통합 때 추가할 RPC(4절), 텍스트 판정에서 기본 무시 문자 제외(8.3) |
+| 변경 이력 | 수정 1(2026-10-19, S3 core 실측 보고): 폴백 폰트 임베딩과 Info 생성을 저널을 켜기 전 한 번으로 바꿈(D4·D9·5.7), FontManager 생성자를 `FallbackFontSource` 로 바꿈. 수정 2(2026-10-19, S2 reflow 실측 보고): 폴백 서브셋 cmap 을 일대일로 다시 만듦(D12), 입력 정규화에 U+00A0 → U+0020 추가(1.3·5.9) 수정 3(2026-10-19, S1 pdf-ops 실측 보고): BT 나누기의 Tlm 복원을 원 줄 설정 연산 재실행으로(D3 규칙 2), `insertion-clipped` 에 직사각형 클립이 원 글리프를 덮지 않는 경우 추가 수정 4(2026-10-19, S2·S3·S4 보고 정리): Info 기록을 커밋 작업 안으로(D9·5.6), redo 소실 조건(D9), 초안 중 허용 RPC(5.7), 전용 Worker 의 chrome.* 불가(5.7), 리플로우 요약 규약·통합 때 추가할 RPC(4절), 텍스트 판정에서 기본 무시 문자 제외(8.3) 수정 5(2026-10-20, 사용자 결정): 초과 3선택을 자동 확장·되돌리기로 대체, 글자 크기 축소 삭제, 이전 형식 호환(1.1·4절·5.4·5.9), 판정 목록에서 편집 블록 한 항목(5.1, B1) |
 | 독립 검토 | 2026-10-19 읽기 전용 검토(판정 REVISE: BLOCKER 1·HIGH 6·MEDIUM 9·LOW 12)를 이 판에 반영했다. 저널·폰트·harfbuzz 실측 주장은 메인 세션이 재현했다(11절) |
 
 ## 1. 완료 기준과 범위
@@ -29,7 +29,7 @@
 | 객체 | 편집하지 않은 쪽의 쪽 사전·콘텐츠·리소스 객체 변경 0. 원본 폰트 객체 불변. 폴백 폰트는 문서당 최대 1개 추가·저장 시 서브셋 | 객체 diff |
 | 편집 동작 | 편집 중 글자 단위 undo/redo, 문단 편집 단위 undo/redo, 연속 편집, 같은 문단 재편집, 저장 후 재편집·undo, 편집 취소, 폴백을 쓴 초안 취소·undo 뒤 새 편집 | Playwright·core 단위 |
 | IME | 1.3 시나리오 I1–I8 | Playwright(CDP `Input.imeSetComposition`·`Input.insertText`) + Windows 사용자 확인 |
-| 초과 | 3선택(영역 넓히기·글자 줄이기·그대로 두기) 동작, 자동 클립 없음(PLAN.md 1.3) | 단위·Playwright |
+| 초과 | **사용자 결정 2026-10-20**: 자동 확장(상한까지), 상한 초과 시 초과 표시·경고·되돌리기, 자동 클립 없음(PLAN.md 1.3). 이전 3선택(넓히기·줄이기·그대로)을 대체 | 단위·Playwright |
 | 저장 | 편집 후 저장은 전체 저장이고 저널 단계를 만들지 않는다(D9). 저장 전 힙 경고(A3-2), 저장 실패 복구(A3-3) | 단위·Playwright(실패 주입) |
 | 성능 | 편집 반응 시간. 잠정 목표 p95 100 ms. 측정 정의는 8.4. 첫 측정 후 메인 세션이 사용자 확인을 받아 고정(PLAN.md 8절) | Playwright |
 
@@ -263,7 +263,7 @@
 
 | 파일 | 내용 |
 | --- | --- |
-| `edit.ts`(새) | `ParagraphTarget`, `RunStyle`·`TextRun`, `ParagraphFormat`·`OverflowChoice`, `ReplaceParagraphOp`·`EditOp`, `PARAGRAPH_LIMIT_REASONS`·`ParagraphLimit`, `REMOVE_SKIP_CODES`, `EditWarning`, `InsertionInfo`, `ParagraphEditPlan`, `ParagraphEditability`·`PageEditability`, `PlacedGlyph`·`PlacedLine`·`ReflowSummary`, `DraftInput`·`DraftUpdate`·`BeginEditResult`, `EditHistoryState`(`revision`·`activeEditIds`), `CommitResult`, `EditedBlock`·`PageEditInfo` |
+| `edit.ts`(새) | `ParagraphTarget`, `RunStyle`·`TextRun`, `ParagraphFormat`(초과 선택 필드는 사용자 결정 2026-10-20 으로 삭제), `ReplaceParagraphOp`·`EditOp`, `PARAGRAPH_LIMIT_REASONS`·`ParagraphLimit`, `REMOVE_SKIP_CODES`, `EditWarning`, `InsertionInfo`, `ParagraphEditPlan`, `ParagraphEditability`·`PageEditability`, `PlacedGlyph`·`PlacedLine`·`ReflowSummary`, `DraftInput`·`DraftUpdate`·`BeginEditResult`, `EditHistoryState`(`revision`·`activeEditIds`), `CommitResult`, `EditedBlock`·`PageEditInfo` |
 | `rpc.ts` | `RenderRequest.clip`, `RenderedPage.clip`, `PdfWorkerApi` 편집 메서드(아래) |
 | `save.ts` | `SavePlan.edits`(편집 쪽·구조 연결이 끊긴 문단 수, 5.8) |
 | `source-map.ts` | S1 이 채우는 선택 필드: `TextShowInfo.tlm`, `SourceOp.state`(채움 색 연산·ExtGState 연산·직사각형 클립), `SourceOp.markedContent`(열린 MC 의 연산·태그·MCID·ActualText 여부). 판정 예산(5.1) 안에서 한 번의 해석으로 얻기 위함 |
@@ -303,6 +303,7 @@
 | `actualtext-partial` | D1 |
 | `singular-ctm`·`insertion-clipped`·`bt-split-unsupported`·`graphics-state-mismatch` | D3 |
 
+- 판정 목록(`getPageEditability`)에서 편집 블록은 레이아웃 문단 수와 무관하게 한 항목이다(첫 레이아웃 문단 id, 상자 = 블록 글자 상자). 커밋 뒤 layout-recon 이 블록 줄을 여러 문단으로 나눠 테두리가 갈라져 보이던 사용자 보고 B1(2026-10-20) 수정.
 - 경고(편집은 가능): `font-fallback`, `glyph-missing`, `synthetic-style`, `tagged-structure-kept`, `tagged-structure-unlinked`, `actualtext-cleared`, `reading-order-approximate`, `link-overlap`, `redact-overlap`(A2-2, `assessRedactionImpact` 를 SourceMap 제거 기준으로 고친 판정), `optional-content`, `area-overlaps-content`, `overflow-clipped`.
 - 판정 시간: 쪽 SourceMap·레이아웃 캐시가 있을 때 문단 하나 10 ms 이하, `getPageEditability` 쪽 하나 100 ms 이하(서버 Node, 측정 기록).
 
@@ -338,9 +339,9 @@
 | 줄 끝 공백 | 폭 계산에서 뺀다. 쓰기는 줄 끝 공백 글리프를 남겨 추출 시 단어가 붙지 않게 한다 |
 | 폰트 없는 글자 | `glyph-missing` 클러스터는 배치하지 않는다(폭 0, 쓰지 않음) |
 | 초과 | 마지막 줄 아래(기준선 + 하강)가 영역 아래 + 0.5pt 를 넘으면 초과. 가로 초과는 글자 단위 나눔으로 생기지 않는다 |
-| 축소(`shrink`) | 0.8 ≤ s ≤ 1 에서 들어가는 가장 큰 s(0.01 단위). 0.8 에서도 넘치면 s = 0.8 + 초과 표시 유지. s 는 출력(`ReflowSummary.fontScale`)이고 입력이 아니다 |
-| 넓히기(`expand`) | 필요한 높이만큼 영역 아래 변을 내린다(상한까지). 상한에 막히면 초과 표시 유지 |
-| 그대로(`keep`) | 넘친 줄도 그대로 쓴다(자동 클립 없음). `areaLimit` 밖으로 나간 부분은 CropBox·상위 Form BBox 에서 잘리므로 경고 `overflow-clipped`. 경고 상태로 커밋을 허용한다(2026-10-20 사용자 결정) |
+| 자동 확장 | **사용자 결정 2026-10-20**(이전 축소·넓히기·그대로 3선택을 대체): 내용이 영역 아래를 넘으면 reflow 가 아래 변을 필요한 높이만큼 내린다(`areaLimit` 까지). `format.area` 는 사용자가 정한 영역 그대로이고 실제로 쓴 영역은 `ReflowSummary.area`. 핸들로 내용보다 작게 줄여도 내용 높이까지 다시 늘어난다. 같은 편집 단위(undo·redo·재적용 결정성). 글자 크기 축소는 없다 |
+| 상한 초과 | `areaLimit` 에 막혀 넘치면 초과 표시와 경고 `overflow-clipped`. 넘친 줄도 그대로 쓴다(자동 클립 없음). 경고 상태로 커밋을 허용한다(2026-10-20 사용자 결정) |
+| 이전 형식 | 이전 빌드가 `/PdfEditorFormat`·`EditOp` 에 남긴 `overflow`(expand·shrink·keep)·`fontScale` 은 읽을 때 버린다(시험 고정) |
 | 줄 | 빈 텍스트도 줄 1개(캐럿용). 빈 `TextRun` 은 모양을 유지하기 위해 남긴다 |
 | 결정성 | 같은 입력이면 같은 결과(D6 재적용) |
 
@@ -385,7 +386,7 @@
 | 입력 | 숨긴 `textarea` 에 포커스. `beforeinput`·`input`·`composition*` 로 편집 모델(텍스트·모양 구간·캐럿·선택)을 고친다. 입력·붙여넣기는 NFC 정규화, 붙여넣기는 텍스트만, 줄바꿈은 강제 줄바꿈 |
 | 키 | 화살표(줄 이동은 리플로우 줄 기준), Home/End, Shift 선택, Ctrl+A(문단 안), Backspace/Delete, Enter(강제 줄바꿈), Ctrl+Z/Ctrl+Shift+Z·Ctrl+Y(편집 중 글자 단위) |
 | 종료 | 바깥 클릭·Esc(조합 중이 아닐 때) → 커밋(변경 없으면 취소와 같음). 도구 막대 "편집 취소" → 취소. Esc = 커밋은 일반 관례(Esc = 취소)와 다르므로 사용자 확인 권고(D11) |
-| 초과 UI | 영역 테두리와 초과 표시. 선택지: 영역 넓히기 / 글자 줄이기(최소 80%) / 그대로 두기 |
+| 초과 UI | **사용자 결정 2026-10-20**: 자동 확장(5.4). 상한에 막힌 초과일 때만 초과 표시와 "되돌리기" 버튼(이번 편집 폐기, "편집 취소"와 같은 경로). Esc·바깥 클릭 커밋은 경고 상태로 허용 |
 | 영역 핸들 | 네 변·네 모서리. `areaLimit` 밖으로 못 나감. 다른 내용과 겹치면 경고 |
 | 표시 | 폴백 글자 점선 밑줄(토글), 없는 글자 표시, 경고 목록, 태그 쪽 안내(D1) |
 | 문서 undo | 편집 밖 Ctrl+Z/Ctrl+Shift+Z·Ctrl+Y, 도구 막대 버튼 |

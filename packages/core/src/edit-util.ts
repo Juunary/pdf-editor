@@ -50,7 +50,7 @@ const CORE_WARNING_KINDS: ReadonlySet<EditWarningKind> = new Set<EditWarningKind
   'area-overlaps-content',
 ]);
 
-/** 영역 상한 밖으로 나간 부분이 렌더에서 잘린다(계약 5.4 `keep`·상한에 막힌 `expand`). */
+/** 영역 상한 밖으로 나간 부분이 렌더에서 잘린다(계약 5.4: 자동 확장이 상한에 막힌 초과). */
 const CLIP_TOLERANCE_PT = 0.5;
 /** 겹침으로 보는 최소 변 길이(pt). 맞닿은 테두리를 겹침으로 세지 않는다. */
 const OVERLAP_MIN_PT = 0.5;

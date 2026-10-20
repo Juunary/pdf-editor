@@ -1,5 +1,5 @@
 /**
- * 문단 배치(계약 5.4). 클러스터 셰이핑 → 줄 나눔(탐욕, 첫 맞춤) → 초과 처리(shrink·expand·keep) → 정렬·좌표.
+ * 문단 배치(계약 5.4). 클러스터 셰이핑 → 줄 나눔(탐욕, 첫 맞춤) → 초과 시 영역 아래 변 자동 확장(상한까지) → 정렬·좌표.
  * 좌표는 페이지 공간(y 아래), 길이 pt. 같은 입력이면 같은 결과다(reflowMs 제외).
  */
 import type { PlacedGlyph, PlacedLine, Rect } from '@pdf-editor/shared-types';
@@ -18,8 +18,6 @@ import {
 export const FIT_EPSILON = 0.01;
 /** 초과 판정 여유(pt, 계약 5.4: 영역 아래 + 0.5pt). */
 export const OVERFLOW_TOLERANCE = 0.5;
-/** shrink 배율 범위와 단위(계약 5.4: 0.8 ≤ s ≤ 1, 0.01 단위). 정수 백분율로 계산해 부동소수 누적을 피한다. */
-export const SHRINK_MIN_PERCENT = 80;
 /** 폰트 높이 정보가 없을 때 쓰는 기본값(1/1000 em). */
 const DEFAULT_ASCENT = 800;
 const DEFAULT_DESCENT = -200;
@@ -34,9 +32,9 @@ interface Item {
   /** kind 가 glyph 일 때만 있다. */
   face: FontFace | null;
   glyphs: ShapedGlyph[];
-  /** 배율 1 의 전진량(pt, 커닝 포함). */
+  /** 전진량(pt, 커닝 포함). */
   adv: number;
-  /** adv 중 다음 클러스터와의 커닝(pt, 배율 1). */
+  /** adv 중 다음 클러스터와의 커닝(pt). */
   kernAfter: number;
   cc: CharClass;
 }
@@ -73,31 +71,23 @@ export function layout(input: ReflowInput): ReflowResult {
   const firstBaselineOffset = Number.isFinite(format.firstBaselineOffset)
     ? format.firstBaselineOffset
     : maxSize;
-  const baseline = (idx: number, s: number): number =>
-    area[1] + firstBaselineOffset * s + idx * lineHeight * s;
+  const baseline = (idx: number): number => area[1] + firstBaselineOffset + idx * lineHeight;
   const firstFace = segments.find((sg) => sg.face !== null)?.face ?? null;
-  const metricsOf = (line: LineRange, s: number): Metrics =>
-    lineMetrics(items, line, s) ??
-    caretMetrics(text, segments, firstFace, offsetOf(items, line, text), s, lineHeight);
-  const bottomOf = (lines: LineRange[], s: number): number => {
+  const metricsOf = (line: LineRange): Metrics =>
+    lineMetrics(items, line) ??
+    caretMetrics(text, segments, firstFace, offsetOf(items, line, text), lineHeight);
+  const bottomOf = (lines: LineRange[]): number => {
     const last = lines.length - 1;
     const lastLine = lines[last];
-    return lastLine === undefined ? area[1] : baseline(last, s) - metricsOf(lastLine, s).descent;
+    return lastLine === undefined ? area[1] : baseline(last) - metricsOf(lastLine).descent;
   };
 
-  let s = 1;
-  let lines = breakLines(items, normal, preferred, lineWidth, s);
-  let bottom = bottomOf(lines, s);
+  const lines = breakLines(items, normal, preferred, lineWidth);
+  const bottom = bottomOf(lines);
+  // 초과하면 아래 변을 필요한 높이까지 자동으로 내린다(상한까지, 2026-10-20 사용자 결정). 줄 폭은 그대로라 줄 나눔은
+  // 바뀌지 않는다. 사용자가 핸들로 영역을 글 높이보다 줄여도 같은 규칙으로 다시 늘어난다. 상한에 막히면 초과 유지.
   let overflow = bottom > area[3] + OVERFLOW_TOLERANCE;
-  if (format.overflow === 'shrink' && overflow) {
-    for (let k = 99; k >= SHRINK_MIN_PERCENT; k--) {
-      s = k / 100;
-      lines = breakLines(items, normal, preferred, lineWidth, s);
-      bottom = bottomOf(lines, s);
-      overflow = bottom > area[3] + OVERFLOW_TOLERANCE;
-      if (!overflow) break;
-    }
-  } else if (format.overflow === 'expand' && overflow) {
+  if (overflow) {
     area = [area[0], area[1], area[2], Math.max(area[3], Math.min(areaLimit[3], bottom))];
     overflow = bottom > area[3] + OVERFLOW_TOLERANCE;
   }
@@ -107,19 +97,10 @@ export function layout(input: ReflowInput): ReflowResult {
   const writable: WritableGlyph[][] = [];
   let box: Rect | null = null;
   lines.forEach((line, idx) => {
-    const y = baseline(idx, s);
-    const m = metricsOf(line, s);
+    const y = baseline(idx);
+    const m = metricsOf(line);
     const isLast = idx === lines.length - 1;
-    const placed = placeLine(
-      items,
-      line,
-      s,
-      lineLeft(idx),
-      lineWidth(idx),
-      format.align,
-      isLast,
-      y,
-    );
+    const placed = placeLine(items, line, lineLeft(idx), lineWidth(idx), format.align, isLast, y);
     glyphs.push(...placed.glyphs);
     writable.push(placed.writable);
     const start = line.a < line.b ? (items[line.a]?.start ?? 0) : offsetOf(items, line, text);
@@ -145,7 +126,6 @@ export function layout(input: ReflowInput): ReflowResult {
       contentBox: box ?? [area[0], area[1], area[0], area[1]],
       area,
       overflow,
-      fontScale: s,
       reflowMs: now() - t0,
     },
     lines: writable,
@@ -225,7 +205,6 @@ function breakLines(
   normal: readonly boolean[],
   preferred: readonly boolean[],
   lineWidth: (idx: number) => number,
-  s: number,
 ): LineRange[] {
   const lines: LineRange[] = [];
   const n = items.length;
@@ -247,12 +226,12 @@ function breakLines(
       }
       if (it.cc.cls !== 'SP') {
         if (j > a && normal[j]) lastBreak = j;
-        if (j > a && pen + (it.adv - it.kernAfter) * s > width) {
+        if (j > a && pen + (it.adv - it.kernAfter) > width) {
           end = lastBreak > a ? lastBreak : emergencyBreak(items, preferred, a, j);
           break;
         }
       }
-      pen += it.adv * s;
+      pen += it.adv;
     }
     if (end < 0) end = n;
     lines.push({ a, b: end, hard });
@@ -287,7 +266,6 @@ interface PlacedLineGlyphs {
 function placeLine(
   items: readonly Item[],
   line: LineRange,
-  s: number,
   left: number,
   width: number,
   align: string,
@@ -305,8 +283,8 @@ function placeLine(
   let natural = 0;
   for (let i = a; i < b; i++) {
     const it = items[i];
-    let adv = it === undefined || it.kind !== 'glyph' ? 0 : it.adv * s;
-    if (it !== undefined && i === contentEnd - 1 && it.kind === 'glyph') adv -= it.kernAfter * s;
+    let adv = it === undefined || it.kind !== 'glyph' ? 0 : it.adv;
+    if (it !== undefined && i === contentEnd - 1 && it.kind === 'glyph') adv -= it.kernAfter;
     advs.push(adv);
     if (i < contentEnd) natural += adv;
   }
@@ -347,7 +325,7 @@ function placeLine(
   for (let i = a; i < b; i++) {
     const it = items[i];
     if (it === undefined || it.kind === 'break') continue;
-    const size = it.seg.size * s;
+    const size = it.seg.size;
     if (it.kind === 'missing' || it.face === null) {
       glyphs.push({
         offset: it.start,
@@ -400,12 +378,12 @@ function placeLine(
 }
 
 /** 줄의 글리프 클러스터에서 가장 큰 올림·가장 깊은 내림(pt, 내림 음수). 글리프가 없으면 null. */
-function lineMetrics(items: readonly Item[], line: LineRange, s: number): Metrics | null {
+function lineMetrics(items: readonly Item[], line: LineRange): Metrics | null {
   let m: Metrics | null = null;
   for (let i = line.a; i < line.b; i++) {
     const it = items[i];
     if (it === undefined || it.kind !== 'glyph' || it.face === null) continue;
-    const fm = faceMetrics(it.face, it.seg.size * s);
+    const fm = faceMetrics(it.face, it.seg.size);
     m =
       m === null
         ? fm
@@ -428,7 +406,6 @@ function caretMetrics(
   segments: readonly FontSegment[],
   firstFace: FontFace | null,
   offset: number,
-  s: number,
   lineHeight: number,
 ): Metrics {
   let seg: FontSegment | undefined;
@@ -437,7 +414,7 @@ function caretMetrics(
   if (seg === undefined && offset === text.length)
     seg = segments.findLast((sg) => sg.end === offset);
   seg ??= segments[0];
-  const size = (seg?.size ?? lineHeight / 1.2) * s;
+  const size = seg?.size ?? lineHeight / 1.2;
   return faceMetrics(seg?.face ?? firstFace, size);
 }
 

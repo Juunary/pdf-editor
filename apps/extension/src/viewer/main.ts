@@ -3,6 +3,7 @@ import {
   EditLog,
   ViewerController,
   classifyFailure,
+  PAGE_ARROW_GUTTER,
   mountViewer,
   type PagePaintedEvent,
 } from '@pdf-editor/viewer-ui';
@@ -401,7 +402,8 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
     pageCount: info.pageCount,
     getEnvironment: () => ({
       devicePixelRatio: window.devicePixelRatio || 1,
-      availableWidth: document.documentElement.clientWidth,
+      // 쪽 좌우 화살표 칸을 뺀 너비에 맞춘다(화살표가 쪽을 가리지 않게).
+      availableWidth: document.documentElement.clientWidth - 2 * PAGE_ARROW_GUTTER,
     }),
     onPagePainted,
     editLog,
