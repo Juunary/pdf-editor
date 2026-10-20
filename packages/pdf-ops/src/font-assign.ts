@@ -601,7 +601,10 @@ export class OriginalFont {
     return this.glyphOk.get(code);
   }
 
+  /** 탐침 임시 문서를 해제한다(R-L3). 여러 번 불러도 된다. 해제 뒤 탐침이 필요하면 임시 문서를 다시 만든다. */
   destroy(): void {
+    this.probeFont?.destroy();
+    this.probeFont = null;
     this.probeDoc?.destroy();
     this.probeDoc = null;
   }
@@ -633,6 +636,7 @@ export class FontState {
   readonly cache: FontCache;
   private readonly originals = new Map<string, OriginalFont>();
   private metrics: FallbackMetrics | null | undefined;
+  private disposed = false;
   /** 이 세션에서 편집 블록에 쓴 폴백 gid(저장 서브셋용). */
   readonly usedFallbackGids = new Set<number>();
 
@@ -644,6 +648,7 @@ export class FontState {
   }
 
   original(style: ResolvedStyle, map: SourceMap | null): OriginalFont {
+    this.assertLive();
     const ref = style.fontRef;
     const key = ref.isIndirect() ? `o:${ref.asIndirect()}` : `o:p${ref.resolve().pointer}`;
     let f = this.originals.get(key);
@@ -664,6 +669,7 @@ export class FontState {
    * MuPDF 함수라 값이 같다). 바이트를 얻지 못하면 null(폴백 없음).
    */
   private fallbackMetrics(): FallbackMetrics | null {
+    this.assertLive();
     if (this.metrics !== undefined) return this.metrics;
     let bytes: Uint8Array;
     try {
@@ -697,6 +703,23 @@ export class FontState {
       tmp.destroy();
     }
     return this.metrics;
+  }
+
+  /**
+   * WASM 자원 해제(R-L3): 원본 폰트마다 탐침 임시 문서, 폴백 `mupdf.Font`. 문서를 닫거나 FontManager 를 버릴 때
+   * 한 번 부른다(여러 번 불러도 된다). 해제 뒤 배정·폴백 조회는 예외. 문서·편집 블록 객체는 건드리지 않는다.
+   */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const f of this.originals.values()) f.destroy();
+    this.originals.clear();
+    this.metrics?.font.destroy();
+    this.metrics = null;
+  }
+
+  private assertLive(): void {
+    if (this.disposed) throw new Error('FontState 가 해제됨');
   }
 
   /** 폴백 face(배정·배치용). 폴백 폰트가 없으면 null. */
