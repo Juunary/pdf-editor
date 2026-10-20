@@ -39,6 +39,7 @@ import {
   replaceContentsSlot,
   type Replacement,
 } from './text-remove.js';
+import { writeStreamBytes } from './mupdf-util.js';
 
 /** 편집 블록 쓰기에 필요한 초안 시작 시점 해석(편집 id 별). */
 export interface WriteContext {
@@ -388,7 +389,7 @@ export function prepareEdit(
     if (!isPage) {
       const num = path[hi]!.objectNumber;
       const list = lists.get(`f:${num}`) ?? [];
-      clone!.writeStream(applyReplacements(streams.get(num), list));
+      writeStreamBytes(clone!, applyReplacements(streams.get(num), list));
       childRef = clone!;
     }
   }
@@ -412,7 +413,7 @@ export function prepareEdit(
       replaceContentsSlot(doc, pageObj, w.slot, copy);
       changed.add(copy.asIndirect());
     } else {
-      doc.newIndirect(w.num).writeStream(w.bytes);
+      writeStreamBytes(doc.newIndirect(w.num), w.bytes);
       changed.add(w.num);
     }
   }

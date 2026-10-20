@@ -26,7 +26,7 @@ import {
   WIN_ANSI_ENCODING,
   type EncodingTable,
 } from './glyph-names.js';
-import { readStreamBytes } from './mupdf-util.js';
+import { readStreamBytes, writeStreamBytes } from './mupdf-util.js';
 import { FontCache, type PdfFont } from './pdf-fonts.js';
 import type { ResolvedStyle } from './edit-style.js';
 
@@ -873,7 +873,7 @@ export class FontState {
     const file = desc.get('FontDescriptor').get('FontFile2');
     if (!file.isStream()) return;
     const sub = subsetFontBytes(FALLBACK_NAME, bytes, used);
-    file.writeStream(sub);
+    writeStreamBytes(file, sub);
     if (!file.get('Length1').isNull()) file.put('Length1', sub.byteLength);
     // ToUnicode·/W 도 쓴 글리프만 남긴다(전체 cmap ToUnicode 가 저장 파일에 약 21 KB).
     const tu = ref.resolve().get('ToUnicode');
@@ -881,7 +881,7 @@ export class FontState {
       const keep = parseToUnicode(readStreamBytes(tu)).filter((e) =>
         this.usedFallbackGids.has(e.code),
       );
-      tu.writeStream(toUnicodeCMap(keep));
+      writeStreamBytes(tu, toUnicodeCMap(keep));
     }
     const widths = new FontCache(this.doc).load(ref.resolve());
     const w = this.doc.newArray();

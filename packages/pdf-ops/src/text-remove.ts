@@ -20,7 +20,7 @@
 import type * as mupdf from 'mupdf';
 import type { RemoveSkipCode, SourceMap } from '@pdf-editor/shared-types';
 import { concatBytes } from './content-stream.js';
-import { readStreamBytes } from './mupdf-util.js';
+import { readStreamBytes, writeStreamBytes } from './mupdf-util.js';
 import { FontCache } from './pdf-fonts.js';
 import { analyzeShow, isSkip, rewriteShow } from './show-ops.js';
 
@@ -203,7 +203,7 @@ export function removeTextShowOps(
       result.streams.push(to);
       result.copied.push({ contentsIndex: w.group.slot, from: w.group.num, to });
     } else {
-      doc.newIndirect(w.group.num).writeStream(w.bytes);
+      writeStreamBytes(doc.newIndirect(w.group.num), w.bytes);
       result.streams.push(w.group.num);
     }
   }

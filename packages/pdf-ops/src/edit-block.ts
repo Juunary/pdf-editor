@@ -16,7 +16,7 @@ import type { BlockFormat } from './edit-plan.js';
 import { cleanParagraphFormat, readBlockFormat } from './edit-plan.js';
 import { effectiveGs, samePdfValue, type ColorOpSpec, type ResolvedStyle } from './edit-style.js';
 import { FALLBACK_KEY, FALLBACK_NAME, type FontState } from './font-assign.js';
-import { readStreamBytes } from './mupdf-util.js';
+import { readStreamBytes, writeStreamBytes } from './mupdf-util.js';
 import type {
   EditBlockRef,
   ParagraphEditContext,
@@ -324,7 +324,7 @@ export function writeBlock(
   closeTJ();
   out.push('ET', 'Q');
   const content = latin1Bytes(`${out.join('\n')}\n`);
-  block.writeStream(content);
+  writeStreamBytes(block, content);
   const built = res.build(doc);
   block.put('Resources', built.dict);
 
