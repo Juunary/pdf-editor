@@ -38,9 +38,11 @@ import { describe, expect, it } from 'vitest';
 import type {
   DraftInput,
   DraftUpdate,
+  EditOp,
   LayoutParagraph,
   PageLayout,
   ParagraphEditPlan,
+  PathEdit,
   PlacedGlyph,
   Rect,
   TextRun,
@@ -768,6 +770,527 @@ describe.skipIf(!dir)('코퍼스 편집 표본 판정(계약 8.2·8.3)', () => {
       const { failures, ...head } = summary;
       console.log(JSON.stringify(head, null, 1));
       console.log(`failures ${failures.length} → ${outPath}`);
+      expect(rows.length).toBeGreaterThan(0);
+    },
+    6 * 3_600_000,
+  );
+});
+
+// ---------------------------------------------------------------- M4 표 셀·패스(계약 6.1)
+
+/**
+ * M4 코퍼스 표본(docs/m4-contract.md 6.1, docs/m4-integration.md). `EDIT_CORPUS_M4=cells,paths`(또는 그 중 하나)일 때만 돈다.
+ *   EDIT_CORPUS_DIR=<PDF 폴더> EDIT_CORPUS_M4=cells,paths [EDIT_CORPUS_M4_OUT=<json>] [EDIT_CORPUS_ENGINES=...]
+ * 표본 쪽은 S1 표본(docs/m4-pdf-ops.md 5.1·5.2)과 같다. 실제 core 세션 흐름(판정 → 시작 → 갱신 → 커밋 → 저장)으로 돈다.
+ *   셀: 쪽마다 머리 행 셀·숫자 셀·글자 셀 최대 3개 × 같은 텍스트·숫자 자릿수 +1(앞에 "1")·한글 덧붙이기(" 수정").
+ *   패스: 쪽마다 편집 가능 패스 큰 것부터 5개 × 채움 색(채움 있는 패스)·선 두께 ×2(선 있는 패스, 0 이면 0.5pt)·10pt 이동.
+ * 지표: 허용 영역 밖 렌더 차이(세 엔진, 셀 = 셀 상자 ∪ 원 문단 상자 ∪ 배치 상자 ∪ 원 글자 잉크, 패스 = 편집 전 ∪ 후 상자,
+ *   여백 2pt), 다른 쪽 렌더(MuPDF), 텍스트(셀: 배치 상자 안 = 입력, 패스: 쪽 텍스트 불변), 다른 쪽 객체 불변, 같은 텍스트
+ *   셀의 글리프 원점 이동 ≤ 0.5pt(1.1), V4(셀 커밋 뒤 표 모양 유지·셀 문단 하나), 재적용 결정성(로그를 새 세션에
+ *   replayEdits 한 저장 렌더 = 원래 저장 렌더, MuPDF), 쪽 판정의 편집 가능 비율·사유 분포.
+ */
+const m4Kinds = process.env.EDIT_CORPUS_M4?.split(',') ?? [];
+const m4Out =
+  process.env.EDIT_CORPUS_M4_OUT ??
+  join(
+    REPO,
+    'out/m4-edit-corpus',
+    `m4-edit-corpus-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
+  );
+/** 표 쪽(1부터, docs/m4-pdf-ops.md 5.2 표본). */
+const M4_TABLE_PAGES: Record<string, number[]> = {
+  'ustreas-mts-202509.pdf': [35, 17],
+  'fed-h41-current.pdf': [9, 8],
+  'fed-combined-finstmt-2025.pdf': [7, 8],
+  'kogl-nabo-finstmt2025.pdf': [107, 85],
+  'kogl-mods-cpi-202609.pdf': [17, 18],
+};
+/** 도표 쪽(1부터, docs/m4-pdf-ops.md 5.1 표본). */
+const M4_PATH_PAGES: Record<string, number[]> = {
+  'arxiv-2609.09268.pdf': [10, 14],
+  'arxiv-2609.10511.pdf': [7, 3],
+  'kogl-mods-cpi-202609.pdf': [4, 6],
+};
+
+interface M4Row {
+  unit: 'cell' | 'path';
+  file: string;
+  page: number;
+  target: string;
+  kind: string;
+  align?: string;
+  warnings: string[];
+  overflow?: boolean;
+  diffOutside: Record<string, DiffResult>;
+  otherPagesDiff: Record<number, number>;
+  text: Record<string, boolean>;
+  objects: string[];
+  shift?: number;
+  v4?: { tableKept: boolean; cellParagraphs: number; cellTable: boolean };
+  replaySame: boolean | null;
+  updateMs: number;
+  error?: string;
+}
+
+interface M4PageTotals {
+  unit: 'cell' | 'path';
+  file: string;
+  page: number;
+  items: number;
+  editable: number;
+  reasons: Record<string, number>;
+  error?: string;
+}
+
+const inflate = (r: Rect, m: number): Rect => [r[0] - m, r[1] - m, r[2] + m, r[3] + m];
+
+function inkOf(model: ReturnType<PdfSession['extractPage']>, chars: number[]): Rect | null {
+  let ink: Rect | null = null;
+  for (const ci of chars) {
+    const ch = model.chars[ci]!;
+    const q = ch.quad;
+    const m = 0.25 * ch.size;
+    const xs = [q[0], q[2], q[4], q[6]];
+    const ys = [q[1], q[3], q[5], q[7]];
+    ink = union(ink, [
+      Math.min(...xs) - m,
+      Math.min(...ys) - m,
+      Math.max(...xs) + m,
+      Math.max(...ys) + m,
+    ]);
+  }
+  return ink;
+}
+
+/** 저장 결과를 판정한다(렌더·다른 쪽·객체·재적용). 텍스트·이동은 호출자가. */
+async function judgeSaved(
+  c: DocCache,
+  p: number,
+  saved: Uint8Array,
+  allow: Rect[],
+  ops: EditOp[],
+  row: M4Row,
+): Promise<void> {
+  const origin = pageOrigin(saved, p);
+  for (const e of engines) {
+    row.diffOutside[e] = diffOutside(
+      await originalRaster(c, e, p),
+      await raster(e, saved, p),
+      allow,
+      origin,
+    );
+  }
+  const others = [...c.mupdfOriginal.keys()].filter((k) => k !== p);
+  const savedOthers = mupdfRasters(saved, others);
+  for (const k of others)
+    row.otherPagesDiff[k + 1] = diffAll(c.mupdfOriginal.get(k)!, savedOthers.get(k)!);
+  const doc = openMupdf(saved);
+  try {
+    for (const [k, o] of c.objects) {
+      if (k === p) continue;
+      const n = pageObjects(doc, k);
+      if (n.content !== o.content) row.objects.push(`p${k + 1} content`);
+      if (n.resources !== o.resources) row.objects.push(`p${k + 1} resources`);
+    }
+  } finally {
+    doc.destroy();
+  }
+  const r = session(c.bytes);
+  try {
+    await r.replayEdits(structuredClone(ops));
+    const again = r.save({ changes: [] }).bytes;
+    row.replaySame =
+      diffAll(mupdfRasters(saved, [p]).get(p)!, mupdfRasters(again, [p]).get(p)!) === 0;
+  } catch (err) {
+    row.replaySame = false;
+    row.error = `재적용 실패: ${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    r.close();
+  }
+}
+
+const tableShape = (layout: PageLayout) =>
+  layout.tables.map((t) => `${t.strategy}:${t.rows}x${t.cols}`).join(',');
+
+async function m4Cells(
+  c: DocCache,
+  file: string,
+  p: number,
+  totals: M4PageTotals[],
+  rows: M4Row[],
+) {
+  const tot: M4PageTotals = { unit: 'cell', file, page: p + 1, items: 0, editable: 0, reasons: {} };
+  totals.push(tot);
+  const s0 = session(c.bytes);
+  let picks: { id: number; bbox: Rect; cell: { table: number; row: number; col: number } }[];
+  let shape0: string;
+  let model0: ReturnType<PdfSession['extractPage']>;
+  let layout0: PageLayout;
+  try {
+    const pe = await s0.getPageEditability(p);
+    layout0 = s0.getPageLayout(p);
+    model0 = s0.extractPage({ pageIndex: p });
+    shape0 = tableShape(layout0);
+    const cells = pe.paragraphs.filter((q) => q.cell !== null);
+    tot.items = cells.length;
+    for (const q of cells) {
+      if (q.editable) tot.editable++;
+      else for (const r of new Set(q.reasons)) tot.reasons[r] = (tot.reasons[r] ?? 0) + 1;
+    }
+    const textOf = (id: number) => layout0.paragraphs.find((x) => x.id === id)?.text ?? '';
+    const ok = cells.filter((q) => q.editable);
+    const header = ok.find((q) => q.cell!.row === 0);
+    const numeric = ok.find(
+      (q) =>
+        q.cell!.row > 0 &&
+        /^[\s\d,.()$%−-]+$/u.test(textOf(q.paragraphId)) &&
+        /\d/.test(textOf(q.paragraphId)),
+    );
+    const word = ok.find((q) => q.cell!.row > 0 && /\p{L}{3}/u.test(textOf(q.paragraphId)));
+    picks = [header, numeric, word]
+      .filter((x): x is NonNullable<typeof x> => x !== undefined)
+      .map((q) => ({ id: q.paragraphId, bbox: q.bbox, cell: q.cell! }));
+  } catch (err) {
+    tot.error = err instanceof Error ? err.message : String(err);
+    s0.close();
+    return;
+  }
+  s0.close();
+  for (const pick of picks) {
+    for (const kind of ['same', 'digit', 'hangul'] as const) {
+      const row: M4Row = {
+        unit: 'cell',
+        file,
+        page: p + 1,
+        target: `cell ${pick.cell.table}:${pick.cell.row}:${pick.cell.col} ${JSON.stringify(layout0!.paragraphs.find((x) => x.id === pick.id)?.text.slice(0, 30))}`,
+        kind,
+        warnings: [],
+        diffOutside: {},
+        otherPagesDiff: {},
+        text: {},
+        objects: [],
+        replaySame: null,
+        updateMs: 0,
+      };
+      rows.push(row);
+      const s = session(c.bytes);
+      try {
+        const plan = await s.planParagraphEdit(p, pick.id);
+        if (!plan.editable)
+          throw new Error(`편집 불가: ${plan.limits.map((l) => l.reason).join(',')}`);
+        row.align = plan.format.align;
+        const last = plan.runs.length - 1;
+        const runs = plan.runs.map((r, i) => ({
+          ...r,
+          text:
+            kind === 'digit' && i === 0
+              ? `1${r.text}`
+              : kind === 'hangul' && i === last
+                ? `${r.text} 수정`
+                : r.text,
+        }));
+        const text = runs.map((r) => r.text).join('');
+        const begin = await s.beginParagraphEdit(p, pick.id, plan.revision, 2);
+        const update = await s.updateParagraphDraft(begin.draftId, {
+          runs,
+          format: plan.format,
+          composition: null,
+          renderScale: 2,
+        });
+        row.updateMs = update.updateMs;
+        row.overflow = update.reflow.overflow;
+        row.warnings = [...new Set(update.warnings.map((w) => w.kind))];
+        const commit = await s.commitParagraphEdit(begin.draftId);
+        const layout = s.getPageLayout(p);
+        const cell = layout.tables[pick.cell.table]?.cells.find(
+          (x) => x.row === pick.cell.row && x.col === pick.cell.col,
+        );
+        row.v4 = {
+          tableKept: tableShape(layout) === shape0,
+          cellParagraphs: cell?.paragraphs.length ?? -1,
+          cellTable: cell
+            ? cell.paragraphs.every((id) => layout.paragraphs.find((x) => x.id === id)?.table)
+            : false,
+        };
+        const saved = s.save({ changes: [] }).bytes;
+        const ink = inkOf(model0!, layout0!.paragraphs.find((x) => x.id === pick.id)?.chars ?? []);
+        const allow = [
+          pick.bbox,
+          plan.target.bbox,
+          update.reflow.contentBox,
+          ...(ink ? [ink] : []),
+        ];
+        await judgeSaved(c, p, saved, allow, [commit.op], row);
+        const expected = squash(expectedText(text, update.reflow.glyphs));
+        for (const e of TEXT_ENGINES) {
+          const got = squash(
+            await textInBox(e, saved, p, update.reflow.contentBox, pageOrigin(saved, p)),
+          );
+          row.text[e] = got === expected;
+        }
+        if (kind === 'same') {
+          const inBox = (m: ReturnType<PdfSession['extractPage']>) =>
+            m.chars.filter(
+              (ch) => squash(ch.text) !== '' && inRect(ch.origin[0], ch.origin[1], pick.bbox),
+            );
+          const a = inBox(model0!);
+          const r2 = session(saved);
+          const b = inBox(r2.extractPage({ pageIndex: p }));
+          r2.close();
+          row.shift =
+            a.length === b.length
+              ? Math.max(
+                  0,
+                  ...a.map((ch, i) =>
+                    Math.hypot(ch.origin[0] - b[i]!.origin[0], ch.origin[1] - b[i]!.origin[1]),
+                  ),
+                )
+              : -1;
+        }
+      } catch (err) {
+        row.error ??= err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      } finally {
+        s.close();
+      }
+    }
+  }
+}
+
+async function m4Paths(
+  c: DocCache,
+  file: string,
+  p: number,
+  totals: M4PageTotals[],
+  rows: M4Row[],
+) {
+  const tot: M4PageTotals = { unit: 'path', file, page: p + 1, items: 0, editable: 0, reasons: {} };
+  totals.push(tot);
+  const s0 = session(c.bytes);
+  let picks: { paintSeq: number; bbox: Rect }[];
+  try {
+    const pe = await s0.getPageEditability(p);
+    tot.items = pe.paths.length;
+    for (const q of pe.paths) {
+      if (q.editable) tot.editable++;
+      else for (const r of new Set(q.reasons)) tot.reasons[r] = (tot.reasons[r] ?? 0) + 1;
+    }
+    const size = (b: Rect) => [(b[2] - b[0]) * (b[3] - b[1]), b[2] - b[0] + b[3] - b[1]] as const;
+    picks = pe.paths
+      .filter((q) => q.editable)
+      .sort((a, b) => {
+        const [aa, al] = size(a.bbox);
+        const [ba, bl] = size(b.bbox);
+        return ba - aa || bl - al || a.paintSeq - b.paintSeq;
+      })
+      .slice(0, 5)
+      .map((q) => ({ paintSeq: q.paintSeq, bbox: q.bbox }));
+  } catch (err) {
+    tot.error = err instanceof Error ? err.message : String(err);
+    s0.close();
+    return;
+  }
+  s0.close();
+  const textBefore = orderNorm(await pageText('mupdf', c.bytes, p));
+  for (const pick of picks) {
+    for (const kind of ['fill', 'width', 'move'] as const) {
+      const row: M4Row = {
+        unit: 'path',
+        file,
+        page: p + 1,
+        target: `path ${pick.paintSeq} [${pick.bbox.map((v) => v.toFixed(1)).join(',')}]`,
+        kind,
+        warnings: [],
+        diffOutside: {},
+        otherPagesDiff: {},
+        text: {},
+        objects: [],
+        replaySame: null,
+        updateMs: 0,
+      };
+      const s = session(c.bytes);
+      try {
+        const plan = await s.planPathEdit(p, [pick.paintSeq]);
+        if (!plan.editable)
+          throw new Error(`편집 불가: ${plan.limits.map((l) => l.reason).join(',')}`);
+        const edit: PathEdit = {
+          transform: null,
+          fill: null,
+          stroke: null,
+          lineWidth: null,
+          points: null,
+          delete: false,
+        };
+        if (kind === 'fill') {
+          if (!plan.fill) continue;
+          edit.fill = [0.1, 0.6, 0.3];
+        } else if (kind === 'width') {
+          if (!plan.stroke) continue;
+          edit.lineWidth = plan.lineWidth ? plan.lineWidth * 2 : 0.5;
+        } else edit.transform = [1, 0, 0, 1, 10, 0];
+        rows.push(row);
+        const begin = await s.beginPathEdit(p, [pick.paintSeq], plan.revision);
+        const update = await s.updatePathDraft(begin.draftId, edit, 2);
+        row.updateMs = update.updateMs;
+        row.warnings = [...new Set(update.warnings.map((w) => w.kind))];
+        const commit = await s.commitPathEdit(begin.draftId);
+        const saved = s.save({ changes: [] }).bytes;
+        await judgeSaved(
+          c,
+          p,
+          saved,
+          [inflate(plan.target.bbox, 0), update.bbox],
+          [commit.op],
+          row,
+        );
+        row.text.mupdf = orderNorm(await pageText('mupdf', saved, p)) === textBefore;
+      } catch (err) {
+        if (!rows.includes(row)) rows.push(row);
+        row.error ??= err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+      } finally {
+        s.close();
+      }
+    }
+  }
+}
+
+function m4Summary(rows: M4Row[], totals: M4PageTotals[]) {
+  const ok = rows.filter((r) => !r.error);
+  const rate = (pass: number, n: number) => ({ pass, n, rate: n ? +(pass / n).toFixed(4) : null });
+  const per = (set: M4Row[]) => ({
+    n: set.length,
+    diffOutside: Object.fromEntries(
+      engines.map((e) => {
+        const v = set.filter((r) => r.diffOutside[e]);
+        return [e, rate(v.filter((r) => r.diffOutside[e]!.pixels === 0).length, v.length)];
+      }),
+    ),
+    otherPages: rate(
+      set.filter((r) => Object.values(r.otherPagesDiff).every((v) => v === 0)).length,
+      set.length,
+    ),
+    text: Object.fromEntries(
+      ['mupdf', 'pdfjs'].map((e) => {
+        const v = set.filter((r) => r.text[e] !== undefined);
+        return [e, rate(v.filter((r) => r.text[e]).length, v.length)];
+      }),
+    ),
+    objects: rate(set.filter((r) => r.objects.length === 0).length, set.length),
+    replay: rate(set.filter((r) => r.replaySame === true).length, set.length),
+    warnings: count(set.flatMap((r) => r.warnings)),
+  });
+  const cells = ok.filter((r) => r.unit === 'cell');
+  const paths = ok.filter((r) => r.unit === 'path');
+  const same = cells.filter((r) => r.kind === 'same' && r.shift !== undefined);
+  const editability = (unit: 'cell' | 'path') => {
+    const t = totals.filter((x) => x.unit === unit);
+    const items = t.reduce((a, x) => a + x.items, 0);
+    const editable = t.reduce((a, x) => a + x.editable, 0);
+    const reasons: Record<string, number> = {};
+    for (const x of t)
+      for (const [k, v] of Object.entries(x.reasons)) reasons[k] = (reasons[k] ?? 0) + v;
+    return {
+      pages: t.length,
+      items,
+      editable,
+      ratio: items ? +(editable / items).toFixed(4) : null,
+      reasons,
+    };
+  };
+  return {
+    date: new Date().toISOString(),
+    engines,
+    editability: { cells: editability('cell'), paths: editability('path') },
+    edits: rows.length,
+    editErrors: rows
+      .filter((r) => r.error)
+      .map((r) => `${r.file} p${r.page} ${r.target} ${r.kind}: ${r.error}`),
+    cells: {
+      ...per(cells),
+      byKind: Object.fromEntries(
+        ['same', 'digit', 'hangul'].map((k) => [k, per(cells.filter((r) => r.kind === k))]),
+      ),
+      overflow: cells.filter((r) => r.overflow).length,
+      shift: {
+        n: same.length,
+        within05: same.filter((r) => r.shift! >= 0 && r.shift! <= 0.5).length,
+        values: same.map(
+          (r) => `${r.file} p${r.page} ${r.target} ${r.align}: ${r.shift!.toFixed(3)}`,
+        ),
+      },
+      v4: rate(
+        cells.filter((r) => r.v4?.tableKept && r.v4.cellParagraphs === 1 && r.v4.cellTable).length,
+        cells.length,
+      ),
+    },
+    paths: {
+      ...per(paths),
+      byKind: Object.fromEntries(
+        ['fill', 'width', 'move'].map((k) => [k, per(paths.filter((r) => r.kind === k))]),
+      ),
+      updateMs: (() => {
+        const v = paths.map((r) => r.updateMs).sort((a, b) => a - b);
+        return v.length
+          ? {
+              median: v[Math.floor(v.length / 2)],
+              p95: v[Math.floor(v.length * 0.95)],
+              max: v.at(-1),
+            }
+          : null;
+      })(),
+    },
+  };
+}
+
+describe.skipIf(!dir || m4Kinds.length === 0)('M4 코퍼스 표본(계약 6.1: 표 셀·패스)', () => {
+  it(
+    '표 쪽 셀 3개 × 3종, 도표 쪽 패스 5개 × 3종',
+    async () => {
+      const rows: M4Row[] = [];
+      const totals: M4PageTotals[] = [];
+      const files = [
+        ...new Set([
+          ...(m4Kinds.includes('cells') ? Object.keys(M4_TABLE_PAGES) : []),
+          ...(m4Kinds.includes('paths') ? Object.keys(M4_PATH_PAGES) : []),
+        ]),
+      ]
+        .filter((f) => !only || only.includes(f))
+        .sort();
+      for (const file of files) {
+        const t0 = performance.now();
+        const bytes = new Uint8Array(readFileSync(join(dir!, file)));
+        const probe = openMupdf(bytes);
+        const pageCount = probe.countPages();
+        const objects = new Map<number, PageObjects>();
+        for (let k = 0; k < Math.min(pageCount, OBJECT_PAGES); k++)
+          objects.set(k, pageObjects(probe, k));
+        probe.destroy();
+        const cellPages = m4Kinds.includes('cells') ? (M4_TABLE_PAGES[file] ?? []) : [];
+        const pathPages = m4Kinds.includes('paths') ? (M4_PATH_PAGES[file] ?? []) : [];
+        const edited = [...cellPages, ...pathPages].map((q) => q - 1);
+        const renderPages = [
+          ...new Set([
+            ...Array.from({ length: Math.min(pageCount, OTHER_RENDER_PAGES) }, (_v, k) => k),
+            ...edited,
+          ]),
+        ];
+        const c: DocCache = {
+          bytes,
+          pageCount,
+          mupdfOriginal: mupdfRasters(bytes, renderPages),
+          objects,
+          engineOriginal: new Map(),
+          textOriginal: new Map(),
+        };
+        for (const q of cellPages) await m4Cells(c, file, q - 1, totals, rows);
+        for (const q of pathPages) await m4Paths(c, file, q - 1, totals, rows);
+        console.log(
+          `${file}: ${rows.filter((r) => r.file === file).length} edits ${((performance.now() - t0) / 1000).toFixed(1)} s`,
+        );
+      }
+      const summary = m4Summary(rows, totals);
+      mkdirSync(dirname(m4Out), { recursive: true });
+      writeFileSync(m4Out, JSON.stringify({ summary, totals, rows }, null, 1));
+      console.log(JSON.stringify(summary, null, 1));
       expect(rows.length).toBeGreaterThan(0);
     },
     6 * 3_600_000,
