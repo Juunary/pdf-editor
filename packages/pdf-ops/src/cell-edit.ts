@@ -1,17 +1,22 @@
 /**
  * 표 셀 편집 대상(M4, docs/m4-contract.md 4.1·D1·D5). 문서를 읽지 않는 순수 계산이다.
  *
- * - 대상: 셀 하나 = 편집 단위(D1). 셀 안 문단 전부를 읽기 순서로 묶은 문단 하나로 다룬다. 문단 사이는 앞 문단 끝 줄이
- *   셀 안쪽 오른쪽 경계 1em 안까지 차고 기준선 간격이 앞 문단 줄 간격과 같으면(±10%) 공백, 아니면 "\n".
+ * - 대상: 셀 하나 = 편집 단위(D1). 셀 안 문단 전부를 읽기 순서로 묶은 문단 하나로 다룬다.
+ * - 줄 잇기: 셀 안 줄 사이(문단 안·문단 사이)는 자동 줄바꿈이면 공백, 아니면 "\n". 자동 줄바꿈 = 다음 줄 첫 단어가
+ *   앞 줄 뒤 셀 안쪽 폭에 들어가지 않음. 문단 사이는 기준선 간격이 앞 문단 줄 간격과 같을(±10%) 때만 공백.
+ *   계약의 "앞 줄이 셀 오른쪽 1em 안까지 참" 대신 이 판정을 쓴다: 오른쪽 정렬로 쌓은 숫자 줄이 공백으로 이어져 다시
+ *   배치되면 위치가 바뀐다(코퍼스 실측, docs/m4-pdf-ops.md 계약 불일치 2).
  * - 셀 상자: 괘선 표는 레이아웃 셀 상자. 정렬 전략 표는 바깥 열·행을 이웃 간격 절반(없으면 1em)만큼, 표 상자가
  *   더 크면 표 상자까지 넓힌다(D5).
- * - 여백: 변마다 min(원 글자와 경계 간격, 2pt). 영역 상한(areaLimit) = 셀 상자 − 여백.
+ * - 여백: 변마다 min(원 글자와 경계 간격, 2pt). 영역 상한(areaLimit) = (셀 상자 − 여백) ∪ 원 글자 상자(원 글자가
+ *   셀 상자 밖으로 나온 셀에서 같은 텍스트가 초과가 되지 않게, docs/m4-pdf-ops.md 계약 불일치 3).
  * - 시작 영역: 세로는 글자 상자, 가로는 셀 상자 − 여백. 단 정렬한 쪽 변(왼쪽 정렬이면 왼쪽, 가운데면 양쪽 같은 값)은
  *   원 글자 간격을 그대로 써서 같은 텍스트 커밋에서 글자가 움직이지 않게 한다(계약 1.1 위치 보존 ≤ 0.5pt,
  *   docs/m4-pdf-ops.md 계약 불일치 1).
  * - 정렬: 괘선 표는 셀 안 좌·우 간격 비교(차 < 1pt 가운데, 오른쪽 간격이 작으면 오른쪽, 아니면 왼쪽). 정렬 전략 표는
  *   같은 열(병합 없는 셀) 글자 상자의 x0·x1·가운데 퍼짐이 가장 작은 키(셀 2개 이상일 때, 아니면 간격 비교).
  */
+import { offsetMap } from './text-map.js';
 import type {
   LayoutParagraph,
   LayoutTable,
@@ -28,7 +33,7 @@ export interface CellTarget {
   cell: TableCell;
   /** 셀 상자(D5, 정렬 전략 표는 넓힌 상자). */
   box: Rect;
-  /** 셀 상자 − 여백(변마다 min(간격, 2pt)) = 영역 상한. */
+  /** (셀 상자 − 여백(변마다 min(간격, 2pt))) ∪ 원 글자 상자 = 영역 상한. */
   limit: Rect;
   /** 시작 영역의 가로(정렬한 변은 원 간격). */
   areaX: [number, number];
@@ -134,27 +139,65 @@ function gapAlign(text: Rect, box: Rect): ParagraphAlign {
   return r < l ? 'right' : 'left';
 }
 
-/** 셀 문단들을 한 문단으로 잇는다(D1). */
+/**
+ * 앞 줄 끝에서 줄을 바꾼 것이 자동 줄바꿈인가: 다음 줄 첫 단어(+ 공백 0.25em)가 앞 줄 뒤 셀 안쪽 폭에 들어가지 않았으면
+ * 자동 줄바꿈(공백으로 잇기), 들어갔으면 강제 줄바꿈("\n"). 오른쪽·가운데 정렬로 쌓은 짧은 줄(숫자 열 등)도 판정한다.
+ */
+function wrapped(model: PageModel, prev: number, next: number, innerWidth: number): boolean {
+  const a = model.lines[prev];
+  const b = model.lines[next];
+  if (!a || !b) return false;
+  const visible = b.chars.map((i) => model.chars[i]!);
+  const start = visible.findIndex((c) => c.text.trim() !== '');
+  if (start < 0) return false;
+  let end = start;
+  while (end + 1 < visible.length && visible[end + 1]!.text.trim() !== '') end++;
+  const qx = (q: readonly number[]) => [Math.min(q[0]!, q[4]!), Math.max(q[2]!, q[6]!)] as const;
+  const word = qx(visible[end]!.quad)[1] - qx(visible[start]!.quad)[0];
+  const size = visible[start]!.size || 10;
+  const width = a.bbox[2] - a.bbox[0];
+  return width + 0.25 * size + word > innerWidth - 0.5;
+}
+
+/** 문단 안 줄 사이 공백 중 강제 줄바꿈으로 볼 곳을 "\n" 으로 바꾼 텍스트(길이·글자 대응은 그대로). */
+function lineBreaks(model: PageModel, p: LayoutParagraph, innerWidth: number): string {
+  if (p.lines.length < 2) return p.text;
+  const text = p.text;
+  const map = offsetMap(p, model.chars);
+  const lineAt = map.map((ci) => (ci >= 0 ? model.chars[ci]!.line : -2));
+  const breaks: number[] = [];
+  for (let k = 1; k < p.lines.length; k++) {
+    const prev = p.lines[k - 1]!;
+    const next = p.lines[k]!;
+    const last = lineAt.lastIndexOf(prev);
+    const first = lineAt.indexOf(next, last + 1);
+    // 줄 사이가 공백 하나일 때만(줄 끝 하이픈으로 붙인 경우는 그대로).
+    if (last < 0 || first !== last + 2 || text[last + 1] !== ' ') continue;
+    if (!wrapped(model, prev, next, innerWidth)) breaks.push(last + 1);
+  }
+  let out = text;
+  for (const i of breaks) out = `${out.slice(0, i)}\n${out.slice(i + 1)}`;
+  return out;
+}
+
+/** 셀 문단들을 한 문단으로 잇는다(D1). 줄 사이·문단 사이는 자동 줄바꿈이면 공백, 아니면 "\n". */
 function mergeParagraphs(
   model: PageModel,
   paras: readonly LayoutParagraph[],
-  innerRight: number,
+  innerWidth: number,
 ): LayoutParagraph {
   const first = paras[0]!;
-  if (paras.length === 1) return first;
+  if (paras.length === 1) return { ...first, text: lineBreaks(model, first, innerWidth) };
   let text = '';
   const chars: number[] = [];
   const lines: number[] = [];
   const styleRuns: StyleRun[] = [];
   let bbox: Rect | null = null;
   paras.forEach((p, k) => {
-    if (k > 0) {
-      const prev = paras[k - 1]!;
-      text += joiner(model, prev, p, innerRight);
-    }
+    if (k > 0) text += joiner(model, paras[k - 1]!, p, innerWidth);
     const off = chars.length;
     for (const r of p.styleRuns) styleRuns.push({ ...r, start: r.start + off, end: r.end + off });
-    text += p.text;
+    text += lineBreaks(model, p, innerWidth);
     chars.push(...p.chars);
     lines.push(...p.lines);
     bbox = unionRect(bbox, p.bbox);
@@ -178,24 +221,22 @@ function baselineOf(model: PageModel, line: number): number | null {
   return c ? c.origin[1] : null;
 }
 
+/** 문단 사이: 자동 줄바꿈이고 기준선 간격이 앞 문단 줄 간격과 같으면(±10%) 공백, 아니면 "\n". */
 function joiner(
   model: PageModel,
   prev: LayoutParagraph,
   next: LayoutParagraph,
-  innerRight: number,
+  innerWidth: number,
 ): string {
   const lastLine = prev.lines.at(-1);
   const firstLine = next.lines[0];
   if (lastLine === undefined || firstLine === undefined) return '\n';
-  const last = model.lines[lastLine];
-  const size = model.chars[last?.chars[0] ?? -1]?.size ?? 10;
-  const full = last !== undefined && innerRight - last.bbox[2] <= size;
   const b0 = baselineOf(model, lastLine);
   const b1 = baselineOf(model, firstLine);
   const ref = prev.lineHeight ?? next.lineHeight;
   const pitch = b0 !== null && b1 !== null ? b1 - b0 : null;
   const sameLeading = ref !== null && pitch !== null && Math.abs(pitch - ref) <= 0.1 * ref;
-  return full && sameLeading ? ' ' : '\n';
+  return sameLeading && wrapped(model, lastLine, firstLine, innerWidth) ? ' ' : '\n';
 }
 
 /** 문단 paragraphId 의 셀 대상. 표 셀 문단이 아니면 null. */
@@ -220,7 +261,9 @@ export function cellTarget(
     Math.max(0, g),
   );
   const m = gap.map((g) => Math.min(g, MARGIN));
-  const limit: Rect = [box[0] + m[0]!, box[1] + m[1]!, box[2] - m[2]!, box[3] - m[3]!];
+  // 원 글자가 셀 상자 밖으로 나온 셀(괘선에 걸친 글자, 셀 배정은 줄 가운데 기준)도 같은 텍스트가 초과가 되지 않게
+  // 원 글자 상자를 상한에 합친다.
+  const limit = unionRect([box[0] + m[0]!, box[1] + m[1]!, box[2] - m[2]!, box[3] - m[3]!], t);
   const align =
     (table.strategy === 'text' && cell.colSpan === 1
       ? columnAlign(model, table, cell.col)
@@ -232,7 +275,7 @@ export function cellTarget(
     const side = Math.min(t[0] - limit[0], limit[2] - t[2]);
     areaX = [t[0] - side, t[2] + side];
   } else areaX = [t[0], limit[2]];
-  const paragraph = mergeParagraphs(model, paras, limit[2]);
+  const paragraph = mergeParagraphs(model, paras, limit[2] - limit[0]);
   let lineHeight = paras[0]!.lineHeight;
   if (lineHeight === null) {
     const bases = paragraph.lines
