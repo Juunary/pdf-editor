@@ -218,6 +218,18 @@ export class EditEngine {
     return { ...plan, revision: this.#revision };
   }
 
+  /**
+   * 이 쪽의 편집 블록 목록(작업 문서 기준, 쪽마다 캐시). 레이아웃 복원 힌트(docs/m3-integration.md 9.6)용.
+   * 목록을 만들지 못하면 빈 목록(힌트 없이 보통 레이아웃).
+   */
+  editBlocks(pageIndex: number): EditBlockRef[] {
+    try {
+      return this.#blocksFor(pageIndex);
+    } catch {
+      return [];
+    }
+  }
+
   /** 이 쪽의 편집 블록(초안 중이면 초안 블록 포함, 작업 문서 기준). */
   getPageEdits(pageIndex: number): PageEditInfo {
     this.#assertUsable();

@@ -223,6 +223,60 @@ export function writeEditBlock(
   return writeBlock(ctx, prepared, runs, format, result, fontStateOf(fonts));
 }
 
+/**
+ * 편집 블록마다 그 블록 글자가 있는 PageModel 줄 인덱스(오름차순). 레이아웃 복원 힌트
+ * (`ReconOptions.fixedGroups`, docs/m3-integration.md 9.6)용 순수 함수(문서를 읽지 않는다).
+ *
+ * 글자의 소속은 원본 연결(`linkage.charOp` → `SourceOp.formPath`)에 블록 Form 객체 번호가 있는지로 정한다
+ * (analyzeBlock 과 같은 규칙). 줄 하나에 블록 글자와 다른 글자가 섞이면 보이는 글자의 과반(절반 초과)이 속한
+ * 블록에 준다. 과반이 없으면 어느 묶음에도 넣지 않는다(보통의 레이아웃 복원). 결과는 `blocks` 순서이고 빈 묶음은 뺀다.
+ */
+export function editBlockLineGroups(
+  model: PageModel,
+  map: SourceMap,
+  linkage: PageLinkage,
+  blocks: readonly EditBlockRef[],
+): number[][] {
+  if (blocks.length === 0) return [];
+  const order = new Map(blocks.map((b, k) => [b.objectNumber, k]));
+  const blockOfOp = new Map<number, number>();
+  const blockOfChar = (ci: number): number => {
+    const opId = linkage.charOp[ci] ?? -1;
+    if (opId < 0) return -1;
+    let k = blockOfOp.get(opId);
+    if (k === undefined) {
+      k = -1;
+      for (const s of map.ops[opId]?.formPath ?? []) {
+        const hit = order.get(s.objectNumber);
+        if (hit !== undefined) {
+          k = hit;
+          break;
+        }
+      }
+      blockOfOp.set(opId, k);
+    }
+    return k;
+  };
+  const groups: number[][] = blocks.map(() => []);
+  model.lines.forEach((line, li) => {
+    const counts = new Map<number, number>();
+    let visible = 0;
+    for (const ci of line.chars) {
+      if (model.chars[ci]!.text.trim() === '') continue;
+      visible++;
+      const k = blockOfChar(ci);
+      if (k >= 0) counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    for (const [k, n] of counts) {
+      if (n * 2 > visible) {
+        groups[k]!.push(li);
+        break;
+      }
+    }
+  });
+  return groups.filter((g) => g.length > 0);
+}
+
 /** 쪽 콘텐츠·Form 에서 /PdfEditorEdit 편집 블록을 찾는다(undo/redo 뒤 목록 재구성, 계약 5.7). */
 export function listEditBlocks(doc: mupdf.PDFDocument, pageIndex: number): EditBlockRef[] {
   return listBlocks(doc, pageIndex);

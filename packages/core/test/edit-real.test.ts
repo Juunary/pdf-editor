@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import type { DraftInput, EditOp, ParagraphEditPlan, TextRun } from '@pdf-editor/shared-types';
+import { validateLayout } from '@pdf-editor/layout-recon';
 import { PdfSession } from '../src/index.js';
 import { FONT_BYTES, MEDIABOX, PAGE, fallbackFonts } from './edit-harness.js';
 import { buildPdf } from './pdf-fixtures.js';
@@ -361,13 +362,18 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
   it('B1: 커밋한 편집 블록을 레이아웃이 여러 문단으로 나눠도 편집 판정은 블록 하나(상자 = 블록 글자 상자)', async () => {
     const s = session(source());
     const { commit } = await edit(s, 'first paragraph', 'Short line one.\nShort line two.');
-    // 전제: 레이아웃 복원은 강제 줄바꿈 뒤 짧은 줄을 다른 문단으로 본다(블록 하나가 문단 둘).
+    // M2 규칙만으로는 강제 줄바꿈 뒤 짧은 줄이 다른 문단이지만, 편집 블록 힌트(9.6)로 레이아웃 문단 하나다.
     const layout = s.getPageLayout(0);
-    expect(layout.paragraphs.filter((p) => p.text.startsWith('Short line')).length).toBe(2);
+    expect(
+      validateLayout(s.extractPage({ pageIndex: 0, includePathSegments: true }), layout),
+    ).toEqual([]);
+    expect(layout.paragraphs.filter((p) => p.text.includes('Short line'))).toHaveLength(1);
     const e = await s.getPageEditability(0);
     const own = e.paragraphs.filter((p) => p.editedBlock === commit.op.id);
     expect(own).toHaveLength(1);
     const lines = layout.paragraphs.filter((p) => p.text.startsWith('Short line'));
+    expect(lines[0]!.text).toBe('Short line one. Short line two.');
+    expect(own[0]!.paragraphId).toBe(lines[0]!.id);
     const [x0, y0, x1, y1] = own[0]!.bbox;
     for (const p of lines) {
       expect(p.bbox[0]).toBeGreaterThanOrEqual(x0 - 1);
@@ -451,6 +457,74 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     expect(own).toHaveLength(1);
     // 둘째 문단(기준선 y = 792 − 640 = 152) 줄은 상자 밖이다.
     expect(own[0]!.bbox[3]).toBeLessThan(150);
+    // 레이아웃(9.6): 블록 줄은 문단 하나, 둘째 문단은 따로 남는다.
+    const layout = s.getPageLayout(0);
+    const block = layout.paragraphs.filter((p) => p.text.includes('Short line one'));
+    expect(block).toHaveLength(1);
+    expect(squash(block[0]!.text)).toBe(squash(long));
+    const second = layout.paragraphs.filter((p) => p.text.includes('Second paragraph'));
+    expect(second.map((p) => p.text)).toEqual(['Second paragraph starts here and ends.']);
     s.close();
+  });
+
+  it('9.6 레이아웃: 두 단 쪽에서 강제 줄바꿈·긴 글로 고친 문단이 레이아웃 문단 하나이고, undo·redo 뒤 다시 계산된다', async () => {
+    const col = (x: number, y: number, lines: string[]) =>
+      `BT /F1 10 Tf ${x} ${y} Td 12 TL ` + lines.map((l) => `(${l}) '`).join(' ') + ' ET';
+    const fill = 'words that fill the narrow column well';
+    const content = [
+      'BT /F1 16 Tf 72 740 Td (Two Column Page) Tj ET',
+      col(72, 712, [fill, fill, fill, 'left first ends here.']),
+      col(72, 652, ['Target paragraph begins', fill, fill, 'target ends here.']),
+      col(72, 592, ['Below paragraph keeps', fill, fill, 'below ends here.']),
+      col(320, 712, ['Right column text', fill, fill, 'right first ends.']),
+      col(320, 652, ['Right second para', fill, fill, 'right second ends.']),
+    ].join('\n');
+    const s = session(buildPdf([{ content, mediabox: MEDIABOX }]));
+    const before = s.getPageLayout(0);
+    const target = before.paragraphs.find((p) => p.text.startsWith('Target paragraph'))!;
+    const right = before.paragraphs.filter((p) => p.text.startsWith('Right'));
+    expect(right).toHaveLength(2);
+    const id = await paragraphId(s, 'Target paragraph');
+    const plan = await s.planParagraphEdit(0, id);
+    expect(plan.editable, JSON.stringify(plan.limits)).toBe(true);
+    const text =
+      'Edited.\nTiny.\n' + 'Longer edited sentence wraps across lines. '.repeat(5).trim();
+    const started = await s.beginParagraphEdit(0, id, plan.revision);
+    await s.updateParagraphDraft(started.draftId, input(plan, text));
+    const commit = await s.commitParagraphEdit(started.draftId);
+    const check = () => {
+      const model = s.extractPage({ pageIndex: 0, includePathSegments: true });
+      const layout = s.getPageLayout(0);
+      expect(validateLayout(model, layout)).toEqual([]);
+      const blockParas = layout.paragraphs.filter((p) => /Edited|Tiny|Longer/u.test(p.text));
+      expect(blockParas).toHaveLength(1);
+      expect(squash(blockParas[0]!.text)).toBe(squash(text));
+      expect(blockParas[0]!.column).toBe(
+        layout.paragraphs.find((p) => p.text.startsWith('words that fill'))!.column,
+      );
+      // 이웃 문단은 따로(왼쪽 아래 문단·오른쪽 단 두 문단).
+      expect(layout.paragraphs.filter((p) => p.text.startsWith('Below paragraph'))).toHaveLength(1);
+      expect(
+        layout.paragraphs.filter((p) => p.text.startsWith('Right')).map((p) => p.text),
+      ).toEqual(right.map((p) => p.text));
+      return blockParas[0]!;
+    };
+    const para = check();
+    const e = await s.getPageEditability(0);
+    expect(e.paragraphs.filter((p) => p.editedBlock === commit.op.id)).toHaveLength(1);
+    expect(e.paragraphs.find((p) => p.editedBlock === commit.op.id)!.paragraphId).toBe(para.id);
+    // undo: 원 문단으로 돌아온다(힌트 없음), redo: 다시 한 문단.
+    await s.undo();
+    const undone = s.getPageLayout(0);
+    expect(undone.paragraphs.map((p) => p.text)).toContain(target.text);
+    await s.redo();
+    check();
+    // 저장 → 재열기 뒤에도 같다(블록은 /PdfEditorEdit 로 다시 찾는다).
+    const saved = s.save({ changes: [] }).bytes;
+    s.close();
+    const r = session(saved);
+    const layout = r.getPageLayout(0);
+    expect(layout.paragraphs.filter((p) => /Edited|Tiny|Longer/u.test(p.text))).toHaveLength(1);
+    r.close();
   });
 });

@@ -4,6 +4,7 @@ import {
   STREAM_INPUT_PEAK_HEAP_RATIO,
   buildSourceMap,
   decideSaveMethod,
+  editBlockLineGroups,
   estimateSaveHeap,
   linkPage,
   listRedactAnnots,
@@ -247,9 +248,27 @@ export class PdfSession {
       .map((n) => this.extractPage({ pageIndex: n }));
     const layout = reconstructPage(this.extractPage({ pageIndex, includePathSegments: true }), {
       neighbors,
+      fixedGroups: this.#editBlockGroups(pageIndex),
     });
     remember(this.#layoutCache, pageIndex, layout);
     return layout;
+  }
+
+  /**
+   * 편집 블록마다 그 글자가 있는 줄 묶음(레이아웃 복원 힌트 `fixedGroups`, docs/m3-integration.md 9.6). 커밋한 편집
+   * 블록은 쪽 레이아웃에서 문단 하나다(오버레이·읽기 순서가 블록을 여러 문단으로 가르거나 이웃 문단과 합치지 않는다).
+   * 블록 목록은 편집 엔진 캐시(커밋·undo·redo·초안 시작 때 갱신), 소속은 원본 연결(linkPage)로 정한다. 블록이 없는
+   * 쪽은 원본 연결을 만들지 않는다. 레이아웃 캐시와 같이 비워지므로(invalidateAround) 따로 캐시하지 않는다.
+   */
+  #editBlockGroups(pageIndex: number): number[][] {
+    const blocks = this.#edit?.editBlocks(pageIndex) ?? [];
+    if (blocks.length === 0) return [];
+    return editBlockLineGroups(
+      this.extractPage({ pageIndex }),
+      this.getSourceMap(pageIndex),
+      this.linkPage(pageIndex),
+      blocks,
+    );
   }
 
   /**

@@ -353,9 +353,41 @@ export function writeBlock(
   return { streamBytes: content.byteLength, resources: built.names, writeMs: now() - t0 };
 }
 
+/**
+ * 리소스(쪽·Form 의 /XObject 사전, Form 재귀)에 /PdfEditorEdit Form 이 하나라도 있는가. 콘텐츠를 읽지 않는 빠른
+ * 사전 검사다. listBlocks 가 찾는 블록은 모두 이 사전들 중 하나에 있으므로, false 이면 블록이 없다.
+ */
+function hasBlockResource(res: mupdf.PDFObject): boolean {
+  const seen = new Set<number>();
+  const visit = (r: mupdf.PDFObject, depth: number): boolean => {
+    const xobjects = r.get('XObject');
+    if (!xobjects.isDictionary()) return false;
+    let found = false;
+    xobjects.forEach((x) => {
+      if (found || !x.isIndirect()) return;
+      const num = x.asIndirect();
+      if (seen.has(num)) return;
+      seen.add(num);
+      const st = x.get('Subtype');
+      if (!st.isName() || st.asName() !== 'Form') return;
+      if (!x.get('PdfEditorEdit').isNull()) {
+        found = true;
+        return;
+      }
+      const own = x.get('Resources');
+      if (depth < 8 && !own.isNull() && visit(own, depth + 1)) found = true;
+    });
+    return found;
+  };
+  return visit(res, 0);
+}
+
 /** 쪽 콘텐츠(Form 재귀)에서 /PdfEditorEdit 가 있고 사용 위치가 1곳인 Form(계약 D3·5.7). */
 export function listBlocks(doc: mupdf.PDFDocument, pageIndex: number): EditBlockRef[] {
   const pageObj = doc.findPage(pageIndex);
+  const res = pageObj.getInheritable('Resources');
+  // 블록 Form 이 리소스에 없으면 콘텐츠를 파싱하지 않는다(레이아웃 힌트로 쪽마다 부른다, docs/m3-integration.md 9.6).
+  if (res.isNull() || !hasBlockResource(res)) return [];
   const contents = pageObj.get('Contents');
   const items: mupdf.PDFObject[] = [];
   if (contents.isArray()) for (let i = 0; i < contents.length; i++) items.push(contents.get(i));
@@ -394,8 +426,7 @@ export function listBlocks(doc: mupdf.PDFDocument, pageIndex: number): EditBlock
       active.delete(num);
     }
   };
-  const res = pageObj.getInheritable('Resources');
-  walk(joined, res.isNull() ? [] : [res], 0);
+  walk(joined, [res], 0);
   return order
     .filter((n) => uses.get(n) === 1)
     .map((n) => {
