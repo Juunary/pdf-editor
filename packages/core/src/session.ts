@@ -496,7 +496,9 @@ export class PdfSession {
     return {
       document: doc,
       pageState: (pageIndex) => ({
-        model: this.extractPage({ pageIndex }),
+        // 레이아웃과 같은 모델(세그먼트 포함). pdf-ops 패스 점 편집이 점 번호를 모델 세그먼트로 대조한다
+        // (docs/m4-pdf-ops.md 7절 #4). 레이아웃이 이미 만든 캐시라 추출이 늘지 않는다.
+        model: this.extractPage({ pageIndex, includePathSegments: true }),
         map: this.getSourceMap(pageIndex),
         linkage: this.linkPage(pageIndex),
         layout: this.getPageLayout(pageIndex),
