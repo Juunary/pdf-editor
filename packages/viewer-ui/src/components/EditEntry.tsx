@@ -99,6 +99,7 @@ export function EditEntry({
           class="pe-edit-hover"
           data-paragraph={hovered.paragraphId}
           data-editable={hovered.editable ? '1' : '0'}
+          data-cell={hovered.cell ? '1' : '0'}
           style={cssRect(hovered.bbox, layout)}
         />
       )}
@@ -114,7 +115,11 @@ export function EditEntry({
             top: `${pageToCss([popover.bbox[0], popover.bbox[3]], layout)[1] + 6}px`,
           }}
         >
-          <strong>이 문단은 편집할 수 없습니다</strong>
+          <strong>
+            {popover.kind === 'cell'
+              ? '이 셀은 편집할 수 없습니다'
+              : '이 문단은 편집할 수 없습니다'}
+          </strong>
           <ul>
             {popover.items.map((item, i) => (
               <li key={i}>{item}</li>

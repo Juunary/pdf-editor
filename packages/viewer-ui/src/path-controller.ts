@@ -309,12 +309,6 @@ export class PathController {
     return this.applyOnce(emptyPathEdit({ delete: true }));
   }
 
-  // ── 편집 가능 표시(D6) ───────────────────────────────────────────────
-
-  setShowEditable(on: boolean): void {
-    this.ctx.patch({ showEditable: on });
-  }
-
   // ── 공통 ─────────────────────────────────────────────────────────────
 
   /** 쪽을 바꾸거나 문서 undo/redo 를 하기 전: 선택·모델을 비운다. */

@@ -198,7 +198,7 @@ export function Controls({ controller }: Props) {
             data-pe-keep=""
             title="문단·셀·패스의 편집 가능 여부를 테두리로 표시합니다(켜면 클릭으로 패스를 선택)"
             aria-pressed={state.edit.showEditable}
-            onClick={() => controller.edit?.paths?.setShowEditable(!state.edit.showEditable)}
+            onClick={() => controller.edit?.setShowEditable(!state.edit.showEditable)}
           >
             편집 가능 표시
           </button>
