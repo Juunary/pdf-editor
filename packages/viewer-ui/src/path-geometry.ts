@@ -49,7 +49,13 @@ export function buildCandidates(
     if (!e) continue;
     const cur = out.get(info.paintSeq);
     if (cur) cur.infos.push(info);
-    else out.set(info.paintSeq, { paintSeq: info.paintSeq, infos: [info], editability: e, bbox: e.bbox });
+    else
+      out.set(info.paintSeq, {
+        paintSeq: info.paintSeq,
+        infos: [info],
+        editability: e,
+        bbox: e.bbox,
+      });
   }
   return [...out.values()];
 }
@@ -108,7 +114,8 @@ function distToSegment(p: Point, a: Point, b: Point): number {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const len2 = dx * dx + dy * dy;
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2));
+  const t =
+    len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2));
   return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
 }
 
@@ -117,7 +124,8 @@ export function distanceToStroke(subpaths: readonly FlatSubpath[], p: Point): nu
   let best = Infinity;
   for (const sp of subpaths) {
     const pts = sp.points;
-    for (let i = 0; i + 1 < pts.length; i++) best = Math.min(best, distToSegment(p, pts[i]!, pts[i + 1]!));
+    for (let i = 0; i + 1 < pts.length; i++)
+      best = Math.min(best, distToSegment(p, pts[i]!, pts[i + 1]!));
     if (sp.closed && pts.length > 1) {
       best = Math.min(best, distToSegment(p, pts[pts.length - 1]!, pts[0]!));
     }
@@ -190,7 +198,11 @@ export function pickPath(
   let best: PathCandidate | null = null;
   for (const c of candidates) {
     if (!candidateHit(c, p, tolPt)) continue;
-    if (!best || area(c.bbox) < area(best.bbox) || (area(c.bbox) === area(best.bbox) && c.paintSeq > best.paintSeq)) {
+    if (
+      !best ||
+      area(c.bbox) < area(best.bbox) ||
+      (area(c.bbox) === area(best.bbox) && c.paintSeq > best.paintSeq)
+    ) {
       best = c;
     }
   }
