@@ -2,6 +2,7 @@
 import type { Rect } from './geometry.js';
 import type {
   BeginEditResult,
+  BeginPathEditResult,
   CommitResult,
   DraftInput,
   DraftUpdate,
@@ -10,6 +11,9 @@ import type {
   PageEditInfo,
   PageEditability,
   ParagraphEditPlan,
+  PathDraftUpdate,
+  PathEdit,
+  PathEditPlan,
 } from './edit.js';
 import type { ExtractRequest, PageModel } from './page-model.js';
 import type { PageLayout } from './page-layout.js';
@@ -112,6 +116,16 @@ export interface PdfWorkerApi {
   commitParagraphEdit(draftId: string): Promise<CommitResult>;
   /** 초안을 버린다. */
   cancelParagraphEdit(draftId: string): Promise<EditHistoryState>;
+  // M4 벡터 패스 편집(docs/m4-contract.md). 패스 초안과 문단 초안은 동시에 열 수 없다.
+  planPathEdit(pageIndex: number, paintSeqs: number[]): Promise<PathEditPlan>;
+  beginPathEdit(
+    pageIndex: number,
+    paintSeqs: number[],
+    revision: number,
+  ): Promise<BeginPathEditResult>;
+  updatePathDraft(draftId: string, edit: PathEdit, renderScale: number): Promise<PathDraftUpdate>;
+  commitPathEdit(draftId: string): Promise<CommitResult>;
+  cancelPathEdit(draftId: string): Promise<EditHistoryState>;
   undo(): Promise<EditHistoryState>;
   redo(): Promise<EditHistoryState>;
   getEditHistory(): Promise<EditHistoryState>;

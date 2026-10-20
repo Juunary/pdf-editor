@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { PdfSession } from '../src/index.js';
+import type { ReplaceParagraphOp } from '@pdf-editor/shared-types';
 import { EditStateError, StaleRevisionError } from '../src/edit-engine.js';
 import * as mupdf from 'mupdf';
 import { createFakeAdapter } from './fake-edit-adapter.js';
@@ -126,7 +127,7 @@ describe('초안 → 커밋 → undo/redo', () => {
       id: 'id-1',
       target: { pageIndex: 0, editedBlock: null },
     });
-    expect(result.op.runs.map((r) => r.text)).toEqual(['Replaced text']);
+    expect((result.op as ReplaceParagraphOp).runs.map((r) => r.text)).toEqual(['Replaced text']);
     expect(result.history).toEqual({
       revision: 1,
       activeEditIds: ['id-1'],
@@ -229,7 +230,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     const plan = await s.planParagraphEdit(0, blockParagraph.id);
     expect(plan.target.editedBlock).toBe('id-1');
     const second = await editParagraph(s, blockParagraph.id, 'Gamma delta');
-    expect(second.op.target.editedBlock).toBe('id-1');
+    expect((second.op as ReplaceParagraphOp).target.editedBlock).toBe('id-1');
     expect(second.op.id).not.toBe('id-1');
     expect((await s.getPageEdits(0)).blocks).toHaveLength(1);
     // 블록 영역은 가장 나중 편집의 배치 결과다.
@@ -514,7 +515,7 @@ describe('실패 경로(독립 검토 반영)', () => {
     expect(text(s)).toContain('Version X');
     expect(text(s)).not.toContain('Version Y');
     const result = await s.commitParagraphEdit(started.draftId);
-    expect(result.op.runs.map((r) => r.text)).toEqual(['Version X']);
+    expect((result.op as ReplaceParagraphOp).runs.map((r) => r.text)).toEqual(['Version X']);
     s.close();
   });
 

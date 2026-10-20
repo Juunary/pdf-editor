@@ -125,6 +125,17 @@ EDIT_CORPUS_DIR=<코퍼스> NODE_OPTIONS=--max-old-space-size=12288 pnpm --filte
 - 남은 제한: 한 클러스터 안에서 기본 글자는 원본, 결합 문자는 폴백으로 나누어 쓰지 않는다. 편집 텍스트가 NFC 라 `é` 처럼 한 위치인 클러스터는 구간(`FontSegment`)으로 나눌 수 없다. 클러스터 전체를 폴백이 가지면 폴백으로 쓴다.
 - shared-types 는 바꾸지 않았다.
 
+### 8.1 마일스톤 리뷰의 머지 후 후속 항목(R- 번호, M4 계약 1.2 에서 처리)
+
+| R- | 내용 |
+| --- | --- |
+| R-M4 | 엔진 `#failure` 상태가 되면 저장도 막혀 미저장 편집을 잃는다 |
+| R-L1 | 뷰어 `ResilientPdf.beginParagraphEdit` 가 `renderScale` 을 넘기지 않는다 |
+| R-L2 | 폴백 서브셋 뒤 `/BaseFont` 에 서브셋 태그가 없다 |
+| R-L3 | OriginalFont·폴백 `mupdf.Font`·WriteContext 해제가 없다 |
+| R-L4 | `edit-block.ts` `styleOf` 대체 경로가 바뀐 스트림을 옛 SourceMap 범위로 읽는다 |
+| R-L5 | 폴백 폰트 로드 실패 시 판정 RPC 가 모두 실패해 편집 기능이 꺼진다 |
+
 ## 9. 사용자 확인 후 수정(2026-10-20)
 
 ### 9.0 Windows 사용자 확인 결과(2026-10-20)

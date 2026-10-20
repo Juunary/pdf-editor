@@ -35,6 +35,13 @@ export function exposePdfWorker(endpoint: Comlink.Endpoint, options: PdfSessionO
       (await load()).updateParagraphDraft(draftId, input),
     commitParagraphEdit: async (draftId) => (await load()).commitParagraphEdit(draftId),
     cancelParagraphEdit: async (draftId) => (await load()).cancelParagraphEdit(draftId),
+    planPathEdit: async (pageIndex, paintSeqs) => (await load()).planPathEdit(pageIndex, paintSeqs),
+    beginPathEdit: async (pageIndex, paintSeqs, revision) =>
+      (await load()).beginPathEdit(pageIndex, paintSeqs, revision),
+    updatePathDraft: async (draftId, edit, renderScale) =>
+      (await load()).updatePathDraft(draftId, edit, renderScale),
+    commitPathEdit: async (draftId) => (await load()).commitPathEdit(draftId),
+    cancelPathEdit: async (draftId) => (await load()).cancelPathEdit(draftId),
     undo: async () => (await load()).undo(),
     redo: async () => (await load()).redo(),
     getEditHistory: async () => (await load()).getEditHistory(),

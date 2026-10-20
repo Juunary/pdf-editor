@@ -2,7 +2,8 @@
  * 문단 편집(M3, docs/m3-contract.md). 편집 계획·리플로우 요약·초안·로그·undo 의 공통 타입.
  * 기하는 페이지 공간(geometry.ts), 길이 pt. 텍스트 위치는 TextRun.text 를 이은 문자열의 UTF-16 위치다.
  */
-import type { RGB, Rect } from './geometry.js';
+import type { Matrix, RGB, Rect } from './geometry.js';
+import type { PaintColor } from './page-model.js';
 import type { RenderedPage } from './rpc.js';
 import type { ChangeKind, SaveMethod } from './save.js';
 import type { EditLimitReason } from './source-map.js';
@@ -18,6 +19,8 @@ export interface ParagraphTarget {
   editedBlock: string | null;
   /** 원 문단 bbox. */
   bbox: Rect;
+  /** 표 셀 안 문단이면 셀 위치(M4, 없거나 null 이면 흐름 문단; M3 로그 호환을 위해 선택 필드). */
+  cell?: { table: number; row: number; col: number } | null;
 }
 
 /**
@@ -69,7 +72,65 @@ export interface ReplaceParagraphOp {
   format: ParagraphFormat;
 }
 
-export type EditOp = ReplaceParagraphOp;
+/** 편집 대상 벡터 패스(M4). */
+/** 패스 대상 확인용 지문(계약 D4). paintSeq 가 밀려도 다른 패스를 고치지 않게 plan·begin·재적용에서 비교한다. */
+export interface PathFingerprint {
+  /** 칠하기 연산 이름(S·f·B 등). */
+  paintOp: string;
+  constructOpCount: number;
+  /** 쪽 공간 상자(1e-3 pt 반올림). */
+  bbox: Rect;
+  /** 구성 연산 바이트의 해시(16진). */
+  constructHash: string;
+}
+
+export interface PathTarget {
+  pageIndex: number;
+  /** 선택한 칠하기 연산별 첫 paintSeq(적용 시점 PageModel 기준, 순서 재적용에서만 유효). */
+  paintSeqs: number[];
+  /** paintSeqs 와 같은 순서. */
+  fingerprints: PathFingerprint[];
+  bbox: Rect;
+}
+
+/** 벡터 패스 편집 내용. null 은 "바꾸지 않음". */
+export interface PathEdit {
+  /** 페이지 공간 아핀(이동·확대축소만). */
+  transform: Matrix | null;
+  fill: RGB | null;
+  stroke: RGB | null;
+  /** 페이지 공간 pt. */
+  lineWidth: number | null;
+}
+
+export interface EditPathOp {
+  kind: 'edit-path';
+  id: string;
+  target: PathTarget;
+  edit: PathEdit;
+}
+
+export type EditOp = ReplaceParagraphOp | EditPathOp;
+
+/** 패스 편집 제한 사유(M4, 연산 단위 사유 EditLimitReason 에 더해). */
+export const PATH_LIMIT_REASONS = [
+  'clip-path',
+  'pattern-or-shading',
+  'path-op-unparsed',
+  'path-spans-streams',
+  'inside-text-object',
+  'path-interleaved-ops', // 구성 ~ 칠하기 사이에 다른 연산(M4 검토 H3)
+  'soft-mask', // 칠하기 시점 SMask
+  'singular-ctm', // 문단 사유와 같은 이름·같은 뜻
+] as const;
+
+export type PathLimitReason = (typeof PATH_LIMIT_REASONS)[number];
+
+export interface PathLimit {
+  reason: PathLimitReason | EditLimitReason;
+  /** 사용자 표시용 설명(한국어). */
+  detail: string;
+}
 
 /** 문단 단위 편집 제한 사유(연산 단위 사유 EditLimitReason 에 더해, 계약 5.1). */
 export const PARAGRAPH_LIMIT_REASONS = [
@@ -131,7 +192,10 @@ export type EditWarningKind =
   | 'redact-overlap' // 겹치는 기존 Redact 주석(나중에 적용하면 새 텍스트도 지워짐)
   | 'optional-content' // 선택적 콘텐츠 안(L7)
   | 'area-overlaps-content' // (자동으로) 넓힌 영역이 다른 글자·도형과 겹침
-  | 'overflow-clipped'; // 영역 상한에 막혀 넘친 줄이 CropBox·상위 Form BBox 에서 잘림
+  | 'overflow-clipped' // 영역 상한에 막혀 넘친 줄이 CropBox·상위 Form BBox 에서 잘림
+  | 'color-space-changed' // 새 색을 쓰려고 색공간을 바꿈(M4 D3)
+  | 'shared-form' // 여러 곳이 쓰는 Form 안의 패스, 이 위치만 바뀜(M4)
+  | 'path-clipped'; // 편집 후 패스 상자가 칠하기 시점 클립·Form BBox 밖(M4)
 
 export interface EditWarning {
   kind: EditWarningKind;
@@ -184,13 +248,54 @@ export interface ParagraphEditability {
   /** 편집 블록이면 그 편집 id. */
   editedBlock: string | null;
   reasons: (ParagraphLimitReason | EditLimitReason)[];
+  /** 표 셀 안 문단이면 셀 위치, 아니면 null(M4). */
+  cell: { table: number; row: number; col: number } | null;
+}
+
+/** 패스별 판정(M4). */
+export interface PathEditability {
+  /** PageModel.paths 인덱스. */
+  pathIndex: number;
+  paintSeq: number;
+  bbox: Rect;
+  editable: boolean;
+  reasons: (PathLimitReason | EditLimitReason)[];
 }
 
 export interface PageEditability {
   pageIndex: number;
   revision: number;
   paragraphs: ParagraphEditability[];
+  paths: PathEditability[];
   ms: number;
+}
+
+/** 패스 편집 시작 전 판정(M4, 문서를 바꾸지 않는다). */
+export interface PathEditPlan {
+  pageIndex: number;
+  revision: number;
+  target: PathTarget;
+  editable: boolean;
+  limits: PathLimit[];
+  warnings: EditWarning[];
+  fill: PaintColor | null;
+  stroke: PaintColor | null;
+  lineWidth: number | null;
+  planMs: number;
+}
+
+export interface PathDraftUpdate {
+  draftId: string;
+  target: PathTarget;
+  bbox: Rect;
+  warnings: EditWarning[];
+  region: RenderedPage;
+  updateMs: number;
+}
+
+export interface BeginPathEditResult {
+  draftId: string;
+  plan: PathEditPlan;
 }
 
 /** 배치된 글리프(클러스터 단위). */

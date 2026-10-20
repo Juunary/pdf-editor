@@ -12,12 +12,14 @@
 import * as mupdf from 'mupdf';
 import type {
   BeginEditResult,
+  BeginPathEditResult,
   ChangeKind,
   CommitResult,
   DraftInput,
   DraftUpdate,
   EditHistoryState,
   EditOp,
+  ReplaceParagraphOp,
   EditWarning,
   EditedBlock,
   PageEditInfo,
@@ -25,6 +27,9 @@ import type {
   ParagraphEditPlan,
   ParagraphFormat,
   ParagraphTarget,
+  PathDraftUpdate,
+  PathEdit,
+  PathEditPlan,
   Rect,
   RenderedPage,
   ReflowSummary,
@@ -86,6 +91,11 @@ export class StaleRevisionError extends EditStateError {
     super(`문서가 바뀌었습니다(revision ${actual}, 요청 ${expected}). 문단 판정을 다시 하세요.`);
     this.name = 'StaleRevisionError';
   }
+}
+
+/** 편집 블록을 다시 편집한 문단 편집의 원 블록 id. 패스 편집은 null. */
+function editedBlockOf(op: EditOp): string | null {
+  return op.kind === 'replace-paragraph' ? op.target.editedBlock : null;
 }
 
 /** 로그 항목: 커밋된 편집 하나와 그 결과 요약. */
@@ -252,7 +262,7 @@ export class EditEngine {
       // 재편집은 블록 id 를 그대로 둘 수 있다(op.id 는 새로 만든다). 가장 나중 항목을 쓴다.
       const entry = [...entries]
         .reverse()
-        .find((e) => e.op.id === ref.editId || e.op.target.editedBlock === ref.editId);
+        .find((e) => e.op.id === ref.editId || editedBlockOf(e.op) === ref.editId);
       if (entry) {
         blocks.push({
           editId: ref.editId,
@@ -397,7 +407,7 @@ export class EditEngine {
     this.#assertUsable();
     const draft = this.#requireDraft(draftId);
     if (draft.broken) throw new EditStateError('초안이 손상되어 커밋할 수 없습니다. 취소하세요.');
-    const op: EditOp = {
+    const op: ReplaceParagraphOp = {
       kind: 'replace-paragraph',
       id: draft.opId,
       target: draft.prepared.target,
@@ -426,6 +436,46 @@ export class EditEngine {
     this.#revision++;
     this.#touched([draft.pageIndex]);
     return { op, history: this.#history() };
+  }
+
+  // ---- M4 패스 편집(docs/m4-contract.md 4.4). 연결용 스텁 ----
+
+  async planPathEdit(pageIndex: number, paintSeqs: number[]): Promise<PathEditPlan> {
+    void pageIndex;
+    void paintSeqs;
+    throw new Error('M4 미구현: core.planPathEdit');
+  }
+
+  async beginPathEdit(
+    pageIndex: number,
+    paintSeqs: number[],
+    revision: number,
+  ): Promise<BeginPathEditResult> {
+    void pageIndex;
+    void paintSeqs;
+    void revision;
+    throw new Error('M4 미구현: core.beginPathEdit');
+  }
+
+  async updatePathDraft(
+    draftId: string,
+    edit: PathEdit,
+    renderScale: number,
+  ): Promise<PathDraftUpdate> {
+    void draftId;
+    void edit;
+    void renderScale;
+    throw new Error('M4 미구현: core.updatePathDraft');
+  }
+
+  async commitPathEdit(draftId: string): Promise<CommitResult> {
+    void draftId;
+    throw new Error('M4 미구현: core.commitPathEdit');
+  }
+
+  async cancelPathEdit(draftId: string): Promise<EditHistoryState> {
+    void draftId;
+    throw new Error('M4 미구현: core.cancelPathEdit');
   }
 
   async cancelParagraphEdit(draftId: string): Promise<EditHistoryState> {
@@ -528,6 +578,9 @@ export class EditEngine {
   }
 
   #replayOne(fonts: FontManager, op: EditOp): void {
+    if (op.kind !== 'replace-paragraph') {
+      throw new EditStateError('M4 미구현: core.replayEdits(edit-path)');
+    }
     const pageIndex = op.target.pageIndex;
     const ctx = this.#context(pageIndex);
     const paragraphId = findParagraphId(ctx, op.target);
@@ -811,10 +864,14 @@ export class EditEngine {
     const rootOf = (e: LogEntry): string => {
       let cur = e;
       const seen = new Set<string>();
-      while (cur.op.target.editedBlock && !seen.has(cur.op.id)) {
+      for (
+        let block = editedBlockOf(cur.op);
+        block && !seen.has(cur.op.id);
+        block = editedBlockOf(cur.op)
+      ) {
         seen.add(cur.op.id);
-        const parent = byId.get(cur.op.target.editedBlock);
-        if (!parent) return cur.op.target.editedBlock;
+        const parent = byId.get(block);
+        if (!parent) return block;
         cur = parent;
       }
       return cur.op.id;

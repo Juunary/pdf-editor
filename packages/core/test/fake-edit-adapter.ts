@@ -196,8 +196,10 @@ export function createFakeAdapter(): FakeAdapter {
             editable: limits.length === 0,
             editedBlock: null,
             reasons: limits.map((l) => l.reason),
+            cell: null,
           };
         }),
+        paths: [],
       };
     },
 

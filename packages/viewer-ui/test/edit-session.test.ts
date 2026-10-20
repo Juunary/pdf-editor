@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EditSession, type EditSessionView } from '../src/edit-session.js';
 import { WORKER_RECOVERED_ERROR_NAME } from '../src/failure.js';
 import { FakeEditHost, type FakeParagraph } from './fake-edit-host.js';
-import type { Rect } from '@pdf-editor/shared-types';
+import type { Rect, ReplaceParagraphOp } from '@pdf-editor/shared-types';
 
 const PARAGRAPH: FakeParagraph = { id: 3, bbox: [100, 50, 150, 90], text: 'ab cd efgh' };
 
@@ -331,7 +331,9 @@ describe('종료', () => {
     const out = await session.commit();
     expect(out.kind).toBe('committed');
     if (out.kind === 'committed') {
-      expect(out.result.op.runs.map((r) => r.text).join('')).toBe('ab cd efghab');
+      expect((out.result.op as ReplaceParagraphOp).runs.map((r) => r.text).join('')).toBe(
+        'ab cd efghab',
+      );
     }
   });
 
@@ -354,7 +356,9 @@ describe('종료', () => {
     const second = await session.commit();
     expect(second.kind).toBe('committed');
     if (second.kind === 'committed') {
-      expect(second.result.op.runs.map((r) => r.text).join('')).toBe('ab cd efghabc');
+      expect((second.result.op as ReplaceParagraphOp).runs.map((r) => r.text).join('')).toBe(
+        'ab cd efghabc',
+      );
     }
   });
 
@@ -379,7 +383,9 @@ describe('종료', () => {
     const out = await done;
     expect(out.kind).toBe('committed');
     if (out.kind === 'committed') {
-      expect(out.result.op.runs.map((r) => r.text).join('')).toBe('ab cd efgha');
+      expect((out.result.op as ReplaceParagraphOp).runs.map((r) => r.text).join('')).toBe(
+        'ab cd efgha',
+      );
     }
     expect(views.some((v) => v.committing)).toBe(true);
     expect(host.count('updateParagraphDraft')).toBe(1);

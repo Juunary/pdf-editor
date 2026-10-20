@@ -110,6 +110,10 @@ export interface TextShowInfo {
 export interface SourceOpState {
   /** 효력 있는 채움 색 설정 연산(cs·sc·scn·g·rg·k) id. 기본값이면 null. */
   fillColorOps: number[];
+  /** 효력 있는 선 색 설정 연산 id(M4). */
+  strokeColorOps?: number[];
+  /** 효력 있는 선 두께 w 연산 id(M4). */
+  lineWidthOps?: number[];
   /** 효력 있는 gs 연산 id(바깥 → 안). */
   extGStateOps: number[];
   /** 활성 클립 중 직사각형으로 계산한 것의 교집합(페이지 공간). 직사각형이 아닌 클립이 있으면 null. 클립 없으면 쪽 경계. */
@@ -166,6 +170,10 @@ export interface SourceOp {
   state?: SourceOpState;
   /** M3: 열린 marked content(mcids 의 상세, pdf-ops 인터프리터가 채운다). */
   markedContent?: OpenMarkedContent[];
+  /** M4: 칠하기·클립 연산을 이루는 구성 연산(m·l·c·re 등) id. */
+  pathOps?: number[];
+  /** M4: 숫자·이름 피연산자의 바이트 범위. */
+  operandRanges?: ByteRange[];
 }
 
 export interface SourceMapError {
