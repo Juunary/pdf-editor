@@ -85,7 +85,7 @@ const host = {
   getPageLayout: unimpl('getPageLayout'),
   getPageEditability: (i) => fake.getPageEditability(i),
   planParagraphEdit: (i, p) => fake.planParagraphEdit(i, p),
-  beginParagraphEdit: (i, p, r) => fake.beginParagraphEdit(i, p, r),
+  beginParagraphEdit: (i, p, r, s) => fake.beginParagraphEdit(i, p, r, s),
   updateParagraphDraft: (d, input) => fake.updateParagraphDraft(d, input),
   commitParagraphEdit: (d) => fake.commitParagraphEdit(d),
   cancelParagraphEdit: (d) => fake.cancelParagraphEdit(d),

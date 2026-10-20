@@ -390,7 +390,7 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
       getPageLayout: (i) => pdf.getPageLayout(i),
       getPageEditability: (i) => pdf.getPageEditability(i),
       planParagraphEdit: (i, p) => pdf.planParagraphEdit(i, p),
-      beginParagraphEdit: (i, p, r) => pdf.beginParagraphEdit(i, p, r),
+      beginParagraphEdit: (i, p, r, scale) => pdf.beginParagraphEdit(i, p, r, scale),
       updateParagraphDraft: (d, input) => pdf.updateParagraphDraft(d, input),
       commitParagraphEdit: (d) => pdf.commitParagraphEdit(d),
       cancelParagraphEdit: (d) => pdf.cancelParagraphEdit(d),

@@ -281,11 +281,16 @@ export class ResilientPdf implements PdfWorkerApi {
     ]);
   }
 
-  async beginParagraphEdit(pageIndex: number, paragraphId: number, revision: number) {
+  async beginParagraphEdit(
+    pageIndex: number,
+    paragraphId: number,
+    revision: number,
+    renderScale?: number,
+  ) {
     const epoch = this.epoch;
     const result = await this.invoke<Awaited<ReturnType<PdfWorkerApi['beginParagraphEdit']>>>(
       'beginParagraphEdit',
-      [pageIndex, paragraphId, revision],
+      [pageIndex, paragraphId, revision, renderScale],
     );
     if (epoch === this.epoch) this.drafts.set(result.draftId, epoch);
     return result;
