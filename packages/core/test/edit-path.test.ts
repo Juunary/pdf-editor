@@ -82,13 +82,29 @@ describe('판정', () => {
     s.close();
   });
 
-  it('패스 판정 오류는 숨기지 않는다', async () => {
+  it('패스 판정 오류는 패스만 비우고 문단 판정은 돌려준다(pathError 진단, 리뷰 M4)', async () => {
+    const normal = open();
+    const expected = (await normal.s.getPageEditability(0)).paragraphs;
+    normal.s.close();
+    expect(expected.length).toBeGreaterThan(0);
     const adapter = createFakeAdapter();
     adapter.planPathEditability = () => {
       throw new Error('판정 버그');
     };
     const { s } = open(adapter);
-    await expect(s.getPageEditability(0)).rejects.toThrow('판정 버그');
+    const e = await s.getPageEditability(0);
+    expect(e.paths).toEqual([]);
+    expect(e.pathError).toBe('판정 버그');
+    expect(e.paragraphs).toEqual(expected);
+    // 문단 편집은 그대로 쓸 수 있다.
+    const plan = await s.planParagraphEdit(0, expected[0]!.paragraphId);
+    expect(plan.revision).toBe(0);
+    s.close();
+  });
+
+  it('정상 판정에는 pathError 가 없다', async () => {
+    const { s } = open();
+    expect((await s.getPageEditability(0)).pathError).toBeUndefined();
     s.close();
   });
 
