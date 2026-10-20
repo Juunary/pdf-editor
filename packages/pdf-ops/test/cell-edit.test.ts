@@ -143,6 +143,11 @@ describe('셀 대상(4.1·D1)', () => {
     const line0 = ctx0.model.chars[chars[0]!]!.line;
     const alpha = chars.filter((ci) => ctx0.model.chars[ci]!.line === line0);
     const beta = chars.filter((ci) => ctx0.model.chars[ci]!.line !== line0);
+    // 레이아웃이 한 문단(두 줄)으로 묶어도 짧은 줄은 강제 줄바꿈으로 남긴다(줄 단위 판정).
+    expect(cell.paragraphs).toHaveLength(1);
+    expect(cellTarget(ctx0.model, ctx0.layout, cell.paragraphs[0]!)!.paragraph.text).toBe(
+      'Alpha\nBeta',
+    );
     const base = ctx0.layout.paragraphs.length;
     const variant = (alphaLineHeight: number | null, cellRight: number) => {
       const pa = {

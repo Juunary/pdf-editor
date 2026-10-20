@@ -112,7 +112,7 @@ const PATH_DETAIL: Record<PathLimitReason, string> = {
   'singular-ctm': '칠하기 시점 CTM 이 특이 행렬',
 };
 
-/** 구성 연산 하나(숫자 피연산자 포함). */
+/** 구성 연산 하나. nums 는 준비(preparePathEdit) 때 읽는다(판정은 문법만 검사, 쪽 판정 시간 4.2). */
 interface Construct {
   op: SourceOp;
   nums: number[];
@@ -121,7 +121,8 @@ interface Construct {
 /** 칠하기 연산 하나의 판정. */
 interface PathItem {
   op: SourceOp;
-  constructs: Construct[];
+  /** 구성 연산(실행 순서). */
+  constructs: SourceOp[];
   /** PageModel.paths 인덱스(이 연산에 연결된 것 전부). */
   infos: number[];
   /** 대표 PathInfo(첫 fill·stroke, 없으면 첫 항목). */
@@ -130,8 +131,6 @@ interface PathItem {
   bbox: Rect;
   limits: PathLimit[];
   optional: boolean;
-  /** 경로 공간 → 페이지 공간(= op.ctm × userToPage). */
-  toPage: Matrix;
 }
 
 interface PageAnalysis {
@@ -153,15 +152,64 @@ function addLimit(list: PathLimit[], reason: PathLimitReason | EditLimitReason, 
   });
 }
 
-function parseConstruct(op: SourceOp, bytes: Uint8Array): number[] | null {
+/**
+ * PDF 숫자 토큰([+-]? 숫자 [. 숫자], 또는 [+-]? . 숫자). 아니면 NaN. 정수는 직접, 소수는 Number(십진 표기).
+ * values 가 false 면 문법만 보고 0 을 돌려준다.
+ */
+function readNumber(b: Uint8Array, s: number, e: number, values: boolean): number {
+  let i = s;
+  if (b[i] === 0x2b || b[i] === 0x2d) i++;
+  let v = 0;
+  let digits = 0;
+  while (i < e && b[i]! >= 0x30 && b[i]! <= 0x39) {
+    v = v * 10 + (b[i++]! - 0x30);
+    digits++;
+  }
+  if (i < e && b[i] === 0x2e) {
+    i++;
+    while (i < e && b[i]! >= 0x30 && b[i]! <= 0x39) {
+      i++;
+      digits++;
+    }
+    if (digits === 0 || i !== e) return NaN;
+    return values ? Number(String.fromCharCode(...b.subarray(s, e))) : 0;
+  }
+  if (digits === 0 || i !== e) return NaN;
+  return b[s] === 0x2d ? -v : v;
+}
+
+const isSpace = (c: number) =>
+  c === 0x20 || c === 0x0a || c === 0x0d || c === 0x09 || c === 0x0c || c === 0x00;
+
+/**
+ * 구성 연산의 숫자 피연산자. 인터프리터가 채운 operandRanges(숫자·이름 토큰)로 바로 읽는다: 토큰 수 = 피연산자 수,
+ * 첫 토큰이 연산 시작, 토큰 사이·마지막 토큰과 연산자 사이는 공백뿐, 모두 숫자. operandRanges 가 없으면 토큰 분리.
+ */
+function parseConstruct(op: SourceOp, stream: Uint8Array, values = true): number[] | null {
   const arity = CONSTRUCT_ARITY[op.op];
   if (arity === undefined) return null;
-  const p = parseContentOpsLenient(bytes);
-  const parsed = p.ops[0];
-  if (p.error || !parsed || parsed.op !== op.op) return null;
-  if (parsed.operands.length !== arity) return null;
-  if (!parsed.operands.every((t) => t.kind === 'number')) return null;
-  return parsed.operands.map((t) => t.value as number);
+  const ranges = op.operandRanges;
+  if (!ranges) {
+    const p = parseContentOpsLenient(stream.subarray(op.range[0], op.range[1]));
+    const parsed = p.ops[0];
+    if (p.error || !parsed || parsed.op !== op.op) return null;
+    if (parsed.operands.length !== arity) return null;
+    if (!parsed.operands.every((t) => t.kind === 'number')) return null;
+    return parsed.operands.map((t) => t.value as number);
+  }
+  if (ranges.length !== arity) return null;
+  const out: number[] = [];
+  let pos = op.range[0];
+  for (const [s, e] of ranges) {
+    for (let i = pos; i < s; i++) if (!isSpace(stream[i]!)) return null;
+    const v = readNumber(stream, s, e, values);
+    if (Number.isNaN(v)) return null;
+    out.push(v);
+    pos = e;
+  }
+  const end = op.range[1] - op.op.length;
+  for (let i = pos; i < end; i++) if (!isSpace(stream[i]!)) return null;
+  return out;
 }
 
 const sameStream = (a: ContentStreamRef, b: ContentStreamRef) =>
@@ -173,47 +221,60 @@ function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
   if (cached) return cached;
   const ops = ctx.map.ops;
   const streams = new StreamCache(ctx.doc);
+  // 칠하기 연산 → 연결된 PathInfo(PageModel.paths 는 paintSeq 순이라 연산별로 모인다).
   const infosOf = new Map<number, number[]>();
-  ctx.linkage.pathOp.forEach((opId, i) => {
-    if (opId < 0) return;
-    const l = infosOf.get(opId) ?? [];
-    l.push(i);
-    infosOf.set(opId, l);
-  });
-  // BT 안 여부(콘텐츠 출처별).
-  const inText = new Uint8Array(ops.length);
-  const textState = new Map<string, boolean>();
-  const keys = new WeakMap<readonly FormStep[], string>();
-  const keyOf = (p: readonly FormStep[]) => {
-    let k = keys.get(p);
-    if (k === undefined) {
-      k = formKey(p);
-      keys.set(p, k);
-    }
-    return k;
-  };
-  for (const o of ops) {
-    const k = keyOf(o.formPath);
-    if (o.op === 'BT') textState.set(k, true);
-    else if (o.op === 'ET') textState.set(k, false);
-    else if (textState.get(k)) inText[o.id] = 1;
+  const pathOp = ctx.linkage.pathOp;
+  for (let i = 0; i < pathOp.length; i++) {
+    const opId = pathOp[i]!;
+    if (opId < 0) continue;
+    const l = infosOf.get(opId);
+    if (l) l.push(i);
+    else infosOf.set(opId, [i]);
   }
-  // gs 연산 id → SMask 키 값(true: 마스크, false: /None, undefined: 키 없음). 뒤의 gs 가 이긴다.
-  const smask = new Map<number, boolean | undefined>();
-  const hasSMask = (ids: readonly number[]) => {
-    let on = false;
-    for (const id of ids) {
-      if (!smask.has(id)) {
-        const m = extGStateOf(ctx, id, streams)?.get('SMask');
-        smask.set(
-          id,
-          m === undefined || m.isNull() ? undefined : !(m.isName() && m.asName() === 'None'),
-        );
-      }
-      const v = smask.get(id);
-      if (v !== undefined) on = v;
+  // BT 안 여부. 같은 콘텐츠 실행의 연산은 formPath 배열을 공유하므로 배열 자체를 키로 쓴다.
+  const inText = new Uint8Array(ops.length);
+  const textState = new Map<readonly FormStep[], boolean>();
+  for (const o of ops) {
+    if (o.op === 'BT') textState.set(o.formPath, true);
+    else if (o.op === 'ET') textState.set(o.formPath, false);
+    else if (o.kind === 'path-paint' && textState.get(o.formPath) === true) inText[o.id] = 1;
+  }
+  // 효력 있는 SMask: 뒤의 gs 가 이긴다. extGStateOps 배열은 실행 지점마다 하나라 마지막 gs id 로 결과를 기억한다
+  // (gs 가 많은 쪽에서 칠하기마다 배열 전체를 다시 훑지 않게).
+  const smaskKey = new Map<number, boolean | undefined>();
+  const smaskAt = new Map<number, boolean>();
+  const keyValue = (id: number) => {
+    if (!smaskKey.has(id)) {
+      const m = extGStateOf(ctx, id, streams)?.get('SMask');
+      smaskKey.set(
+        id,
+        m === undefined || m.isNull() ? undefined : !(m.isName() && m.asName() === 'None'),
+      );
     }
-    return on;
+    return smaskKey.get(id);
+  };
+  const hasSMask = (ids: readonly number[]) => {
+    if (ids.length === 0) return false;
+    let i = ids.length - 1;
+    const pending: number[] = [];
+    let v = false;
+    for (; i >= 0; i--) {
+      const id = ids[i]!;
+      const known = smaskAt.get(id);
+      if (known !== undefined) {
+        v = known;
+        break;
+      }
+      const k = keyValue(id);
+      if (k !== undefined) {
+        v = k;
+        smaskAt.set(id, k);
+        break;
+      }
+      pending.push(id);
+    }
+    for (const id of pending) smaskAt.set(id, v);
+    return v;
   };
   const patternOp = new Map<number, boolean>();
   const isPattern = (id: number) => {
@@ -229,31 +290,59 @@ function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
 
   const items: PathItem[] = [];
   const bySeq = new Map<number, PathItem>();
-  for (const op of ops) {
+  let lastNum = -1;
+  let lastBytes: Uint8Array = new Uint8Array(0);
+  const paths = ctx.model.paths;
+  // PathInfo 가 연결된 칠하기 연산만(연산 id 순 = paintSeq 순).
+  for (const [opId, infos] of infosOf) {
+    const op = ops[opId]!;
     if (op.kind !== 'path-paint' || !PAINT_TARGETS.has(op.op) || !op.paintSeq?.length) continue;
-    const infos = infosOf.get(op.id) ?? [];
-    if (infos.length === 0) continue;
-    const paths = ctx.model.paths;
-    const painted = infos.filter((i) => paths[i]!.op === 'fill' || paths[i]!.op === 'stroke');
-    const pathIndex = painted[0] ?? infos[0]!;
+    let painted = 0;
+    let firstPainted = -1;
+    let clipInfo = false;
     let bbox: Rect | null = null;
-    for (const i of painted.length > 0 ? painted : infos) bbox = union(bbox, paths[i]!.bbox);
+    for (const i of infos) {
+      const kind = paths[i]!.op;
+      if (kind === 'fill' || kind === 'stroke') {
+        if (firstPainted < 0) firstPainted = i;
+        painted++;
+        const b = paths[i]!.bbox;
+        bbox = bbox
+          ? [
+              Math.min(bbox[0], b[0]),
+              Math.min(bbox[1], b[1]),
+              Math.max(bbox[2], b[2]),
+              Math.max(bbox[3], b[3]),
+            ]
+          : [b[0], b[1], b[2], b[3]];
+      } else clipInfo = true;
+    }
+    if (!bbox) for (const i of infos) bbox = union(bbox, paths[i]!.bbox);
     const limits: PathLimit[] = [];
     let optional = false;
 
-    const constructs: Construct[] = [];
+    const constructs: SourceOp[] = [];
+    let spans = false;
     for (const id of op.pathOps ?? []) {
       const c = ops[id];
       if (!c) continue;
-      const nums = parseConstruct(c, streams.opBytes(c));
-      if (!nums) addLimit(limits, 'path-op-unparsed');
-      constructs.push({ op: c, nums: nums ?? [] });
+      if (c.stream.objectNumber !== lastNum) {
+        lastNum = c.stream.objectNumber;
+        lastBytes = streams.get(lastNum);
+      }
+      if (!parseConstruct(c, lastBytes, false)) addLimit(limits, 'path-op-unparsed');
+      if (!spans && !sameStream(c.stream, op.stream)) spans = true;
+      constructs.push(c);
+      if (c.limits.length > 0) {
+        for (const r of c.limits) {
+          if (r === 'optional-content') optional = true;
+          else if (OP_BLOCKING[r]) addLimit(limits, r);
+        }
+      }
     }
     if (constructs.length === 0) addLimit(limits, 'path-op-unparsed');
-    if (constructs.some((c) => !sameStream(c.op.stream, op.stream))) {
-      addLimit(limits, 'path-spans-streams');
-    }
-    const first = constructs[0]?.op.id ?? op.id;
+    if (spans) addLimit(limits, 'path-spans-streams');
+    const first = constructs[0]?.id ?? op.id;
     for (let id = first + 1; id < op.id; id++) {
       const o = ops[id]!;
       if (o.kind === 'path-construct') continue;
@@ -264,38 +353,36 @@ function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
     const fills = FILLS.has(op.op);
     const strokes = STROKES.has(op.op);
     const state = op.state;
-    const patterned =
-      (fills && (state?.fillColorOps ?? []).some(isPattern)) ||
-      (strokes && (state?.strokeColorOps ?? []).some(isPattern)) ||
-      painted.length !== (fills ? 1 : 0) + (strokes ? 1 : 0);
+    let patterned = painted !== (fills ? 1 : 0) + (strokes ? 1 : 0);
+    if (!patterned && fills && state)
+      for (const id of state.fillColorOps) patterned ||= isPattern(id);
+    if (!patterned && strokes && state?.strokeColorOps) {
+      for (const id of state.strokeColorOps) patterned ||= isPattern(id);
+    }
     if (patterned) addLimit(limits, 'pattern-or-shading');
     // 패턴 칠하기도 MuPDF 는 clip + 내용으로 보내므로 클립 PathInfo 는 패턴이 아닐 때만 클립 사유다.
-    else if (infos.some((i) => paths[i]!.op === 'clip' || paths[i]!.op === 'clip-stroke')) {
-      addLimit(limits, 'clip-path');
-    }
+    else if (clipInfo) addLimit(limits, 'clip-path');
     if (inText[op.id]) addLimit(limits, 'inside-text-object');
-    if (hasSMask(state?.extGStateOps ?? [])) addLimit(limits, 'soft-mask');
-    for (const o of [op, ...constructs.map((c) => c.op)]) {
-      for (const r of o.limits) {
-        if (r === 'optional-content') optional = true;
-        else if (OP_BLOCKING[r]) addLimit(limits, r);
-      }
+    if (state && hasSMask(state.extGStateOps)) addLimit(limits, 'soft-mask');
+    for (const r of op.limits) {
+      if (r === 'optional-content') optional = true;
+      else if (OP_BLOCKING[r]) addLimit(limits, r);
     }
-    if (Math.abs(determinant(op.ctm)) < 1e-12 || !invert(op.ctm)) addLimit(limits, 'singular-ctm');
+    const det = determinant(op.ctm);
+    if (!Number.isFinite(det) || Math.abs(det) < 1e-12) addLimit(limits, 'singular-ctm');
 
     const item: PathItem = {
       op,
       constructs,
       infos,
-      pathIndex,
-      paintSeq: Math.min(...op.paintSeq),
-      bbox: bbox ?? [0, 0, 0, 0],
+      pathIndex: firstPainted >= 0 ? firstPainted : infos[0]!,
+      paintSeq: op.paintSeq[0]!,
+      bbox: bbox!,
       limits,
       optional,
-      toPage: concat(op.ctm, ctx.map.userToPage),
     };
     items.push(item);
-    for (const s of op.paintSeq) bySeq.set(s, item);
+    for (const sq of op.paintSeq) bySeq.set(sq, item);
   }
   const result = { items, bySeq };
   analyses.set(ctx.map, result);
@@ -326,7 +413,7 @@ function fingerprintOf(item: PathItem, streams: StreamCache): PathFingerprint {
     paintOp: item.op.op,
     constructOpCount: item.constructs.length,
     bbox: item.bbox.map(round3) as Rect,
-    constructHash: hashBytes(item.constructs.map((c) => streams.opBytes(c.op))),
+    constructHash: hashBytes(item.constructs.map((c) => streams.opBytes(c))),
   };
 }
 
@@ -817,10 +904,16 @@ export function preparePathEdit(
 
   const pItems: PreparedItem[] = items.map((it) => {
     const holder = holderOfStream(it.op.stream, it.op.formPath);
-    const { points } = constructPoints(it.constructs.map((c) => ({ op: c.op.op, nums: c.nums })));
+    const toPage = concat(it.op.ctm, ctx.map.userToPage);
+    const constructs = it.constructs.map((c) => {
+      const nums = parseConstruct(c, streams.get(c.stream.objectNumber));
+      if (!nums) throw new Error(`구성 연산을 읽지 못함: ${c.op}`);
+      return { op: c, nums };
+    });
+    const { points } = constructPoints(constructs.map((c) => ({ op: c.op.op, nums: c.nums })));
     let pointsBox: Rect | null = null;
     for (const p of points) {
-      const q = apply(it.toPage, p[0], p[1]);
+      const q = apply(toPage, p[0], p[1]);
       pointsBox = union(pointsBox, [q[0], q[1], q[0], q[1]]);
     }
     const fill = paintColorOf(ctx, it, 'fill');
@@ -829,9 +922,9 @@ export function preparePathEdit(
     const clip = it.op.state?.clipRect;
     return {
       holder: holder.key,
-      constructs: it.constructs,
+      constructs,
       paint: it.op,
-      toPage: it.toPage,
+      toPage,
       bbox: [...it.bbox] as Rect,
       pointsBox: pointsBox ?? ([...it.bbox] as Rect),
       pathIndex: it.pathIndex,

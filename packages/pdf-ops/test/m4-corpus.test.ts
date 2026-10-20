@@ -238,6 +238,10 @@ interface EditSample {
   shift?: number;
   warnings?: string[];
   v4?: { tableKept: boolean; cellParagraphs: number; cellTable: boolean };
+  /** 셀: 시작 정렬·상한에 막힌 초과·시작 텍스트. */
+  align?: string;
+  overflow?: boolean;
+  start?: string;
   error?: string;
 }
 
@@ -375,7 +379,7 @@ async function cellSamples(
           s.diffOutside[eng] = diffOutside(
             a,
             await raster(eng, after, p),
-            [pick.bbox, result.summary.contentBox],
+            [pick.bbox, plan.target.bbox, result.summary.contentBox],
             origin,
           );
         }
@@ -416,6 +420,12 @@ async function cellSamples(
             : false,
         };
         s.warnings = [...new Set(plan.warnings.map((w) => w.kind))];
+        s.align = plan.format.align;
+        s.overflow = result.summary.overflow;
+        s.start = plan.runs
+          .map((r) => r.text)
+          .join('')
+          .slice(0, 80);
       } catch (err) {
         s.error = err instanceof Error ? err.message : String(err);
       } finally {
