@@ -878,7 +878,10 @@ export class EditEngine {
     if (this.#disposed) throw new EditStateError('문서가 닫혔습니다.');
     // R-M4: 엔진이 실패 상태여도 저장은 막지 않는다. 저널 상태를 믿을 수 없으므로 감싸지 않고 현재 문서를 그대로 내보낸다
     // (undo 는 이미 막혀 있어 저널에 저장 단계가 생겨도 해가 없다). 경고는 `saveWarnings()` 로 알린다.
-    if (this.#failure) return fn();
+    if (this.#failure) {
+      this.#finalizeFallbackBestEffort();
+      return fn();
+    }
     this.#requireNoDraft('save');
     if (!this.#journalOn) return fn();
     const doc = this.#doc;
@@ -913,8 +916,24 @@ export class EditEngine {
   saveWarnings(): string[] {
     if (!this.#failure) return [];
     return [
-      `편집 엔진 오류(${this.#failure}) 상태에서 저장합니다. 저널 보호 없이 현재 문서를 그대로 내보내며, 마지막 편집이 빠졌거나 일부만 반영됐을 수 있습니다.`,
+      `편집 엔진 오류(${this.#failure}) 상태에서 저장합니다. 저널 보호 없이 현재 문서를 그대로 내보냅니다.`,
+      '마지막 편집이 빠졌거나 일부만 반영됐을 수 있고, 취소한 초안의 변경이 저장 파일에 들어갈 수 있습니다. 저장 뒤 파일을 확인하고 문서를 다시 여세요.',
     ];
+  }
+
+  /**
+   * 실패 상태 저장(R-M4)에서도 폴백 서브셋 교체(D9)와 서브셋 이름 태그(R-L2)를 시도한다. 저널로 감싸지 않으므로 작업 문서에
+   * 그대로 남지만 이 세션은 편집 RPC 가 막혀 다시 쓰지 않는다(두 처리 모두 같은 입력에 같은 결과). 실패는 무시한다
+   * (전체 폰트·태그 없는 이름으로 저장될 뿐 내용은 같다).
+   */
+  #finalizeFallbackBestEffort(): void {
+    try {
+      if (!this.#active().some(usesFallbackOf)) return;
+      this.#fonts?.finalizeForSave();
+      if (this.#fallbackRef) tagFallbackSubset(this.#doc, this.#fallbackRef);
+    } catch {
+      // 최선 노력: 저장은 계속한다.
+    }
   }
 
   // ---- 내부 ----
