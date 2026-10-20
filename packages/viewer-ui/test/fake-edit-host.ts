@@ -407,8 +407,9 @@ export class FakeEditHost implements EditHostApi {
     pageIndex: number,
     paragraphId: number,
     revision: number,
+    renderScale = 1,
   ): Promise<BeginEditResult> {
-    await this.enter('beginParagraphEdit', [pageIndex, paragraphId, revision]);
+    await this.enter('beginParagraphEdit', [pageIndex, paragraphId, revision, renderScale]);
     if (revision !== this.revision) throw new Error('revision 이 현재와 다릅니다');
     if (this.drafts.size > 0) throw new Error('초안은 문서당 1개입니다');
     const p = this.paragraph(paragraphId);
@@ -416,7 +417,7 @@ export class FakeEditHost implements EditHostApi {
     if (!plan.editable) throw new Error('편집할 수 없는 문단입니다');
     const draftId = `draft-${++this.draftSeq}`;
     this.drafts.set(draftId, { paragraph: p, input: null });
-    return { draftId, plan, first: this.update(draftId, plan.runs, plan.format, 1) };
+    return { draftId, plan, first: this.update(draftId, plan.runs, plan.format, renderScale) };
   }
 
   async updateParagraphDraft(draftId: string, input: DraftInput): Promise<DraftUpdate> {

@@ -51,8 +51,8 @@ function setup(options: { withEdit?: boolean; paragraphs?: FakeParagraph[] } = {
       : {
           getPageEditability: vi.fn((i: number) => edit.getPageEditability(i)),
           planParagraphEdit: vi.fn((i: number, p: number) => edit.planParagraphEdit(i, p)),
-          beginParagraphEdit: vi.fn((i: number, p: number, r: number) =>
-            edit.beginParagraphEdit(i, p, r),
+          beginParagraphEdit: vi.fn((i: number, p: number, r: number, s?: number) =>
+            edit.beginParagraphEdit(i, p, r, s),
           ),
           updateParagraphDraft: vi.fn((d: string, input: never) =>
             edit.updateParagraphDraft(d, input),

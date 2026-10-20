@@ -228,7 +228,12 @@ export class EditController {
       }
       let begun;
       try {
-        begun = await this.ctx.rpc.beginParagraphEdit(pageIndex, paragraphId, plan.revision);
+        begun = await this.ctx.rpc.beginParagraphEdit(
+          pageIndex,
+          paragraphId,
+          plan.revision,
+          this.ctx.currentView()?.renderScale,
+        );
       } catch (e) {
         // 오래된 revision(그 사이 문서가 바뀜): 다시 판정해 한 번 더 시도한다.
         if (!/revision/i.test(classifyFailure(e).message)) throw e;
@@ -237,7 +242,12 @@ export class EditController {
           this.showLimits(plan);
           return;
         }
-        begun = await this.ctx.rpc.beginParagraphEdit(pageIndex, paragraphId, plan.revision);
+        begun = await this.ctx.rpc.beginParagraphEdit(
+          pageIndex,
+          paragraphId,
+          plan.revision,
+          this.ctx.currentView()?.renderScale,
+        );
       }
       const view = this.ctx.currentView();
       const text = view?.text ?? null;
