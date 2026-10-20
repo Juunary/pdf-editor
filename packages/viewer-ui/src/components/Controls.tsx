@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { featureDisabledReason, type FeatureName, type ViewerController } from '../controller.js';
 import { useViewerState } from '../hooks.js';
+import { docHistoryShortcut } from '../edit-keys.js';
+import { EDIT_PAGES_NOTICE } from '../edit-labels.js';
 import { canStep } from '../page-nav.js';
-import { isFindShortcut } from '../shortcuts.js';
+import { isFindShortcut, isTypingTarget } from '../shortcuts.js';
 import { FindBar } from './FindBar.js';
 
 const FEATURE_LABELS: Record<FeatureName, string> = {
@@ -10,6 +12,7 @@ const FEATURE_LABELS: Record<FeatureName, string> = {
   search: '검색',
   debug: '연결 디버그',
   layout: '레이아웃',
+  edit: '문단 편집',
 };
 
 interface Props {
@@ -23,14 +26,31 @@ export function Controls({ controller }: Props) {
   /** Esc 로 취소할 때 뒤따르는 blur 가 입력을 확정하지 않게 한다. */
   const cancelled = useRef(false);
   const shown = draft ?? String(state.pageIndex + 1);
+  const session = state.edit.session;
 
   // Ctrl+F 가로채기. 검색이 비활성화되면 브라우저 기본 찾기에 맡긴다.
+  // 편집 밖 Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y 는 문서 되돌리기·다시 실행이다(편집 중에는 편집기 textarea 가 처리한다).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isFindShortcut(e) && controller.shouldInterceptFind()) {
         e.preventDefault();
         controller.openFind();
+        return;
       }
+      const edit = controller.edit;
+      const step = docHistoryShortcut(e);
+      if (
+        !edit ||
+        !step ||
+        e.isComposing ||
+        edit.active ||
+        isTypingTarget(document.activeElement)
+      ) {
+        return;
+      }
+      if (controller.getState().disabled.edit) return;
+      e.preventDefault();
+      void (step === 'undo' ? edit.undo() : edit.redo());
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -136,6 +156,77 @@ export function Controls({ controller }: Props) {
       >
         레이아웃
       </button>
+      {controller.edit && !state.disabled.edit && (
+        <>
+          <button
+            id="pe-doc-undo"
+            type="button"
+            class="pe-btn"
+            title="편집 되돌리기 (Ctrl+Z)"
+            disabled={session !== null || state.edit.busy || state.edit.history?.canUndo !== true}
+            onClick={() => void controller.edit?.undo()}
+          >
+            되돌리기
+          </button>
+          <button
+            id="pe-doc-redo"
+            type="button"
+            class="pe-btn"
+            title="다시 실행 (Ctrl+Shift+Z, Ctrl+Y)"
+            disabled={session !== null || state.edit.busy || state.edit.history?.canRedo !== true}
+            onClick={() => void controller.edit?.redo()}
+          >
+            다시 실행
+          </button>
+          {session && (
+            <button
+              id="pe-edit-cancel"
+              type="button"
+              class="pe-btn"
+              data-pe-keep=""
+              title="이 문단의 편집을 버리고 원래대로 되돌립니다"
+              onClick={() => void controller.edit?.cancelActive()}
+            >
+              편집 취소
+            </button>
+          )}
+          <button
+            id="pe-fb-toggle"
+            type="button"
+            class="pe-btn"
+            data-pe-keep=""
+            title="원본 글꼴에 없어 폴백 글꼴로 쓴 글자에 점선 밑줄 표시"
+            aria-pressed={state.edit.fallbackUnderline}
+            onClick={() => controller.edit?.setFallbackUnderline(!state.edit.fallbackUnderline)}
+          >
+            폴백 표시
+          </button>
+          <label
+            class="pe-edit-opt"
+            data-pe-keep=""
+            title={`태그된 PDF 쪽의 문단은 편집하지 않습니다. ${EDIT_PAGES_NOTICE}`}
+          >
+            <input
+              id="pe-block-tagged"
+              type="checkbox"
+              checked={state.edit.blockTagged}
+              onChange={(e) => controller.edit?.setBlockTagged(e.currentTarget.checked)}
+            />{' '}
+            태그 PDF 편집 막기
+          </label>
+        </>
+      )}
+      {state.edit.notice && (
+        <span
+          id="pe-edit-notice"
+          class="pe-notice pe-edit-notice"
+          role="status"
+          title="클릭하면 닫습니다"
+          onClick={() => controller.edit?.dismissNotice()}
+        >
+          {state.edit.notice} ✕
+        </span>
+      )}
       {disabledOwn.length > 0 && (
         <span
           id="pe-notice"

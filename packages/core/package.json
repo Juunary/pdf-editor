@@ -29,9 +29,12 @@
   "dependencies": {
     "@pdf-editor/layout-recon": "workspace:*",
     "@pdf-editor/pdf-ops": "workspace:*",
+    "@pdf-editor/reflow": "workspace:*",
     "@pdf-editor/shared-types": "workspace:*",
     "comlink": "4.4.2",
     "mupdf": "1.28.1"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "pdfjs-dist": "6.4.299"
+  }
 }

@@ -4,11 +4,14 @@
 // 잃는다. 그래서 Comlink 리스너를 먼저 동기 등록하고, MuPDF 는 동적 import 로 불러온다.
 import * as Comlink from 'comlink';
 import type { PdfWorkerApi } from '@pdf-editor/shared-types';
+import type { PdfSessionOptions } from './session.js';
 
-export function exposePdfWorker(endpoint: Comlink.Endpoint): void {
+export function exposePdfWorker(endpoint: Comlink.Endpoint, options: PdfSessionOptions = {}): void {
   let api: Promise<PdfWorkerApi> | null = null;
   const load = (): Promise<PdfWorkerApi> =>
-    (api ??= import('./worker-api.js').then((m) => m.createPdfWorkerApi()));
+    (api ??= Promise.all([import('./worker-api.js'), import('./session.js')]).then(([m, s]) =>
+      m.createPdfWorkerApi(new s.PdfSession(options)),
+    ));
   const lazy: PdfWorkerApi = {
     open: async (bytes) => (await load()).open(bytes),
     getPageInfo: async (pageIndex) => (await load()).getPageInfo(pageIndex),
@@ -21,6 +24,21 @@ export function exposePdfWorker(endpoint: Comlink.Endpoint): void {
     planSave: async (request) => (await load()).planSave(request),
     save: async (request) => (await load()).save(request),
     close: async () => (await load()).close(),
+    getPageEditability: async (pageIndex) => (await load()).getPageEditability(pageIndex),
+    planParagraphEdit: async (pageIndex, paragraphId) =>
+      (await load()).planParagraphEdit(pageIndex, paragraphId),
+    getPageEdits: async (pageIndex) => (await load()).getPageEdits(pageIndex),
+    beginParagraphEdit: async (pageIndex, paragraphId, revision, renderScale) =>
+      (await load()).beginParagraphEdit(pageIndex, paragraphId, revision, renderScale),
+    listRedactAnnots: async () => (await load()).listRedactAnnots(),
+    updateParagraphDraft: async (draftId, input) =>
+      (await load()).updateParagraphDraft(draftId, input),
+    commitParagraphEdit: async (draftId) => (await load()).commitParagraphEdit(draftId),
+    cancelParagraphEdit: async (draftId) => (await load()).cancelParagraphEdit(draftId),
+    undo: async () => (await load()).undo(),
+    redo: async () => (await load()).redo(),
+    getEditHistory: async () => (await load()).getEditHistory(),
+    replayEdits: async (ops) => (await load()).replayEdits(ops),
   };
   Comlink.expose(lazy, endpoint);
   void load();

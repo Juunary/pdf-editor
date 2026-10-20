@@ -52,6 +52,27 @@ export interface Counts {
   fn: number;
 }
 
+/** 역할 혼동표 열·행 이름. 라벨 행 `none`: 라벨과 짝이 없는 예측 문단. 예측 열 `none`: 짝이 없는 라벨 문단. */
+export const ROLE_NONE = 'none';
+/** 예측 열 `container`: 짝이 표·도형 안 문단. */
+export const ROLE_CONTAINER = 'container';
+/** 역할 채점 짝짓기 하한: 라벨 문단 줄 집합과 예측 문단 줄 집합의 Jaccard. */
+export const ROLE_PAIR_MIN_JACCARD = 0.5;
+/** 역할 채점 대상(혼동표 순서). */
+export const ROLES: readonly ParagraphRole[] = [
+  'body',
+  'heading',
+  'list-item',
+  'caption',
+  'footnote',
+  'header',
+  'footer',
+  'other',
+];
+
+/** 혼동표: matrix[라벨 역할 | 'none'][예측 역할 | 'container' | 'none'] = 쌍 수. 0 인 칸은 없다. */
+export type RoleMatrix = Record<string, Record<string, number>>;
+
 export interface PageScore {
   /** 흐름 문단 완전 일치: tp = 일치, fp = 예측 − 일치, fn = 라벨 − 일치. */
   paragraphs: Counts;
@@ -71,6 +92,10 @@ export interface PageScore {
   figures: Counts;
   /** 머리·꼬리 줄. */
   margin: Counts;
+  /** 역할 혼동표(라벨 문단과 예측 문단을 줄 Jaccard 0.5 이상으로 일대일 짝지은 쌍 기준). */
+  roles: RoleMatrix;
+  /** 짝지은 쌍 중 역할이 다른 것(분석용): `라벨역할[줄] → 예측역할 P<id>[줄]`. */
+  roleMisses: string[];
   /** 실패 사례(분석용): 일치하지 않은 라벨 문단과 그 줄을 담은 예측 문단. */
   misses: string[];
 }
@@ -115,6 +140,67 @@ const median = (xs: number[]): number => {
   const m = s.length >> 1;
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 };
+
+/**
+ * 역할 채점(W4-1). 라벨 문단과 예측 문단을 줄 집합 Jaccard 내림차순으로 일대일 짝지어(하한 `ROLE_PAIR_MIN_JACCARD`)
+ * 역할 혼동표를 만든다. 문단 경계가 틀려 짝이 없는 라벨 문단은 예측 열 `none`, 짝이 없는 예측 흐름 문단은 라벨 행 `none`
+ * 에 센다. 라벨 문단 줄이 하나도 없는 예측 문단(표·도형 검출 문제)은 세지 않는다.
+ */
+function scoreRoles(
+  labelParas: readonly LabelParagraph[],
+  layout: PageLayout,
+  clean: (ls: readonly number[]) => number[],
+): { roles: RoleMatrix; roleMisses: string[] } {
+  const roles: RoleMatrix = {};
+  const bump = (row: string, col: string): void => {
+    const r = (roles[row] ??= {});
+    r[col] = (r[col] ?? 0) + 1;
+  };
+  const roleMisses: string[] = [];
+  const lab = labelParas
+    .map((p) => ({ p, lines: new Set(clean(p.lines)) }))
+    .filter((x) => x.lines.size > 0);
+  const pred = layout.paragraphs
+    .map((p) => ({ p, lines: new Set(clean(p.lines)) }))
+    .filter((x) => x.lines.size > 0);
+  const flowLines = new Set(lab.flatMap((x) => [...x.lines]));
+
+  const cands: [number, number, number][] = [];
+  lab.forEach((a, i) =>
+    pred.forEach((b, j) => {
+      let inter = 0;
+      for (const l of a.lines) if (b.lines.has(l)) inter++;
+      if (inter === 0) return;
+      const v = inter / (a.lines.size + b.lines.size - inter);
+      if (v >= ROLE_PAIR_MIN_JACCARD) cands.push([v, i, j]);
+    }),
+  );
+  cands.sort((x, y) => y[0] - x[0] || x[1] - y[1] || x[2] - y[2]);
+  const labUsed = new Set<number>();
+  const predUsed = new Set<number>();
+  for (const [, i, j] of cands) {
+    if (labUsed.has(i) || predUsed.has(j)) continue;
+    labUsed.add(i);
+    predUsed.add(j);
+    const { p: lp } = lab[i]!;
+    const { p: pp } = pred[j]!;
+    const inContainer = pp.table !== null || pp.figure !== null;
+    bump(lp.role, inContainer ? ROLE_CONTAINER : pp.role);
+    if (inContainer || pp.role !== lp.role)
+      roleMisses.push(
+        `${lp.role}[${clean(lp.lines).join(',')}] → ${inContainer ? ROLE_CONTAINER : pp.role} P${pp.id}[${clean(pp.lines).join(',')}]`,
+      );
+  }
+  lab.forEach((x, i) => {
+    if (!labUsed.has(i)) bump(x.p.role, ROLE_NONE);
+  });
+  pred.forEach((x, j) => {
+    if (predUsed.has(j) || x.p.table !== null || x.p.figure !== null) return;
+    if (![...x.lines].some((l) => flowLines.has(l))) return;
+    bump(ROLE_NONE, x.p.role);
+  });
+  return { roles, roleMisses };
+}
 
 export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
   const ignore = new Set(label.ignoreLines ?? []);
@@ -268,6 +354,8 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
   for (const l of pm) if (lm.has(l)) mtp++;
   const margin = { tp: mtp, fp: pm.size - mtp, fn: lm.size - mtp };
 
+  const { roles, roleMisses } = scoreRoles(labelParas, layout, clean);
+
   return {
     paragraphs,
     pairs,
@@ -279,8 +367,22 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
     cellLines,
     figures,
     margin,
+    roles,
+    roleMisses,
     misses,
   };
+}
+
+export interface RoleMetrics {
+  /** 라벨 문단 수(짝이 없는 것 포함). */
+  support: number;
+  /** 예측 문단 수(짝이 없는 흐름 문단 포함). */
+  predicted: number;
+  /** 라벨·예측 역할이 같은 쌍. */
+  tp: number;
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
 }
 
 export interface ScoreSummary {
@@ -299,6 +401,12 @@ export interface ScoreSummary {
   figureP: number | null;
   figureR: number | null;
   marginF1: number | null;
+  /** 역할별 정밀도·재현율(혼동표 합산 기준, `ROLES` 순서). */
+  roles: Record<string, RoleMetrics>;
+  /** 역할 혼동표 합산. */
+  roleMatrix: RoleMatrix;
+  /** 라벨 문단 수 / 줄 Jaccard 0.5 이상으로 짝지은 수 / 짝 중 역할이 같은 수. */
+  rolePairs: { labeled: number; paired: number; match: number };
 }
 
 const add = (a: Counts, b: Counts): Counts => ({
@@ -310,6 +418,48 @@ const prec = (c: Counts): number | null => (c.tp + c.fp ? c.tp / (c.tp + c.fp) :
 const rec = (c: Counts): number | null => (c.tp + c.fn ? c.tp / (c.tp + c.fn) : null);
 const f1 = (c: Counts): number | null =>
   2 * c.tp + c.fp + c.fn ? (2 * c.tp) / (2 * c.tp + c.fp + c.fn) : null;
+
+/** 쪽별 혼동표를 합산하고 역할별 지표를 낸다. */
+function summarizeRoles(scores: readonly PageScore[]): {
+  roles: Record<string, RoleMetrics>;
+  roleMatrix: RoleMatrix;
+  rolePairs: { labeled: number; paired: number; match: number };
+} {
+  const roleMatrix: RoleMatrix = {};
+  for (const s of scores)
+    for (const [row, cols] of Object.entries(s.roles))
+      for (const [col, n] of Object.entries(cols)) {
+        const r = (roleMatrix[row] ??= {});
+        r[col] = (r[col] ?? 0) + n;
+      }
+  const roles: Record<string, RoleMetrics> = {};
+  for (const role of ROLES) {
+    const tp = roleMatrix[role]?.[role] ?? 0;
+    const support = Object.values(roleMatrix[role] ?? {}).reduce((a, b) => a + b, 0);
+    const predicted = Object.values(roleMatrix).reduce((a, cols) => a + (cols[role] ?? 0), 0);
+    roles[role] = {
+      support,
+      predicted,
+      tp,
+      precision: predicted ? tp / predicted : null,
+      recall: support ? tp / support : null,
+      f1: support + predicted ? (2 * tp) / (support + predicted) : null,
+    };
+  }
+  let labeled = 0;
+  let paired = 0;
+  let match = 0;
+  for (const [row, cols] of Object.entries(roleMatrix)) {
+    if (row === ROLE_NONE) continue;
+    for (const [col, n] of Object.entries(cols)) {
+      labeled += n;
+      if (col === ROLE_NONE) continue;
+      paired += n;
+      if (col === row) match += n;
+    }
+  }
+  return { roles, roleMatrix, rolePairs: { labeled, paired, match } };
+}
 
 /** 전체 합산(계약 4.3: 쪽 평균이 아닌 합산, τ 만 쪽 평균). */
 export function summarizeScores(scores: readonly PageScore[]): ScoreSummary {
@@ -344,5 +494,6 @@ export function summarizeScores(scores: readonly PageScore[]): ScoreSummary {
     figureP: prec(figures),
     figureR: rec(figures),
     marginF1: f1(margin),
+    ...summarizeRoles(scores),
   };
 }
