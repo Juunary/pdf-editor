@@ -82,19 +82,7 @@ describe('판정', () => {
     s.close();
   });
 
-  it('pdf-ops 가 "M4 미구현" 이면 paths 는 빈 목록이고 문단 판정은 돈다', async () => {
-    const adapter = createFakeAdapter();
-    adapter.planPathEditability = () => {
-      throw new Error('M4 미구현: pdf-ops.planPathEditability');
-    };
-    const { s } = open(adapter);
-    const e = await s.getPageEditability(0);
-    expect(e.paths).toEqual([]);
-    expect(e.paragraphs.length).toBeGreaterThan(0);
-    s.close();
-  });
-
-  it('다른 오류는 숨기지 않는다', async () => {
+  it('패스 판정 오류는 숨기지 않는다', async () => {
     const adapter = createFakeAdapter();
     adapter.planPathEditability = () => {
       throw new Error('판정 버그');
@@ -331,6 +319,25 @@ describe('경고', () => {
     expect(u.warnings.map((w) => w.kind)).toContain('color-space-changed');
     const same = await s.updatePathDraft(started.draftId, { ...NO_EDIT, fill: [0.5, 0.5, 0.5] }, 1);
     expect(same.warnings.map((w) => w.kind)).not.toContain('color-space-changed');
+    await s.cancelPathEdit(started.draftId);
+    s.close();
+  });
+
+  it('쓰기 경고가 오면(빈 배열 포함) core 근사를 쓰지 않는다', async () => {
+    const { s, adapter } = open();
+    adapter.probe.pathWriteWarnings = [];
+    const [first] = seqs(s);
+    const plan = await s.planPathEdit(0, [first!]);
+    const started = await s.beginPathEdit(0, [first!], plan.revision);
+    const u = await s.updatePathDraft(started.draftId, { ...NO_EDIT, fill: [1, 0, 0] }, 1);
+    expect(u.warnings.map((w) => w.kind)).not.toContain('color-space-changed');
+    adapter.probe.pathWriteWarnings = [
+      { kind: 'color-space-changed', message: 'a', rects: [[0, 0, 1, 1]] },
+    ];
+    const v = await s.updatePathDraft(started.draftId, { ...NO_EDIT, fill: [1, 0, 0] }, 1);
+    const kinds = v.warnings.map((w) => w.kind);
+    expect(kinds.filter((k) => k === 'color-space-changed')).toHaveLength(1);
+    expect(v.warnings.find((w) => w.kind === 'color-space-changed')!.rects).toHaveLength(1);
     await s.cancelPathEdit(started.draftId);
     s.close();
   });

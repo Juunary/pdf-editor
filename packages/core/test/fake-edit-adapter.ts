@@ -67,7 +67,7 @@ export interface FakeAdapterProbe {
   /** 다음 패스 prepare / write 호출을 실패시킨다. */
   failNextPath: { prepare?: boolean; write?: boolean; writeAfter?: boolean };
   /** writePathEdit 결과에 실을 경고(pdf-ops 가 채울 `warnings` 선택 필드 흉내). */
-  pathWriteWarnings: EditWarning[];
+  pathWriteWarnings: EditWarning[] | undefined;
 }
 
 export interface FakeAdapter extends EditAdapter {
@@ -177,7 +177,7 @@ export function createFakeAdapter(): FakeAdapter {
     planWarnings: [],
     pathWrites: [],
     failNextPath: {},
-    pathWriteWarnings: [],
+    pathWriteWarnings: undefined,
   };
   /** 패스 편집 준비 때 찍어 둔 원본 스트림(쓰기는 항상 원본 기준 절대 편집). */
   const pathSnapshots = new Map<
@@ -444,7 +444,11 @@ export function createFakeAdapter(): FakeAdapter {
         probe.failNextPath.writeAfter = false;
         throw new Error('fake writePath(쓴 뒤) 실패');
       }
-      return { bbox: bbox!, writeMs: 0, warnings: [...probe.pathWriteWarnings] };
+      return {
+        bbox: bbox!,
+        writeMs: 0,
+        ...(probe.pathWriteWarnings ? { warnings: [...probe.pathWriteWarnings] } : {}),
+      };
     },
 
     layoutParagraph(input: ReflowInput): ReflowResult {

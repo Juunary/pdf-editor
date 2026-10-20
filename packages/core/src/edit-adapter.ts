@@ -8,6 +8,7 @@ import {
   FontManager,
   type FallbackFontSource,
   listEditBlocks,
+  pathEditWarnings,
   planPageEditability,
   planParagraphEdit,
   planPathEdit,
@@ -30,8 +31,9 @@ export type {
 } from '@pdf-editor/pdf-ops';
 
 /**
- * 패스 쓰기 결과. pdf-ops 시그니처(`{ bbox, writeMs }`)에 쓰는 도중 정해지는 경고(`color-space-changed`·`path-clipped`,
- * 계약 4.2)를 실을 선택 필드를 더했다. pdf-ops 가 채우면 core 가 초안 경고에 합친다(docs/m4-core.md 6절).
+ * 패스 쓰기 결과. pdf-ops 시그니처(`{ bbox, writeMs }`)에 쓰는 도중 정해지는 경고(`color-space-changed`·`path-clipped`·
+ * `table-rule-removed`, 계약 4.2)를 실을 선택 필드를 더했다. 기본 어댑터는 pdf-ops `pathEditWarnings` 로 채운다.
+ * 필드가 있으면(빈 배열 포함) core 근사 경고(`pathCoreWarnings`)를 쓰지 않는다. 없을 때만 근사한다.
  */
 export type PathWriteResult = ReturnType<typeof writePathEdit> & { warnings?: EditWarning[] };
 
@@ -93,7 +95,11 @@ export const defaultEditAdapter: EditAdapter = {
   planPathEditability,
   planPathEdit,
   preparePathEdit,
-  writePathEdit,
+  // pdf-ops 는 쓰기 경고를 `pathEditWarnings` 로 따로 준다(docs/m4-pdf-ops.md 6절 #4). 여기서 반환에 싣는다.
+  writePathEdit: (ctx, prepared, edit) => ({
+    ...writePathEdit(ctx, prepared, edit),
+    warnings: pathEditWarnings(ctx, prepared),
+  }),
   writeEditBlock,
   listEditBlocks,
   recordEditMetadata,

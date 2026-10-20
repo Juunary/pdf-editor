@@ -44,6 +44,7 @@ import type {
   EditBlockRef,
   ParagraphEditContext,
   PreparedEdit,
+  PathWriteResult,
   PreparedPathEdit,
 } from './edit-adapter.js';
 import {
@@ -298,17 +299,9 @@ export class EditEngine {
     return { ...plan, revision: this.#revision };
   }
 
-  /**
-   * 쪽의 패스 판정 목록(어댑터 결과). pdf-ops 가 "M4 미구현" 이면 빈 목록: 패스 판정이 없어도 문단 판정은 돌아야 한다.
-   * 그 밖의 오류는 그대로 올린다(docs/m4-core.md 6절).
-   */
+  /** 쪽의 패스 판정 목록(어댑터 결과). 판정 오류는 그대로 올린다. */
   #planPaths(ctx: ParagraphEditContext): PathEditability[] {
-    try {
-      return this.#adapter.planPathEditability(ctx);
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('M4 미구현')) return [];
-      throw error;
-    }
+    return this.#adapter.planPathEditability(ctx);
   }
 
   /**
@@ -612,11 +605,7 @@ export class EditEngine {
     }
     draft.edit = edit;
     draft.bbox = written.bbox;
-    draft.warnings = mergeWarnings(
-      draft.plan.warnings,
-      written.warnings ?? [],
-      pathCoreWarnings(draft.plan, edit, draft.ctx.layout),
-    );
+    draft.warnings = pathWarnings(draft.plan, edit, draft.ctx, written);
     this.#host.invalidateAround(draft.pageIndex);
     const clip = inflateRect(unionRect(previous, written.bbox), REGION_MARGIN_PT);
     const region = this.#host.renderRegion(draft.pageIndex, renderScale, clip);
@@ -813,11 +802,7 @@ export class EditEngine {
     const written = this.#adapter.writePathEdit(ctx, prepared, op.edit);
     this.#base.push({
       op,
-      warnings: mergeWarnings(
-        plan.warnings,
-        written.warnings ?? [],
-        pathCoreWarnings(plan, op.edit, ctx.layout),
-      ),
+      warnings: pathWarnings(plan, op.edit, ctx, written),
     });
     this.#touched([pageIndex], false);
   }
@@ -1225,6 +1210,24 @@ export class EditEngine {
     );
     return { summary: result.summary, warnings, usesFallback };
   }
+}
+
+/**
+ * 패스 편집 경고 = 계획 경고 + 쓰기 경고(같은 종류는 하나로). 어댑터가 쓰기 경고를 주면(pdf-ops `pathEditWarnings`, 빈 배열
+ * 포함) 그것만 쓰고, 주지 않으면 core 근사(`pathCoreWarnings`)로 대신한다. 둘을 함께 쓰면 근사의 거짓 양성
+ * (`table-rule-removed`)이 정확한 판정을 덮는다.
+ */
+function pathWarnings(
+  plan: Omit<PathEditPlan, 'revision'>,
+  edit: PathEdit,
+  ctx: ParagraphEditContext,
+  written: PathWriteResult,
+): EditWarning[] {
+  return mergeWarnings(
+    plan.warnings,
+    written.warnings ?? pathCoreWarnings(plan, edit, ctx.layout),
+    [],
+  );
 }
 
 function hasWarning(entry: LogEntry, kind: EditWarning['kind']): boolean {
