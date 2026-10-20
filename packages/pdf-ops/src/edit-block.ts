@@ -226,6 +226,7 @@ export function writeBlock(
   };
   let curFont = '';
   let curSize = NaN;
+  let curTz = 1;
   let curStyle = '';
   let curItalic: boolean | null = null;
   let strokeSetup = false;
@@ -291,6 +292,14 @@ export function writeBlock(
         curFont = fontName;
         curSize = g.size;
       }
+      // 가로 비율(장평): Tz 는 글리프 모양·전진과 TJ 숫자 단위에 함께 곱해진다(PDF 32000 9.3.4).
+      const tz = g.horizontalScale ?? 1;
+      if (tz !== curTz) {
+        closeTJ();
+        tj = [];
+        out.push(`${f(tz * 100)} Tz`);
+        curTz = tz;
+      }
       tj ??= [];
       if (needTm) {
         const yAxis = g.syntheticItalic ? upItalic : up;
@@ -298,13 +307,13 @@ export function writeBlock(
         curItalic = g.syntheticItalic;
       } else if (pen) {
         const along = (P[0] - pen[0]) * ex[0] + (P[1] - pen[1]) * ex[1];
-        const adj = (-along * 1000) / g.size;
+        const adj = (-along * 1000) / (g.size * curTz);
         if (Math.abs(adj) >= 0.0005) tj.push(f(adj));
       }
       const bytes =
         g.faceKey === FALLBACK_KEY ? Uint8Array.of((g.gid >> 8) & 0xff, g.gid & 0xff) : g.code;
       tj.push(`<${hex(bytes)}>`);
-      const adv = (g.pdfWidth / 1000) * g.size;
+      const adv = (g.pdfWidth / 1000) * g.size * curTz;
       pen = [P[0] + ex[0] * adv, P[1] + ex[1] * adv];
       glyphOffsets.push(g.offset);
       if (g.syntheticBold) syntheticRuns[g.runIndex]!.bold = true;
@@ -335,6 +344,9 @@ export function writeBlock(
         italic: r.style.italic,
         color: r.style.color,
         ...(r.style.charSpacing ? { charSpacing: r.style.charSpacing } : {}),
+        ...(r.style.horizontalScale && r.style.horizontalScale !== 1
+          ? { horizontalScale: r.style.horizontalScale }
+          : {}),
         font: rs ? fontLabel(rs.fontRef) : FALLBACK_NAME,
         synthetic: syntheticRuns[i]!,
       };

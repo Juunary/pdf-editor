@@ -239,6 +239,22 @@ function joiner(
   return sameLeading && wrapped(model, lastLine, firstLine, innerWidth) ? ' ' : '\n';
 }
 
+/** 셀 문단들의 보이는(공백류가 아닌) 글자 상자 가로 범위. 없으면 null. */
+function inkSpan(model: PageModel, paras: readonly LayoutParagraph[]): [number, number] | null {
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  for (const p of paras) {
+    for (const c of p.chars) {
+      const ch = model.chars[c];
+      if (!ch || ch.text.trim() === '') continue;
+      const q = ch.quad;
+      x0 = Math.min(x0, q[0], q[2], q[4], q[6]);
+      x1 = Math.max(x1, q[0], q[2], q[4], q[6]);
+    }
+  }
+  return x0 <= x1 ? [x0, x1] : null;
+}
+
 /** 문단 paragraphId 의 셀 대상. 표 셀 문단이 아니면 null. */
 export function cellTarget(
   model: PageModel,
@@ -268,13 +284,16 @@ export function cellTarget(
     (table.strategy === 'text' && cell.colSpan === 1
       ? columnAlign(model, table, cell.col)
       : null) ?? gapAlign(t, box);
-  // 정렬한 변은 원 간격(위치 보존), 반대 변은 셀 경계 − 여백.
+  // 정렬한 변은 원 간격(위치 보존), 반대 변은 셀 경계 − 여백. 정렬한 변의 위치는 보이는 글자 잉크의 가로 범위로 정한다:
+  // 문단 상자는 줄 끝 공백 글리프까지 덮어, 리플로우 줄(줄 끝 공백 제외)이 가운데 정렬은 공백 폭 절반, 오른쪽 정렬은
+  // 공백 폭만큼 밀린다(docs/m4-pdf-ops.md 6절 #7, fed-combined-finstmt-2025 8쪽 1.0pt). 정렬 판정은 문단 상자 그대로.
+  const [i0, i1] = inkSpan(model, paras) ?? [t[0], t[2]];
   let areaX: [number, number];
-  if (align === 'right') areaX = [limit[0], t[2]];
+  if (align === 'right') areaX = [limit[0], i1];
   else if (align === 'center') {
-    const side = Math.min(t[0] - limit[0], limit[2] - t[2]);
-    areaX = [t[0] - side, t[2] + side];
-  } else areaX = [t[0], limit[2]];
+    const side = Math.min(i0 - limit[0], limit[2] - i1);
+    areaX = [i0 - side, i1 + side];
+  } else areaX = [i0, limit[2]];
   const paragraph = mergeParagraphs(model, paras, limit[2] - limit[0]);
   let lineHeight = paras[0]!.lineHeight;
   if (lineHeight === null) {
