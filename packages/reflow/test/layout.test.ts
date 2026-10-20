@@ -311,3 +311,32 @@ describe('입력 검사·결정성', () => {
     }
   });
 });
+
+describe('자간(FontSegment.charSpacing)', () => {
+  it('글리프마다 전진에 더하고 줄 끝 글리프 뒤 자간은 줄 폭에 넣지 않는다', () => {
+    const text = 'ab cd';
+    const base = input(text);
+    const r = layoutParagraph({
+      ...base,
+      segments: [seg(pdfFace(), 0, text.length, { charSpacing: -0.5 })],
+    });
+    // 자연 폭 5+5+2.5+5+5 = 22.5, 글리프 5개 × -0.5 중 마지막 뒤 자간 제외 → 22.5 − 2.
+    expect(r.summary.lines[0]).toMatchObject({ x0: 0 });
+    expect(r.summary.lines[0]?.x1).toBeCloseTo(20.5, 9);
+    expect(r.summary.glyphs.map((g) => g.x)).toEqual([0, 4.5, 9, 11, 15.5]);
+    expect(r.lines[0]?.map((g) => g.x)).toEqual([0, 4.5, 9, 11, 15.5]);
+  });
+
+  it('자간으로 좁아진 줄은 같은 폭에 더 많은 글자가 들어간다', () => {
+    const text = 'aaaa aaaa';
+    const fmt = { area: [0, 0, 42, 1000] as [number, number, number, number] };
+    // 자연 폭 42.5 > 42: 나뉜다.
+    expect(lineTexts(layoutParagraph(input(text, fmt)), text)).toEqual(['aaaa ', 'aaaa']);
+    // 자간 −0.1 × 8(마지막 글리프 뒤 제외) → 41.7: 한 줄.
+    const tight = layoutParagraph({
+      ...input(text, fmt),
+      segments: [seg(pdfFace(), 0, text.length, { charSpacing: -0.1 })],
+    });
+    expect(lineTexts(tight, text)).toEqual(['aaaa aaaa']);
+  });
+});
