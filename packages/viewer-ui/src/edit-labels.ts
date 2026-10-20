@@ -2,7 +2,7 @@
 import type { EditLimitReason, ParagraphLimitReason } from '@pdf-editor/shared-types';
 
 export const LIMIT_LABELS: Record<ParagraphLimitReason | EditLimitReason, string> = {
-  'not-flow-paragraph': '표 셀·도형 안의 글자는 이 버전에서 편집할 수 없습니다.',
+  'not-flow-paragraph': '표 셀 안의 글자는 이 버전에서 편집할 수 없습니다.',
   'vertical-or-rotated': '세로쓰기·회전된 글자는 편집할 수 없습니다.',
   'remove-skipped': '원본 글자를 안전하게 지울 수 없는 연산이 있어 편집할 수 없습니다.',
   'mixed-content-sources': '문단 글자가 쪽 본문과 별도 개체(Form)에 걸쳐 있어 편집할 수 없습니다.',
