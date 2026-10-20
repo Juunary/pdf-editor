@@ -159,6 +159,24 @@ describe('영역 가로 보정(제안 2)', () => {
     expect(result.summary.lines).toHaveLength(p.lines.length);
   });
 
+  it('넓히는 쪽에 이웃 내용이 있으면 그 앞에서 멈춘다', () => {
+    const tj = (t: string) =>
+      `[${t
+        .split(' ')
+        .map((w) => `(${w} )`)
+        .join(' 120 ')}] TJ`;
+    const text = LINES.map((t, i) => `BT /F1 10 Tf 1 0 0 1 72 ${250 - 12 * i} Tm ${tj(t)} ET`);
+    const base = ctxOf(makeDoc([{ content: text.join(' ') }]));
+    const right = findParagraph(base, 'quick brown').bbox[2];
+    // 원 줄 오른쪽 2pt 에 세로 막대(이웃 내용).
+    const bar = `0 0 1 rg ${right + 2} 200 3 60 re f`;
+    const ctx = ctxOf(makeDoc([{ content: `${text.join(' ')} ${bar}` }]));
+    const p = findParagraph(ctx, 'quick brown');
+    const plan = planParagraphEdit(ctx, new FontManager(ctx.doc, fallbackFor(ctx.doc)), p.id);
+    expect(plan.format.area[2]).toBeGreaterThan(p.bbox[2]);
+    expect(plan.format.area[2]).toBeLessThanOrEqual(right + 1.5 + 1e-6);
+  });
+
   it('원 줄이 영역 안에 들면 영역을 바꾸지 않는다', () => {
     const content = LINES.map((t, i) => `BT /F1 10 Tf 72 ${250 - 12 * i} Td (${t}) Tj ET`).join(
       ' ',
