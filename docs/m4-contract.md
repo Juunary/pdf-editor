@@ -9,7 +9,7 @@
 | 입력 | M3 계약(`docs/m3-contract.md`, 수정 1–6)·통합 결과(`docs/m3-integration.md`), M2 계약(PageLayout 표 모델), M1 계약(SourceMap·paintSeq) |
 | 일정 | PLAN.md 6절 계획은 3주(2027-01-18~02-07). 2026-10-20 착수 |
 | 상태 표기 | 확정·권고·결정 대기(M3 계약과 같음) |
-| 변경 이력 | 초판 + 독립 검토 반영(2026-10-20) 수정 1(2026-10-21, 사용자 결정): D1 확정(셀 하나 = 편집 단위), D2 확정(권고안 + 점 단위 편집 + 패스 삭제), `PathEdit.points`·`delete`, 경고 `table-rule-removed` |
+| 변경 이력 | 초판 + 독립 검토 반영(2026-10-20) 수정 1(2026-10-21, 사용자 결정): D1 확정(셀 하나 = 편집 단위), D2 확정(권고안 + 점 단위 편집 + 패스 삭제), `PathEdit.points`·`delete`, 경고 `table-rule-removed` 수정 2(2026-10-21, 작업 보고·통합): 셀 시작 영역 정렬 변·상한·줄 잇기 규칙(S1 구현 기준), `operandRanges` 범위, 괘선 판정(`LayoutTable.paths`)·패스 편집 경고 경로, 원문 자간 시작 상태·영역 가로 보정 |
 | 독립 검토 | 2026-10-20 읽기 전용 검토(판정 REVISE: BLOCKER 1·HIGH 6·MEDIUM 8·LOW 9)를 이 판에 반영했다. 실측(MuPDF): 경로 안 끼인 `w`·`Q` 가 새 속성을 무시·상태 누출, 편집 블록 `Do` 가 뒤 패스 paintSeq 를 +1 민다 |
 
 ## 1. 완료 기준과 범위
@@ -71,7 +71,7 @@
 - 대안: 셀 안 문단 하나씩 편집(M3 문단과 같은 단위). 셀이 잘못 나뉘면 사용자가 문단을 따로 고쳐야 한다.
 - 근거: M2 셀 줄 일치는 test 0.621·test2 0.931 로, 셀 안 문단 나누기가 불안정하다. 셀은 사용자가 보는 편집 단위다.
 - 구현: 대상의 `glyphSeqs` = 셀 문단 글자 전부(읽기 순서), `ParagraphTarget.cell` 에 표·행·열. `planParagraphEdit(pageIndex, paragraphId)` 는 셀 문단 id 를 받으면 셀 대상으로 넓힌다(RPC 추가 없음).
-- 셀 안 문단 잇기: 앞 줄이 셀 오른쪽 여백 근처(1em 안)까지 차고 줄 간격이 같으면 공백으로 잇고, 아니면 `\n`(문단 나누기 불안정을 강제 줄바꿈으로 굳히지 않기 위함).
+- 셀 안 문단 잇기: 앞 줄이 셀 오른쪽 여백 근처(1em 안)까지 차고 줄 간격이 같으면 공백으로 잇고, 아니면 `\n`(문단 나누기 불안정을 강제 줄바꿈으로 굳히지 않기 위함). **수정 2(S1 구현 기준)**: 셀 안 줄 사이(문단 안·문단 사이 모두)는 자동 줄바꿈(앞 줄 폭 + 0.25em + 다음 줄 첫 단어 폭 > 셀 안쪽 폭 − 0.5pt)이면 공백, 아니면 `\n`. 문단 사이는 기준선 간격이 ±10% 안일 때만 공백. 오른쪽 정렬 숫자 줄이 1em 규칙으로 공백 이어지던 문제를 막는다.
 
 ### D2 벡터 편집 범위
 
@@ -81,7 +81,7 @@
   - **점 단위 편집**: 한 패스를 선택해 점 편집 모드로 들어가면 꼭짓점(`m`·`l`·`re` 모서리)과 곡선 제어점(`c`·`v`·`y`)을 끌어 옮긴다. 점 추가·삭제·선분 종류 바꾸기는 하지 않는다. `re` 의 점을 옮기면 그 패스는 `m l l l h` 로 바뀐다. 다중 선택에서는 점 편집을 하지 않는다.
   - 속성: 채움 색, 선 색, 선 두께.
   - 다중 선택: Shift+클릭으로 여러 패스를 골라 같은 속성·같은 이동·크기·삭제를 한 번에 적용(한 편집 단위).
-  - **패스 삭제**: 선택한 패스를 지운다(Delete 키·패널 버튼). 쓰기: 구성 연산과 칠하기 연산을 지우고 칠하기 자리에 `n` 을 둔다(클립 없는 칠하기만 대상이라 `n` 은 그리기·상태에 영향 없음). 지운 패스 뒤 패스의 paintSeq 가 줄어들므로 대상 확인은 지문(D4)에 기댄다. 표 괘선을 지우면 표 감지가 바뀔 수 있다(경고 `table-rule-removed`).
+  - **패스 삭제**: 선택한 패스를 지운다(Delete 키·패널 버튼). 쓰기: 구성 연산과 칠하기 연산을 지우고 칠하기 자리에 `n` 을 둔다(클립 없는 칠하기만 대상이라 `n` 은 그리기·상태에 영향 없음). 지운 패스 뒤 패스의 paintSeq 가 줄어들므로 대상 확인은 지문(D4)에 기댄다. 표 괘선을 지우면 표 감지가 바뀔 수 있다(경고 `table-rule-removed`). **수정 2**: 판정은 shared-types `LayoutTable.paths`(괘선 전략이 쓴 패스, 통합 때 추가)에 든 패스를 지울 때만. 경고는 편집 내용에 따라 달라 pdf-ops `pathEditWarnings` 로 주고 core 가 `PathDraftUpdate.warnings` 에 합친다(`writePathEdit` 시그니처 불변).
 
 ### D3 새 색의 색공간
 
@@ -100,8 +100,8 @@
 
 ### D5 셀 초과 처리
 
-- 2026-10-20 사용자 결정(자동 확장·되돌리기·경고 커밋)을 셀에 그대로 적용한다. 셀의 `areaLimit` = 셀 상자 − 여백(변마다 min(원 글자와 경계 간격, 2pt)) ∩ 쪽·클립·Form 상한이므로, 자동 확장은 셀 아래 경계에서 멈춘다.
-- 셀 시작 `format.area`: 가로 = 셀 상자 − 여백(줄 폭이 셀 폭이 되게), 세로 = 글자 bbox. 정렬 = 셀 안 좌·우 간격 비교(차 < 1pt 면 가운데, 오른쪽 간격이 작으면 오른쪽). 정렬 전략 표는 열 정렬 키(x0·x1·cx)를 쓴다. M2 한 줄 문단 `align: 'unknown'` 을 셀에서는 쓰지 않는다.
+- 2026-10-20 사용자 결정(자동 확장·되돌리기·경고 커밋)을 셀에 그대로 적용한다. 셀의 `areaLimit` = 셀 상자 − 여백(변마다 min(원 글자와 경계 간격, 2pt)) ∩ 쪽·클립·Form 상한이므로, 자동 확장은 셀 아래 경계에서 멈춘다. **수정 2**: 상한 = (셀 상자 − 여백) ∪ 원 글자 상자(괘선 표에서 글자가 셀 상자 밖으로 나온 셀이 같은 텍스트로도 초과되던 문제, ustreas-mts 17쪽).
+- 셀 시작 `format.area`: 가로 = 셀 상자 − 여백(줄 폭이 셀 폭이 되게), 세로 = 글자 bbox. 정렬 = 셀 안 좌·우 간격 비교(차 < 1pt 면 가운데, 오른쪽 간격이 작으면 오른쪽). 정렬 전략 표는 열 정렬 키(x0·x1·cx)를 쓴다. M2 한 줄 문단 `align: 'unknown'` 을 셀에서는 쓰지 않는다. **수정 2**: 정렬한 쪽 변은 원 글자 위치에 둔다(왼쪽 정렬이면 왼쪽 변, 오른쪽이면 오른쪽 변, 가운데면 양쪽 같은 간격). 반대 변은 셀 상자 − 여백. 그래야 같은 텍스트 편집에서 글자가 움직이지 않는다. 원문 자간(`Tc`)은 시작 상태 모양에 싣고(`RunStyle.charSpacing`, 통합 때 추가), 쓰기는 블록에 `Tc` 로 쓴다. 글자쌍 커닝(TJ)은 시작 상태에 싣지 않고 영역 가로를 원 줄 자연 폭까지 넓혀 같은 텍스트가 일찍 줄바꿈되지 않게 한다(후속: 커닝 보존).
 - 정렬 전략 표(괘선 없음)는 셀 경계가 바깥 글자 외곽이므로 바깥 열·행을 이웃 간격 절반 또는 표 상자까지 넓힌 상자를 셀 상자로 쓴다. 넘치면 초과 표시·`overflow-clipped` 경고·"되돌리기", 경고 상태 커밋 허용.
 - 행 높이는 바꾸지 않는다(행 추가·밀어내기는 범위 밖).
 
@@ -117,7 +117,7 @@
 | --- | --- |
 | `edit.ts` | `ParagraphTarget.cell`(셀 대상), `PathTarget`(`fingerprints`)·`PathFingerprint`·`PathEdit`·`EditPathOp`, `EditOp = ReplaceParagraphOp \| EditPathOp`, `PATH_LIMIT_REASONS`·`PathLimit`, `PathEditability`, `PageEditability.paths`, `ParagraphEditability.cell`, `PathEditPlan`, `PathDraftUpdate`, 경고 `color-space-changed` |
 | `rpc.ts` | `planPathEdit`·`beginPathEdit`·`updatePathDraft`·`commitPathEdit`·`cancelPathEdit` |
-| `source-map.ts` | S1 이 채우는 선택 필드: `SourceOpState.strokeColorOps`·`lineWidthOps`, `SourceOp.pathOps`(칠하기·클립 연산의 구성 연산 id 목록), `SourceOp.operandRanges`(숫자·이름 피연산자 바이트 범위) |
+| `source-map.ts` | S1 이 채우는 선택 필드: `SourceOpState.strokeColorOps`·`lineWidthOps`, `SourceOp.pathOps`(칠하기·클립 연산의 구성 연산 id 목록), `SourceOp.operandRanges`(숫자·이름 피연산자 바이트 범위, 수정 2: 패스 구성·색·`w` 연산에만 채움 — 모든 연산에 넣으면 SourceMap 이 커짐) |
 
 - 패스 대상 식별: `PathTarget.paintSeqs` = 칠하기 연산별 첫 paintSeq(편집 적용 시점 PageModel 기준) + `fingerprints`(D4). `PATH_LIMIT_REASONS` 의 `singular-ctm` 은 문단 사유와 같은 이름·같은 뜻이다(서로소 아님).
 - 셀·패스 초안도 문서당 하나(M3 5.7 과 같음). 패스 초안과 문단 초안은 동시에 열 수 없다.
