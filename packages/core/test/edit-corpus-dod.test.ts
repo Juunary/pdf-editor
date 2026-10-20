@@ -13,7 +13,7 @@
  *   same   : 계획의 runs 그대로(텍스트·모양 구간 불변).
  *   latin  : 고정 단어 목록, 시드 = 문서 id + 문단 id, 길이 = 원 길이 × [0.7, 1.3). 첫 run 모양.
  *   korean : 원 텍스트 + " " + 고정 한글 문장(계약 8.2 "원본에 없는 한글 문장 추가"). 첫 run 모양.
- *   format 은 계획 그대로(overflow null). latin·korean 이 넘치면 overflow 'expand' 로 한 번 더 갱신한다.
+ *   format 은 계획 그대로. 넘치면 리플로우가 영역 아래 변을 자동으로 내린다(계약 5.4, 2026-10-20 사용자 결정).
  *
  * 판정(계약 8.3, 과제 지시):
  *   1 영역 밖 렌더: scale 2, 주석 제외, 채널 차 > 8 픽셀 수(MuPDF·pdf.js·Poppler). 허용 영역 = 원 문단 bbox ∪ 최종
@@ -121,7 +121,6 @@ interface EditRow {
   overflowInitial: boolean | null;
   overflowFinal: boolean | null;
   expanded: boolean;
-  fontScale: number | null;
   glyphKinds: Record<string, number>;
   missingClusters: string[];
   contentBox: Rect | null;
@@ -296,7 +295,6 @@ async function runEdit(
     overflowInitial: null,
     overflowFinal: null,
     expanded: false,
-    fontScale: null,
     glyphKinds: {},
     missingClusters: [],
     contentBox: null,
@@ -334,17 +332,10 @@ async function runEdit(
     const input: DraftInput = { runs, format: plan.format, composition: null, renderScale: 2 };
     update = await s.updateParagraphDraft(begin.draftId, input);
     row.timing.updateMs = update.updateMs;
-    row.overflowInitial = update.reflow.overflow;
-    if (kind !== 'same' && update.reflow.overflow) {
-      update = await s.updateParagraphDraft(begin.draftId, {
-        ...input,
-        format: { ...plan.format, overflow: 'expand' },
-      });
-      row.expanded = true;
-      row.timing.updateMs += update.updateMs;
-    }
+    // 자동 확장(계약 5.4): 원 영역을 넘었으면 아래 변이 내려가 있다.
+    row.expanded = update.reflow.area[3] > plan.format.area[3] + 0.01;
+    row.overflowInitial = row.expanded || update.reflow.overflow;
     row.overflowFinal = update.reflow.overflow;
-    row.fontScale = update.reflow.fontScale;
     row.contentBox = update.reflow.contentBox;
     row.warnings = [...new Set(update.warnings.map((w) => w.kind))];
     t = performance.now();

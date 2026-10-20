@@ -13,7 +13,7 @@ import { parseContentOpsLenient } from './content-stream.js';
 import { apply, applyLinear, fmt9, invert, latin1Bytes, lookupResource } from './edit-common.js';
 import { writeContextOf, type WriteContext } from './edit-apply.js';
 import type { BlockFormat } from './edit-plan.js';
-import { readBlockFormat } from './edit-plan.js';
+import { cleanParagraphFormat, readBlockFormat } from './edit-plan.js';
 import {
   effectiveGs,
   resolveStyle,
@@ -329,7 +329,8 @@ export function writeBlock(
     .map((g) => g.offset);
   const fmt: BlockFormat = {
     v: 1,
-    format,
+    // 현재 필드만 쓴다(이전 빌드의 overflow·fontScale 이 섞인 EditOp 를 재적용해도 남기지 않는다).
+    format: cleanParagraphFormat(format) ?? format,
     runs: runs.map((r, i) => {
       const rs = styleOf(r.style.sourceChar);
       return {

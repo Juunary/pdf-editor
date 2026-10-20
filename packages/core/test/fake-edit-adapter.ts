@@ -219,7 +219,6 @@ export function createFakeAdapter(): FakeAdapter {
         firstLineIndent: 0,
         lineHeight: p.lineHeight ?? first.size * 1.2,
         firstBaselineOffset: first.origin[1] - by0,
-        overflow: null,
       };
       return {
         pageIndex: ctx.pageIndex,
@@ -445,17 +444,17 @@ function fakeLayout(input: ReflowInput): ReflowResult {
     return seg;
   };
   let area: Rect = [...format.area];
-  const placeLines = (scale: number): { lines: WritableGlyph[][]; boxes: Rect[] } => {
+  const placeLines = (): { lines: WritableGlyph[][]; boxes: Rect[] } => {
     const lines: WritableGlyph[][] = [];
     const boxes: Rect[] = [];
     let current: WritableGlyph[] = [];
     let x = area[0];
-    let baseline = area[1] + format.firstBaselineOffset * scale;
+    let baseline = area[1] + format.firstBaselineOffset;
     const flush = (): void => {
       lines.push(current);
       current = [];
       x = area[0];
-      baseline += format.lineHeight * scale;
+      baseline += format.lineHeight;
     };
     let i = 0;
     while (i < text.length) {
@@ -470,7 +469,7 @@ function fakeLayout(input: ReflowInput): ReflowResult {
         i += ch.length;
         continue; // glyph-missing: 쓰지 않음
       }
-      const w = advance(seg) * scale;
+      const w = advance(seg);
       if (x + w > area[2] + 1e-6 && current.length > 0) flush();
       const code =
         seg.face.kind === 'fallback'
@@ -487,7 +486,7 @@ function fakeLayout(input: ReflowInput): ReflowResult {
         gid: seg.face.kind === 'fallback' ? koreanFont.encodeCharacter(ch) : ch.charCodeAt(0),
         x,
         y: baseline,
-        size: seg.size * scale,
+        size: seg.size,
         pdfWidth: 1000,
         syntheticBold: false,
         syntheticItalic: false,
@@ -510,19 +509,12 @@ function fakeLayout(input: ReflowInput): ReflowResult {
     }
     return { lines, boxes };
   };
-  let scale = 1;
-  let placed = placeLines(scale);
+  const placed = placeLines();
   const bottomOf = (p: { boxes: Rect[] }): number => Math.max(area[1], ...p.boxes.map((b) => b[3]));
+  // 계약 5.4(2026-10-20): 넘치면 아래 변을 필요한 높이까지(상한까지) 자동으로 내린다.
   let overflow = bottomOf(placed) > area[3] + 0.5;
-  if (overflow && format.overflow === 'expand') {
+  if (overflow) {
     area = [area[0], area[1], area[2], Math.min(areaLimit[3], bottomOf(placed))];
-    overflow = bottomOf(placed) > area[3] + 0.5;
-  } else if (overflow && format.overflow === 'shrink') {
-    for (let s = 0.99; s >= 0.8; s -= 0.01) {
-      scale = Math.round(s * 100) / 100;
-      placed = placeLines(scale);
-      if (bottomOf(placed) <= area[3] + 0.5) break;
-    }
     overflow = bottomOf(placed) > area[3] + 0.5;
   }
   const allBoxes =
@@ -563,7 +555,6 @@ function fakeLayout(input: ReflowInput): ReflowResult {
     contentBox,
     area,
     overflow,
-    fontScale: scale,
     reflowMs: 0,
   };
   return { summary, lines: placed.lines };

@@ -92,7 +92,6 @@ export function format(over: Partial<ParagraphFormat> = {}): ParagraphFormat {
     firstLineIndent: 0,
     lineHeight: 12,
     firstBaselineOffset: 8,
-    overflow: null,
     ...over,
   };
 }

@@ -100,62 +100,58 @@ describe('영역·들여쓰기·기준선', () => {
   });
 });
 
-describe('초과·축소·넓히기·그대로', () => {
-  // 한 줄: 기준선 8s, 아래 = 10s.
-  it('마지막 줄 아래가 영역 아래 + 0.5pt 를 넘으면 초과', () => {
-    expect(layoutParagraph(input('a', { area: [0, 0, 100, 9.5] })).summary.overflow).toBe(false);
-    expect(layoutParagraph(input('a', { area: [0, 0, 100, 9.4] })).summary.overflow).toBe(true);
-    // 고르지 않았으면(null) 표시만 하고 배율 1.
-    const r = layoutParagraph(input('a', { area: [0, 0, 100, 5] }));
-    expect(r.summary).toMatchObject({ overflow: true, fontScale: 1 });
+describe('초과·자동 확장(2026-10-20 사용자 결정)', () => {
+  // 한 줄: 기준선 8, 아래 = 10.
+  it('마지막 줄 아래가 영역 아래 + 0.5pt 를 넘으면 아래 변을 그만큼 내린다', () => {
+    const fits = layoutParagraph(input('a', { area: [0, 0, 100, 9.5] }));
+    expect(fits.summary).toMatchObject({ overflow: false, area: [0, 0, 100, 9.5] });
+    const grown = layoutParagraph(input('a', { area: [0, 0, 100, 9.4] }));
+    expect(grown.summary).toMatchObject({ overflow: false, area: [0, 0, 100, 10] });
+    expect(grown.summary).not.toHaveProperty('fontScale');
+    // 글자 크기는 그대로(축소 없음).
+    expect(grown.summary.glyphs[0]?.size).toBe(10);
   });
 
-  it('shrink: 0.01 단위로 들어가는 가장 큰 배율', () => {
-    const r = layoutParagraph(input('a', { area: [0, 0, 100, 9], overflow: 'shrink' }));
-    // 10s ≤ 9.5 → s = 0.95
-    expect(r.summary).toMatchObject({ overflow: false, fontScale: 0.95 });
-    expect(r.summary.glyphs[0]?.size).toBeCloseTo(9.5, 9);
-    expect(r.summary.lines[0]?.baseline).toBeCloseTo(7.6, 9);
-    expect(r.lines[0]?.[0]?.size).toBeCloseTo(9.5, 9);
-  });
-
-  it('shrink: 줄 수가 줄어드는 배율을 찾는다', () => {
-    // 자연 폭 42.5s, 줄 폭 42 → s ≤ 0.988 이면 한 줄. 두 줄이면 아래 22s > 12.5.
-    const text = 'aaaa bbbb';
-    const r = layoutParagraph(input(text, { area: [0, 0, 42, 12], overflow: 'shrink' }));
-    expect(r.summary).toMatchObject({ overflow: false, fontScale: 0.98 });
-    expect(lineTexts(r, text)).toEqual([text]);
-  });
-
-  it('shrink: 0.8 에서도 넘치면 0.8 + 초과 유지', () => {
-    const r = layoutParagraph(input('a', { area: [0, 0, 100, 7], overflow: 'shrink' }));
-    expect(r.summary).toMatchObject({ overflow: true, fontScale: 0.8 });
-  });
-
-  it('expand: 필요한 만큼 아래 변을 내리고 상한에서 멈춘다', () => {
+  it('필요한 만큼 아래 변을 내리고 상한에서 멈추며, 막히면 초과 유지', () => {
     const text = 'a\nb\nc'; // 아래 = 8 + 24 + 2 = 34
-    const ok = layoutParagraph(input(text, { area: [0, 0, 100, 20], overflow: 'expand' }));
-    expect(ok.summary).toMatchObject({ overflow: false, fontScale: 1, area: [0, 0, 100, 34] });
+    const ok = layoutParagraph(input(text, { area: [0, 0, 100, 20] }));
+    expect(ok.summary).toMatchObject({ overflow: false, area: [0, 0, 100, 34] });
     const blocked = layoutParagraph(
-      input(text, { area: [0, 0, 100, 20], overflow: 'expand' }, pdfFace(), [0, 0, 100, 30]),
+      input(text, { area: [0, 0, 100, 20] }, pdfFace(), [0, 0, 100, 30]),
     );
     expect(blocked.summary).toMatchObject({ overflow: true, area: [0, 0, 100, 30] });
-    // 넘치지 않으면 영역을 바꾸지 않는다.
-    const fits = layoutParagraph(input('a', { area: [0, 0, 100, 50], overflow: 'expand' }));
+    // 넘친 줄도 그대로 놓는다(자동 클립 없음). 상한 밖으로 나간 부분은 overflow-clipped 판단.
+    expect(blocked.lines.flat()).toHaveLength(3);
+    expect(blocked.summary.contentBox[3]).toBe(34);
+    expect(isOverflowClipped(blocked.summary, [0, 0, 100, 30])).toBe(true);
+    expect(isOverflowClipped(ok.summary, [0, 0, 1000, 1000])).toBe(false);
+  });
+
+  it('넘치지 않으면 영역을 바꾸지 않는다(사용자가 넓힌 영역은 줄이지 않음)', () => {
+    const fits = layoutParagraph(input('a', { area: [0, 0, 100, 50] }));
     expect(fits.summary.area).toEqual([0, 0, 100, 50]);
   });
 
-  it('keep: 넘친 줄도 그대로 놓고, 상한 밖으로 나가면 overflow-clipped 판단', () => {
+  it('사용자가 영역을 글 높이보다 줄여도 글 높이까지 다시 늘어난다(줄 폭은 그대로)', () => {
+    const text = 'aaaa bbbb cccc';
+    const full = layoutParagraph(input(text, { area: [0, 0, 50, 100] }));
+    const small = layoutParagraph(input(text, { area: [0, 0, 50, 5] }));
+    expect(lineTexts(small, text)).toEqual(lineTexts(full, text));
+    expect(small.summary.area[3]).toBe(full.summary.contentBox[3]);
+    expect(small.summary.overflow).toBe(false);
+  });
+
+  it('이전 빌드의 overflow·fontScale 필드가 형식에 남아 있어도 무시한다(축소 없음)', () => {
     const text = 'a\nb\nc';
-    const inside = layoutParagraph(input(text, { area: [0, 0, 100, 20], overflow: 'keep' }));
-    expect(inside.summary).toMatchObject({ overflow: true, fontScale: 1, area: [0, 0, 100, 20] });
-    expect(inside.lines.flat()).toHaveLength(3);
-    expect(isOverflowClipped(inside.summary, [0, 0, 1000, 1000])).toBe(false);
-    const clipped = layoutParagraph(
-      input(text, { area: [0, 0, 100, 20], overflow: 'keep' }, pdfFace(), [0, 0, 100, 25]),
-    );
-    expect(clipped.summary.contentBox[3]).toBe(34);
-    expect(isOverflowClipped(clipped.summary, [0, 0, 100, 25])).toBe(true);
+    const legacy = {
+      area: [0, 0, 100, 20],
+      overflow: 'shrink',
+      fontScale: 0.85,
+    } as unknown as Parameters<typeof input>[1];
+    const r = layoutParagraph(input(text, legacy));
+    expect(r.summary).toMatchObject({ overflow: false, area: [0, 0, 100, 34] });
+    expect(r.summary.glyphs.every((g) => g.size === 10)).toBe(true);
+    expect(stable(r)).toEqual(stable(layoutParagraph(input(text, { area: [0, 0, 100, 20] }))));
   });
 });
 
@@ -277,9 +273,11 @@ describe('입력 검사·결정성', () => {
 
   it('같은 입력이면 같은 결과', () => {
     const text = '가나다 라마바사아자차 well-known 日本語。です\n끝 (괄호) aaaa';
-    for (const overflow of [null, 'shrink', 'expand', 'keep'] as const) {
-      const make = () =>
-        layoutParagraph(input(text, { area: [0, 0, 60, 30], align: 'justify', overflow }));
+    for (const area of [
+      [0, 0, 60, 30],
+      [0, 0, 60, 300],
+    ] as const) {
+      const make = () => layoutParagraph(input(text, { area: [...area], align: 'justify' }));
       expect(stable(make())).toEqual(stable(make()));
     }
   });
