@@ -20,7 +20,8 @@ beforeAll(async () => {
   await loadModules();
 });
 
-const ctxOf = (doc: mupdf.PDFDocument) => pageContext(doc, 0, { fixedGroups: true });
+const ctxOf = (doc: mupdf.PDFDocument) =>
+  pageContext(doc, 0, { segments: true, fixedGroups: true });
 
 /** 같은 텍스트로 커밋하고 다시 읽은 쪽 상태와 배치 결과. */
 function sameTextCommit(ctx: ParagraphEditContext, paragraphId: number) {
@@ -79,6 +80,23 @@ describe('자간 Tc(제안 1)', () => {
     expect(origins(after)).toHaveLength(before.length);
   });
 
+  it('가로 비율 Tz 를 RunStyle.horizontalScale 로 싣고 편집 블록에 Tz 로 써 같은 텍스트 커밋이 글자 위치를 지킨다', () => {
+    const content = LINES.map(
+      (t, i) => `BT /F1 10 Tf 85 Tz -0.2 Tc 1 0 0 1 72 ${250 - 12 * i} Tm (${t}) Tj ET`,
+    ).join(' ');
+    const ctx = ctxOf(makeDoc([{ content }]));
+    const p = findParagraph(ctx, 'quick brown');
+    const before = origins(ctx);
+    const { plan, result, after } = sameTextCommit(ctx, p.id);
+    expect(plan.runs.every((r) => r.style.horizontalScale === 0.85)).toBe(true);
+    expect(plan.runs.every((r) => r.style.charSpacing === -0.17)).toBe(true);
+    expect(result.summary.lines).toHaveLength(p.lines.length);
+    expect(maxShift(before, origins(after))).toBeLessThanOrEqual(0.05);
+    const block = after.editBlocks[0]!;
+    const stream = after.doc.newIndirect(block.objectNumber).readStream().asString();
+    expect(stream).toContain('85 Tz');
+  });
+
   it('Tm 배율·Tz 를 곱해 페이지 공간 값으로 바꾼다', () => {
     // Tf 5 × Tm 2 = 글자 크기 10pt, Tc 0.1 × 배율 2 × Tz 0.5 = 0.1pt.
     const content = `BT /F1 5 Tf 0.1 Tc 50 Tz 2 0 0 2 72 250 Tm (${LINES[0]}) Tj ET`;
@@ -86,6 +104,16 @@ describe('자간 Tc(제안 1)', () => {
     const p = findParagraph(ctx, 'quick brown');
     const plan = planParagraphEdit(ctx, new FontManager(ctx.doc, fallbackFor(ctx.doc)), p.id);
     expect(plan.runs[0]!.style.charSpacing).toBeCloseTo(0.1, 6);
+  });
+
+  it('Tm 으로 가로만 줄인 글자는 horizontalScale 로, 기울인 글자는 1 로 본다', () => {
+    const plan = (tm: string) => {
+      const ctx = ctxOf(makeDoc([{ content: `BT /F1 10 Tf ${tm} Tm (${LINES[0]}) Tj ET` }]));
+      const p = findParagraph(ctx, 'quick brown');
+      return planParagraphEdit(ctx, new FontManager(ctx.doc, fallbackFor(ctx.doc)), p.id);
+    };
+    expect(plan('0.9 0 0 1 72 250').runs[0]!.style.horizontalScale).toBeCloseTo(0.9, 6);
+    expect('horizontalScale' in plan('1 0 0.2 1 72 250').runs[0]!.style).toBe(false);
   });
 
   it('Tc 가 0 이면 charSpacing 을 넣지 않는다(이전 로그와 같은 모양)', () => {
@@ -139,5 +167,35 @@ describe('영역 가로 보정(제안 2)', () => {
     const p = findParagraph(ctx, 'quick brown');
     const plan = planParagraphEdit(ctx, new FontManager(ctx.doc, fallbackFor(ctx.doc)), p.id);
     expect(plan.format.area).toEqual(p.bbox);
+  });
+});
+
+describe('셀 정렬 기준(불일치 #7)', () => {
+  it('줄 끝 공백까지 가운데 맞춘 셀도 같은 텍스트 커밋에서 글자가 움직이지 않는다', () => {
+    const xs = [100, 200, 300, 400];
+    const rows = [100, 130, 160, 190];
+    const H = 300;
+    const rules: string[] = [];
+    for (const y of rows) rules.push(`${xs[0]} ${H - y} m ${xs[3]} ${H - y} l S`);
+    for (const x of xs) rules.push(`${x} ${H - rows[0]!} m ${x} ${H - rows[3]!} l S`);
+    // "Total " 폭(Helvetica 10) = 25.01pt: 줄 끝 공백을 포함해 셀 가운데(150)에 맞춘다.
+    const cells: string[] = [];
+    for (let r = 0; r < 3; r++)
+      for (let c = 0; c < 3; c++) {
+        const centered = r === 1 && c === 1;
+        const x = centered ? xs[c]! + 50 - 25.01 / 2 : xs[c]! + 5;
+        const t = centered ? 'Total ' : `R${r}C${c}`;
+        cells.push(`BT /F1 10 Tf ${x} ${H - (rows[r]! + 14)} Td (${t}) Tj ET`);
+      }
+    const doc = makeDoc([
+      { content: `0.5 w ${rules.join(' ')} ${cells.join(' ')}`, mediabox: [0, 0, 500, 300] },
+    ]);
+    const ctx = ctxOf(doc);
+    const table = ctx.layout.tables[0]!;
+    const cell = table.cells.find((c) => c.row === 1 && c.col === 1)!;
+    const before = origins(ctx);
+    const { plan, after } = sameTextCommit(ctx, cell.paragraphs[0]!);
+    expect(plan.format.align).toBe('center');
+    expect(maxShift(before, origins(after))).toBeLessThanOrEqual(0.05);
   });
 });

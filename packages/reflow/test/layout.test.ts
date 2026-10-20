@@ -339,4 +339,17 @@ describe('자간(FontSegment.charSpacing)', () => {
     });
     expect(lineTexts(tight, text)).toEqual(['aaaa aaaa']);
   });
+
+  it('가로 비율(horizontalScale)은 글리프 전진에 곱하고 쓰기 글리프에 실린다', () => {
+    const text = 'ab';
+    const r = layoutParagraph({
+      ...input(text),
+      segments: [seg(pdfFace(), 0, text.length, { horizontalScale: 0.8 })],
+    });
+    expect(r.summary.glyphs.map((g) => g.x)).toEqual([0, 4]);
+    expect(r.summary.lines[0]?.x1).toBeCloseTo(8, 9);
+    expect(r.lines[0]?.map((g) => g.horizontalScale)).toEqual([0.8, 0.8]);
+    const plain = layoutParagraph(input(text));
+    expect(plain.lines[0]?.every((g) => !('horizontalScale' in g))).toBe(true);
+  });
 });

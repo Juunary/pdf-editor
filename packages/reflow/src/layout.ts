@@ -188,9 +188,10 @@ function buildItems(text: string, segments: readonly FontSegment[]): Item[] {
       // 자간(Tc)은 글리프마다 전진 뒤에 붙는다. 클러스터 마지막 글리프 뒤 자간은 다음 클러스터와의 간격이라 커닝처럼
       // 줄 끝에서 뺀다(kernAfter).
       const cs = it.seg.charSpacing ?? 0;
+      const hs = it.seg.horizontalScale ?? 1;
       it.glyphs = r.glyphs;
-      it.adv = r.advance * em + cs * r.glyphs.length;
-      it.kernAfter = r.kernAfter * em + (r.glyphs.length > 0 ? cs : 0);
+      it.adv = r.advance * em * hs + cs * r.glyphs.length;
+      it.kernAfter = r.kernAfter * em * hs + (r.glyphs.length > 0 ? cs : 0);
     });
     i = j;
   }
@@ -355,6 +356,7 @@ function placeLine(
         size,
       });
       const em = size / 1000;
+      const hs = it.seg.horizontalScale ?? 1;
       let gx = pen;
       for (const g of it.glyphs) {
         writable.push({
@@ -363,15 +365,16 @@ function placeLine(
           faceKey: face.key,
           code: g.code,
           gid: g.gid,
-          x: gx + g.xOffset * em,
+          x: gx + g.xOffset * em * hs,
           y,
           size,
           pdfWidth: g.pdfWidth,
           syntheticBold: it.seg.syntheticBold,
           syntheticItalic: it.seg.syntheticItalic,
           runIndex: it.seg.runIndex,
+          ...(hs !== 1 ? { horizontalScale: hs } : {}),
         });
-        gx += g.advance * em + (it.seg.charSpacing ?? 0);
+        gx += g.advance * em * hs + (it.seg.charSpacing ?? 0);
       }
       pen += advance;
     }

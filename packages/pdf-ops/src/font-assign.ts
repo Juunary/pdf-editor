@@ -748,7 +748,13 @@ export class FontState {
     text: string,
     runs: readonly {
       text: string;
-      style: { sourceChar: number; bold: boolean; italic: boolean; charSpacing?: number };
+      style: {
+        sourceChar: number;
+        bold: boolean;
+        italic: boolean;
+        charSpacing?: number;
+        horizontalScale?: number;
+      };
     }[],
     resolve: (sourceChar: number) => ResolvedStyle | null,
     map: SourceMap | null,
@@ -763,6 +769,7 @@ export class FontState {
       const orig = style ? this.original(style, map) : null;
       const size = style?.size ?? 10;
       const charSpacing = run.style.charSpacing ?? 0;
+      const horizontalScale = run.style.horizontalScale ?? 1;
       const cl = clusters(run.text);
       orig?.prepare(cl.map((c) => c.text).filter((t) => t !== '\n'));
       let prevFace: FontFace | null | undefined;
@@ -814,6 +821,7 @@ export class FontState {
             syntheticBold: sb,
             syntheticItalic: si,
             ...(charSpacing !== 0 ? { charSpacing } : {}),
+            ...(horizontalScale !== 1 ? { horizontalScale } : {}),
           });
         }
       }

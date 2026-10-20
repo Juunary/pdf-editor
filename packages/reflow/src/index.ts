@@ -60,6 +60,8 @@ export interface FontSegment {
   syntheticItalic: boolean;
   /** 글리프마다 더하는 자간(pt, RunStyle.charSpacing). 없으면 0. 줄 끝 글리프 뒤 자간은 줄 폭에 넣지 않는다. */
   charSpacing?: number;
+  /** 가로 비율(RunStyle.horizontalScale, Tz/100). 글리프 전진·커닝에 곱한다. 없으면 1. */
+  horizontalScale?: number;
 }
 
 export interface ReflowInput {
@@ -88,6 +90,8 @@ export interface WritableGlyph {
   syntheticBold: boolean;
   syntheticItalic: boolean;
   runIndex: number;
+  /** 가로 비율(FontSegment.horizontalScale). 1 이면 생략. 쓰기가 `Tz` 와 TJ 단위에 쓴다. */
+  horizontalScale?: number;
 }
 
 export interface ReflowResult {

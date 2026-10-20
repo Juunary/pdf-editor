@@ -64,6 +64,8 @@ export interface BlockFormat {
     color: [number, number, number] | null;
     /** RunStyle.charSpacing(pt). 0 이면 쓰지 않는다. */
     charSpacing?: number;
+    /** RunStyle.horizontalScale. 1 이면 쓰지 않는다. */
+    horizontalScale?: number;
     /** 원 폰트 이름(BaseFont). 폴백이면 폴백 폰트 이름. */
     font: string;
     synthetic: { bold: boolean; italic: boolean };
@@ -977,20 +979,48 @@ export function normalizeStartState(state: StartState): StartState {
   return { ...state, runs, charIndexOfOffset: map };
 }
 
+/** 결정성: 로그·블록 JSON 에 남는 값이라 유효숫자를 고정한다. */
+const round6 = (v: number): number => Number(v.toPrecision(6));
+
+/**
+ * 원본 글자 연산의 글자 공간 → 페이지 공간 가로·세로 배율(Tm × CTM × userToPage). 연산을 찾지 못하면 null.
+ */
+function textScales(
+  ctx: ParagraphEditContext,
+  sourceChar: number,
+): { sx: number; sy: number; tc: number; th: number } | null {
+  const opId = ctx.linkage.charOp[sourceChar] ?? -1;
+  const op = opId >= 0 ? ctx.map.ops[opId] : undefined;
+  const text = op?.text;
+  if (!op || !text) return null;
+  const m = concat(concat(text.tm, op.ctm), ctx.map.userToPage);
+  const sx = Math.hypot(m[0], m[1]);
+  // 세로 배율은 기준선에 수직인 높이(|det| / sx). y 축 길이를 쓰면 기울인 글자(Tm 비틀기)를 가로 축소로 잘못 본다.
+  const sy = Math.abs(m[0] * m[3] - m[1] * m[2]) / sx;
+  if (!(sx > 1e-9) || !(sy > 1e-9) || !Number.isFinite(sx) || !Number.isFinite(sy)) return null;
+  return { sx, sy, tc: text.charSpacing, th: text.horizontalScale };
+}
+
 /**
  * 원본 글자 연산의 자간(Tc)을 페이지 공간 pt 로(글리프마다 더하는 전진). Tc 는 크기를 곱하지 않은 글자 공간 값이라
- * 가로 비율(Tz)과 글자 공간 → 페이지 공간 배율(PageModel 글자 크기 / Tf 크기)을 곱한다. 찾지 못하거나 0 이면 0.
+ * 가로 비율(Tz)과 글자 공간 → 페이지 공간 가로 배율을 곱한다. 찾지 못하거나 0 이면 0.
  */
 export function charSpacingOf(ctx: ParagraphEditContext, sourceChar: number): number {
-  const opId = ctx.linkage.charOp[sourceChar] ?? -1;
-  const text = opId >= 0 ? ctx.map.ops[opId]?.text : undefined;
-  const ch = ctx.model.chars[sourceChar];
-  if (!text || !ch || !text.charSpacing || !(Math.abs(text.fontSize) > 1e-9)) return 0;
-  const value = text.charSpacing * text.horizontalScale * (ch.size / Math.abs(text.fontSize));
-  if (!Number.isFinite(value)) return 0;
-  // 결정성: 로그·블록 JSON 에 남는 값이라 유효숫자를 고정한다.
-  const rounded = Number(value.toPrecision(6));
-  return Math.abs(rounded) < 1e-6 ? 0 : rounded;
+  const t = textScales(ctx, sourceChar);
+  if (!t || !t.tc) return 0;
+  const value = round6(t.tc * t.th * t.sx);
+  return Number.isFinite(value) && Math.abs(value) >= 1e-6 ? value : 0;
+}
+
+/**
+ * 원본 글자의 가로 비율(장평): Tz/100 × (글자 공간 가로 배율 / 세로 배율). Tz 뿐 아니라 Tm·CTM 으로 가로만 줄인
+ * 글자(HWP 계열 PDF)도 같은 값으로 나타낸다. 0.1% 안이면 1.
+ */
+export function horizontalScaleOf(ctx: ParagraphEditContext, sourceChar: number): number {
+  const t = textScales(ctx, sourceChar);
+  if (!t || !Number.isFinite(t.th) || !(t.th > 0)) return 1;
+  const value = round6(t.th * (t.sx / t.sy));
+  return Math.abs(value - 1) < 1e-3 ? 1 : value;
 }
 
 /**
@@ -1050,6 +1080,7 @@ export function originalStartState(
     // 넓은 자간(자간 띄어쓰기)은 추출이 글자 사이에 합성 공백을 넣어 이미 간격을 나타낸다. 자간까지 더하면 두 번 벌어진다.
     const raw = charSpacingOf(ctx, sc);
     const charSpacing = raw > 0 && gapRuns.has(ri) ? 0 : raw;
+    const horizontalScale = horizontalScaleOf(ctx, sc);
     return {
       sourceChar: sc,
       fontId: r?.fontId ?? ctx.model.chars[sc]?.fontId ?? 0,
@@ -1058,6 +1089,7 @@ export function originalStartState(
       italic: r?.italic ?? false,
       color: r?.color ?? null,
       ...(charSpacing !== 0 ? { charSpacing } : {}),
+      ...(horizontalScale !== 1 ? { horizontalScale } : {}),
     };
   };
   for (let o = 0; o < text.length; o++) {
@@ -1168,6 +1200,12 @@ export function blockStartState(ctx: ParagraphEditContext, a: EditAnalysis): Sta
         Number.isFinite(r.charSpacing) &&
         r.charSpacing !== 0
           ? { charSpacing: r.charSpacing }
+          : {}),
+        ...(typeof r.horizontalScale === 'number' &&
+        Number.isFinite(r.horizontalScale) &&
+        r.horizontalScale > 0 &&
+        r.horizontalScale !== 1
+          ? { horizontalScale: r.horizontalScale }
           : {}),
       },
     };
