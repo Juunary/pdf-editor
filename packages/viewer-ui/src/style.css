@@ -368,12 +368,6 @@
 .pe-edit-overflow-msg {
   color: #ffb4a8;
 }
-.pe-edit-chip {
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: #3c4a2f;
-  color: #cdeea8;
-}
 .pe-edit-info {
   /* 페이지 글자를 가리지 않도록 화면 오른쪽 아래에 고정한다. */
   position: fixed !important;

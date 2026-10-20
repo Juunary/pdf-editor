@@ -33,7 +33,6 @@ const format = (
   firstLineIndent: 0,
   lineHeight: 20,
   firstBaselineOffset: 12,
-  overflow: null,
   ...extra,
 });
 const reflow = (

@@ -58,13 +58,14 @@ export function fakeReflow(
   runs: TextRun[],
   format: ParagraphFormat,
   layout: FakeLayoutOptions = DEFAULT_LAYOUT,
+  areaLimit: Rect = [0, 0, 612, 792],
 ): ReflowSummary {
   const text = runs.map((r) => r.text).join('');
   const firstStyle = runs[0]?.style;
   const fontId = firstStyle?.fontId ?? 0;
-  let scale = 1;
   let area: Rect = [...format.area];
-  const build = (s: number) => {
+  const build = () => {
+    const s = 1;
     const lines: PlacedLine[] = [];
     const glyphs: PlacedGlyph[] = [];
     const width = area[2] - area[0];
@@ -144,18 +145,11 @@ export function fakeReflow(
     flush(text.length, false);
     return { lines, glyphs };
   };
-  let built = build(scale);
+  const built = build();
   const bottomOf = (l: PlacedLine[]) => (l.at(-1)?.baseline ?? 0) + (l.at(-1)?.descent ?? 0);
+  // 계약 5.4(2026-10-20): 넘치면 아래 변을 글 높이까지(상한까지) 자동으로 내린다.
   if (bottomOf(built.lines) > area[3] + 0.5) {
-    if (format.overflow === 'expand') {
-      area = [area[0], area[1], area[2], bottomOf(built.lines)];
-    } else if (format.overflow === 'shrink') {
-      for (let s = 99; s >= 80; s--) {
-        scale = s / 100;
-        built = build(scale);
-        if (bottomOf(built.lines) <= area[3] + 0.5) break;
-      }
-    }
+    area = [area[0], area[1], area[2], Math.min(areaLimit[3], bottomOf(built.lines))];
   }
   const { lines, glyphs } = built;
   const xs = glyphs.flatMap((g) => [g.x, g.x + g.advance]);
@@ -171,7 +165,6 @@ export function fakeReflow(
     contentBox,
     area,
     overflow: bottomOf(lines) > area[3] + 0.5,
-    fontScale: scale,
     reflowMs: 1,
   };
 }
@@ -304,7 +297,6 @@ export class FakeEditHost implements EditHostApi {
       firstLineIndent: 0,
       lineHeight: 20,
       firstBaselineOffset: 12,
-      overflow: null,
     };
     const editable = p.editable !== false;
     return {
@@ -343,7 +335,7 @@ export class FakeEditHost implements EditHostApi {
     format: ParagraphFormat,
     scale: number,
   ): DraftUpdate {
-    const reflow = fakeReflow(runs, format, this.layout);
+    const reflow = fakeReflow(runs, format, this.layout, this.options.areaLimit);
     const pad = 2;
     const box: Rect = [
       Math.min(reflow.contentBox[0], reflow.area[0]) - pad,
@@ -379,7 +371,7 @@ export class FakeEditHost implements EditHostApi {
       }
     }
     const warnings: EditWarning[] = [];
-    if (reflow.overflow && format.overflow === 'keep') {
+    if (reflow.overflow) {
       warnings.push({
         kind: 'overflow-clipped',
         message: '넘친 줄이 잘릴 수 있습니다(테스트).',
