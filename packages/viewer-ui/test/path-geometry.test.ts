@@ -1,3 +1,4 @@
+import type { PathSegment } from '@pdf-editor/shared-types';
 import { describe, expect, it } from 'vitest';
 import {
   boxTransform,
@@ -48,7 +49,7 @@ describe('맞음 판정', () => {
   });
 
   it('even-odd 구멍은 안쪽이 아니다', () => {
-    const outer = [
+    const outer: PathSegment[] = [
       { type: 'M', p: [0, 0] },
       { type: 'L', p: [100, 0] },
       { type: 'L', p: [100, 100] },
@@ -59,8 +60,8 @@ describe('맞음 판정', () => {
       { type: 'L', p: [60, 60] },
       { type: 'L', p: [40, 60] },
       { type: 'Z' },
-    ] as const;
-    const p = makePath(1, [0, 0, 100, 100], { evenOdd: true, segments: [...outer] });
+    ];
+    const p = makePath(1, [0, 0, 100, 100], { evenOdd: true, segments: outer });
     expect(insideFill(flattenPath(p), [50, 50], true)).toBe(false);
     expect(insideFill(flattenPath(p), [10, 10], true)).toBe(true);
     expect(insideFill(flattenPath(p), [50, 50], false)).toBe(true); // 같은 방향이면 감김 2(0 아님)

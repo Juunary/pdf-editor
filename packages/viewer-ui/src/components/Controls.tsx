@@ -13,6 +13,7 @@ const FEATURE_LABELS: Record<FeatureName, string> = {
   debug: '연결 디버그',
   layout: '레이아웃',
   edit: '문단 편집',
+  path: '벡터 편집',
 };
 
 interface Props {
@@ -190,6 +191,17 @@ export function Controls({ controller }: Props) {
               편집 취소
             </button>
           )}
+          <button
+            id="pe-mark-toggle"
+            type="button"
+            class="pe-btn"
+            data-pe-keep=""
+            title="문단·셀·패스의 편집 가능 여부를 테두리로 표시합니다(켜면 클릭으로 패스를 선택)"
+            aria-pressed={state.edit.showEditable}
+            onClick={() => controller.edit?.paths?.setShowEditable(!state.edit.showEditable)}
+          >
+            편집 가능 표시
+          </button>
           <button
             id="pe-fb-toggle"
             type="button"

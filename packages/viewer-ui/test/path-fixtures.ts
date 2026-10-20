@@ -14,11 +14,7 @@ export function rectSegments(r: Rect): PathSegment[] {
   ];
 }
 
-export function makePath(
-  paintSeq: number,
-  rect: Rect,
-  options: Partial<PathInfo> = {},
-): PathInfo {
+export function makePath(paintSeq: number, rect: Rect, options: Partial<PathInfo> = {}): PathInfo {
   return {
     paintSeq,
     op: 'fill',

@@ -17,7 +17,13 @@ import { limitLabel, TAGGED_BLOCKED_LABEL } from './edit-labels.js';
 import type { EditLog } from './edit-log.js';
 import { EditSession, isWorkerRecovered, type EditSessionView } from './edit-session.js';
 import { classifyFailure } from './failure.js';
-import type { EditHostApi } from './viewer-host.js';
+import {
+  initialPathState,
+  PathController,
+  type PathContext,
+  type PathState,
+} from './path-controller.js';
+import type { EditHostApi, PathHostApi } from './viewer-host.js';
 
 export type EditLoadable<T> =
   | { status: 'idle' }
@@ -27,6 +33,8 @@ export type EditLoadable<T> =
 
 /** 편집할 수 없는 문단에서 더블클릭했을 때 보여 주는 사유 팝오버. */
 export interface EditPopover {
+  /** 표 셀이면 'cell'(제목 문구). 없으면 문단. */
+  kind?: 'paragraph' | 'cell';
   pageIndex: number;
   paragraphId: number;
   bbox: Rect;
@@ -51,6 +59,10 @@ export interface EditState {
   blockTagged: boolean;
   /** 폴백 글자 점선 밑줄 표시(토글). */
   fallbackUnderline: boolean;
+  /** 편집 가능 표시(D6): 문단·셀·패스 테두리를 쪽 위에 모두 그린다. */
+  showEditable: boolean;
+  /** 벡터 패스 편집(M4) 상태. */
+  path: PathState;
 }
 
 export function initialEditState(): EditState {
@@ -64,6 +76,8 @@ export function initialEditState(): EditState {
     notice: null,
     blockTagged: false,
     fallbackUnderline: true,
+    showEditable: false,
+    path: initialPathState(),
   };
 }
 
@@ -101,16 +115,40 @@ export interface EditContext {
   invalidatePages(pages: number[]): Promise<void>;
   /** 취소 뒤 쪽 캔버스를 편집 전 렌더로 되돌린다. */
   repaintPage(): void;
+  /** 벡터 패스 편집(M4) 연결. 호스트가 패스 RPC 를 주지 않으면 null. */
+  paths: {
+    rpc: PathHostApi;
+    extract(pageIndex: number): Promise<PageModel>;
+    setTimer(fn: () => void, ms: number): unknown;
+    clearTimer(handle: unknown): void;
+    disable(reason: string): void;
+  } | null;
 }
 
 export class EditController {
   private session: EditSession | null = null;
   private ending: Promise<boolean> | null = null;
+  /** 벡터 패스 편집(M4). 호스트가 패스 RPC 를 주지 않으면 null. */
+  readonly paths: PathController | null;
 
-  constructor(private readonly ctx: EditContext) {}
+  constructor(private readonly ctx: EditContext) {
+    const p = ctx.paths;
+    this.paths = p
+      ? new PathController({
+          ...ctx,
+          pathRpc: p.rpc,
+          extractPaths: (i) => p.extract(i),
+          setTimer: (fn, ms) => p.setTimer(fn, ms),
+          clearTimer: (h) => p.clearTimer(h),
+          disablePath: (reason) => p.disable(reason),
+          getPath: () => ctx.getState().path,
+          patchPath: (partial) => ctx.patch({ path: { ...ctx.getState().path, ...partial } }),
+        } satisfies PathContext)
+      : null;
+  }
 
   get active(): boolean {
-    return this.session !== null;
+    return this.session !== null || (this.paths?.active ?? false);
   }
 
   /** 테스트·e2e 용: 지금 세션(반응 시간 기록 등). */
@@ -207,7 +245,8 @@ export class EditController {
    */
   async begin(pageIndex: number, paragraphId: number, point: Point | null): Promise<void> {
     const state = this.ctx.getState();
-    if (this.session || state.starting || state.busy) return;
+    if (this.session || state.starting || state.busy || this.paths?.active) return;
+    this.paths?.clear();
     this.ctx.patch({ starting: true, popover: null, notice: null });
     try {
       let plan = await this.ctx.rpc.planParagraphEdit(pageIndex, paragraphId);
@@ -339,6 +378,7 @@ export class EditController {
    * 편집 모드를 벗어났으면(또는 처음부터 없으면) true, 계속 편집 중이면 false 를 돌려준다.
    */
   commitActive(): Promise<boolean> {
+    if (this.paths?.active) return this.paths.commitGesture();
     if (!this.session) return Promise.resolve(true);
     return (this.ending ??= this.doCommit().finally(() => {
       this.ending = null;
@@ -384,6 +424,7 @@ export class EditController {
 
   /** 도구 막대 "편집 취소". */
   async cancelActive(): Promise<void> {
+    if (await this.paths?.cancelGesture()) return;
     if (this.ending) await this.ending;
     const session = this.session;
     if (!session) return;
@@ -413,7 +454,8 @@ export class EditController {
 
   private async step(kind: 'undo' | 'redo'): Promise<void> {
     const state = this.ctx.getState();
-    if (this.session || state.starting || state.busy) return;
+    if (this.session || state.starting || state.busy || this.paths?.active) return;
+    this.paths?.reset();
     const history = state.history;
     if (history && !(kind === 'undo' ? history.canUndo : history.canRedo)) return;
     this.ctx.patch({ busy: true });
@@ -444,6 +486,16 @@ export class EditController {
       this.ctx.patch({ history: null });
     }
     this.ctx.patch({ editability: { status: 'idle' } });
+    if (this.paths) {
+      const hadGesture = this.paths.active;
+      await this.paths.cancelGesture();
+      this.paths.reset();
+      if (hadGesture) {
+        this.ctx.patch({
+          notice: '작업 모듈이 중단되어 문서를 복구했습니다. 진행 중이던 패스 편집은 취소했습니다.',
+        });
+      }
+    }
     const session = this.session;
     if (session) {
       try {
