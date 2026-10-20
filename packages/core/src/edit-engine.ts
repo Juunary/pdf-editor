@@ -198,6 +198,8 @@ export class EditEngine {
   #fonts: FontManager | null = null;
   #fallbackBytes: Uint8Array | null = null;
   #fallbackLoading: Promise<void> | null = null;
+  /** 폴백 폰트 로드가 실패한 적이 있고 아직 못 얻었다(R-L5). 폴백 없이 진행한다. */
+  #fallbackLoadError: string | null = null;
   /** 저널을 켜기 직전(작업 밖)에 한 번 임베딩한 폴백 폰트 객체. 그 전에는 null. */
   #fallbackRef: mupdf.PDFObject | null = null;
 
@@ -251,6 +253,14 @@ export class EditEngine {
 
   get revision(): number {
     return this.#revision;
+  }
+
+  /**
+   * 폴백 폰트 로드 실패 사유(R-L5). 성공했거나 시도하지 않았으면 null. 실패하면 편집은 폴백 없이 진행하고 원본 폰트에 없는
+   * 글자만 `glyph-missing` 이 된다. 저널이 켜진 뒤에는 폴백 폰트를 문서에 넣을 수 없어 다시 시도하지 않는다.
+   */
+  get fallbackLoadError(): string | null {
+    return this.#fallbackLoadError;
   }
 
   /** MuPDF 저널 위치·단계(작업이 열려 있으면 null). 테스트·진단용. */
@@ -846,7 +856,10 @@ export class EditEngine {
    * undo 직후의 저장은 redo 를 잃는다(docs/m3-core.md 2.4).
    */
   runSave<T>(fn: () => T): T {
-    this.#assertUsable();
+    if (this.#disposed) throw new EditStateError('문서가 닫혔습니다.');
+    // R-M4: 엔진이 실패 상태여도 저장은 막지 않는다. 저널 상태를 믿을 수 없으므로 감싸지 않고 현재 문서를 그대로 내보낸다
+    // (undo 는 이미 막혀 있어 저널에 저장 단계가 생겨도 해가 없다). 경고는 `saveWarnings()` 로 알린다.
+    if (this.#failure) return fn();
     this.#requireNoDraft('save');
     if (!this.#journalOn) return fn();
     const doc = this.#doc;
@@ -854,7 +867,11 @@ export class EditEngine {
     doc.beginOperation('save');
     let result: T;
     try {
-      if (usesFallback) this.#fonts?.finalizeForSave();
+      if (usesFallback) {
+        this.#fonts?.finalizeForSave();
+        // R-L2: pdf-ops 서브셋 교체는 /BaseFont 를 그대로 둔다. 저장 파일의 폰트 이름에 서브셋 태그를 붙인다.
+        if (this.#fallbackRef) tagFallbackSubset(this.#doc, this.#fallbackRef);
+      }
       result = fn();
     } catch (error) {
       try {
@@ -868,6 +885,17 @@ export class EditEngine {
     this.#abandonOrFail();
     this.#reconcileRedo();
     return result;
+  }
+
+  /**
+   * 저장 때 사용자에게 알릴 경고(R-M4). 엔진이 실패 상태면 저널로 감싸지 않고 저장하므로 마지막 편집이 문서에 반영됐는지
+   * 확인해야 한다. 정상이면 빈 배열.
+   */
+  saveWarnings(): string[] {
+    if (!this.#failure) return [];
+    return [
+      `편집 엔진 오류(${this.#failure}) 상태에서 저장합니다. 저널 보호 없이 현재 문서를 그대로 내보내며, 마지막 편집이 빠졌거나 일부만 반영됐을 수 있습니다.`,
+    ];
   }
 
   // ---- 내부 ----
@@ -965,7 +993,7 @@ export class EditEngine {
   }
 
   /**
-   * 판정 RPC 의 준비: 폴백 폰트 바이트 로드 → FontManager. 문서를 바꾸지 않고 저널도 켜지 않는다. 이 단계의
+   * 판정 RPC 의 준비: 폴백 폰트 바이트 로드(실패하면 폴백 없이 진행, R-L5) → FontManager. 문서를 바꾸지 않고 저널도 켜지 않는다. 이 단계의
    * `FallbackFontSource.ref()` 는 null 이다(계약 5.7).
    */
   async #prepareRead(): Promise<void> {
@@ -1001,14 +1029,28 @@ export class EditEngine {
     this.#journalOn = true;
   }
 
+  /**
+   * 폴백 폰트 바이트를 불러온다. 실패해도 예외로 올리지 않고(R-L5) 폴백 없이 진행한다: `FallbackFontSource.bytes()` 가
+   * 예외를 내면 FontManager 가 폴백 없음으로 다루어 원본 폰트에 없는 글자만 `glyph-missing` 이 된다. 실패는 캐시하지
+   * 않아 저널을 켜기 전의 다음 호출이 다시 시도한다.
+   */
   async #loadFallbackBytes(): Promise<void> {
     const load = this.#options.loadFallbackFont;
     if (this.#fallbackBytes || !load) return;
+    // 저널을 켠 뒤에는 폴백 폰트를 임베딩할 수 없어 다시 시도해도 쓸 수 없다.
+    if (this.#fallbackLoadError !== null && this.#journalOn) return;
     const pending = (this.#fallbackLoading ??= load().then((bytes) => {
       this.#fallbackBytes = bytes;
     }));
     try {
       await pending;
+      if (this.#fallbackLoadError !== null) {
+        // FontManager 는 폴백 없음 판정을 캐시한다. 늦게 얻었으면 새로 만든다(편집 전이라 상태가 없다).
+        this.#fallbackLoadError = null;
+        this.#fonts = null;
+      }
+    } catch (error) {
+      this.#fallbackLoadError = error instanceof Error ? error.message : String(error);
     } finally {
       if (this.#fallbackLoading === pending) this.#fallbackLoading = null;
     }

@@ -49,7 +49,7 @@ describe('판정 RPC', () => {
     s.close();
   });
 
-  it('폴백 폰트 로드 실패는 전달하고 다음 호출에서 다시 시도한다', async () => {
+  it('폴백 폰트 로드 실패는 폴백 없이 진행하고 다음 호출에서 다시 시도한다(R-L5)', async () => {
     let calls = 0;
     const adapter = createFakeAdapter();
     const s = new PdfSession({
@@ -61,9 +61,11 @@ describe('판정 RPC', () => {
       },
     });
     s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
-    await expect(s.getPageEditability(0)).rejects.toThrow('폰트 파일 없음');
+    expect((await s.getPageEditability(0)).paragraphs).toHaveLength(3);
+    expect(s.fallbackLoadError).toBe('폰트 파일 없음');
     expect((await s.getPageEditability(0)).paragraphs).toHaveLength(3);
     expect(calls).toBe(2);
+    expect(s.fallbackLoadError).toBeNull();
     s.close();
   });
 
