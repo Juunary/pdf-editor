@@ -259,7 +259,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(t).not.toContain('q 2 w 10 20');
   });
 
-  it('삭제: 구성 ~ 칠하기를 n 으로, 다른 패스는 그대로', async () => {
+  it('삭제: 구성 ~ 칠하기를 공백으로(짝 없는 n 없음), 다른 패스는 그대로(세 엔진)', async () => {
     const doc = makeDoc([
       '0 0 1 rg 50 50 40 30 re f 1 0 0 RG 10 10 m 100 10 l S 200 200 20 20 re f',
     ]);
@@ -267,10 +267,48 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     const ctx = ctxOf(doc);
     const list = planPathEditability(ctx);
     const r = apply(ctx, [list[1]!.paintSeq], edit({ delete: true }));
-    expect(contentText(doc)).toContain('50 50 40 30 re f 1 0 0 RG n 200 200 20 20 re f');
+    expect(contentText(doc)).toBe('0 0 1 rg 50 50 40 30 re f 1 0 0 RG   200 200 20 20 re f');
+    expect(contentText(doc)).not.toMatch(/(^|\s)n(\s|$)/);
     const again = ctxOf(reopen(doc));
     expect(again.model.paths).toHaveLength(2);
+    // 뒤 패스의 paintSeq 는 하나 당겨지고 판정·편집을 이어서 할 수 있다.
+    const next = planPathEditability(again);
+    expect(next.map((p) => p.paintSeq)).toEqual([list[0]!.paintSeq, list[1]!.paintSeq]);
+    expect(next.every((p) => p.editable)).toBe(true);
     await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
+  });
+
+  it('삭제: Form 안·q/Q 사이·연속 삭제도 공백만 남고 렌더가 같다(세 엔진)', async () => {
+    const doc = makeDoc(
+      ['q 1 0 0 RG 3 w 20 20 m 120 20 l S Q 0 1 0 rg 150 150 40 40 re f q /X0 Do Q'],
+      (d) => ({
+        XObject: {
+          X0: d.addStream('0 0 1 rg 10 200 30 30 re f 1 0 0 rg 60 200 30 30 re f', {
+            Type: 'XObject',
+            Subtype: 'Form',
+            BBox: [0, 0, 400, 300],
+            Resources: {},
+          }),
+        },
+      }),
+    );
+    const before = bytesOf(doc);
+    let ctx = ctxOf(doc);
+    const first = planPathEditability(ctx)[0]!;
+    const r1 = apply(ctx, [first.paintSeq], edit({ delete: true }));
+    // 같은 문서에서 이어서: Form 안 첫 패스 삭제(복제본).
+    const doc2 = reopen(doc);
+    ctx = ctxOf(doc2);
+    const inForm = planPathEditability(ctx).find((p) => p.bbox[0] < 15 && p.bbox[1] < 100)!;
+    const r2 = apply(ctx, [inForm.paintSeq], edit({ delete: true }));
+    expect(contentText(doc2)).toMatch(
+      /^q 1 0 0 RG 3 w +Q 0 1 0 rg 150 150 40 40 re f q \/PEF0 Do Q$/,
+    );
+    const clone = doc2.findPage(0).get('Resources').get('XObject').get('PEF0');
+    expect(latin1String(readStreamBytes(clone))).toBe('0 0 1 rg   1 0 0 rg 60 200 30 30 re f');
+    // Form BBox 클립 PathInfo 를 빼면 칠한 패스 2개.
+    expect(ctxOf(reopen(doc2)).model.paths.filter((p) => p.op !== 'clip')).toHaveLength(2);
+    await expectNoChangeOutside(before, bytesOf(doc2), 0, [r1.bbox, r2.bbox]);
   });
 
   it('다중 선택: 같은 이동을 모든 대상에', () => {
