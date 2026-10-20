@@ -13,6 +13,7 @@ import { reconstructPage } from '@pdf-editor/layout-recon';
 import type {
   RedactAnnotSummary,
   BeginEditResult,
+  BeginPathEditResult,
   CommitResult,
   DraftInput,
   DraftUpdate,
@@ -28,6 +29,9 @@ import type {
   PageEditInfo,
   PageEditability,
   ParagraphEditPlan,
+  PathDraftUpdate,
+  PathEdit,
+  PathEditPlan,
   Rect,
   RenderRequest,
   RenderedPage,
@@ -424,6 +428,34 @@ export class PdfSession {
 
   async cancelParagraphEdit(draftId: string): Promise<EditHistoryState> {
     return this.#engine.cancelParagraphEdit(draftId);
+  }
+
+  async planPathEdit(pageIndex: number, paintSeqs: number[]): Promise<PathEditPlan> {
+    return this.#engine.planPathEdit(pageIndex, paintSeqs);
+  }
+
+  async beginPathEdit(
+    pageIndex: number,
+    paintSeqs: number[],
+    revision: number,
+  ): Promise<BeginPathEditResult> {
+    return this.#engine.beginPathEdit(pageIndex, paintSeqs, revision);
+  }
+
+  async updatePathDraft(
+    draftId: string,
+    edit: PathEdit,
+    renderScale: number,
+  ): Promise<PathDraftUpdate> {
+    return this.#engine.updatePathDraft(draftId, edit, renderScale);
+  }
+
+  async commitPathEdit(draftId: string): Promise<CommitResult> {
+    return this.#engine.commitPathEdit(draftId);
+  }
+
+  async cancelPathEdit(draftId: string): Promise<EditHistoryState> {
+    return this.#engine.cancelPathEdit(draftId);
   }
 
   async undo(): Promise<EditHistoryState> {

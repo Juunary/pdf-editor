@@ -180,9 +180,10 @@ export function planPageEditability(
       editable: plan.editable,
       editedBlock: block,
       reasons: [...new Set(plan.limits.map((l) => l.reason))],
+      cell: null,
     });
   }
-  return { pageIndex: ctx.pageIndex, paragraphs };
+  return { pageIndex: ctx.pageIndex, paragraphs, paths: [] };
 }
 
 /** 편집 가능 판정·시작 텍스트·영역(계약 5.1·5.3). 문서를 바꾸지 않는다. revision 은 호출자가 채운다. */

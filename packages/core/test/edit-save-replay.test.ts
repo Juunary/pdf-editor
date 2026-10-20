@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import { PdfSession } from '../src/index.js';
 import { EditStateError } from '../src/edit-engine.js';
-import type { EditOp } from '@pdf-editor/shared-types';
+import type { EditOp, ReplaceParagraphOp } from '@pdf-editor/shared-types';
 import { createFakeAdapter } from './fake-edit-adapter.js';
 import { buildPdf } from './pdf-fixtures.js';
 import {
@@ -453,7 +453,7 @@ describe('replayEdits(D6 복구)', () => {
     const ops = await recordOps(live);
     const fresh = harness();
     const broken = structuredClone(ops);
-    broken[1]!.target.glyphSeqs = [999, 1000];
+    (broken[1] as ReplaceParagraphOp).target.glyphSeqs = [999, 1000];
     await expect(fresh.s.replayEdits(broken)).rejects.toThrow('재적용 실패(2/3번째');
     await expect(fresh.s.getPageEditability(0)).rejects.toThrow('다시 열어야');
     await expect(fresh.s.replayEdits([])).rejects.toThrow('다시 열어야');

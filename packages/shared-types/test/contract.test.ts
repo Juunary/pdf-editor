@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EDIT_LIMIT_REASONS,
   PARAGRAPH_LIMIT_REASONS,
+  PATH_LIMIT_REASONS,
   REMOVE_SKIP_CODES,
   type EditLimitReason,
 } from '../src/index.js';
@@ -20,5 +21,18 @@ describe('M3 계약', () => {
     expect(new Set(REMOVE_SKIP_CODES).size).toBe(REMOVE_SKIP_CODES.length);
     const opReasons: readonly string[] = EDIT_LIMIT_REASONS;
     for (const r of PARAGRAPH_LIMIT_REASONS) expect(opReasons).not.toContain(r);
+  });
+});
+
+describe('M4 계약', () => {
+  it('패스 편집 제한 사유는 중복 없이 고정 목록이고 연산 단위 사유와 겹치지 않는다', () => {
+    expect(new Set(PATH_LIMIT_REASONS).size).toBe(PATH_LIMIT_REASONS.length);
+    const opReasons: readonly string[] = EDIT_LIMIT_REASONS;
+    for (const r of PATH_LIMIT_REASONS) expect(opReasons).not.toContain(r);
+  });
+  it('패스 사유는 문단 사유와 singular-ctm(계약 4.2 가 두 쪽에 모두 정의) 외에 겹치지 않는다', () => {
+    const paragraphReasons: readonly string[] = PARAGRAPH_LIMIT_REASONS;
+    const shared = PATH_LIMIT_REASONS.filter((r) => paragraphReasons.includes(r));
+    expect(shared).toEqual(['singular-ctm']);
   });
 });

@@ -61,6 +61,15 @@ export function createPdfWorkerApi(session = new PdfSession()): PdfWorkerApi {
     },
     commitParagraphEdit: (draftId) => session.commitParagraphEdit(draftId),
     cancelParagraphEdit: (draftId) => session.cancelParagraphEdit(draftId),
+    planPathEdit: (pageIndex, paintSeqs) => session.planPathEdit(pageIndex, paintSeqs),
+    beginPathEdit: (pageIndex, paintSeqs, revision) =>
+      session.beginPathEdit(pageIndex, paintSeqs, revision),
+    async updatePathDraft(draftId, edit, renderScale) {
+      const update = await session.updatePathDraft(draftId, edit, renderScale);
+      return Comlink.transfer(update, [update.region.rgba.buffer]);
+    },
+    commitPathEdit: (draftId) => session.commitPathEdit(draftId),
+    cancelPathEdit: (draftId) => session.cancelPathEdit(draftId),
     undo: () => session.undo(),
     redo: () => session.redo(),
     getEditHistory: () => session.getEditHistory(),

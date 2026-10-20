@@ -285,7 +285,9 @@ export class FakeEditHost implements EditHostApi {
         editable: p.editable !== false,
         editedBlock: null,
         reasons: (p.reasons ?? []) as never,
+        cell: null,
       })),
+      paths: [],
       ms: 1,
     };
   }
