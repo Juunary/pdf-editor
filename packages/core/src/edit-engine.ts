@@ -300,7 +300,7 @@ export class EditEngine {
 
   /**
    * 쪽의 패스 판정 목록(어댑터 결과). pdf-ops 가 "M4 미구현" 이면 빈 목록: 패스 판정이 없어도 문단 판정은 돌아야 한다.
-   * 그 밖의 오류는 그대로 올린다(docs/m4-core.md 5절).
+   * 그 밖의 오류는 그대로 올린다(docs/m4-core.md 6절).
    */
   #planPaths(ctx: ParagraphEditContext): PathEditability[] {
     try {
