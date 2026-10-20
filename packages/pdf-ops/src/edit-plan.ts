@@ -993,6 +993,37 @@ export function charSpacingOf(ctx: ParagraphEditContext, sourceChar: number): nu
   return Math.abs(rounded) < 1e-6 ? 0 : rounded;
 }
 
+/**
+ * 같은 줄의 두 원본 글자 사이에 합성 공백(원본 글자 없음, 추출이 넓은 간격에 넣은 것)이 있는 모양 구간 번호. 줄 사이
+ * 잇기 공백은 세지 않는다.
+ */
+function letterSpacedRuns(
+  ctx: ParagraphEditContext,
+  paragraph: LayoutParagraph,
+  text: string,
+  map: readonly number[],
+  runIdx: readonly number[],
+): Set<number> {
+  const out = new Set<number>();
+  const lineOf = new Map<number, number>();
+  for (const li of paragraph.lines)
+    for (const c of ctx.model.lines[li]?.chars ?? []) lineOf.set(c, li);
+  let prevReal = -1;
+  for (let o = 0; o < text.length; o++) {
+    const ci = map[o] ?? -1;
+    if (ci >= 0) {
+      prevReal = ci;
+      continue;
+    }
+    if (prevReal < 0 || !/\s/u.test(text[o]!)) continue;
+    let next = -1;
+    for (let k = o + 1; k < text.length && next < 0; k++) next = map[k] ?? -1;
+    const line = lineOf.get(prevReal);
+    if (next >= 0 && line !== undefined && lineOf.get(next) === line) out.add(runIdx[o]!);
+  }
+  return out;
+}
+
 export function originalStartState(
   ctx: ParagraphEditContext,
   paragraph: LayoutParagraph,
@@ -1012,10 +1043,13 @@ export function originalStartState(
     prev = v;
   }
   const runs: TextRun[] = [];
+  const gapRuns = letterSpacedRuns(ctx, paragraph, text, map, runIdx);
   const styleOf = (ri: number): RunStyle => {
     const r = paragraph.styleRuns[ri];
     const sc = r ? (paragraph.chars[r.start] ?? paragraph.chars[0]!) : paragraph.chars[0]!;
-    const charSpacing = charSpacingOf(ctx, sc);
+    // 넓은 자간(자간 띄어쓰기)은 추출이 글자 사이에 합성 공백을 넣어 이미 간격을 나타낸다. 자간까지 더하면 두 번 벌어진다.
+    const raw = charSpacingOf(ctx, sc);
+    const charSpacing = raw > 0 && gapRuns.has(ri) ? 0 : raw;
     return {
       sourceChar: sc,
       fontId: r?.fontId ?? ctx.model.chars[sc]?.fontId ?? 0,

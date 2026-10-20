@@ -67,6 +67,18 @@ describe('자간 Tc(제안 1)', () => {
     expect(maxShift(before, origins(after))).toBeLessThanOrEqual(0.05);
   });
 
+  it('추출이 합성 공백을 넣은 넓은 자간(자간 띄어쓰기)은 자간을 싣지 않는다(간격을 두 번 더하지 않음)', () => {
+    const content = 'BT /F1 10 Tf 4 Tc 1 0 0 1 72 250 Tm (DEPARTMENT OF THE TREASURY) Tj ET';
+    const ctx = ctxOf(makeDoc([{ content }]));
+    const p = ctx.layout.paragraphs[0]!;
+    expect(p.text).toMatch(/D E P/);
+    const before = origins(ctx);
+    const { plan, result, after } = sameTextCommit(ctx, p.id);
+    expect(plan.runs.some((r) => r.style.charSpacing)).toBe(false);
+    expect(result.summary.lines).toHaveLength(1);
+    expect(origins(after)).toHaveLength(before.length);
+  });
+
   it('Tm 배율·Tz 를 곱해 페이지 공간 값으로 바꾼다', () => {
     // Tf 5 × Tm 2 = 글자 크기 10pt, Tc 0.1 × 배율 2 × Tz 0.5 = 0.1pt.
     const content = `BT /F1 5 Tf 0.1 Tc 50 Tz 2 0 0 2 72 250 Tm (${LINES[0]}) Tj ET`;
