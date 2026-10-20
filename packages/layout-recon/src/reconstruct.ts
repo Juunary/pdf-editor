@@ -42,6 +42,13 @@ export interface ReconOptions {
    * 머리·꼬리로 본다(러닝헤드·쪽 번호, 계약 2.5). 없으면 쪽 하나만 본다.
    */
   neighbors?: readonly PageModel[];
+  /**
+   * 한 문단으로 고정할 PageModel 줄 묶음(M3 편집 블록, docs/m3-integration.md 9.6). 묶음마다 정확히 흐름 문단 하나가
+   * 되고(역할은 다른 흐름 문단과 같은 규칙, 줄은 위→아래), 그 줄은 표·도형·머리·꼬리·영역 쌓기·문단 나누기에서 뺀다.
+   * 문단은 묶음 줄 상자 합으로 XY-cut 에 들어가 첫 줄 자리의 읽기 순서·열을 받는다. 보이지 않는 줄·가로가 아닌 줄·
+   * 범위 밖 번호는 무시하고, 여러 묶음에 든 줄은 앞 묶음이 갖는다. 없으면 M2 결과와 같다.
+   */
+  fixedGroups?: readonly (readonly number[])[];
 }
 
 /** 반복 비교용 글 정규화: 소문자, 숫자 → #, 공백 하나. */
@@ -155,7 +162,18 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
   const visible = feats.filter((f) => f.chars.length > 0 && f.text.trim() !== '');
   const visibleSet = new Set(visible);
   const unassignedLines = feats.filter((f) => !visibleSet.has(f)).map((f) => f.index);
-  const horizontal = visible.filter((f) => f.horizontal);
+  // 고정 묶음(편집 블록): 보이는 가로 줄만, 줄마다 첫 묶음 하나.
+  const fixedOf = new Map<number, number>();
+  (options.fixedGroups ?? []).forEach((g, k) => {
+    for (const li of g) {
+      const f = feats[li];
+      if (f && visibleSet.has(f) && f.horizontal && !fixedOf.has(li)) fixedOf.set(li, k);
+    }
+  });
+  const fixedFeats: LineFeature[][] = [];
+  for (const [li, k] of fixedOf) (fixedFeats[k] ??= []).push(feats[li]!);
+  const fixedGroups = fixedFeats.filter((g) => g !== undefined && g.length > 0);
+  const horizontal = visible.filter((f) => f.horizontal && !fixedOf.has(f.index));
   const rotated = visible.filter((f) => !f.horizontal);
   const pathSummary = summarizePaths(model);
   const bounds = model.bounds;
@@ -167,7 +185,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
   const excludedPaths = new Set(detected.flatMap((t) => t.paths));
 
   // 4단계: 도형과 라벨.
-  const free = (f: LineFeature) => !tableLines.has(f.index);
+  const free = (f: LineFeature) => !tableLines.has(f.index) && !fixedOf.has(f.index);
   // 표 안에 대부분(60% 이상) 들어가는 도형 후보는 표의 남은 괘선·배경이다.
   const figs = detectFigures(model, visible.filter(free), pathSummary, excludedPaths).filter(
     (f) =>
@@ -222,19 +240,26 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
     for (const [li, fk] of labelOf) if (fk === k) b = union(b, feats[li]!.bbox);
     return b;
   });
-  const regions = stackRegions(margins.body, [...tableBoxes, ...figBoxes]);
+  // 고정 묶음 문단: 같은 행 조각은 간격과 무관하게 잇는다(양쪽 정렬 줄의 넓은 단어 간격으로 가로로 갈라지지 않게).
+  const fixedUnits = fixedGroups.map((g) => buildUnits(model, g, fillers, true));
+  const fixedBoxes: Rect[] = fixedUnits.map((us) =>
+    us.slice(1).reduce((b, u) => union(b, u.full), us[0]!.full),
+  );
+  const regions = stackRegions(margins.body, [...tableBoxes, ...figBoxes, ...fixedBoxes]);
 
   // 6단계: XY-cut.
   type Item =
     | { kind: 'region'; region: Region; bbox: Rect }
     | { kind: 'table'; index: number; bbox: Rect }
     | { kind: 'figure'; index: number; bbox: Rect }
-    | { kind: 'rotated'; feat: LineFeature; bbox: Rect };
+    | { kind: 'rotated'; feat: LineFeature; bbox: Rect }
+    | { kind: 'fixed'; index: number; bbox: Rect };
   const items: Item[] = [
     ...regions.map((region) => ({ kind: 'region' as const, region, bbox: region.bbox })),
     ...tableBoxes.map((bbox, index) => ({ kind: 'table' as const, index, bbox })),
     ...figBoxes.map((bbox, index) => ({ kind: 'figure' as const, index, bbox })),
     ...rotatedBody.map((feat) => ({ kind: 'rotated' as const, feat, bbox: feat.bbox })),
+    ...fixedBoxes.map((bbox, index) => ({ kind: 'fixed' as const, index, bbox })),
   ];
   const cut = xyCut(items as CutItem[]);
 
@@ -298,6 +323,16 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
         });
         readingOrder.push({ kind: 'paragraph', id });
       }
+    } else if (it.kind === 'fixed') {
+      const col = columnFor(idx, it.bbox);
+      const id = pushPara(fixedUnits[it.index]!, {
+        role: 'body',
+        column: col,
+        table: null,
+        figure: null,
+        region: null,
+      });
+      readingOrder.push({ kind: 'paragraph', id });
     } else if (it.kind === 'rotated') {
       const col = columnFor(idx, it.bbox);
       const id = pushPara([makeUnit(model, [it.feat])], {
