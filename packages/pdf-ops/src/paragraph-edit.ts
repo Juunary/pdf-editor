@@ -30,6 +30,7 @@ import { latestWriteContext, prepareEdit, styleFor } from './edit-apply.js';
 import { listBlocks, writeBlock } from './edit-block.js';
 import { recordMetadata } from './edit-meta.js';
 import { cellOfParagraph } from './cell-edit.js';
+import { planPathEditability } from './path-edit.js';
 import {
   analyzeParagraph,
   blockStartState,
@@ -191,6 +192,7 @@ export interface WriteResult {
  * 줄바꿈·양쪽 정렬 간격) 이웃 문단 줄과 합칠 수 있다. 그런 레이아웃 문단은 어느 것을 편집해도 대상이 블록 전체이므로
  * (계약 D3) 블록마다 첫 문단 id 하나만 남기고, 상자는 블록 글자 상자(analyzeBlock)로 한다. 레이아웃 문단 상자를
  * 그대로 쓰면 한 블록이 여러 테두리로 갈라져 보이거나 이웃 문단까지 덮는다(2026-10-20 사용자 보고, docs/m3-integration.md 9절).
+ * 표 셀은 셀마다 한 항목(첫 문단 id, 상자 = 셀 상자, M4 4.1). paths 는 planPathEditability(M4 4.2).
  */
 export function planPageEditability(
   ctx: ParagraphEditContext,
@@ -226,7 +228,7 @@ export function planPageEditability(
       cell: plan.target.cell ?? null,
     });
   }
-  return { pageIndex: ctx.pageIndex, paragraphs, paths: [] };
+  return { pageIndex: ctx.pageIndex, paragraphs, paths: planPathEditability(ctx) };
 }
 
 /** 편집 가능 판정·시작 텍스트·영역(계약 5.1·5.3). 문서를 바꾸지 않는다. revision 은 호출자가 채운다. */

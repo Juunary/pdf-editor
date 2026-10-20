@@ -121,7 +121,10 @@ describe('셀 대상(4.1·D1)', () => {
   it('판정 목록: 셀마다 한 항목(상자 = 셀 상자, cell 설정)', () => {
     const doc = gridDoc();
     const ctx = ctxOf(doc);
-    const list = planPageEditability(ctx, new FontManager(doc, fallbackFor(doc))).paragraphs;
+    const pe = planPageEditability(ctx, new FontManager(doc, fallbackFor(doc)));
+    // 패스 판정도 같은 목록에 든다(괘선 8개).
+    expect(pe.paths.map((p) => p.editable)).toEqual(new Array(8).fill(true));
+    const list = pe.paragraphs;
     const cells = list.filter((p) => p.cell !== null);
     expect(cells).toHaveLength(9);
     const t = ctx.layout.tables[0]!;
