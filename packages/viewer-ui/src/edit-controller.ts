@@ -144,6 +144,7 @@ export class EditController {
           setTimer: (fn, ms) => p.setTimer(fn, ms),
           clearTimer: (h) => p.clearTimer(h),
           disablePath: (reason) => p.disable(reason),
+          ensureEditability: (i) => this.ensureEditability(i),
           getPath: () => ctx.getState().path,
           patchPath: (partial) => ctx.patch({ path: { ...ctx.getState().path, ...partial } }),
         } satisfies PathContext)
@@ -166,14 +167,29 @@ export class EditController {
 
   // ── 쪽 판정·이력 ─────────────────────────────────────────────────────
 
+  /**
+   * 쪽 판정을 불러온다. 같은 쪽을 불러오는 중이면 그 요청이 끝날 때까지 기다린다(패스 Alt+클릭 선택이 판정 도착 전에
+   * 후보 없음으로 끝나지 않게).
+   */
   async ensureEditability(pageIndex: number): Promise<void> {
     const current = this.ctx.getState().editability;
-    if (
-      (current.status === 'ready' || current.status === 'loading') &&
-      current.pageIndex === pageIndex
-    ) {
+    if (current.status === 'ready' && current.pageIndex === pageIndex) return;
+    if (current.status === 'loading' && current.pageIndex === pageIndex) {
+      await this.editabilityPending;
       return;
     }
+    const pending = this.loadEditability(pageIndex);
+    this.editabilityPending = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.editabilityPending === pending) this.editabilityPending = null;
+    }
+  }
+
+  private editabilityPending: Promise<void> | null = null;
+
+  private async loadEditability(pageIndex: number): Promise<void> {
     this.ctx.patch({ editability: { status: 'loading', pageIndex } });
     try {
       const value = await this.ctx.rpc.getPageEditability(pageIndex);
