@@ -5,6 +5,10 @@ import type {
   EditWarningKind,
   LayoutParagraph,
   PageLayout,
+  PaintColor,
+  PathEdit,
+  PathEditPlan,
+  RGB,
   Rect,
   ReflowSummary,
 } from '@pdf-editor/shared-types';
@@ -168,4 +172,96 @@ export function ensureInfoDictionary(doc: mupdf.PDFDocument): void {
   }
   const created = doc.addObject(doc.newDictionary());
   doc.getTrailer().put('Info', created);
+}
+
+/** 표 괘선으로 볼 수 있는 가는 패스의 짧은 변 상한(pt). */
+const RULE_MAX_THICKNESS_PT = 3;
+/** 색 채널을 "같다"로 보는 8비트 반올림 오차. */
+const RGB_EPSILON = 0.5 / 255;
+
+function sameRgb(a: RGB, b: RGB): boolean {
+  return a.every((v, i) => Math.abs(v - b[i]!) <= RGB_EPSILON);
+}
+
+/**
+ * 새 색을 원래 색공간 계열로 쓸 수 없어 DeviceRGB 로 바꿔야 하는가(계약 D3). 성분 수 1·3·4 의 Device 계열은 그대로
+ * 쓰되 Gray 에 채도가 있으면 불가, Separation·DeviceN·Indexed·Lab 은 항상 불가. 원래 rgb 근사와 같은 색은 쓰지 않는
+ * 채널이라 해당 없음. pdf-ops 의 실제 쓰기 결정의 근사이며, pdf-ops 가 같은 종류 경고를 주면 합쳐진다.
+ */
+function needsSpaceChange(old: PaintColor | null, next: RGB | null): boolean {
+  if (!old || !next) return false;
+  if (old.rgb && sameRgb(old.rgb, next)) return false;
+  if (/Separation|DeviceN|Indexed|Lab/i.test(old.space)) return true;
+  if (old.values.length === 1) return Math.max(...next) - Math.min(...next) > RGB_EPSILON;
+  return false;
+}
+
+/**
+ * 패스 편집 요청으로 core 가 정하는 경고(계약 4.2): `color-space-changed`(D3 근사), `table-rule-removed`(D2: 괘선 표
+ * 안의 가는 패스를 지움, 레이아웃 기반 근사). `path-clipped` 는 칠하기 시점 클립을 아는 pdf-ops 만 정할 수 있다.
+ */
+export function pathCoreWarnings(
+  plan: Pick<PathEditPlan, 'fill' | 'stroke' | 'target'>,
+  edit: PathEdit,
+  layout: PageLayout,
+): EditWarning[] {
+  const warnings: EditWarning[] = [];
+  if (edit.delete) {
+    const [x0, y0, x1, y1] = plan.target.bbox;
+    const thin = Math.min(x1 - x0, y1 - y0) <= RULE_MAX_THICKNESS_PT;
+    const rects = layout.tables
+      .filter(
+        (t) => t.strategy === 'lines' && intersectRect(inflateRect(t.bbox, 2), plan.target.bbox),
+      )
+      .map((t) => t.bbox);
+    if (thin && rects.length > 0) {
+      warnings.push({
+        kind: 'table-rule-removed',
+        message: '표 괘선으로 쓰인 패스를 지웠습니다. 표 인식이 바뀔 수 있습니다.',
+        rects: [plan.target.bbox],
+      });
+    }
+    return warnings;
+  }
+  if (needsSpaceChange(plan.fill, edit.fill) || needsSpaceChange(plan.stroke, edit.stroke)) {
+    warnings.push({
+      kind: 'color-space-changed',
+      message: '새 색을 쓰려고 색공간을 DeviceRGB 로 바꿨습니다.',
+      rects: [plan.target.bbox],
+    });
+  }
+  return warnings;
+}
+
+/**
+ * 저장 파일에서 폴백 폰트 서브셋의 이름에 서브셋 태그(`ABCDEF+`)를 붙인다(PDF 32000 9.6.4, R-L2). 태그는 서브셋 글꼴
+ * 바이트의 해시에서 정해 같은 글자 집합이면 같다(결정성). 저장 작업 안에서 서브셋 교체 뒤에 부르고, 작업을 버리면 되돌아간다.
+ * 서브셋 바이트가 없으면(교체 실패·건너뜀) 아무것도 하지 않는다.
+ */
+export function tagFallbackSubset(doc: mupdf.PDFDocument, fontRef: mupdf.PDFObject): void {
+  const font = fontRef.resolve();
+  if (!font.isDictionary()) return;
+  const descendant = font.get('DescendantFonts').get(0);
+  const descriptor = descendant.get('FontDescriptor');
+  const file = descriptor.get('FontFile2');
+  if (!file.isStream()) return;
+  const buffer = file.readStream();
+  let hash = 0x811c9dc5;
+  try {
+    for (const byte of buffer.asUint8Array()) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  } finally {
+    buffer.destroy();
+  }
+  let tag = '';
+  for (let i = 0; i < 6; i++) {
+    tag += String.fromCharCode(65 + (hash % 26));
+    hash = (Math.floor(hash / 26) + Math.imul(i + 1, 0x9e3779b1)) >>> 0;
+  }
+  const current = font.get('BaseFont');
+  const base = current.isName() ? current.asName() : 'NotoSansKR';
+  if (/^[A-Z]{6}\+/.test(base)) return;
+  const tagged = doc.newName(`${tag}+${base}`);
+  font.put('BaseFont', tagged);
+  descendant.put('BaseFont', doc.newName(`${tag}+${base}`));
+  descriptor.put('FontName', doc.newName(`${tag}+${base}`));
 }
