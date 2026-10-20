@@ -1,8 +1,7 @@
 /**
- * M4 통합 e2e(실제 core 패스 RPC 필요). core `planPathEdit` 등이 아직 "M4 미구현" 이라 전부 `test.skip` 이다.
- * 통합 때 `test.describe` 안의 `test.skip(true, INTEGRATION_SKIP)` 한 줄을 지우면 켜진다(docs/m4-viewer-ui.md 4절 목록).
- * 본문은 가짜 호스트 시험(`path-ui.spec.ts`)과 같은 DOM 식별자(`#pe-path-*`)와 `?e2e` 이음매(`window.__pe`)를 쓰며,
- * 통합 전에는 실행한 적이 없다. 문서는 시험에서 만드는 1쪽 PDF(채움 사각형 + 선)다.
+ * M4 통합 e2e(실제 core 패스 RPC·pdf-ops 쓰기, docs/m4-viewer-ui.md 4절 목록, docs/m4-integration.md).
+ * 가짜 호스트 시험(`path-ui.spec.ts`)과 같은 DOM 식별자(`#pe-path-*`)와 `?e2e` 이음매(`window.__pe`)를 쓴다.
+ * 문서는 시험에서 만드는 1쪽 PDF(채움 사각형 + 선 + 글자 한 줄)다.
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,8 +10,6 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
-
-const INTEGRATION_SKIP = 'M4 core 패스 RPC(planPathEdit·beginPathEdit·…) 미구현: 통합 때 켠다';
 
 /** 채움 사각형(100,600,200×100) + 선(100,500→300,500) + 글자 한 줄이 있는 1쪽 PDF. */
 function vectorPdf(): Buffer {
@@ -54,9 +51,6 @@ interface PathSummary {
 }
 
 test.describe('통합(실제 core 패스 RPC 필요)', () => {
-  // 통합 때 이 한 줄을 지운다(그룹 전체를 건너뛴다. 확장을 띄우지도 않는다).
-  test.skip(true, INTEGRATION_SKIP);
-
   let context: BrowserContext;
   let userDataDir: string;
   let extensionId: string;
@@ -90,6 +84,14 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
       timeout: 30_000,
     });
     await expect(page.locator('#pe-notice', { hasText: '벡터 편집' })).toHaveCount(0);
+    await page.waitForFunction(
+      () =>
+        (
+          window as unknown as {
+            __pe: { controller: { getState(): { edit: { editability: { status: string } } } } };
+          }
+        ).__pe.controller.getState().edit.editability.status === 'ready',
+    );
     return page;
   }
 
@@ -118,12 +120,22 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
       [x, y] as const,
     );
 
+  /**
+   * Alt+클릭으로 패스를 고른다. 열린 직후에는 쪽 판정·패스 모델이 다시 불러와지며 첫 클릭이 선택 없이 끝날 수 있어
+   * (모델 갱신과 겹침) 선택 상자가 보일 때까지 다시 누른다.
+   */
+  async function altSelect(page: Page, x: number, y: number) {
+    await expect(async () => {
+      const p = await at(page, x, y);
+      await page.keyboard.down('Alt');
+      await page.mouse.click(p.x, p.y);
+      await page.keyboard.up('Alt');
+      await expect(page.locator('#pe-path-box')).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
+  }
+
   async function selectFill(page: Page) {
-    const p = await at(page, 200, 142); // 채움 사각형(페이지 공간 y 는 위에서부터: 792−650)
-    await page.keyboard.down('Alt');
-    await page.mouse.click(p.x, p.y);
-    await page.keyboard.up('Alt');
-    await expect(page.locator('#pe-path-box')).toBeVisible();
+    await altSelect(page, 200, 142); // 채움 사각형(페이지 공간 y 는 위에서부터: 792−650)
     await expect(page.locator('#pe-path-fill')).toBeEnabled();
   }
 
@@ -174,10 +186,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
 
   test('점 편집·삭제·선 두께 후 저장 → 재열기', async () => {
     const page = await open(sample);
-    const line = await at(page, 200, 292); // 선(792−500)
-    await page.keyboard.down('Alt');
-    await page.mouse.click(line.x, line.y);
-    await page.keyboard.up('Alt');
+    await altSelect(page, 200, 292); // 선(792−500)
     const width = page.locator('#pe-path-width');
     await width.fill('6');
     await width.dispatchEvent('change');
@@ -215,18 +224,27 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
 
   test('Worker 치명 오류 → 복구 → EditPathOp 재적용 결과 = 복구 전 화면', async () => {
     const page = await open(sample);
-    await selectFill(page);
-    await page.evaluate(() => {
-      const el = document.getElementById('pe-path-fill') as HTMLInputElement;
-      el.value = '#0000ff';
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await expect(page.locator('#pe-doc-undo')).toBeEnabled();
     const canvas = () =>
       page.evaluate(() =>
         (document.getElementById('page-canvas') as HTMLCanvasElement).toDataURL(),
       );
-    const before = await canvas();
+    const setFill = async (color: string) => {
+      await selectFill(page);
+      await page.evaluate((value) => {
+        const el = document.getElementById('pe-path-fill') as HTMLInputElement;
+        el.value = value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, color);
+    };
+    await setFill('#0000ff');
+    await expect(page.locator('#pe-doc-undo')).toBeEnabled();
+    await expect
+      .poll(async () => (await paths(page)).find((p) => p.op === 'fill')!.rgb)
+      .toEqual([0, 0, 1]);
+    const afterFirst = await canvas();
+    await setFill('#00ff00');
+    await expect.poll(canvas).not.toBe(afterFirst);
+    // 다음 renderPage 가 wasm 트랩(RuntimeError)을 내도록 지금 Worker 핸들을 감싼다(M3 edit-integration 과 같은 방식).
     await page.evaluate(() => {
       const handle = (window as unknown as { __pe: { pdf: { current: { api: unknown } } } }).__pe
         .pdf.current;
@@ -249,11 +267,12 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
         },
       );
     });
+    // undo 뒤 렌더가 실패 → 새 Worker 에서 남은 로그(첫 EditPathOp)를 replayEdits 로 재적용한다.
     await page.click('#pe-doc-undo');
     await expect(page.locator('#notice-bar [data-notice="recovered"]')).toBeVisible({
       timeout: 30_000,
     });
-    await page.click('#pe-doc-redo').catch(() => {});
-    expect(await canvas()).toBe(before);
+    await expect.poll(canvas, { timeout: 30_000 }).toBe(afterFirst);
+    expect((await paths(page)).find((p) => p.op === 'fill')!.rgb).toEqual([0, 0, 1]);
   });
 });

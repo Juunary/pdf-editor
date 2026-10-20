@@ -62,6 +62,8 @@ export interface PathContext extends EditContext {
   disablePath(reason: string): void;
   /** 패스 모델(includePathSegments)을 읽는다. */
   extractPaths(pageIndex: number): Promise<PageModel>;
+  /** 쪽 판정(패스 편집 가능 목록)이 도착할 때까지 기다린다. 없으면 기다리지 않는다. */
+  ensureEditability?(pageIndex: number): Promise<void>;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
   patchPath(partial: Partial<PathState>): void;
@@ -128,7 +130,7 @@ export class PathController {
     if (this.gesture || this.ctx.getState().session || this.ctx.getState().starting) {
       return this.ctx.getPath().selection?.paintSeqs ?? [];
     }
-    await this.ensureModel(pageIndex);
+    await Promise.all([this.ensureModel(pageIndex), this.ctx.ensureEditability?.(pageIndex)]);
     const hit = pickPath(this.candidates(pageIndex), point, STROKE_HIT_PX / cssScale);
     const cur = this.ctx.getPath().selection;
     const base = cur && cur.pageIndex === pageIndex ? cur.paintSeqs : [];
