@@ -16,6 +16,8 @@
 | 3 | `m4-viewer-ui`(S3) | cff18cd | `docs/m4-viewer-ui.md` |
 | 4 | `m4-m3fu`(S4) | 20f823b | `docs/m3-integration.md` 10절 |
 
+- main 머지 c2e0251(origin/main 0877dfc, PR #6 도형 라벨 문단 편집 허용). 충돌 3곳: `edit-plan.ts` 는 m4 셀 판정(`cellTarget`)을 살리고 main 의 "표 셀만 `not-flow-paragraph`" 규칙은 M4 셀 편집으로 대체해 `not-flow-paragraph` 를 어디에도 붙이지 않는다. `paragraph-plan.test.ts` 는 표 문단(셀 없음)도 제한 없음 시험으로, main 의 도형 라벨 편집 가능 시험은 그대로. `edit-labels.ts` 는 m4 타입(패스 사유 포함)에 문구를 "본문 흐름 밖의 글자…"(이전 결과 표시용)로. shared-types 사유 주석 갱신.
+
 ## 2. 통합 수정
 
 ### 2.1 계약 불일치
@@ -125,12 +127,12 @@ Playwright(계약 6.2, `e2e/path-latency.spec.ts` 옵트인, kogl-mods-cpi 4쪽,
 
 ## 5. 검증
 
-2026-10-21, 이 worktree `m4`.
+2026-10-21, 이 worktree `m4`, main 머지(c2e0251) 뒤.
 
 | 명령 | 결과 |
 | --- | --- |
 | `pnpm exec turbo run build typecheck test test:e2e --force` | 통과(25개 작업, 캐시 0, 종료 코드 0) |
-| 단위 | shared-types 4, layout-recon 60(3 skip), reflow 60, pdf-ops 439(5 skip), core 275(5 skip), viewer-ui 280, extension 44, spike-m0 33(1 skip) |
+| 단위 | shared-types 4, layout-recon 60(3 skip), reflow 60, pdf-ops 440(5 skip), core 275(5 skip), viewer-ui 280, extension 44, spike-m0 33(1 skip) |
 | e2e | 119건 통과, 3건 skip(옵트인 측정 `edit-latency`·`path-latency`, 기존 동적 skip) |
 | `pnpm lint`·`pnpm exec prettier --check .` | 통과 |
 | `path-integration.spec.ts --repeat-each=3` | 15/15 통과 |
