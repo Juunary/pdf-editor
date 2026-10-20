@@ -374,7 +374,7 @@ describe('오류·복구', () => {
 describe('편집 가능 표시', () => {
   it('토글하면 상태가 바뀌고 쪽을 다시 읽을 때 패스 모델도 읽는다', async () => {
     const { controller, host } = await started();
-    paths(controller).setShowEditable(true);
+    controller.edit!.setShowEditable(true);
     expect(controller.getState().edit.showEditable).toBe(true);
     await controller.goToPage(1);
     expect(host.extractPage).toHaveBeenCalledWith({ pageIndex: 1, includePathSegments: true });

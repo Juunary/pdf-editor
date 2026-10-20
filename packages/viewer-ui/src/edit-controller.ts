@@ -229,6 +229,13 @@ export class EditController {
     this.ctx.patch({ fallbackUnderline });
   }
 
+  /** 편집 가능 표시(D6) 토글. 켜면 패스 선택용 모델을 미리 읽는다. */
+  setShowEditable(showEditable: boolean): void {
+    this.ctx.patch({ showEditable });
+    const view = this.ctx.currentView();
+    if (showEditable && view && this.paths) void this.paths.ensureModel(view.pageIndex);
+  }
+
   dismissPopover(): void {
     if (this.ctx.getState().popover) this.ctx.patch({ popover: null });
   }
@@ -323,6 +330,7 @@ export class EditController {
     const items = details.length > 0 ? details : plan.limits.map((l) => limitLabel(l.reason));
     this.ctx.patch({
       popover: {
+        kind: plan.target.cell ? 'cell' : 'paragraph',
         pageIndex: plan.pageIndex,
         paragraphId: plan.paragraphId,
         bbox: plan.target.bbox,
