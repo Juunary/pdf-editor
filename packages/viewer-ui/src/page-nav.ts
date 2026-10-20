@@ -27,3 +27,11 @@ export function canStep(current: number, delta: number, pageCount: number): bool
   const next = current + delta;
   return next >= 0 && next < pageCount;
 }
+
+/** 좌우 화살표·툴바 버튼의 비활성 상태. 첫 쪽은 이전, 마지막 쪽은 다음이 비활성이다. */
+export function navDisabled(current: number, pageCount: number): { prev: boolean; next: boolean } {
+  return { prev: !canStep(current, -1, pageCount), next: !canStep(current, 1, pageCount) };
+}
+
+/** 좌우 화살표 한 줄의 가로 자리(CSS px = 버튼 너비 + 페이지와의 간격). 뷰어는 가용 너비에서 양쪽 몫을 뺀다. */
+export const PAGE_ARROW_GUTTER = 40;
