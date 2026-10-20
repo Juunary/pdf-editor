@@ -1,8 +1,16 @@
 /** 편집 제한 사유의 사용자 표시 문구(한국어). 키는 계약 5.1 의 문단 사유와 연산 사유 전부다. */
-import type { EditLimitReason, ParagraphLimitReason } from '@pdf-editor/shared-types';
+import type {
+  EditLimitReason,
+  ParagraphLimitReason,
+  PathLimitReason,
+} from '@pdf-editor/shared-types';
 
-export const LIMIT_LABELS: Record<ParagraphLimitReason | EditLimitReason, string> = {
-  'not-flow-paragraph': '표 셀 안의 글자는 이 버전에서 편집할 수 없습니다.',
+export const LIMIT_LABELS: Record<
+  ParagraphLimitReason | EditLimitReason | PathLimitReason,
+  string
+> = {
+  // M4 부터 판정이 붙이지 않는다(도형 라벨·표 셀 모두 편집 가능). 이전 판정 결과 표시용으로 남긴다.
+  'not-flow-paragraph': '본문 흐름 밖의 글자는 이 버전에서 편집할 수 없습니다.',
   'vertical-or-rotated': '세로쓰기·회전된 글자는 편집할 수 없습니다.',
   'remove-skipped': '원본 글자를 안전하게 지울 수 없는 연산이 있어 편집할 수 없습니다.',
   'mixed-content-sources': '문단 글자가 쪽 본문과 별도 개체(Form)에 걸쳐 있어 편집할 수 없습니다.',
@@ -22,6 +30,13 @@ export const LIMIT_LABELS: Record<ParagraphLimitReason | EditLimitReason, string
     '쪽 본문 밖(주석 외관·패턴·Type3 글리프·SMask 안)의 글자는 편집할 수 없습니다.',
   'form-depth-exceeded': '개체(Form) 중첩이 너무 깊어 편집할 수 없습니다.',
   'optional-content': '선택적 콘텐츠(레이어) 안의 글자입니다.',
+  'clip-path': '잘림 영역(클립)을 만드는 패스는 편집할 수 없습니다.',
+  'pattern-or-shading': '무늬(패턴)·그러데이션(셰이딩) 채움 패스는 편집할 수 없습니다.',
+  'path-op-unparsed': '패스 그리기 연산을 해석하지 못해 편집할 수 없습니다.',
+  'path-spans-streams': '패스가 콘텐츠 스트림 경계에 걸쳐 있어 편집할 수 없습니다.',
+  'inside-text-object': '글자 개체(BT) 안의 패스는 편집할 수 없습니다.',
+  'path-interleaved-ops': '패스 그리기 도중에 다른 연산이 끼어 있어 편집할 수 없습니다.',
+  'soft-mask': '투명도 마스크(SMask) 아래의 패스는 편집할 수 없습니다.',
   'type3-font': 'Type3 글꼴은 편집할 수 없습니다.',
   'font-encoding-unresolved': '글꼴 인코딩을 복원하지 못해 편집할 수 없습니다.',
   'clip-text': '클립 텍스트(렌더 모드 4–7)는 편집할 수 없습니다.',

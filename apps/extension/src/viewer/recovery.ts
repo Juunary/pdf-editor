@@ -83,11 +83,18 @@ const RETRY_AFTER_RECOVERY = new Set<keyof PdfWorkerApi>([
   'planSave',
   'getPageEditability',
   'planParagraphEdit',
+  'planPathEdit',
   'getPageEdits',
   'getEditHistory',
 ]);
 
-type DraftMethod = 'updateParagraphDraft' | 'commitParagraphEdit' | 'cancelParagraphEdit';
+type DraftMethod =
+  | 'updateParagraphDraft'
+  | 'commitParagraphEdit'
+  | 'cancelParagraphEdit'
+  | 'updatePathDraft'
+  | 'commitPathEdit'
+  | 'cancelPathEdit';
 
 export class ResilientPdf implements PdfWorkerApi {
   private current: WorkerHandle;
@@ -274,11 +281,16 @@ export class ResilientPdf implements PdfWorkerApi {
     ]);
   }
 
-  async beginParagraphEdit(pageIndex: number, paragraphId: number, revision: number) {
+  async beginParagraphEdit(
+    pageIndex: number,
+    paragraphId: number,
+    revision: number,
+    renderScale?: number,
+  ) {
     const epoch = this.epoch;
     const result = await this.invoke<Awaited<ReturnType<PdfWorkerApi['beginParagraphEdit']>>>(
       'beginParagraphEdit',
-      [pageIndex, paragraphId, revision],
+      [pageIndex, paragraphId, revision, renderScale],
     );
     if (epoch === this.epoch) this.drafts.set(result.draftId, epoch);
     return result;
@@ -308,6 +320,53 @@ export class ResilientPdf implements PdfWorkerApi {
   async cancelParagraphEdit(draftId: string) {
     this.checkDraft('cancelParagraphEdit', draftId);
     const result = await this.invoke<EditHistoryState>('cancelParagraphEdit', [draftId]);
+    this.drafts.delete(draftId);
+    return result;
+  }
+
+  planPathEdit(pageIndex: number, paintSeqs: number[]) {
+    return this.invoke<Awaited<ReturnType<PdfWorkerApi['planPathEdit']>>>('planPathEdit', [
+      pageIndex,
+      paintSeqs,
+    ]);
+  }
+
+  async beginPathEdit(pageIndex: number, paintSeqs: number[], revision: number) {
+    const epoch = this.epoch;
+    const result = await this.invoke<Awaited<ReturnType<PdfWorkerApi['beginPathEdit']>>>(
+      'beginPathEdit',
+      [pageIndex, paintSeqs, revision],
+    );
+    if (epoch === this.epoch) this.drafts.set(result.draftId, epoch);
+    return result;
+  }
+
+  async updatePathDraft(
+    draftId: string,
+    edit: Parameters<PdfWorkerApi['updatePathDraft']>[1],
+    renderScale: number,
+  ) {
+    this.checkDraft('updatePathDraft', draftId);
+    return this.invoke<Awaited<ReturnType<PdfWorkerApi['updatePathDraft']>>>('updatePathDraft', [
+      draftId,
+      edit,
+      renderScale,
+    ]);
+  }
+
+  async commitPathEdit(draftId: string) {
+    this.checkDraft('commitPathEdit', draftId);
+    const result = await this.invoke<Awaited<ReturnType<PdfWorkerApi['commitPathEdit']>>>(
+      'commitPathEdit',
+      [draftId],
+    );
+    this.drafts.delete(draftId);
+    return result;
+  }
+
+  async cancelPathEdit(draftId: string) {
+    this.checkDraft('cancelPathEdit', draftId);
+    const result = await this.invoke<EditHistoryState>('cancelPathEdit', [draftId]);
     this.drafts.delete(draftId);
     return result;
   }

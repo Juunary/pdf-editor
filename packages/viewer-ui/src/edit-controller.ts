@@ -15,9 +15,16 @@ import type {
 import { offsetAtPagePoint } from './edit-geometry.js';
 import { limitLabel, TAGGED_BLOCKED_LABEL } from './edit-labels.js';
 import type { EditLog } from './edit-log.js';
+import type { InputBufferPort } from './input-buffer.js';
 import { EditSession, isWorkerRecovered, type EditSessionView } from './edit-session.js';
 import { classifyFailure } from './failure.js';
-import type { EditHostApi } from './viewer-host.js';
+import {
+  initialPathState,
+  PathController,
+  type PathContext,
+  type PathState,
+} from './path-controller.js';
+import type { EditHostApi, PathHostApi } from './viewer-host.js';
 
 export type EditLoadable<T> =
   | { status: 'idle' }
@@ -27,6 +34,8 @@ export type EditLoadable<T> =
 
 /** 편집할 수 없는 문단에서 더블클릭했을 때 보여 주는 사유 팝오버. */
 export interface EditPopover {
+  /** 표 셀이면 'cell'(제목 문구). 없으면 문단. */
+  kind?: 'paragraph' | 'cell';
   pageIndex: number;
   paragraphId: number;
   bbox: Rect;
@@ -51,6 +60,10 @@ export interface EditState {
   blockTagged: boolean;
   /** 폴백 글자 점선 밑줄 표시(토글). */
   fallbackUnderline: boolean;
+  /** 편집 가능 표시(D6): 문단·셀·패스 테두리를 쪽 위에 모두 그린다. */
+  showEditable: boolean;
+  /** 벡터 패스 편집(M4) 상태. */
+  path: PathState;
 }
 
 export function initialEditState(): EditState {
@@ -64,6 +77,8 @@ export function initialEditState(): EditState {
     notice: null,
     blockTagged: false,
     fallbackUnderline: true,
+    showEditable: false,
+    path: initialPathState(),
   };
 }
 
@@ -101,16 +116,48 @@ export interface EditContext {
   invalidatePages(pages: number[]): Promise<void>;
   /** 취소 뒤 쪽 캔버스를 편집 전 렌더로 되돌린다. */
   repaintPage(): void;
+  /** 벡터 패스 편집(M4) 연결. 호스트가 패스 RPC 를 주지 않으면 null. */
+  paths: {
+    rpc: PathHostApi;
+    extract(pageIndex: number): Promise<PageModel>;
+    setTimer(fn: () => void, ms: number): unknown;
+    clearTimer(handle: unknown): void;
+    disable(reason: string): void;
+  } | null;
 }
 
 export class EditController {
   private session: EditSession | null = null;
   private ending: Promise<boolean> | null = null;
+  /** 벡터 패스 편집(M4). 호스트가 패스 RPC 를 주지 않으면 null. */
+  readonly paths: PathController | null;
+  /** 편집기가 열리기 전 입력을 모으는 버퍼(DOM 구현은 마운트가 주입한다). */
+  private buffer: InputBufferPort | null = null;
 
-  constructor(private readonly ctx: EditContext) {}
+  constructor(private readonly ctx: EditContext) {
+    const p = ctx.paths;
+    this.paths = p
+      ? new PathController({
+          ...ctx,
+          pathRpc: p.rpc,
+          extractPaths: (i) => p.extract(i),
+          setTimer: (fn, ms) => p.setTimer(fn, ms),
+          clearTimer: (h) => p.clearTimer(h),
+          disablePath: (reason) => p.disable(reason),
+          ensureEditability: (i) => this.ensureEditability(i),
+          getPath: () => ctx.getState().path,
+          patchPath: (partial) => ctx.patch({ path: { ...ctx.getState().path, ...partial } }),
+        } satisfies PathContext)
+      : null;
+  }
+
+  setInputBuffer(buffer: InputBufferPort | null): void {
+    this.buffer?.close();
+    this.buffer = buffer;
+  }
 
   get active(): boolean {
-    return this.session !== null;
+    return this.session !== null || (this.paths?.active ?? false);
   }
 
   /** 테스트·e2e 용: 지금 세션(반응 시간 기록 등). */
@@ -120,19 +167,38 @@ export class EditController {
 
   // ── 쪽 판정·이력 ─────────────────────────────────────────────────────
 
+  /**
+   * 쪽 판정을 불러온다. 같은 쪽을 불러오는 중이면 그 요청이 끝날 때까지 기다린다(패스 Alt+클릭 선택이 판정 도착 전에
+   * 후보 없음으로 끝나지 않게).
+   */
   async ensureEditability(pageIndex: number): Promise<void> {
     const current = this.ctx.getState().editability;
-    if (
-      (current.status === 'ready' || current.status === 'loading') &&
-      current.pageIndex === pageIndex
-    ) {
+    if (current.status === 'ready' && current.pageIndex === pageIndex) return;
+    if (current.status === 'loading' && current.pageIndex === pageIndex) {
+      await this.editabilityPending;
       return;
     }
+    const pending = this.loadEditability(pageIndex);
+    this.editabilityPending = pending;
+    try {
+      await pending;
+    } finally {
+      if (this.editabilityPending === pending) this.editabilityPending = null;
+    }
+  }
+
+  private editabilityPending: Promise<void> | null = null;
+
+  private async loadEditability(pageIndex: number): Promise<void> {
     this.ctx.patch({ editability: { status: 'loading', pageIndex } });
     try {
       const value = await this.ctx.rpc.getPageEditability(pageIndex);
       if (this.ctx.isStalePage(pageIndex)) return this.resetLoading(pageIndex);
       this.ctx.patch({ editability: { status: 'ready', pageIndex, value } });
+      // 패스 판정만 실패한 쪽: 문단 편집은 그대로 쓰고 진단 로그만 남긴다.
+      if (value.pathError) {
+        this.ctx.logEvent('path-editability-error', { pageIndex, error: value.pathError });
+      }
       if (this.ctx.getState().history === null) void this.refreshHistory();
     } catch (e) {
       const failure = classifyFailure(e);
@@ -191,6 +257,13 @@ export class EditController {
     this.ctx.patch({ fallbackUnderline });
   }
 
+  /** 편집 가능 표시(D6) 토글. 켜면 패스 선택용 모델을 미리 읽는다. */
+  setShowEditable(showEditable: boolean): void {
+    this.ctx.patch({ showEditable });
+    const view = this.ctx.currentView();
+    if (showEditable && view && this.paths) void this.paths.ensureModel(view.pageIndex);
+  }
+
   dismissPopover(): void {
     if (this.ctx.getState().popover) this.ctx.patch({ popover: null });
   }
@@ -207,8 +280,12 @@ export class EditController {
    */
   async begin(pageIndex: number, paragraphId: number, point: Point | null): Promise<void> {
     const state = this.ctx.getState();
-    if (this.session || state.starting || state.busy) return;
+    if (this.session || state.starting || state.busy || this.paths?.active) return;
+    this.paths?.clear();
     this.ctx.patch({ starting: true, popover: null, notice: null });
+    // 편집기가 열리는 동안(plan → begin) 친 글자를 모은다. 열리면 넣고, 열리지 못하면 버린다.
+    this.buffer?.open();
+    let started = false;
     try {
       let plan = await this.ctx.rpc.planParagraphEdit(pageIndex, paragraphId);
       if (!plan.editable) {
@@ -228,7 +305,12 @@ export class EditController {
       }
       let begun;
       try {
-        begun = await this.ctx.rpc.beginParagraphEdit(pageIndex, paragraphId, plan.revision);
+        begun = await this.ctx.rpc.beginParagraphEdit(
+          pageIndex,
+          paragraphId,
+          plan.revision,
+          this.ctx.currentView()?.renderScale,
+        );
       } catch (e) {
         // 오래된 revision(그 사이 문서가 바뀜): 다시 판정해 한 번 더 시도한다.
         if (!/revision/i.test(classifyFailure(e).message)) throw e;
@@ -237,7 +319,12 @@ export class EditController {
           this.showLimits(plan);
           return;
         }
-        begun = await this.ctx.rpc.beginParagraphEdit(pageIndex, paragraphId, plan.revision);
+        begun = await this.ctx.rpc.beginParagraphEdit(
+          pageIndex,
+          paragraphId,
+          plan.revision,
+          this.ctx.currentView()?.renderScale,
+        );
       }
       const view = this.ctx.currentView();
       const text = view?.text ?? null;
@@ -256,6 +343,12 @@ export class EditController {
       );
       this.ctx.patch({ session: this.session.view() });
       this.session.start();
+      started = true;
+      const buffered = this.buffer?.take() ?? '';
+      if (buffered !== '') {
+        this.session.typeText(buffered);
+        this.ctx.logEvent('edit-input-buffered', { length: buffered.length });
+      }
       this.ctx.logEvent('edit-begin', {
         pageIndex,
         paragraphId,
@@ -265,8 +358,17 @@ export class EditController {
     } catch (e) {
       this.handleFailure(e, '편집을 시작하지 못했습니다');
     } finally {
+      if (!started) this.buffer?.close();
       this.ctx.patch({ starting: false });
     }
+  }
+
+  private isCellParagraph(paragraphId: number): boolean {
+    const e = this.ctx.getState().editability;
+    return (
+      e.status === 'ready' &&
+      e.value.paragraphs.some((p) => p.paragraphId === paragraphId && p.cell !== null)
+    );
   }
 
   private showLimits(plan: ParagraphEditPlan): void {
@@ -274,6 +376,7 @@ export class EditController {
     const items = details.length > 0 ? details : plan.limits.map((l) => limitLabel(l.reason));
     this.ctx.patch({
       popover: {
+        kind: plan.target.cell || this.isCellParagraph(plan.paragraphId) ? 'cell' : 'paragraph',
         pageIndex: plan.pageIndex,
         paragraphId: plan.paragraphId,
         bbox: plan.target.bbox,
@@ -329,6 +432,7 @@ export class EditController {
    * 편집 모드를 벗어났으면(또는 처음부터 없으면) true, 계속 편집 중이면 false 를 돌려준다.
    */
   commitActive(): Promise<boolean> {
+    if (this.paths?.active) return this.paths.commitGesture();
     if (!this.session) return Promise.resolve(true);
     return (this.ending ??= this.doCommit().finally(() => {
       this.ending = null;
@@ -374,6 +478,7 @@ export class EditController {
 
   /** 도구 막대 "편집 취소". */
   async cancelActive(): Promise<void> {
+    if (await this.paths?.cancelGesture()) return;
     if (this.ending) await this.ending;
     const session = this.session;
     if (!session) return;
@@ -403,7 +508,8 @@ export class EditController {
 
   private async step(kind: 'undo' | 'redo'): Promise<void> {
     const state = this.ctx.getState();
-    if (this.session || state.starting || state.busy) return;
+    if (this.session || state.starting || state.busy || this.paths?.active) return;
+    this.paths?.reset();
     const history = state.history;
     if (history && !(kind === 'undo' ? history.canUndo : history.canRedo)) return;
     this.ctx.patch({ busy: true });
@@ -434,6 +540,16 @@ export class EditController {
       this.ctx.patch({ history: null });
     }
     this.ctx.patch({ editability: { status: 'idle' } });
+    if (this.paths) {
+      const hadGesture = this.paths.active;
+      await this.paths.cancelGesture();
+      this.paths.reset();
+      if (hadGesture) {
+        this.ctx.patch({
+          notice: '작업 모듈이 중단되어 문서를 복구했습니다. 진행 중이던 패스 편집은 취소했습니다.',
+        });
+      }
+    }
     const session = this.session;
     if (session) {
       try {

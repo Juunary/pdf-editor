@@ -24,11 +24,13 @@ import type {
   SourceMap,
   TextRun,
 } from '@pdf-editor/shared-types';
-import type { FontSegment, ReflowResult } from '@pdf-editor/reflow';
+import { layoutParagraph, type FontSegment, type ReflowResult } from '@pdf-editor/reflow';
 import { now } from './clock.js';
-import { latestWriteContext, prepareEdit } from './edit-apply.js';
+import { latestWriteContext, prepareEdit, releaseWriteContext, styleFor } from './edit-apply.js';
 import { listBlocks, writeBlock } from './edit-block.js';
 import { recordMetadata } from './edit-meta.js';
+import { cellOfParagraph } from './cell-edit.js';
+import { planPathEditability, releasePathEdit } from './path-edit.js';
 import {
   analyzeParagraph,
   blockStartState,
@@ -36,6 +38,8 @@ import {
   normalizeStartState,
   originalStartState,
   type AnalyzeEnv,
+  type EditAnalysis,
+  type StartState,
 } from './edit-plan.js';
 import { resolveStyle } from './edit-style.js';
 import { FontState } from './font-assign.js';
@@ -65,11 +69,19 @@ function planOne(
   paragraphId: number,
   t0: number,
 ): Omit<ParagraphEditPlan, 'revision'> {
+  return planWith(env, paragraphId, t0).plan;
+}
+
+function planWith(
+  env: AnalyzeEnv,
+  paragraphId: number,
+  t0: number,
+): { plan: Omit<ParagraphEditPlan, 'revision'>; analysis: EditAnalysis } {
   const { ctx } = env;
   const a = analyzeParagraph(env, paragraphId);
   const editable = a.limits.length === 0;
   const start = normalizeStartState(
-    a.block ? blockStartState(ctx, a) : originalStartState(ctx, a.paragraph),
+    a.block ? blockStartState(ctx, a) : cellStart(originalStartState(ctx, a.paragraph), a),
   );
   const ins = a.insertion;
   const insertion: InsertionInfo | null = !editable
@@ -89,7 +101,10 @@ function planOne(
         : null;
   const changes: ChangeKind[] = ['content-stream'];
   const save = decideSaveMethod(changes, ctx.doc.canBeSavedIncrementally());
-  return {
+  const cell = a.cell
+    ? { table: a.cell.table.id, row: a.cell.cell.row, col: a.cell.cell.col }
+    : null;
+  const plan: Omit<ParagraphEditPlan, 'revision'> = {
     pageIndex: ctx.pageIndex,
     paragraphId,
     target: {
@@ -97,6 +112,7 @@ function planOne(
       glyphSeqs: a.chars.map((c) => ctx.model.chars[c]!.glyphSeq),
       editedBlock: a.block?.editId ?? null,
       bbox: [...a.paragraph.bbox] as Rect,
+      ...(cell ? { cell } : {}),
     },
     editable: editable && insertion !== null,
     limits: a.limits,
@@ -113,6 +129,24 @@ function planOne(
     },
     save: { method: save.method, changes },
     planMs: now() - t0,
+  };
+  return { plan, analysis: a };
+}
+
+/** 셀 시작 형식(D5): 가로 = 셀 − 여백(정렬한 변은 원 간격), 세로 = 글자 상자, 셀 정렬, 들여쓰기 0. */
+function cellStart(state: StartState, a: EditAnalysis): StartState {
+  const c = a.cell;
+  if (!c) return state;
+  const box = a.paragraph.bbox;
+  return {
+    ...state,
+    format: {
+      ...state.format,
+      area: [c.areaX[0], box[1], c.areaX[1], box[3]],
+      align: c.align,
+      firstLineIndent: 0,
+      lineHeight: c.lineHeight ?? state.format.lineHeight,
+    },
   };
 }
 
@@ -158,6 +192,7 @@ export interface WriteResult {
  * 줄바꿈·양쪽 정렬 간격) 이웃 문단 줄과 합칠 수 있다. 그런 레이아웃 문단은 어느 것을 편집해도 대상이 블록 전체이므로
  * (계약 D3) 블록마다 첫 문단 id 하나만 남기고, 상자는 블록 글자 상자(analyzeBlock)로 한다. 레이아웃 문단 상자를
  * 그대로 쓰면 한 블록이 여러 테두리로 갈라져 보이거나 이웃 문단까지 덮는다(2026-10-20 사용자 보고, docs/m3-integration.md 9절).
+ * 표 셀은 셀마다 한 항목(첫 문단 id, 상자 = 셀 상자, M4 4.1). paths 는 planPathEditability(M4 4.2).
  */
 export function planPageEditability(
   ctx: ParagraphEditContext,
@@ -167,8 +202,16 @@ export function planPageEditability(
   const env = makeEnv(ctx, fontCacheOf(ctx.doc));
   const paragraphs: PageEditability['paragraphs'] = [];
   const blocks = new Set<string>();
+  const cells = new Set<string>();
   for (const p of ctx.layout.paragraphs) {
-    const plan = planOne(env, p.id, now());
+    // 셀은 한 항목(첫 문단 id, 상자 = 셀 상자, 계약 4.1).
+    const found = p.table !== null ? cellOfParagraph(ctx.layout, p.id) : null;
+    if (found) {
+      const key = `${found.table.id}:${found.cell.row}:${found.cell.col}`;
+      if (cells.has(key)) continue;
+      cells.add(key);
+    }
+    const { plan, analysis } = planWith(env, p.id, now());
     const block = plan.target.editedBlock;
     if (block !== null) {
       if (blocks.has(block)) continue;
@@ -176,13 +219,16 @@ export function planPageEditability(
     }
     paragraphs.push({
       paragraphId: p.id,
-      bbox: [...(block !== null ? plan.target.bbox : p.bbox)] as Rect,
+      bbox: [
+        ...(analysis.cell ? analysis.cell.box : block !== null ? plan.target.bbox : p.bbox),
+      ] as Rect,
       editable: plan.editable,
       editedBlock: block,
       reasons: [...new Set(plan.limits.map((l) => l.reason))],
+      cell: plan.target.cell ?? null,
     });
   }
-  return { pageIndex: ctx.pageIndex, paragraphs };
+  return { pageIndex: ctx.pageIndex, paragraphs, paths: planPathEditability(ctx) };
 }
 
 /** 편집 가능 판정·시작 텍스트·영역(계약 5.1·5.3). 문서를 바꾸지 않는다. revision 은 호출자가 채운다. */
@@ -191,9 +237,116 @@ export function planParagraphEdit(
   fonts: FontManager,
   paragraphId: number,
 ): Omit<ParagraphEditPlan, 'revision'> {
-  void fonts;
   const t0 = now();
-  return planOne(makeEnv(ctx, fontCacheOf(ctx.doc)), paragraphId, t0);
+  const plan = planOne(makeEnv(ctx, fontCacheOf(ctx.doc)), paragraphId, t0);
+  if (!plan.editable || plan.target.editedBlock !== null) return plan;
+  const format = fitAreaToNaturalLines(ctx, fonts, plan);
+  return format === plan.format ? plan : { ...plan, format, planMs: now() - t0 };
+}
+
+/**
+ * 시작 영역 가로 보정(docs/m3-integration.md 10.4 제안 2): 원 줄마다 리플로우 셰이퍼로 잰 자연 폭(줄 끝 공백 제외, 첫 줄
+ * 들여쓰기 포함)의 최댓값이 영역 폭보다 크면 영역을 그 폭까지 넓힌다(정렬한 변 반대쪽으로, 가운데는 양쪽, areaLimit 안).
+ * 원본 TJ 커닝·합자 등으로 원 줄이 셰이퍼 폭보다 좁게 놓여 같은 텍스트가 더 일찍 줄바뀌는 것을 막는다. 넓힐 필요가 없으면
+ * 같은 객체를 돌려준다. 측정은 원 줄 경계마다 강제 줄바꿈을 넣은 텍스트를 넓은 영역에 배치해 한다(문서를 바꾸지 않는다).
+ */
+function fitAreaToNaturalLines(
+  ctx: ParagraphEditContext,
+  fonts: FontManager,
+  plan: Omit<ParagraphEditPlan, 'revision'>,
+): ParagraphFormat {
+  const format = plan.format;
+  const lineOf = new Map<number, number>();
+  const wanted = new Set(plan.charIndexOfOffset.filter((c) => c >= 0));
+  ctx.model.lines.forEach((line, li) => {
+    for (const c of line.chars) if (wanted.has(c)) lineOf.set(c, li);
+  });
+  const runs: TextRun[] = [];
+  let offset = 0;
+  let prevLine = -1;
+  let last = '';
+  for (const run of plan.runs) {
+    let text = '';
+    for (let j = 0; j < run.text.length; j++) {
+      const ci = plan.charIndexOfOffset[offset + j] ?? -1;
+      const line = ci >= 0 ? (lineOf.get(ci) ?? prevLine) : prevLine;
+      const ch = run.text[j]!;
+      if (prevLine >= 0 && line !== prevLine && ch !== '\n' && last !== '\n') text += '\n';
+      text += ch;
+      last = ch;
+      prevLine = line;
+    }
+    offset += run.text.length;
+    runs.push({ text, style: run.style });
+  }
+  const text = runs.map((r) => r.text).join('');
+  if (text.trim() === '') return format;
+  // 판정 시점 해석으로 배정한다(지난 초안의 WriteContext 를 쓰지 않게 FontManager.assign 을 거치지 않는다).
+  const { segments } = fontStateOf(fonts).assign(
+    text,
+    runs,
+    (sc) => resolveStyle(ctx, sc),
+    ctx.map,
+  );
+  const [x0, y0, x1, y1] = format.area;
+  const huge = 1e6;
+  const result = layoutParagraph({
+    text,
+    segments,
+    format: { ...format, align: 'left', area: [x0, y0, x0 + huge, y1] },
+    areaLimit: [-huge, -huge, huge, huge],
+  });
+  let need = 0;
+  for (const line of result.summary.lines) {
+    if (line.x1 > line.x0) need = Math.max(need, line.x1 - x0);
+  }
+  const width = x1 - x0;
+  if (!(need > width + 1e-3)) return format;
+  // 줄 폭 판정 여유(FIT_EPSILON 0.01pt) 안에 들도록 조금 더 넓힌다. 로그에 남는 값이라 소수 3자리로 고정한다.
+  const grow = Math.ceil((need - width) * 1000 + 1) / 1000;
+  // 넓히는 쪽은 상한과 함께 이웃 내용(다른 문단·이미지·패스 중 원 영역과 겹치지 않고 세로로 걸치는 것) 앞 0.5pt 에서
+  // 멈춘다. 이웃 위로 넓히면 같은 텍스트가 다른 내용과 겹치거나 뒤에 그려진 내용에 가려진다(M3 코퍼스 측정 nasa-eo 2건).
+  const [left, right] = neighbourBounds(ctx, plan, format.area);
+  const lim: Rect = [
+    Math.max(plan.areaLimit[0], left),
+    plan.areaLimit[1],
+    Math.min(plan.areaLimit[2], right),
+    plan.areaLimit[3],
+  ];
+  let [nx0, nx1] = [x0, x1];
+  if (format.align === 'right') nx0 = Math.max(lim[0], x0 - grow);
+  else if (format.align === 'center') {
+    nx0 = Math.max(lim[0], x0 - grow / 2);
+    nx1 = Math.min(lim[2], x1 + grow / 2);
+  } else nx1 = Math.min(lim[2], x1 + grow);
+  nx0 = Math.min(nx0, x0);
+  nx1 = Math.max(nx1, x1);
+  if (nx0 === x0 && nx1 === x1) return format;
+  return { ...format, area: [nx0, y0, nx1, y1] };
+}
+
+/**
+ * 영역 왼쪽·오른쪽으로 가장 가까운 이웃 내용의 변(0.5pt 띄움). 이웃 = 대상 밖 문단·이미지·칠하기 패스 중 영역과 세로로
+ * 걸치고 영역과 겹치지 않는 것(영역을 덮는 배경은 세지 않는다). 없으면 ±Infinity.
+ */
+function neighbourBounds(
+  ctx: ParagraphEditContext,
+  plan: Omit<ParagraphEditPlan, 'revision'>,
+  area: Rect,
+): [number, number] {
+  const own = new Set(plan.charIndexOfOffset.filter((c) => c >= 0));
+  const boxes: Rect[] = [];
+  for (const p of ctx.layout.paragraphs) if (!p.chars.some((c) => own.has(c))) boxes.push(p.bbox);
+  for (const im of ctx.model.images) boxes.push(im.bbox);
+  for (const pa of ctx.model.paths) if (pa.op === 'fill' || pa.op === 'stroke') boxes.push(pa.bbox);
+  let left = -Infinity;
+  let right = Infinity;
+  for (const b of boxes) {
+    if (b[3] <= area[1] || b[1] >= area[3]) continue;
+    if (b[0] >= area[2]) right = Math.min(right, b[0] - 0.5);
+    else if (b[2] <= area[0]) left = Math.max(left, b[2] + 0.5);
+  }
+  return [left, right];
 }
 
 /**
@@ -325,11 +478,11 @@ export class FontManager {
     runs: TextRun[],
   ): { segments: FontSegment[]; warnings: EditWarning[] } {
     const wc = latestWriteContext(ctx.doc);
-    const cached = wc && wc.pageIndex === ctx.pageIndex ? wc.styles : null;
+    const draft = wc && wc.pageIndex === ctx.pageIndex ? wc : null;
     return fontStateOf(this).assign(
       text,
       runs,
-      (sc) => cached?.get(sc) ?? resolveStyle(ctx, sc),
+      (sc) => (draft ? styleFor(draft, sc) : resolveStyle(ctx, sc)),
       ctx.map,
     );
   }
@@ -338,4 +491,21 @@ export class FontManager {
   finalizeForSave(): void {
     fontStateOf(this).finalizeForSave();
   }
+
+  /**
+   * 원본 폰트 탐침·폴백 `mupdf.Font` 를 해제한다(R-L3, `FontState.dispose`). 여러 번 불러도 된다. 해제 뒤 assign 등은
+   * 예외. 문서·편집 블록 객체는 건드리지 않는다. core 가 문서를 닫을 때·FontManager 를 바꿀 때 부른다.
+   */
+  dispose(): void {
+    fontStateOf(this).dispose();
+  }
+}
+
+/**
+ * 편집 하나(editId) 또는 문서 전체(editId 생략)의 pdf-ops 초안 상태(문단 WriteContext·패스 준비 상태)를 버린다(R-L3).
+ * core 가 커밋·취소·재적용 뒤와 문서를 닫을 때 부른다. 문서 내용은 바꾸지 않는다.
+ */
+export function releaseEdit(doc: mupdf.PDFDocument, editId?: string): void {
+  releaseWriteContext(doc, editId);
+  releasePathEdit(doc, editId);
 }

@@ -47,6 +47,11 @@ export interface SavePlan {
   heap: SaveHeapEstimate;
   /** 편집이 없으면 null. */
   edits: SaveEditSummary | null;
+  /**
+   * 저장 전에 사용자에게 보이고 확인을 받을 경고(편집 엔진 실패 상태 저장 등, M4 R-M4). 없거나 비어 있으면 경고 없음.
+   * 뷰어는 비어 있지 않으면 확인 창을 띄운 뒤 저장한다.
+   */
+  warnings?: string[];
 }
 
 export interface SaveResult {
@@ -64,4 +69,6 @@ export interface SaveResult {
   wasmHeapBytes: number | null;
   /** 저장 전에 계산한 예상 피크 힙. 계산하지 못했으면 null. */
   heap: SaveHeapEstimate | null;
+  /** 이 저장에 해당한 경고(`SavePlan.warnings` 와 같음). */
+  warnings?: string[];
 }

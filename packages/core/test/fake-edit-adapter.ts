@@ -10,6 +10,7 @@
 import * as mupdf from 'mupdf';
 import {
   FontManager,
+  type PreparedPathEdit,
   ownResources,
   ownSubdict,
   putUniqueResource,
@@ -24,6 +25,9 @@ import type {
   PageEditability,
   ParagraphEditPlan,
   ParagraphFormat,
+  PathEdit,
+  PathEditPlan,
+  PathFingerprint,
   Rect,
   ReflowSummary,
   TextRun,
@@ -58,6 +62,16 @@ export interface FakeAdapterProbe {
   };
   /** 판정이 계획 경고로 더하는 경고(예: 태그 구조 끊김). */
   planWarnings: EditWarning[];
+  /** 패스 쓰기 호출 인자(prepare 때 정한 편집 id → 쓴 편집 목록). */
+  pathWrites: { editId: string; edit: PathEdit }[];
+  /** 다음 패스 prepare / write 호출을 실패시킨다. */
+  failNextPath: { prepare?: boolean; write?: boolean; writeAfter?: boolean };
+  /** writePathEdit 결과에 실을 경고(pdf-ops 가 채울 `warnings` 선택 필드 흉내). */
+  pathWriteWarnings: EditWarning[] | undefined;
+  /** releaseEdit 호출 수(R-L3 연결 확인). */
+  releaseCalls: number;
+  /** 만든 FontManager 의 dispose 호출 수. */
+  fontDisposeCalls: number;
 }
 
 export interface FakeAdapter extends EditAdapter {
@@ -92,9 +106,21 @@ class FakeFonts extends FontManager {
     let offset = 0;
     let usesFallback = false;
     let missing = false;
+    // 폴백 폰트를 얻지 못했으면(R-L5) 실제 FontManager 처럼 폴백 없음으로 다룬다.
+    let fallbackAvailable = true;
+    try {
+      this.#source.bytes();
+    } catch {
+      fallbackAvailable = false;
+    }
     runs.forEach((run, runIndex) => {
       for (const ch of run.text) {
-        const kind = HANGUL.test(ch) ? 'fallback' : UNSUPPORTED.test(ch) ? 'missing' : 'original';
+        const kind =
+          HANGUL.test(ch) && fallbackAvailable
+            ? 'fallback'
+            : HANGUL.test(ch) || UNSUPPORTED.test(ch)
+              ? 'missing'
+              : 'original';
         if (kind === 'fallback') usesFallback = true;
         if (kind === 'missing') missing = true;
         segments.push({
@@ -118,6 +144,11 @@ class FakeFonts extends FontManager {
   }
 
   /** 저장 작업 안에서: 쓴 글리프만 남긴 서브셋으로 FontFile2 를 바꾼다(작업을 버리면 되돌아간다). */
+  override dispose(): void {
+    this.#probe.fontDisposeCalls++;
+    super.dispose();
+  }
+
   override finalizeForSave(): void {
     if (this.#probe.failNext.finalize) {
       this.#probe.failNext.finalize = false;
@@ -153,7 +184,17 @@ export function createFakeAdapter(): FakeAdapter {
     calls: [],
     failNext: {},
     planWarnings: [],
+    pathWrites: [],
+    failNextPath: {},
+    pathWriteWarnings: undefined,
+    releaseCalls: 0,
+    fontDisposeCalls: 0,
   };
+  /** 패스 편집 준비 때 찍어 둔 원본 스트림(쓰기는 항상 원본 기준 절대 편집). */
+  const pathSnapshots = new Map<
+    string,
+    { streamNum: number; original: Uint8Array<ArrayBuffer>; lines: PathLine[] }
+  >();
   /** 편집 블록 영역(plan 이 재편집 대상을 알아보는 데 쓴다). */
   const blockBoxes = new Map<string, Rect>();
   let fonts: FakeFonts | null = null;
@@ -196,8 +237,10 @@ export function createFakeAdapter(): FakeAdapter {
             editable: limits.length === 0,
             editedBlock: null,
             reasons: limits.map((l) => l.reason),
+            cell: null,
           };
         }),
+        paths: [],
       };
     },
 
@@ -324,6 +367,101 @@ export function createFakeAdapter(): FakeAdapter {
       };
     },
 
+    // ---- M4 패스: 한 줄 = 패스 하나(`x y w h re f` 꼴)인 쪽 콘텐츠만 다루는 최소 구현 ----
+
+    planPathEditability(ctx) {
+      return ctx.model.paths
+        .map((path, pathIndex) => ({ path, pathIndex }))
+        .filter(({ path }) => path.op === 'fill' || path.op === 'stroke')
+        .map(({ path, pathIndex }) => ({
+          pathIndex,
+          paintSeq: path.paintSeq,
+          bbox: path.bbox,
+          editable: true,
+          reasons: [],
+        }));
+    },
+
+    planPathEdit(ctx, paintSeqs): Omit<PathEditPlan, 'revision'> {
+      probe.calls.push('planPath');
+      const lines = paintSeqs.map((seq) => pathLineOf(ctx, seq));
+      const bbox = lines
+        .map((l) => l.bbox)
+        .reduce((a, b) => [
+          Math.min(a[0], b[0]),
+          Math.min(a[1], b[1]),
+          Math.max(a[2], b[2]),
+          Math.max(a[3], b[3]),
+        ]);
+      const first = ctx.model.paths.find((p) => p.paintSeq === paintSeqs[0])!;
+      return {
+        pageIndex: ctx.pageIndex,
+        target: {
+          pageIndex: ctx.pageIndex,
+          paintSeqs,
+          fingerprints: lines.map((l) => l.fingerprint),
+          bbox,
+        },
+        editable: true,
+        limits: [],
+        warnings: [],
+        fill: first.op === 'fill' ? first.color : null,
+        stroke: first.op === 'stroke' ? first.color : null,
+        lineWidth: first.lineWidth,
+        planMs: 0,
+      };
+    },
+
+    preparePathEdit(ctx, plan, editId): PreparedPathEdit {
+      probe.calls.push('preparePath');
+      if (probe.failNextPath.prepare) {
+        probe.failNextPath.prepare = false;
+        throw new Error('fake preparePath 실패');
+      }
+      const lines = plan.target.paintSeqs.map((seq) => pathLineOf(ctx, seq));
+      const streamNum = lines[0]!.streamNum;
+      const stream = ctx.doc.newIndirect(streamNum);
+      const buf = stream.readStream();
+      const original = buf.asUint8Array().slice();
+      buf.destroy();
+      pathSnapshots.set(editId, { streamNum, original, lines });
+      return { editId, target: plan.target, changedObjects: [streamNum] };
+    },
+
+    writePathEdit(ctx, prepared, edit) {
+      probe.calls.push('writePath');
+      if (probe.failNextPath.write) {
+        probe.failNextPath.write = false;
+        throw new Error('fake writePath 실패');
+      }
+      const snap = pathSnapshots.get(prepared.editId)!;
+      const height = ctx.layout.bounds[3];
+      const decoder = new TextDecoder('latin1');
+      let bytes: Uint8Array<ArrayBuffer> = snap.original;
+      let bbox: Rect | null = null;
+      for (const line of [...snap.lines].sort((a, b) => b.range[0] - a.range[0])) {
+        const [text, box] = rewritePathLine(line, edit, height);
+        bytes = concat([
+          bytes.subarray(0, line.range[0]),
+          new TextEncoder().encode(text),
+          bytes.subarray(line.range[1]),
+        ]);
+        bbox = bbox ? unionBox(bbox, box) : box;
+      }
+      void decoder;
+      ctx.doc.newIndirect(snap.streamNum).writeStream(bytes);
+      probe.pathWrites.push({ editId: prepared.editId, edit });
+      if (probe.failNextPath.writeAfter) {
+        probe.failNextPath.writeAfter = false;
+        throw new Error('fake writePath(쓴 뒤) 실패');
+      }
+      return {
+        bbox: bbox!,
+        writeMs: 0,
+        ...(probe.pathWriteWarnings ? { warnings: [...probe.pathWriteWarnings] } : {}),
+      };
+    },
+
     layoutParagraph(input: ReflowInput): ReflowResult {
       probe.calls.push('layout');
       return fakeLayout(input);
@@ -402,6 +540,10 @@ export function createFakeAdapter(): FakeAdapter {
       } finally {
         page.destroy();
       }
+    },
+
+    releaseEdit() {
+      probe.releaseCalls++;
     },
 
     recordEditMetadata(doc, info) {
@@ -572,4 +714,73 @@ function concat(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
 
 function fmt(n: number): string {
   return (Math.round(n * 1000) / 1000).toString();
+}
+
+interface PathLine {
+  streamNum: number;
+  /** 줄 전체(개행 제외)의 스트림 바이트 범위. */
+  range: [number, number];
+  /** 구성 숫자 4개와 칠하기 연산자. */
+  nums: [number, number, number, number];
+  paintOp: string;
+  bbox: Rect;
+  fingerprint: PathFingerprint;
+}
+
+/** paintSeq 를 가진 칠하기 연산이 있는 줄(`x y w h re f`)을 찾는다. */
+function pathLineOf(ctx: ParagraphEditContext, paintSeq: number): PathLine {
+  const op = ctx.map.ops.find((o) => o.paintSeq?.includes(paintSeq) && o.kind === 'path-paint');
+  const path = ctx.model.paths.find((p) => p.paintSeq === paintSeq);
+  if (!op || !path) throw new Error(`fake: paintSeq ${paintSeq} 의 패스 연산 없음`);
+  const stream = ctx.doc.newIndirect(op.stream.objectNumber);
+  const buf = stream.readStream();
+  const text = new TextDecoder('latin1').decode(buf.asUint8Array());
+  buf.destroy();
+  const start = text.lastIndexOf('\n', op.range[0]) + 1;
+  const endNl = text.indexOf('\n', op.range[1]);
+  const end = endNl < 0 ? text.length : endNl;
+  const match = /^\s*(-?[\d.]+) (-?[\d.]+) (-?[\d.]+) (-?[\d.]+) re ([fSB])\s*$/.exec(
+    text.slice(start, end),
+  );
+  if (!match) throw new Error(`fake: 지원하지 않는 패스 줄: ${text.slice(start, end)}`);
+  const nums = [1, 2, 3, 4].map((i) => Number(match[i])) as [number, number, number, number];
+  return {
+    streamNum: op.stream.objectNumber,
+    range: [start, end],
+    nums,
+    paintOp: match[5]!,
+    bbox: path.bbox,
+    fingerprint: {
+      paintOp: match[5]!,
+      constructOpCount: 1,
+      bbox: path.bbox,
+      constructHash: `re:${nums.join(',')}`,
+    },
+  };
+}
+
+function unionBox(a: Rect, b: Rect): Rect {
+  return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+}
+
+/** 줄을 편집 내용으로 다시 쓴다(크기·이동 아핀, 채움 색, 삭제). 반환: [새 줄 텍스트, 새 쪽 상자]. */
+function rewritePathLine(line: PathLine, edit: PathEdit, pageHeight: number): [string, Rect] {
+  if (edit.delete) return ['n', line.bbox];
+  const [x, y, w, h] = line.nums;
+  let [px0, py0, px1, py1] = [x, pageHeight - y - h, x + w, pageHeight - y];
+  if (edit.transform) {
+    const [a, , , d, e, f] = edit.transform;
+    [px0, px1] = [a * px0 + e, a * px1 + e];
+    [py0, py1] = [d * py0 + f, d * py1 + f];
+  }
+  const box: Rect = [
+    Math.min(px0, px1),
+    Math.min(py0, py1),
+    Math.max(px0, px1),
+    Math.max(py0, py1),
+  ];
+  const body = `${fmt(box[0])} ${fmt(pageHeight - box[3])} ${fmt(box[2] - box[0])} ${fmt(box[3] - box[1])} re ${line.paintOp}`;
+  if (!edit.fill) return [body, box];
+  const [r, g, b] = edit.fill;
+  return [`q ${fmt(r)} ${fmt(g)} ${fmt(b)} rg ${body} Q`, box];
 }

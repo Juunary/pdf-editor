@@ -2,8 +2,21 @@
  * MuPDF WASM 래퍼를 쓰고 바로 해제하는 도구. 동기 루프에서는 FinalizationRegistry 정리가 돌지 않으므로
  * 쪽·버퍼 래퍼를 GC 에 맡기면 큰 문서에서 WASM 힙이 쌓인다.
  */
-import type * as mupdf from 'mupdf';
+import * as mupdf from 'mupdf';
 import type { Matrix } from '@pdf-editor/shared-types';
+
+/**
+ * 스트림 내용을 바꾼다. mupdf.js 는 Uint8Array·문자열을 받으면 임시 Buffer 래퍼를 만들고 해제를 GC 에 맡겨, 큰 콘텐츠
+ * 스트림(수 MB)을 반복해 쓰는 패스 끌기·편집 갱신에서 사본이 쌓이고 GC 멈춤이 생긴다. 버퍼를 직접 만들어 바로 놓는다.
+ */
+export function writeStreamBytes(obj: mupdf.PDFObject, bytes: Uint8Array | string): void {
+  const buffer = typeof bytes === 'string' ? new mupdf.Buffer(bytes) : new mupdf.Buffer(bytes);
+  try {
+    obj.writeStream(buffer);
+  } finally {
+    buffer.destroy();
+  }
+}
 
 /** 스트림을 디코드한 바이트(JS 복사본). MuPDF Buffer 래퍼는 복사 직후 해제한다. */
 export function readStreamBytes(stream: mupdf.PDFObject): Uint8Array {

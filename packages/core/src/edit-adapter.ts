@@ -8,21 +8,35 @@ import {
   FontManager,
   type FallbackFontSource,
   listEditBlocks,
+  pathEditWarnings,
   planPageEditability,
   planParagraphEdit,
+  planPathEdit,
+  planPathEditability,
   prepareParagraphEdit,
+  preparePathEdit,
   recordEditMetadata,
+  releaseEdit,
   writeEditBlock,
+  writePathEdit,
 } from '@pdf-editor/pdf-ops';
 import { layoutParagraph } from '@pdf-editor/reflow';
-import type { Rect } from '@pdf-editor/shared-types';
+import type { EditWarning, Rect } from '@pdf-editor/shared-types';
 
 export type {
   EditBlockRef,
   ParagraphEditContext,
   PreparedEdit,
+  PreparedPathEdit,
   WriteResult,
 } from '@pdf-editor/pdf-ops';
+
+/**
+ * 패스 쓰기 결과. pdf-ops 시그니처(`{ bbox, writeMs }`)에 쓰는 도중 정해지는 경고(`color-space-changed`·`path-clipped`·
+ * `table-rule-removed`, 계약 4.2)를 실을 선택 필드를 더했다. 기본 어댑터는 pdf-ops `pathEditWarnings` 로 채운다.
+ * 필드가 있으면(빈 배열 포함) core 근사 경고(`pathCoreWarnings`)를 쓰지 않는다. 없을 때만 근사한다.
+ */
+export type PathWriteResult = ReturnType<typeof writePathEdit> & { warnings?: EditWarning[] };
 
 export interface EditAdapter {
   /** 문서당 하나. `fallback` 은 core 가 미리 await 한 폴백 폰트 바이트와, 저널을 켜기 직전에 임베딩한 객체(그 전에는 null)다. */
@@ -30,9 +44,16 @@ export interface EditAdapter {
   planPageEditability: typeof planPageEditability;
   planParagraphEdit: typeof planParagraphEdit;
   prepareParagraphEdit: typeof prepareParagraphEdit;
+  /** M4 패스 판정·계획·준비·쓰기(docs/m4-contract.md 4.2–4.3). */
+  planPathEditability: typeof planPathEditability;
+  planPathEdit: typeof planPathEdit;
+  preparePathEdit: typeof preparePathEdit;
+  writePathEdit: (...args: Parameters<typeof writePathEdit>) => PathWriteResult;
   writeEditBlock: typeof writeEditBlock;
   listEditBlocks: typeof listEditBlocks;
   recordEditMetadata: typeof recordEditMetadata;
+  /** 초안 하나(editId) 또는 문서 전체의 pdf-ops 초안 상태를 버린다(R-L3). 문서 내용은 바꾸지 않는다. */
+  releaseEdit: typeof releaseEdit;
   layoutParagraph: typeof layoutParagraph;
   /**
    * 세션 로그에 없는 편집 블록(다른 세션이 만든 파일)의 영역을 어림한다(페이지 공간). 모르면 null.
@@ -74,9 +95,18 @@ export const defaultEditAdapter: EditAdapter = {
   planPageEditability,
   planParagraphEdit,
   prepareParagraphEdit,
+  planPathEditability,
+  planPathEdit,
+  preparePathEdit,
+  // pdf-ops 는 쓰기 경고를 `pathEditWarnings` 로 따로 준다(docs/m4-pdf-ops.md 6절 #4). 여기서 반환에 싣는다.
+  writePathEdit: (ctx, prepared, edit) => ({
+    ...writePathEdit(ctx, prepared, edit),
+    warnings: pathEditWarnings(ctx, prepared),
+  }),
   writeEditBlock,
   listEditBlocks,
   recordEditMetadata,
+  releaseEdit,
   layoutParagraph,
   blockBounds: formBoundsInPage,
 };

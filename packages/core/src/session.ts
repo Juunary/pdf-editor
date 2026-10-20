@@ -13,6 +13,7 @@ import { reconstructPage } from '@pdf-editor/layout-recon';
 import type {
   RedactAnnotSummary,
   BeginEditResult,
+  BeginPathEditResult,
   CommitResult,
   DraftInput,
   DraftUpdate,
@@ -28,6 +29,9 @@ import type {
   PageEditInfo,
   PageEditability,
   ParagraphEditPlan,
+  PathDraftUpdate,
+  PathEdit,
+  PathEditPlan,
   Rect,
   RenderRequest,
   RenderedPage,
@@ -315,7 +319,7 @@ export class PdfSession {
    * (`SavePlan.edits`)을 채운다. 편집을 커밋·재적용한 문서와 전체 저장을 한 번이라도 한 세션은 전체 저장이다
    * (docs/m3-contract.md D9·A3-9). 초안이 열려 있으면 예외.
    */
-  planSave({ changes }: SaveRequest): SavePlan {
+  planSave({ changes }: SaveRequest): SavePlan & { warnings: string[] } {
     const edit = this.#edit;
     if (edit?.hasDraft) {
       throw new EditStateError(
@@ -352,11 +356,12 @@ export class PdfSession {
       canBeSavedIncrementally,
       heap: decision.heap,
       edits: edit?.editSummary() ?? null,
+      warnings: edit?.saveWarnings() ?? [],
     };
   }
 
   /** 저장. 편집 RPC 를 쓴 문서는 저널 작업으로 감싼다(`EditEngine.runSave`, D9). 초안이 열려 있으면 예외. */
-  save(request: SaveRequest): SaveResult {
+  save(request: SaveRequest): SaveResult & { warnings: string[] } {
     const doc = this.document;
     const plan = this.planSave(request);
     const t0 = performance.now();
@@ -378,6 +383,7 @@ export class PdfSession {
       saveMs: performance.now() - t0,
       wasmHeapBytes: wasmHeapBytes(),
       heap: plan.heap,
+      warnings: plan.warnings,
     };
   }
 
@@ -385,6 +391,11 @@ export class PdfSession {
 
   get #engine(): EditEngine {
     return this.#edit ?? noDocument();
+  }
+
+  /** 폴백 폰트 로드 실패 사유(R-L5, 진단용). 폴백을 얻었거나 시도하지 않았으면 null. */
+  get fallbackLoadError(): string | null {
+    return this.#edit?.fallbackLoadError ?? null;
   }
 
   async getPageEditability(pageIndex: number): Promise<PageEditability> {
@@ -426,6 +437,34 @@ export class PdfSession {
     return this.#engine.cancelParagraphEdit(draftId);
   }
 
+  async planPathEdit(pageIndex: number, paintSeqs: number[]): Promise<PathEditPlan> {
+    return this.#engine.planPathEdit(pageIndex, paintSeqs);
+  }
+
+  async beginPathEdit(
+    pageIndex: number,
+    paintSeqs: number[],
+    revision: number,
+  ): Promise<BeginPathEditResult> {
+    return this.#engine.beginPathEdit(pageIndex, paintSeqs, revision);
+  }
+
+  async updatePathDraft(
+    draftId: string,
+    edit: PathEdit,
+    renderScale: number,
+  ): Promise<PathDraftUpdate> {
+    return this.#engine.updatePathDraft(draftId, edit, renderScale);
+  }
+
+  async commitPathEdit(draftId: string): Promise<CommitResult> {
+    return this.#engine.commitPathEdit(draftId);
+  }
+
+  async cancelPathEdit(draftId: string): Promise<EditHistoryState> {
+    return this.#engine.cancelPathEdit(draftId);
+  }
+
   async undo(): Promise<EditHistoryState> {
     return this.#engine.undo();
   }
@@ -449,7 +488,9 @@ export class PdfSession {
     return {
       document: doc,
       pageState: (pageIndex) => ({
-        model: this.extractPage({ pageIndex }),
+        // 레이아웃과 같은 모델(세그먼트 포함). pdf-ops 패스 점 편집이 점 번호를 모델 세그먼트로 대조한다
+        // (docs/m4-pdf-ops.md 7절 #4). 레이아웃이 이미 만든 캐시라 추출이 늘지 않는다.
+        model: this.extractPage({ pageIndex, includePathSegments: true }),
         map: this.getSourceMap(pageIndex),
         linkage: this.linkPage(pageIndex),
         layout: this.getPageLayout(pageIndex),

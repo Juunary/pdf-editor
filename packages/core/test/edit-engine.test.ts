@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { PdfSession } from '../src/index.js';
+import type { ReplaceParagraphOp } from '@pdf-editor/shared-types';
 import { EditStateError, StaleRevisionError } from '../src/edit-engine.js';
 import * as mupdf from 'mupdf';
 import { createFakeAdapter } from './fake-edit-adapter.js';
@@ -48,7 +49,7 @@ describe('판정 RPC', () => {
     s.close();
   });
 
-  it('폴백 폰트 로드 실패는 전달하고 다음 호출에서 다시 시도한다', async () => {
+  it('폴백 폰트 로드 실패는 폴백 없이 진행하고 다음 호출에서 다시 시도한다(R-L5)', async () => {
     let calls = 0;
     const adapter = createFakeAdapter();
     const s = new PdfSession({
@@ -60,9 +61,11 @@ describe('판정 RPC', () => {
       },
     });
     s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
-    await expect(s.getPageEditability(0)).rejects.toThrow('폰트 파일 없음');
+    expect((await s.getPageEditability(0)).paragraphs).toHaveLength(3);
+    expect(s.fallbackLoadError).toBe('폰트 파일 없음');
     expect((await s.getPageEditability(0)).paragraphs).toHaveLength(3);
     expect(calls).toBe(2);
+    expect(s.fallbackLoadError).toBeNull();
     s.close();
   });
 
@@ -126,7 +129,7 @@ describe('초안 → 커밋 → undo/redo', () => {
       id: 'id-1',
       target: { pageIndex: 0, editedBlock: null },
     });
-    expect(result.op.runs.map((r) => r.text)).toEqual(['Replaced text']);
+    expect((result.op as ReplaceParagraphOp).runs.map((r) => r.text)).toEqual(['Replaced text']);
     expect(result.history).toEqual({
       revision: 1,
       activeEditIds: ['id-1'],
@@ -229,7 +232,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     const plan = await s.planParagraphEdit(0, blockParagraph.id);
     expect(plan.target.editedBlock).toBe('id-1');
     const second = await editParagraph(s, blockParagraph.id, 'Gamma delta');
-    expect(second.op.target.editedBlock).toBe('id-1');
+    expect((second.op as ReplaceParagraphOp).target.editedBlock).toBe('id-1');
     expect(second.op.id).not.toBe('id-1');
     expect((await s.getPageEdits(0)).blocks).toHaveLength(1);
     // 블록 영역은 가장 나중 편집의 배치 결과다.
@@ -514,7 +517,7 @@ describe('실패 경로(독립 검토 반영)', () => {
     expect(text(s)).toContain('Version X');
     expect(text(s)).not.toContain('Version Y');
     const result = await s.commitParagraphEdit(started.draftId);
-    expect(result.op.runs.map((r) => r.text)).toEqual(['Version X']);
+    expect((result.op as ReplaceParagraphOp).runs.map((r) => r.text)).toEqual(['Version X']);
     s.close();
   });
 

@@ -82,6 +82,11 @@ export interface LayoutTable {
   cells: TableCell[];
   /** lines: 괘선으로 찾음, text: 글자 정렬로 찾음. */
   strategy: 'lines' | 'text';
+  /**
+   * 표 상자 안의 괘선·배경 사각형으로 쓴 PageModel.paths 인덱스(오름차순, 도형 검출에서 뺀 것). `lines` 전략은 이 패스로
+   * 격자를 찾는다. 패스 삭제 경고 `table-rule-removed` 의 판정 근거(docs/m4-pdf-ops.md 6절 #5).
+   */
+  paths: number[];
 }
 
 export interface LayoutFigure {

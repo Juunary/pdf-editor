@@ -124,7 +124,14 @@ export class DeviceCollector {
   /** 실행이 끝났을 때(성공·실패 모두) 잡고 있는 래퍼를 놓는다. */
   finish(): void {
     this.#releasePrev();
+    // mupdf.js 는 글꼴이 바뀔 때마다 새 Font 래퍼(참조 1)를 만들고 해제를 GC 에 맡긴다. 큰 폰트(폴백 약 4 MB)가 GC 전까지
+    // 남지 않게 받은 래퍼를 추출 끝에 놓는다(R-L3). 마지막 래퍼는 mupdf.js 전역이 가리키지만 pointer 가 0 이 되면 다음
+    // 텍스트에서 새로 만든다.
+    for (const font of this.#fontWrappers) font.destroy();
+    this.#fontWrappers.clear();
   }
+
+  readonly #fontWrappers = new Set<mupdf.Font>();
 
   // --- 텍스트 -------------------------------------------------------------------------
 
@@ -308,6 +315,7 @@ export class DeviceCollector {
   }
 
   #fontId(font: mupdf.Font): number {
+    this.#fontWrappers.add(font);
     const known = this.#fontIds.get(font.pointer);
     if (known !== undefined) return known;
     const id = this.fonts.length;

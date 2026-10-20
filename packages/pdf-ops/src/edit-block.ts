@@ -11,18 +11,12 @@ import type { ReflowResult } from '@pdf-editor/reflow';
 import { now } from './clock.js';
 import { parseContentOpsLenient } from './content-stream.js';
 import { apply, applyLinear, fmt9, invert, latin1Bytes, lookupResource } from './edit-common.js';
-import { writeContextOf, type WriteContext } from './edit-apply.js';
+import { styleFor, writeContextOf, type WriteContext } from './edit-apply.js';
 import type { BlockFormat } from './edit-plan.js';
 import { cleanParagraphFormat, readBlockFormat } from './edit-plan.js';
-import {
-  effectiveGs,
-  resolveStyle,
-  samePdfValue,
-  type ColorOpSpec,
-  type ResolvedStyle,
-} from './edit-style.js';
+import { effectiveGs, samePdfValue, type ColorOpSpec, type ResolvedStyle } from './edit-style.js';
 import { FALLBACK_KEY, FALLBACK_NAME, type FontState } from './font-assign.js';
-import { readStreamBytes } from './mupdf-util.js';
+import { readStreamBytes, writeStreamBytes } from './mupdf-util.js';
 import type {
   EditBlockRef,
   ParagraphEditContext,
@@ -221,7 +215,8 @@ export function writeBlock(
   const upItalic = applyLinear(invU, 0.2, -1);
   const upN = norm(up);
   const res = new BlockResources();
-  const styleOf = (sc: number): ResolvedStyle | null => wc.styles.get(sc) ?? resolveStyle(ctx, sc);
+  // 초안 중에는 문서가 바뀌었으므로 판정 시점 해석만 쓴다(R-L4).
+  const styleOf = (sc: number): ResolvedStyle | null => styleFor(wc, sc);
 
   const out: string[] = ['q', '0 Tc 0 Tw 100 Tz 0 TL 0 Ts', 'BT'];
   let tj: string[] | null = null;
@@ -231,6 +226,7 @@ export function writeBlock(
   };
   let curFont = '';
   let curSize = NaN;
+  let curTz = 1;
   let curStyle = '';
   let curItalic: boolean | null = null;
   let strokeSetup = false;
@@ -296,6 +292,14 @@ export function writeBlock(
         curFont = fontName;
         curSize = g.size;
       }
+      // 가로 비율(장평): Tz 는 글리프 모양·전진과 TJ 숫자 단위에 함께 곱해진다(PDF 32000 9.3.4).
+      const tz = g.horizontalScale ?? 1;
+      if (tz !== curTz) {
+        closeTJ();
+        tj = [];
+        out.push(`${f(tz * 100)} Tz`);
+        curTz = tz;
+      }
       tj ??= [];
       if (needTm) {
         const yAxis = g.syntheticItalic ? upItalic : up;
@@ -303,13 +307,13 @@ export function writeBlock(
         curItalic = g.syntheticItalic;
       } else if (pen) {
         const along = (P[0] - pen[0]) * ex[0] + (P[1] - pen[1]) * ex[1];
-        const adj = (-along * 1000) / g.size;
+        const adj = (-along * 1000) / (g.size * curTz);
         if (Math.abs(adj) >= 0.0005) tj.push(f(adj));
       }
       const bytes =
         g.faceKey === FALLBACK_KEY ? Uint8Array.of((g.gid >> 8) & 0xff, g.gid & 0xff) : g.code;
       tj.push(`<${hex(bytes)}>`);
-      const adv = (g.pdfWidth / 1000) * g.size;
+      const adv = (g.pdfWidth / 1000) * g.size * curTz;
       pen = [P[0] + ex[0] * adv, P[1] + ex[1] * adv];
       glyphOffsets.push(g.offset);
       if (g.syntheticBold) syntheticRuns[g.runIndex]!.bold = true;
@@ -320,7 +324,7 @@ export function writeBlock(
   closeTJ();
   out.push('ET', 'Q');
   const content = latin1Bytes(`${out.join('\n')}\n`);
-  block.writeStream(content);
+  writeStreamBytes(block, content);
   const built = res.build(doc);
   block.put('Resources', built.dict);
 
@@ -339,6 +343,10 @@ export function writeBlock(
         bold: r.style.bold,
         italic: r.style.italic,
         color: r.style.color,
+        ...(r.style.charSpacing ? { charSpacing: r.style.charSpacing } : {}),
+        ...(r.style.horizontalScale && r.style.horizontalScale !== 1
+          ? { horizontalScale: r.style.horizontalScale }
+          : {}),
         font: rs ? fontLabel(rs.fontRef) : FALLBACK_NAME,
         synthetic: syntheticRuns[i]!,
       };

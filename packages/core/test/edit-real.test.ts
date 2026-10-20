@@ -5,7 +5,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
-import type { DraftInput, EditOp, ParagraphEditPlan, TextRun } from '@pdf-editor/shared-types';
+import type {
+  DraftInput,
+  EditOp,
+  ParagraphEditPlan,
+  ReplaceParagraphOp,
+  TextRun,
+} from '@pdf-editor/shared-types';
 import { validateLayout } from '@pdf-editor/layout-recon';
 import { PdfSession } from '../src/index.js';
 import { FONT_BYTES, MEDIABOX, PAGE, fallbackFonts } from './edit-harness.js';
@@ -396,8 +402,8 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     expect(update.reflow.overflow).toBe(false);
     expect(update.reflow.area[3]).toBeGreaterThan(plan.format.area[3] + 1);
     expect(update.reflow.area[3]).toBeCloseTo(update.reflow.contentBox[3], 6);
-    expect(commit.op.format).toEqual(plan.format);
-    expect(commit.op.format).not.toHaveProperty('overflow');
+    expect((commit.op as ReplaceParagraphOp).format).toEqual(plan.format);
+    expect((commit.op as ReplaceParagraphOp).format).not.toHaveProperty('overflow');
     const area = (s: PdfSession) => s.getPageEdits(0).then((e) => e.blocks[0]?.area);
     expect(await area(live)).toEqual(update.reflow.area);
     const edited = stext(live);
