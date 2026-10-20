@@ -31,7 +31,7 @@ export type {
 
 /**
  * 패스 쓰기 결과. pdf-ops 시그니처(`{ bbox, writeMs }`)에 쓰는 도중 정해지는 경고(`color-space-changed`·`path-clipped`,
- * 계약 4.2)를 실을 선택 필드를 더했다. pdf-ops 가 채우면 core 가 초안 경고에 합친다(docs/m4-core.md 5절).
+ * 계약 4.2)를 실을 선택 필드를 더했다. pdf-ops 가 채우면 core 가 초안 경고에 합친다(docs/m4-core.md 6절).
  */
 export type PathWriteResult = ReturnType<typeof writePathEdit> & { warnings?: EditWarning[] };
 

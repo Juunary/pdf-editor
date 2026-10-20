@@ -75,7 +75,7 @@ function remember<K, V>(cache: Map<K, V>, key: K, value: V): void {
 
 /**
  * 저장 계획·결과에 붙는 경고(R-M4). shared-types 의 `SavePlan`·`SaveResult` 에는 없는 core 확장이라 타입 없이 구조 복제로
- * 건너가며, 뷰어가 쓰려면 shared-types 에 선택 필드가 필요하다(docs/m4-core.md 5절).
+ * 건너가며, 뷰어가 쓰려면 shared-types 에 선택 필드가 필요하다(docs/m4-core.md 6절).
  */
 export interface SaveWarnings {
   warnings: string[];
