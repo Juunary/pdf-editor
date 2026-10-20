@@ -334,6 +334,7 @@ export function writeBlock(
         bold: r.style.bold,
         italic: r.style.italic,
         color: r.style.color,
+        ...(r.style.charSpacing ? { charSpacing: r.style.charSpacing } : {}),
         font: rs ? fontLabel(rs.fontRef) : FALLBACK_NAME,
         synthetic: syntheticRuns[i]!,
       };

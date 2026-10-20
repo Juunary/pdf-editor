@@ -185,9 +185,12 @@ function buildItems(text: string, segments: readonly FontSegment[]): Item[] {
         return;
       }
       const em = it.seg.size / 1000;
+      // 자간(Tc)은 글리프마다 전진 뒤에 붙는다. 클러스터 마지막 글리프 뒤 자간은 다음 클러스터와의 간격이라 커닝처럼
+      // 줄 끝에서 뺀다(kernAfter).
+      const cs = it.seg.charSpacing ?? 0;
       it.glyphs = r.glyphs;
-      it.adv = r.advance * em;
-      it.kernAfter = r.kernAfter * em;
+      it.adv = r.advance * em + cs * r.glyphs.length;
+      it.kernAfter = r.kernAfter * em + (r.glyphs.length > 0 ? cs : 0);
     });
     i = j;
   }
@@ -368,7 +371,7 @@ function placeLine(
           syntheticItalic: it.seg.syntheticItalic,
           runIndex: it.seg.runIndex,
         });
-        gx += g.advance * em;
+        gx += g.advance * em + (it.seg.charSpacing ?? 0);
       }
       pen += advance;
     }

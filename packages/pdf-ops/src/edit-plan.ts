@@ -18,6 +18,7 @@ import type {
   ParagraphLimit,
   ParagraphLimitReason,
   Rect,
+  RunStyle,
   SourceOp,
   TextRun,
 } from '@pdf-editor/shared-types';
@@ -61,6 +62,8 @@ export interface BlockFormat {
     bold: boolean;
     italic: boolean;
     color: [number, number, number] | null;
+    /** RunStyle.charSpacing(pt). 0 이면 쓰지 않는다. */
+    charSpacing?: number;
     /** 원 폰트 이름(BaseFont). 폴백이면 폴백 폰트 이름. */
     font: string;
     synthetic: { bold: boolean; italic: boolean };
@@ -974,6 +977,22 @@ export function normalizeStartState(state: StartState): StartState {
   return { ...state, runs, charIndexOfOffset: map };
 }
 
+/**
+ * 원본 글자 연산의 자간(Tc)을 페이지 공간 pt 로(글리프마다 더하는 전진). Tc 는 크기를 곱하지 않은 글자 공간 값이라
+ * 가로 비율(Tz)과 글자 공간 → 페이지 공간 배율(PageModel 글자 크기 / Tf 크기)을 곱한다. 찾지 못하거나 0 이면 0.
+ */
+export function charSpacingOf(ctx: ParagraphEditContext, sourceChar: number): number {
+  const opId = ctx.linkage.charOp[sourceChar] ?? -1;
+  const text = opId >= 0 ? ctx.map.ops[opId]?.text : undefined;
+  const ch = ctx.model.chars[sourceChar];
+  if (!text || !ch || !text.charSpacing || !(Math.abs(text.fontSize) > 1e-9)) return 0;
+  const value = text.charSpacing * text.horizontalScale * (ch.size / Math.abs(text.fontSize));
+  if (!Number.isFinite(value)) return 0;
+  // 결정성: 로그·블록 JSON 에 남는 값이라 유효숫자를 고정한다.
+  const rounded = Number(value.toPrecision(6));
+  return Math.abs(rounded) < 1e-6 ? 0 : rounded;
+}
+
 export function originalStartState(
   ctx: ParagraphEditContext,
   paragraph: LayoutParagraph,
@@ -993,9 +1012,10 @@ export function originalStartState(
     prev = v;
   }
   const runs: TextRun[] = [];
-  const styleOf = (ri: number) => {
+  const styleOf = (ri: number): RunStyle => {
     const r = paragraph.styleRuns[ri];
     const sc = r ? (paragraph.chars[r.start] ?? paragraph.chars[0]!) : paragraph.chars[0]!;
+    const charSpacing = charSpacingOf(ctx, sc);
     return {
       sourceChar: sc,
       fontId: r?.fontId ?? ctx.model.chars[sc]?.fontId ?? 0,
@@ -1003,6 +1023,7 @@ export function originalStartState(
       bold: r?.bold ?? false,
       italic: r?.italic ?? false,
       color: r?.color ?? null,
+      ...(charSpacing !== 0 ? { charSpacing } : {}),
     };
   };
   for (let o = 0; o < text.length; o++) {
@@ -1109,6 +1130,11 @@ export function blockStartState(ctx: ParagraphEditContext, a: EditAnalysis): Sta
         bold: r.bold,
         italic: r.italic,
         color: r.color,
+        ...(typeof r.charSpacing === 'number' &&
+        Number.isFinite(r.charSpacing) &&
+        r.charSpacing !== 0
+          ? { charSpacing: r.charSpacing }
+          : {}),
       },
     };
   });

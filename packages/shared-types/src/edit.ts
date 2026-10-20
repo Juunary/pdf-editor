@@ -35,6 +35,11 @@ export interface RunStyle {
   bold: boolean;
   italic: boolean;
   color: RGB | null;
+  /**
+   * 글리프마다 더하는 자간(pt, 페이지 공간). 시작 상태가 원본 연산의 `Tc` 로 채운다(Tc × Tz × 글자 크기/Tf 크기).
+   * 리플로우가 클러스터 전진에 더하고, 쓰기는 위치 차이를 TJ 숫자로 옮긴다. 없으면 0(이전 로그·블록 호환).
+   */
+  charSpacing?: number;
 }
 
 /** 같은 모양의 텍스트 구간. 강제 줄바꿈은 "\n". */
