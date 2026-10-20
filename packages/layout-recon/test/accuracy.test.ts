@@ -147,6 +147,7 @@ describe('scoreLayout', () => {
           colBounds: [105, 200, 300],
           cells: [cell(0, 0, [0]), cell(1, 0, [1])],
           strategy: 'lines',
+          paths: [],
         },
       ],
       readingOrder: [{ kind: 'table', id: 0 }],
@@ -367,6 +368,7 @@ describe('scoreLayout 경계 사례', () => {
           colBounds: [300, 400],
           cells: [],
           strategy: 'text',
+          paths: [],
         },
       ],
       figures: [

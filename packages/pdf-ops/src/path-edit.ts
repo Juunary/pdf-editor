@@ -779,6 +779,8 @@ interface PreparedItem {
   /** 구성 점의 페이지 공간 상자(선 폭 제외). 칠한 상자와의 차이가 선 폭 여백이다. */
   pointsBox: Rect;
   pathIndex: number;
+  /** 이 칠하기 연산에 연결된 PageModel.paths 인덱스 전부. */
+  infos: number[];
   fill: PaintColor | null;
   stroke: PaintColor | null;
   /** 경로 공간 선 두께(stroke 계열만). */
@@ -792,7 +794,8 @@ interface PreparedState {
   editId: string;
   holders: Map<string, Holder>;
   items: PreparedItem[];
-  tables: Rect[];
+  /** 괘선 전략 표가 격자로 쓴 PageModel.paths 인덱스(LayoutTable.paths). */
+  rulePaths: Set<number>;
   warnings: EditWarning[];
 }
 
@@ -928,6 +931,7 @@ export function preparePathEdit(
       bbox: [...it.bbox] as Rect,
       pointsBox: pointsBox ?? ([...it.bbox] as Rect),
       pathIndex: it.pathIndex,
+      infos: [...it.infos],
       fill: fill?.color ?? null,
       stroke: stroke?.color ?? null,
       lineWidth: stroke?.lineWidth ?? null,
@@ -947,7 +951,9 @@ export function preparePathEdit(
     editId,
     holders,
     items: pItems,
-    tables: ctx.layout.tables.filter((t) => t.strategy === 'lines').map((t) => [...t.bbox] as Rect),
+    rulePaths: new Set(
+      ctx.layout.tables.filter((t) => t.strategy === 'lines').flatMap((t) => t.paths),
+    ),
     warnings: [],
   });
   return {
@@ -1123,7 +1129,7 @@ export function writePathEdit(
     bbox = union(bbox, r.bbox);
     if (r.spaceChanged) spaceRects.push(r.bbox);
     if (!edit.delete && it.clipRect && !inside(r.bbox, it.clipRect)) clipped.push(r.bbox);
-    if (edit.delete && st.tables.some((t) => intersectsArea(it.bbox, t))) ruleRects.push(it.bbox);
+    if (edit.delete && it.infos.some((i) => st.rulePaths.has(i))) ruleRects.push(it.bbox);
   }
   for (const h of st.holders.values()) {
     h.write(applyReplacements(h.orig, [...h.fixed, ...(lists.get(h.key) ?? [])]));
@@ -1152,10 +1158,6 @@ export function writePathEdit(
   st.warnings = warnings;
   return { bbox: bbox ?? prepared.target.bbox, writeMs: now() - t0 };
 }
-
-/** 겹침(1pt 여유, 폭 0 선 포함). */
-const intersectsArea = (a: Rect, b: Rect) =>
-  a[0] <= b[2] + 1 && a[2] >= b[0] - 1 && a[1] <= b[3] + 1 && a[3] >= b[1] - 1;
 
 /**
  * 마지막 writePathEdit 의 편집 경고(`color-space-changed`·`path-clipped`·`table-rule-removed`). 계획 경고

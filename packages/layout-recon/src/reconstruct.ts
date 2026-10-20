@@ -432,6 +432,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
         colBounds: t.colBounds,
         cells,
         strategy: t.strategy,
+        paths: [...t.paths],
       });
       readingOrder.push({ kind: 'table', id: tableId });
     } else {
