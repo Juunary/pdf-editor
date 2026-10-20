@@ -58,6 +58,8 @@ export interface FontSegment {
   runIndex: number;
   syntheticBold: boolean;
   syntheticItalic: boolean;
+  /** 글리프마다 더하는 자간(pt, RunStyle.charSpacing). 없으면 0. 줄 끝 글리프 뒤 자간은 줄 폭에 넣지 않는다. */
+  charSpacing?: number;
 }
 
 export interface ReflowInput {

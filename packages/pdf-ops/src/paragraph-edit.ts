@@ -24,7 +24,7 @@ import type {
   SourceMap,
   TextRun,
 } from '@pdf-editor/shared-types';
-import type { FontSegment, ReflowResult } from '@pdf-editor/reflow';
+import { layoutParagraph, type FontSegment, type ReflowResult } from '@pdf-editor/reflow';
 import { now } from './clock.js';
 import { latestWriteContext, prepareEdit, styleFor } from './edit-apply.js';
 import { listBlocks, writeBlock } from './edit-block.js';
@@ -237,9 +237,76 @@ export function planParagraphEdit(
   fonts: FontManager,
   paragraphId: number,
 ): Omit<ParagraphEditPlan, 'revision'> {
-  void fonts;
   const t0 = now();
-  return planOne(makeEnv(ctx, fontCacheOf(ctx.doc)), paragraphId, t0);
+  const plan = planOne(makeEnv(ctx, fontCacheOf(ctx.doc)), paragraphId, t0);
+  if (!plan.editable || plan.target.editedBlock !== null) return plan;
+  const format = fitAreaToNaturalLines(ctx, fonts, plan);
+  return format === plan.format ? plan : { ...plan, format, planMs: now() - t0 };
+}
+
+/**
+ * 시작 영역 가로 보정(docs/m3-integration.md 10.4 제안 2): 원 줄마다 리플로우 셰이퍼로 잰 자연 폭(줄 끝 공백 제외, 첫 줄
+ * 들여쓰기 포함)의 최댓값이 영역 폭보다 크면 영역을 그 폭까지 넓힌다(정렬한 변 반대쪽으로, 가운데는 양쪽, areaLimit 안).
+ * 원본 TJ 커닝·합자 등으로 원 줄이 셰이퍼 폭보다 좁게 놓여 같은 텍스트가 더 일찍 줄바뀌는 것을 막는다. 넓힐 필요가 없으면
+ * 같은 객체를 돌려준다. 측정은 원 줄 경계마다 강제 줄바꿈을 넣은 텍스트를 넓은 영역에 배치해 한다(문서를 바꾸지 않는다).
+ */
+function fitAreaToNaturalLines(
+  ctx: ParagraphEditContext,
+  fonts: FontManager,
+  plan: Omit<ParagraphEditPlan, 'revision'>,
+): ParagraphFormat {
+  const format = plan.format;
+  const lineOf = new Map<number, number>();
+  const wanted = new Set(plan.charIndexOfOffset.filter((c) => c >= 0));
+  ctx.model.lines.forEach((line, li) => {
+    for (const c of line.chars) if (wanted.has(c)) lineOf.set(c, li);
+  });
+  const runs: TextRun[] = [];
+  let offset = 0;
+  let prevLine = -1;
+  let last = '';
+  for (const run of plan.runs) {
+    let text = '';
+    for (let j = 0; j < run.text.length; j++) {
+      const ci = plan.charIndexOfOffset[offset + j] ?? -1;
+      const line = ci >= 0 ? (lineOf.get(ci) ?? prevLine) : prevLine;
+      const ch = run.text[j]!;
+      if (prevLine >= 0 && line !== prevLine && ch !== '\n' && last !== '\n') text += '\n';
+      text += ch;
+      last = ch;
+      prevLine = line;
+    }
+    offset += run.text.length;
+    runs.push({ text, style: run.style });
+  }
+  const text = runs.map((r) => r.text).join('');
+  if (text.trim() === '') return format;
+  const { segments } = fonts.assign(ctx, text, runs);
+  const [x0, y0, x1, y1] = format.area;
+  const huge = 1e6;
+  const result = layoutParagraph({
+    text,
+    segments,
+    format: { ...format, align: 'left', area: [x0, y0, x0 + huge, y1] },
+    areaLimit: [-huge, -huge, huge, huge],
+  });
+  let need = 0;
+  for (const line of result.summary.lines) {
+    if (line.x1 > line.x0) need = Math.max(need, line.x1 - x0);
+  }
+  const width = x1 - x0;
+  if (!(need > width + 1e-3)) return format;
+  // 줄 폭 판정 여유(FIT_EPSILON 0.01pt) 안에 들도록 조금 더 넓힌다. 로그에 남는 값이라 소수 3자리로 고정한다.
+  const grow = Math.ceil((need - width) * 1000 + 1) / 1000;
+  const lim = plan.areaLimit;
+  let [nx0, nx1] = [x0, x1];
+  if (format.align === 'right') nx0 = Math.max(lim[0], x0 - grow);
+  else if (format.align === 'center') {
+    nx0 = Math.max(lim[0], x0 - grow / 2);
+    nx1 = Math.min(lim[2], x1 + grow / 2);
+  } else nx1 = Math.min(lim[2], x1 + grow);
+  if (nx0 === x0 && nx1 === x1) return format;
+  return { ...format, area: [nx0, y0, nx1, y1] };
 }
 
 /**
