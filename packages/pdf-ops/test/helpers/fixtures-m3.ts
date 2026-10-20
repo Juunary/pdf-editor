@@ -230,3 +230,27 @@ export function expectSameOrigins(
 /** 변경 허용 영역(계약 8.3): 원 문단 bbox ∪ 배치 상자 ∪ 영역. */
 export const allowedOf = (bbox: Rect, contentBox: Rect, area?: Rect): Rect[] =>
   area ? [bbox, contentBox, area] : [bbox, contentBox];
+
+/**
+ * 3×3 괘선 표 콘텐츠(쪽 500×300, 페이지 공간 x 100–400, 행 경계 y = rows). 셀 (r, c) 글자는 "R{r}C{c}",
+ * 셀 왼쪽 + 5pt, 행 위 + 14pt 기준선. text(r, c) 로 셀 글을 바꾼다(문자열 배열이면 12pt 간격 여러 줄).
+ */
+export function gridTable(
+  rows: number[] = [100, 120, 140, 160],
+  text: (r: number, c: number) => string | string[] = (r, c) => `R${r}C${c}`,
+): string {
+  const xs = [100, 200, 300, 400];
+  const H = 300;
+  const rules: string[] = [];
+  for (const y of rows) rules.push(`${xs[0]} ${H - y} m ${xs[3]} ${H - y} l S`);
+  for (const x of xs) rules.push(`${x} ${H - rows[0]!} m ${x} ${H - rows[3]!} l S`);
+  const cells: string[] = [];
+  for (let r = 0; r < 3; r++)
+    for (let c = 0; c < 3; c++) {
+      const t = text(r, c);
+      (Array.isArray(t) ? t : [t]).forEach((line, k) =>
+        cells.push(`BT /F1 10 Tf ${xs[c]! + 5} ${H - (rows[r]! + 14 + 12 * k)} Td (${line}) Tj ET`),
+      );
+    }
+  return `0.5 w ${rules.join(' ')} ${cells.join(' ')}`;
+}

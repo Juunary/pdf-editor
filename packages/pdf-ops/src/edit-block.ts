@@ -11,16 +11,10 @@ import type { ReflowResult } from '@pdf-editor/reflow';
 import { now } from './clock.js';
 import { parseContentOpsLenient } from './content-stream.js';
 import { apply, applyLinear, fmt9, invert, latin1Bytes, lookupResource } from './edit-common.js';
-import { writeContextOf, type WriteContext } from './edit-apply.js';
+import { styleFor, writeContextOf, type WriteContext } from './edit-apply.js';
 import type { BlockFormat } from './edit-plan.js';
 import { cleanParagraphFormat, readBlockFormat } from './edit-plan.js';
-import {
-  effectiveGs,
-  resolveStyle,
-  samePdfValue,
-  type ColorOpSpec,
-  type ResolvedStyle,
-} from './edit-style.js';
+import { effectiveGs, samePdfValue, type ColorOpSpec, type ResolvedStyle } from './edit-style.js';
 import { FALLBACK_KEY, FALLBACK_NAME, type FontState } from './font-assign.js';
 import { readStreamBytes } from './mupdf-util.js';
 import type {
@@ -221,7 +215,8 @@ export function writeBlock(
   const upItalic = applyLinear(invU, 0.2, -1);
   const upN = norm(up);
   const res = new BlockResources();
-  const styleOf = (sc: number): ResolvedStyle | null => wc.styles.get(sc) ?? resolveStyle(ctx, sc);
+  // 초안 중에는 문서가 바뀌었으므로 판정 시점 해석만 쓴다(R-L4).
+  const styleOf = (sc: number): ResolvedStyle | null => styleFor(wc, sc);
 
   const out: string[] = ['q', '0 Tc 0 Tw 100 Tz 0 TL 0 Ts', 'BT'];
   let tj: string[] | null = null;

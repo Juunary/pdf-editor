@@ -21,6 +21,8 @@ import type {
   SourceOp,
   TextRun,
 } from '@pdf-editor/shared-types';
+import { cellTarget, type CellTarget } from './cell-edit.js';
+import { offsetMap } from './text-map.js';
 import { parseContentOpsLenient } from './content-stream.js';
 import {
   concat,
@@ -116,6 +118,8 @@ export interface EditAnalysis {
   actualTextClears: number[];
   /** 복제할 Form 이 /StructParents 를 가져 복제본에서 지운다. */
   structParentsRemoved: boolean;
+  /** 표 셀 대상(M4 D1). paragraph 는 셀 문단을 이은 문단이다. */
+  cell: CellTarget | null;
 }
 
 /** 한 번의 판정(쪽 하나) 안에서 공유하는 상태. */
@@ -292,14 +296,22 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
   const limits = new Limits();
   const warnings: EditWarning[] = [];
 
-  if (paragraph.table !== null || paragraph.figure !== null) {
-    limits.add(
-      'not-flow-paragraph',
-      paragraph.table !== null ? '표 셀 문단(M4)' : '도형 라벨 문단',
-      [],
-    );
+  // 표 셀(M4 D1): 셀 문단 전부가 대상. 셀을 찾지 못한 표 문단은 흐름 문단처럼 다룬다.
+  let target = paragraph;
+  let cell: CellTarget | null = null;
+  if (paragraph.figure !== null) {
+    limits.add('not-flow-paragraph', '도형 라벨 문단', []);
+  } else if (paragraph.table !== null) {
+    cell = cellTarget(ctx.model, ctx.layout, paragraphId);
+    if (cell) target = cell.paragraph;
   }
-  for (const li of paragraph.lines) {
+  const withCell = (a: EditAnalysis): EditAnalysis => {
+    a.cell = cell;
+    // 편집 블록은 만들 때의 상한(블록 BBox)을 그대로 쓴다(커밋 뒤 셀 상자는 새 글로 다시 계산된다).
+    if (cell && !a.block) a.areaLimit = intersect(a.areaLimit, cell.limit);
+    return a;
+  };
+  for (const li of target.lines) {
     const line = ctx.model.lines[li];
     if (!line) continue;
     const angle = Math.abs(Math.atan2(line.dir[1], line.dir[0]));
@@ -309,16 +321,14 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
   }
 
   // 편집 블록 글자를 포함하면 대상은 블록 전체(계약 D3).
-  for (const c of paragraph.chars) {
+  for (const c of target.chars) {
     const opId = ctx.linkage.charOp[c] ?? -1;
     const op = opId >= 0 ? ctx.map.ops[opId] : undefined;
     const step = op ? blockStepOf(env, op) : null;
-    if (op && step) return analyzeBlock(env, paragraph, step, limits, warnings);
+    if (op && step) return withCell(analyzeBlock(env, target, step, limits, warnings));
   }
 
-  const chars = paragraph.chars;
-  const result = analyzeChars(env, paragraph, chars, limits, warnings);
-  return result;
+  return withCell(analyzeChars(env, target, target.chars, limits, warnings, cell?.members ?? null));
 }
 
 function analyzeChars(
@@ -327,9 +337,11 @@ function analyzeChars(
   chars: number[],
   limits: Limits,
   warnings: EditWarning[],
+  members: ReadonlySet<number> | null,
 ): EditAnalysis {
   const { ctx } = env;
   const ops = ctx.map.ops;
+  const own = members ?? new Set([paragraph.id]);
   const base: EditAnalysis = {
     paragraph,
     chars,
@@ -344,6 +356,7 @@ function analyzeChars(
     areaLimit: [...ctx.model.bounds] as Rect,
     actualTextClears: [],
     structParentsRemoved: false,
+    cell: null,
   };
 
   // 연산 연결·연산 제한.
@@ -420,7 +433,7 @@ function analyzeChars(
           if (g.seq === null || targetSeqs.has(g.seq)) continue;
           const c = charOfSeq.get(g.seq);
           const owner = c === undefined ? undefined : paraOf.get(c);
-          if (owner !== undefined && owner !== paragraph.id) partial = true;
+          if (owner !== undefined && !own.has(owner)) partial = true;
           else {
             extraSeqs.push(g.seq);
             used = true;
@@ -921,6 +934,7 @@ function analyzeBlock(
     areaLimit,
     actualTextClears: [],
     structParentsRemoved: false,
+    cell: null,
   };
 }
 
@@ -932,44 +946,6 @@ export interface StartState {
   runs: TextRun[];
   charIndexOfOffset: number[];
   format: ParagraphFormat;
-}
-
-/** 원 문단 텍스트 위치 → 글자 인덱스(합성 공백 -1). 문단 텍스트와 글자 텍스트를 앞에서부터 맞춘다. */
-export function offsetMap(
-  paragraph: LayoutParagraph,
-  chars: readonly { text: string }[],
-): number[] {
-  const text = paragraph.text;
-  const out = new Array<number>(text.length).fill(-1);
-  let k = 0;
-  const list = paragraph.chars;
-  for (let o = 0; o < text.length;) {
-    while (k < list.length) {
-      const t = chars[list[k]!]?.text ?? '';
-      if (t !== '' && text.startsWith(t, o)) break;
-      // 줄 끝에서 지운 공백 글자·빈 글자는 건너뛴다.
-      if (t.trim() === '') {
-        k++;
-        continue;
-      }
-      break;
-    }
-    const ci = list[k];
-    const t = ci !== undefined ? (chars[ci]?.text ?? '') : '';
-    if (ci !== undefined && t !== '' && text.startsWith(t, o)) {
-      for (let j = 0; j < t.length; j++) out[o + j] = ci;
-      o += t.length;
-      k++;
-    } else if (/\s/u.test(text[o]!)) {
-      o++;
-    } else if (ci !== undefined) {
-      // 맞지 않는 글자(U+FFFD 등): 한 칸씩 맞춘다.
-      out[o] = ci;
-      o++;
-      k++;
-    } else o++;
-  }
-  return out;
 }
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });

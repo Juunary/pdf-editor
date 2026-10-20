@@ -57,6 +57,25 @@ export interface WriteContext {
 const contexts = new WeakMap<mupdf.PDFDocument, Map<string, WriteContext>>();
 const latest = new WeakMap<mupdf.PDFDocument, WriteContext>();
 
+/**
+ * 초안의 모양 해석(R-L4). 보관한 해석에 없으면 가장 가까운 글자 번호의 해석을 쓴다. 바뀐 문서를 판정 시점 SourceMap
+ * 범위로 다시 읽지 않는다.
+ */
+export function styleFor(wc: WriteContext, sourceChar: number): ResolvedStyle | null {
+  const hit = wc.styles.get(sourceChar);
+  if (hit) return hit;
+  let best: ResolvedStyle | null = null;
+  let dist = Infinity;
+  for (const [sc, st] of wc.styles) {
+    const d = Math.abs(sc - sourceChar);
+    if (d < dist || (d === dist && best !== null && sc < best.sourceChar)) {
+      best = st;
+      dist = d;
+    }
+  }
+  return best;
+}
+
 export function writeContextOf(doc: mupdf.PDFDocument, editId: string): WriteContext | undefined {
   return contexts.get(doc)?.get(editId);
 }
@@ -76,7 +95,11 @@ function register(doc: mupdf.PDFDocument, wc: WriteContext): void {
   latest.set(doc, wc);
 }
 
-/** 판정 시점 모양 해석(plan.runs 와 문단 styleRuns 의 sourceChar). 문서를 바꾸기 전에 부른다. */
+/**
+ * 판정 시점 모양 해석. 문서를 바꾸기 전에 부른다. plan.runs·문단 styleRuns 의 sourceChar 에 더해 대상 글자 전부를
+ * 해석해 둔다(연산마다 한 번 읽고 글자별 fontId·size 만 바꾼다). 초안 중에는 문서가 바뀌어 SourceMap 범위로 다시 읽을
+ * 수 없기 때문이다(R-L4).
+ */
 function resolveStyles(
   ctx: ParagraphEditContext,
   plan: Omit<ParagraphEditPlan, 'revision'>,
@@ -92,6 +115,23 @@ function resolveStyles(
   for (const sc of scs) {
     const s = resolveStyle(ctx, sc, streams);
     if (s) out.set(sc, s);
+  }
+  const byOp = new Map<number, ResolvedStyle | null>();
+  for (const c of a.chars) {
+    if (out.has(c)) continue;
+    const opId = ctx.linkage.charOp[c] ?? -1;
+    if (opId < 0) continue;
+    let base = byOp.get(opId);
+    if (base === undefined) {
+      base = resolveStyle(ctx, c, streams);
+      byOp.set(opId, base);
+      if (base) {
+        out.set(c, base);
+        continue;
+      }
+    }
+    const ch = ctx.model.chars[c];
+    if (base && ch) out.set(c, { ...base, sourceChar: c, fontId: ch.fontId, size: ch.size });
   }
   return out;
 }

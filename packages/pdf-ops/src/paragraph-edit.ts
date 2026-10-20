@@ -26,9 +26,11 @@ import type {
 } from '@pdf-editor/shared-types';
 import type { FontSegment, ReflowResult } from '@pdf-editor/reflow';
 import { now } from './clock.js';
-import { latestWriteContext, prepareEdit } from './edit-apply.js';
+import { latestWriteContext, prepareEdit, styleFor } from './edit-apply.js';
 import { listBlocks, writeBlock } from './edit-block.js';
 import { recordMetadata } from './edit-meta.js';
+import { cellOfParagraph } from './cell-edit.js';
+import { planPathEditability } from './path-edit.js';
 import {
   analyzeParagraph,
   blockStartState,
@@ -36,6 +38,8 @@ import {
   normalizeStartState,
   originalStartState,
   type AnalyzeEnv,
+  type EditAnalysis,
+  type StartState,
 } from './edit-plan.js';
 import { resolveStyle } from './edit-style.js';
 import { FontState } from './font-assign.js';
@@ -65,11 +69,19 @@ function planOne(
   paragraphId: number,
   t0: number,
 ): Omit<ParagraphEditPlan, 'revision'> {
+  return planWith(env, paragraphId, t0).plan;
+}
+
+function planWith(
+  env: AnalyzeEnv,
+  paragraphId: number,
+  t0: number,
+): { plan: Omit<ParagraphEditPlan, 'revision'>; analysis: EditAnalysis } {
   const { ctx } = env;
   const a = analyzeParagraph(env, paragraphId);
   const editable = a.limits.length === 0;
   const start = normalizeStartState(
-    a.block ? blockStartState(ctx, a) : originalStartState(ctx, a.paragraph),
+    a.block ? blockStartState(ctx, a) : cellStart(originalStartState(ctx, a.paragraph), a),
   );
   const ins = a.insertion;
   const insertion: InsertionInfo | null = !editable
@@ -89,7 +101,10 @@ function planOne(
         : null;
   const changes: ChangeKind[] = ['content-stream'];
   const save = decideSaveMethod(changes, ctx.doc.canBeSavedIncrementally());
-  return {
+  const cell = a.cell
+    ? { table: a.cell.table.id, row: a.cell.cell.row, col: a.cell.cell.col }
+    : null;
+  const plan: Omit<ParagraphEditPlan, 'revision'> = {
     pageIndex: ctx.pageIndex,
     paragraphId,
     target: {
@@ -97,6 +112,7 @@ function planOne(
       glyphSeqs: a.chars.map((c) => ctx.model.chars[c]!.glyphSeq),
       editedBlock: a.block?.editId ?? null,
       bbox: [...a.paragraph.bbox] as Rect,
+      ...(cell ? { cell } : {}),
     },
     editable: editable && insertion !== null,
     limits: a.limits,
@@ -113,6 +129,24 @@ function planOne(
     },
     save: { method: save.method, changes },
     planMs: now() - t0,
+  };
+  return { plan, analysis: a };
+}
+
+/** 셀 시작 형식(D5): 가로 = 셀 − 여백(정렬한 변은 원 간격), 세로 = 글자 상자, 셀 정렬, 들여쓰기 0. */
+function cellStart(state: StartState, a: EditAnalysis): StartState {
+  const c = a.cell;
+  if (!c) return state;
+  const box = a.paragraph.bbox;
+  return {
+    ...state,
+    format: {
+      ...state.format,
+      area: [c.areaX[0], box[1], c.areaX[1], box[3]],
+      align: c.align,
+      firstLineIndent: 0,
+      lineHeight: c.lineHeight ?? state.format.lineHeight,
+    },
   };
 }
 
@@ -158,6 +192,7 @@ export interface WriteResult {
  * 줄바꿈·양쪽 정렬 간격) 이웃 문단 줄과 합칠 수 있다. 그런 레이아웃 문단은 어느 것을 편집해도 대상이 블록 전체이므로
  * (계약 D3) 블록마다 첫 문단 id 하나만 남기고, 상자는 블록 글자 상자(analyzeBlock)로 한다. 레이아웃 문단 상자를
  * 그대로 쓰면 한 블록이 여러 테두리로 갈라져 보이거나 이웃 문단까지 덮는다(2026-10-20 사용자 보고, docs/m3-integration.md 9절).
+ * 표 셀은 셀마다 한 항목(첫 문단 id, 상자 = 셀 상자, M4 4.1). paths 는 planPathEditability(M4 4.2).
  */
 export function planPageEditability(
   ctx: ParagraphEditContext,
@@ -167,8 +202,16 @@ export function planPageEditability(
   const env = makeEnv(ctx, fontCacheOf(ctx.doc));
   const paragraphs: PageEditability['paragraphs'] = [];
   const blocks = new Set<string>();
+  const cells = new Set<string>();
   for (const p of ctx.layout.paragraphs) {
-    const plan = planOne(env, p.id, now());
+    // 셀은 한 항목(첫 문단 id, 상자 = 셀 상자, 계약 4.1).
+    const found = p.table !== null ? cellOfParagraph(ctx.layout, p.id) : null;
+    if (found) {
+      const key = `${found.table.id}:${found.cell.row}:${found.cell.col}`;
+      if (cells.has(key)) continue;
+      cells.add(key);
+    }
+    const { plan, analysis } = planWith(env, p.id, now());
     const block = plan.target.editedBlock;
     if (block !== null) {
       if (blocks.has(block)) continue;
@@ -176,14 +219,16 @@ export function planPageEditability(
     }
     paragraphs.push({
       paragraphId: p.id,
-      bbox: [...(block !== null ? plan.target.bbox : p.bbox)] as Rect,
+      bbox: [
+        ...(analysis.cell ? analysis.cell.box : block !== null ? plan.target.bbox : p.bbox),
+      ] as Rect,
       editable: plan.editable,
       editedBlock: block,
       reasons: [...new Set(plan.limits.map((l) => l.reason))],
-      cell: null,
+      cell: plan.target.cell ?? null,
     });
   }
-  return { pageIndex: ctx.pageIndex, paragraphs, paths: [] };
+  return { pageIndex: ctx.pageIndex, paragraphs, paths: planPathEditability(ctx) };
 }
 
 /** 편집 가능 판정·시작 텍스트·영역(계약 5.1·5.3). 문서를 바꾸지 않는다. revision 은 호출자가 채운다. */
@@ -326,11 +371,11 @@ export class FontManager {
     runs: TextRun[],
   ): { segments: FontSegment[]; warnings: EditWarning[] } {
     const wc = latestWriteContext(ctx.doc);
-    const cached = wc && wc.pageIndex === ctx.pageIndex ? wc.styles : null;
+    const draft = wc && wc.pageIndex === ctx.pageIndex ? wc : null;
     return fontStateOf(this).assign(
       text,
       runs,
-      (sc) => cached?.get(sc) ?? resolveStyle(ctx, sc),
+      (sc) => (draft ? styleFor(draft, sc) : resolveStyle(ctx, sc)),
       ctx.map,
     );
   }

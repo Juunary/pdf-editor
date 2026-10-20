@@ -75,9 +75,14 @@ const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 interface PathBuf {
   cmds: number[][];
   move: number;
+  /** 이 경로를 만든 구성 연산 id(기록한 연산만, M4 SourceOp.pathOps). */
+  ops: number[];
 }
 
-const newPath = (): PathBuf => ({ cmds: [], move: -1 });
+const newPath = (): PathBuf => ({ cmds: [], move: -1, ops: [] });
+
+/** 피연산자 바이트 범위를 기록하는 연산 종류(M4 SourceOp.operandRanges). */
+const OPERAND_RANGE_KINDS: ReadonlySet<SourceOpKind> = new Set(['path-construct', 'color']);
 
 function concat(a: Matrix, b: Matrix): Matrix {
   return [
@@ -195,6 +200,10 @@ interface GState {
   miterLimit: number;
   /** 효력 있는 채움 색 연산 id(cs 다음 sc/scn, 또는 g/rg/k 하나). 바꿀 때 새 배열로 바꾼다(연산 기록이 공유). */
   fillColorOps: number[];
+  /** 효력 있는 선 색 연산 id(CS 다음 SC/SCN, 또는 G/RG/K 하나, M4). */
+  strokeColorOps: number[];
+  /** 효력 있는 w 연산 id(M4). gs /LW 는 extGStateOps 로 본다. */
+  lineWidthOps: number[];
   /** 실행한 gs 연산 id(바깥 → 안). 바꿀 때 새 배열로 바꾼다. */
   extGStateOps: number[];
   /** 직사각형 클립의 교집합(페이지 공간). 직사각형이 아닌 클립이 걸리면 null. */
@@ -464,6 +473,8 @@ export class ContentInterpreter {
       lineJoin: 0,
       miterLimit: 10,
       fillColorOps: [],
+      strokeColorOps: [],
+      lineWidthOps: [],
       extGStateOps: [],
       clipRect: bounds,
     };
@@ -597,6 +608,11 @@ export class ContentInterpreter {
       state: this.opState(),
       markedContent: (this.markedSnap ??= this.marked.map((m) => m.info)),
     };
+    if (OPERAND_RANGE_KINDS.has(rec.kind) || op.op === 'w') {
+      rec.operandRanges = op.operands
+        .filter((t) => t.kind === 'number' || t.kind === 'name')
+        .map((t) => [t.start - seg.start, t.end - seg.start]);
+    }
     if (op.end > seg.end) this.addLimit(rec, 'spans-stream-boundary');
     if (ctx.inheritsResources) this.addLimit(rec, 'form-inherits-resources');
     if (rec.mcids.length > 0 || ctx.structParents) this.addLimit(rec, 'tagged-content');
@@ -610,6 +626,8 @@ export class ContentInterpreter {
     const g = this.gs;
     return {
       fillColorOps: g.fillColorOps,
+      strokeColorOps: g.strokeColorOps,
+      lineWidthOps: g.lineWidthOps,
       extGStateOps: g.extGStateOps,
       clipRect: g.clipRect,
     };
@@ -635,6 +653,7 @@ export class ContentInterpreter {
     if (masked) return;
     if (FLUSHING.has(op.op)) this.flushText();
     const gs = this.gs;
+    if (rec && rec.kind === 'path-construct') this.pathBuf.ops.push(rec.id);
     switch (op.op) {
       // 그래픽 상태
       case 'q':
@@ -660,6 +679,7 @@ export class ContentInterpreter {
         break;
       case 'w':
         gs.lineWidth = num(o, 0);
+        if (rec) gs.lineWidthOps = [rec.id];
         break;
       case 'j':
         gs.lineJoin = Math.min(2, Math.max(0, Math.trunc(num(o, 0))));
@@ -707,6 +727,7 @@ export class ContentInterpreter {
       case 'W':
       case 'W*':
         this.pendingClip = { owner: rec };
+        if (rec) rec.pathOps = [...this.pathBuf.ops];
         break;
       case 'S':
       case 's':
@@ -790,7 +811,10 @@ export class ContentInterpreter {
       case 'CS':
       case 'cs':
         this.setColorSpace(ctx, op.op === 'cs' ? gs.fill : gs.stroke, o.names[0] ?? '');
-        if (op.op === 'cs' && rec) gs.fillColorOps = [rec.id];
+        if (rec) {
+          if (op.op === 'cs') gs.fillColorOps = [rec.id];
+          else gs.strokeColorOps = [rec.id];
+        }
         break;
       case 'SC':
       case 'sc':
@@ -802,12 +826,17 @@ export class ContentInterpreter {
           const first = gs.fillColorOps[0];
           const cs = first !== undefined && this.ops[first]?.op === 'cs' ? [first] : [];
           gs.fillColorOps = [...cs, rec.id];
+        } else if (rec) {
+          const first = gs.strokeColorOps[0];
+          const cs = first !== undefined && this.ops[first]?.op === 'CS' ? [first] : [];
+          gs.strokeColorOps = [...cs, rec.id];
         }
         break;
       case 'G':
       case 'RG':
       case 'K':
         this.setColorSpace(ctx, gs.stroke, 'DeviceColor');
+        if (rec) gs.strokeColorOps = [rec.id];
         break;
       case 'g':
       case 'rg':
@@ -1019,6 +1048,7 @@ export class ContentInterpreter {
 
   private paintPath(rec: SourceOp | null, dofill: boolean, dostroke: boolean): void {
     const gs = this.gs;
+    if (rec) rec.pathOps = [...this.pathBuf.ops];
     const dev = this.deviceCtm();
     const clipRect = this.pendingClip ? rectOfPath(this.pathBuf.cmds, dev) : null;
     const path = this.takePath(dev);
