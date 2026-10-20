@@ -68,7 +68,10 @@ describe('decideSave', () => {
   it('core 저장 경고(실패 상태 저장)는 확인 창을 띄우고 맨 앞에 온다', () => {
     const d = decideSave(
       plan({
-        warnings: ['편집 엔진 오류 상태에서 저장합니다.', '취소한 초안의 변경이 들어갈 수 있습니다.'],
+        warnings: [
+          '편집 엔진 오류 상태에서 저장합니다.',
+          '취소한 초안의 변경이 들어갈 수 있습니다.',
+        ],
         heap: heap('warn', '힙'),
         edits: { pages: [0], structureUnlinked: 0, pdfaDeclared: false },
       }),
