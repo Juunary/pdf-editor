@@ -19,6 +19,7 @@ import { classifyFailure } from './failure.js';
 import { buildCandidates, pickPath, STROKE_HIT_PX, type PathCandidate } from './path-geometry.js';
 import {
   PathGesture,
+  PathTargetChangedError,
   type PathCommitOutcome,
   type PathGestureView,
   type PathRpc,
@@ -236,6 +237,8 @@ export class PathController {
       this.gesture = null;
       this.ctx.patchPath({ gesture: null });
       this.handleFailure(e, '패스 편집을 시작하지 못했습니다');
+      // 같은 paintSeq 가 다른 패스를 가리킨다: 낡은 선택으로 다시 편집하지 않게 푼다.
+      if (e instanceof PathTargetChangedError) this.clear();
     });
     return g;
   }
@@ -258,6 +261,7 @@ export class PathController {
     if (out.kind === 'failed') {
       this.ctx.repaintPage();
       this.handleFailure(new Error(out.error), '패스 편집을 반영하지 못했습니다');
+      if (out.targetChanged) this.clear();
       return false;
     }
     if (out.kind === 'cancelled') {
