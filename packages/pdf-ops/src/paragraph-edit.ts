@@ -304,15 +304,49 @@ function fitAreaToNaturalLines(
   if (!(need > width + 1e-3)) return format;
   // 줄 폭 판정 여유(FIT_EPSILON 0.01pt) 안에 들도록 조금 더 넓힌다. 로그에 남는 값이라 소수 3자리로 고정한다.
   const grow = Math.ceil((need - width) * 1000 + 1) / 1000;
-  const lim = plan.areaLimit;
+  // 넓히는 쪽은 상한과 함께 이웃 내용(다른 문단·이미지·패스 중 원 영역과 겹치지 않고 세로로 걸치는 것) 앞 0.5pt 에서
+  // 멈춘다. 이웃 위로 넓히면 같은 텍스트가 다른 내용과 겹치거나 뒤에 그려진 내용에 가려진다(M3 코퍼스 측정 nasa-eo 2건).
+  const [left, right] = neighbourBounds(ctx, plan, format.area);
+  const lim: Rect = [
+    Math.max(plan.areaLimit[0], left),
+    plan.areaLimit[1],
+    Math.min(plan.areaLimit[2], right),
+    plan.areaLimit[3],
+  ];
   let [nx0, nx1] = [x0, x1];
   if (format.align === 'right') nx0 = Math.max(lim[0], x0 - grow);
   else if (format.align === 'center') {
     nx0 = Math.max(lim[0], x0 - grow / 2);
     nx1 = Math.min(lim[2], x1 + grow / 2);
   } else nx1 = Math.min(lim[2], x1 + grow);
+  nx0 = Math.min(nx0, x0);
+  nx1 = Math.max(nx1, x1);
   if (nx0 === x0 && nx1 === x1) return format;
   return { ...format, area: [nx0, y0, nx1, y1] };
+}
+
+/**
+ * 영역 왼쪽·오른쪽으로 가장 가까운 이웃 내용의 변(0.5pt 띄움). 이웃 = 대상 밖 문단·이미지·칠하기 패스 중 영역과 세로로
+ * 걸치고 영역과 겹치지 않는 것(영역을 덮는 배경은 세지 않는다). 없으면 ±Infinity.
+ */
+function neighbourBounds(
+  ctx: ParagraphEditContext,
+  plan: Omit<ParagraphEditPlan, 'revision'>,
+  area: Rect,
+): [number, number] {
+  const own = new Set(plan.charIndexOfOffset.filter((c) => c >= 0));
+  const boxes: Rect[] = [];
+  for (const p of ctx.layout.paragraphs) if (!p.chars.some((c) => own.has(c))) boxes.push(p.bbox);
+  for (const im of ctx.model.images) boxes.push(im.bbox);
+  for (const pa of ctx.model.paths) if (pa.op === 'fill' || pa.op === 'stroke') boxes.push(pa.bbox);
+  let left = -Infinity;
+  let right = Infinity;
+  for (const b of boxes) {
+    if (b[3] <= area[1] || b[1] >= area[3]) continue;
+    if (b[0] >= area[2]) right = Math.min(right, b[0] - 0.5);
+    else if (b[2] <= area[0]) left = Math.max(left, b[2] + 0.5);
+  }
+  return [left, right];
 }
 
 /**
