@@ -259,3 +259,13 @@ reflow 가 아직 `harfbuzzjs` 를 import 하지 않아(S2 진행 중) 정식 �
 - `apps/extension/src/worker/pdf-worker.ts`(폴백 폰트 로더), `scripts/verify-dist.mjs`, `public/diag/chrome-probe-worker.js`(새, 진단)
 - `apps/extension/test/`: `recovery.test.ts`·`save-plan.test.ts`(새)
 - `apps/extension/e2e/`: `edit-harness.ts`·`edit-ui.spec.ts`·`edit-integration.spec.ts`·`ime-cdp.spec.ts`·`extension-save.spec.ts`·`worker-chrome.spec.ts`(새)
+
+## 11. 페이지 이동 화살표(2026-10-20 사용자 결정 4)
+
+- 표시 방식: 한 번에 한 쪽만 그린다(연속 스크롤 아님). 따라서 화살표는 이전·다음 쪽을 불러오며 스크롤 위치 계산은 없다.
+- 구성: `components/PageArrow.tsx` 를 쪽 컨테이너(`#page-container`, flex) 양옆에 둔다(`mount.tsx`). 칸은 32px + 좌우 여백 8px(`PAGE_ARROW_GUTTER` = 40px)이며, 뷰어는 쪽 맞춤 너비(`availableWidth`)에서 양쪽 두 칸을 뺀다. 화살표는 쪽·텍스트 층·레이아웃 오버레이 바깥에 있고, 칸은 `pointer-events: none`, 버튼만 포인터를 받는다. 세로는 `position: sticky` 로 화면 가운데에 따라온다.
+- 상태: 첫 쪽은 이전, 마지막 쪽은 다음이 비활성(`navDisabled`). 툴바의 쪽 번호·`/ N`·`#pe-prev`/`#pe-next` 와 같은 컨트롤러 상태를 쓴다.
+- 편집 중: `controller.goToPage()` 가 초안을 먼저 `commitActive()` 로 커밋한 뒤 이동한다(커밋이 복구로 편집을 이어 가면 이동하지 않음). 화살표 mousedown 은 편집기의 바깥 클릭 커밋과 같은 경로이고 `data-pe-keep` 이 아니다.
+- 키보드 단축키(←/→)는 두지 않는다(캐럿 이동과 충돌).
+- 제한: 폭이 쪽 최소 너비(320px) + 화살표 칸(80px) + 여백보다 좁으면 기존처럼 가로 스크롤이 생긴다.
+- 시험: `packages/viewer-ui/test/page-nav.test.ts`(`navDisabled`), `apps/extension/e2e/page-nav.spec.ts`(하니스 3쪽 이동·끝 쪽 비활성·편집 중 커밋 후 이동·방향키 무반응·쪽 바깥 배치, 시험에서 만든 3쪽 PDF 로 일반 뷰어·iframe 800/480·embed 이동·배치·텍스트 복사).
