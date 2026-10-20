@@ -6,7 +6,9 @@ import { useViewerState } from '../hooks.js';
 import { hitsOnPage } from '../search-nav.js';
 import { DebugInspector, DebugLayer } from './DebugLayer.js';
 import { EditEntry } from './EditEntry.js';
+import { EditableMarks } from './EditableMarks.js';
 import { EditorLayer } from './EditorLayer.js';
+import { PathLayer } from './PathLayer.js';
 import { HighlightLayer } from './HighlightLayer.js';
 import { LayoutLayer } from './LayoutLayer.js';
 import { TextLayer } from './TextLayer.js';
@@ -23,7 +25,8 @@ export function PageSurface({ controller }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const session = state.edit.session;
-  const region = session?.region ?? null;
+  const pathGesture = state.edit.path.gesture;
+  const region = session?.region ?? pathGesture?.region ?? null;
   /** 마지막으로 그린 기준 비트맵과, 그 위에 합성한 변경 영역. */
   const painted = useRef<{ view: PageView; token: number } | null>(null);
   const regionPainted = useRef<RenderedPage | null>(null);
@@ -76,6 +79,9 @@ export function PageSurface({ controller }: Props) {
     !session && editability.status === 'ready' && editability.pageIndex === view.pageIndex
       ? editability.value
       : null;
+  const pathCandidates =
+    !session && controller.edit?.paths ? controller.edit.paths.candidates(view.pageIndex) : [];
+  const showMarks = !session && entry !== null && state.edit.showEditable;
   const size = { width: `${layout.cssWidth}px`, height: `${layout.cssHeight}px` };
 
   return (
@@ -110,6 +116,9 @@ export function PageSurface({ controller }: Props) {
           layout={layout}
         />
       )}
+      {showMarks && entry && (
+        <EditableMarks editability={entry} layout={layout} pageRef={pageRef} />
+      )}
       {entry && (
         <EditEntry
           controller={controller}
@@ -119,6 +128,16 @@ export function PageSurface({ controller }: Props) {
           editability={entry}
           popover={state.edit.popover}
           busy={state.edit.starting || state.edit.busy}
+        />
+      )}
+      {!session && controller.edit?.paths && !state.disabled.path && entry && (
+        <PathLayer
+          controller={controller}
+          pageRef={pageRef}
+          view={view}
+          path={state.edit.path}
+          showEditable={state.edit.showEditable}
+          candidates={pathCandidates}
         />
       )}
       {session && (

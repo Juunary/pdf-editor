@@ -64,4 +64,33 @@ describe('EditLog', () => {
     log.reset();
     expect(log.snapshot()).toEqual({ ops: [], activeEditIds: [] });
   });
+
+  it('EditPathOp(패스 편집·삭제)도 문단 편집과 같은 순서로 보관한다(M4)', () => {
+    const pathOp = (id: string, del: boolean): EditOp => ({
+      kind: 'edit-path',
+      id,
+      target: { pageIndex: 0, paintSeqs: [3], fingerprints: [], bbox: [0, 0, 1, 1] },
+      edit: {
+        transform: null,
+        fill: [1, 0, 0],
+        stroke: null,
+        lineWidth: null,
+        points: null,
+        delete: del,
+      },
+    });
+    const log = new EditLog();
+    log.recordCommit(commit('a', ['a']));
+    log.recordCommit({ op: pathOp('p1', false), history: history(['a', 'p1']) });
+    log.recordCommit({ op: pathOp('p2', true), history: history(['a', 'p1', 'p2']) });
+    expect(log.snapshot().ops.map((o) => o.kind)).toEqual([
+      'replace-paragraph',
+      'edit-path',
+      'edit-path',
+    ]);
+    // undo 뒤 새 문단 편집을 하면 되살릴 수 없는 패스 편집은 버린다
+    log.recordHistory(history(['a', 'p1']));
+    log.recordCommit(commit('b', ['a', 'p1', 'b']));
+    expect(log.snapshot().ops.map((o) => o.id)).toEqual(['a', 'p1', 'b']);
+  });
 });

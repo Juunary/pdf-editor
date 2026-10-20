@@ -28,9 +28,14 @@ import {
   stepHit,
   type FindState,
 } from './search-nav.js';
-import { hasEditHost, type ViewerEnvironment, type ViewerHost } from './viewer-host.js';
+import {
+  hasEditHost,
+  hasPathHost,
+  type ViewerEnvironment,
+  type ViewerHost,
+} from './viewer-host.js';
 
-export type FeatureName = 'text' | 'search' | 'debug' | 'layout' | 'edit';
+export type FeatureName = 'text' | 'search' | 'debug' | 'layout' | 'edit' | 'path';
 
 /** 렌더가 끝난 현재 페이지. 오버레이 배치의 기준이다. */
 export interface PageView {
@@ -153,7 +158,7 @@ export class ViewerController {
       debug: { status: 'idle' },
       layoutEnabled: false,
       layout: { status: 'idle' },
-      disabled: { text: null, search: null, debug: null, layout: null, edit: null },
+      disabled: { text: null, search: null, debug: null, layout: null, edit: null, path: null },
       find: initialFindState(),
       edit: initialEditState(),
       repaintToken: 0,
@@ -185,6 +190,15 @@ export class ViewerController {
         logOnce: (kind, event, data) => this.logOnce(kind, event, data),
         invalidatePages: (pages) => this.invalidatePages(pages),
         repaintPage: () => this.patch({ repaintToken: this.state.repaintToken + 1 }),
+        paths: hasPathHost(host)
+          ? {
+              rpc: host,
+              extract: (pageIndex) => host.extractPage({ pageIndex, includePathSegments: true }),
+              setTimer: (fn, ms) => setTimeout(fn, ms),
+              clearTimer: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+              disable: (reason) => this.disable('path', reason),
+            }
+          : null,
       });
     } else {
       // 호스트가 편집 RPC 를 주지 않는 구성(예: 읽기 전용 하니스): 편집 UI 를 만들지 않는다.
@@ -258,6 +272,7 @@ export class ViewerController {
     if (this.edit?.active && target !== this.state.pageIndex && !(await this.edit.commitActive())) {
       return;
     }
+    if (target !== this.state.pageIndex) this.edit?.paths?.reset();
     const { pageIndex, loading, view } = this.state;
     // 이미 보고 있거나 불러오는 중인 페이지는 다시 그리지 않는다.
     if (target === pageIndex && (loading || view?.pageIndex === target)) return;
@@ -324,6 +339,9 @@ export class ViewerController {
     if (this.state.debugEnabled) await this.ensureDebug(pageIndex);
     if (this.state.layoutEnabled) await this.ensureLayout(pageIndex);
     if (this.edit && !this.state.disabled.edit) await this.edit.ensureEditability(pageIndex);
+    if (this.edit?.paths && !this.state.disabled.path && this.state.edit.showEditable) {
+      await this.edit.paths.ensureModel(pageIndex);
+    }
   }
 
   /**
@@ -337,7 +355,11 @@ export class ViewerController {
       text: { status: 'idle' },
       debug: { status: 'idle' },
       layout: { status: 'idle' },
-      edit: { ...this.state.edit, editability: { status: 'idle' } },
+      edit: {
+        ...this.state.edit,
+        editability: { status: 'idle' },
+        path: { ...this.state.edit.path, model: { status: 'idle' } },
+      },
     });
     const find = this.state.find;
     if (find.query !== '') {

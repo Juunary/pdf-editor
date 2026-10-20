@@ -30,6 +30,20 @@ export const EDIT_HOST_METHODS = [
   'getEditHistory',
 ] as const satisfies readonly (keyof EditHostApi)[];
 
+/** 벡터 패스 편집(M4) RPC. 하나라도 없으면 패스 편집만 꺼진다(문단 편집과 별개). */
+export type PathHostApi = Pick<
+  PdfWorkerApi,
+  'planPathEdit' | 'beginPathEdit' | 'updatePathDraft' | 'commitPathEdit' | 'cancelPathEdit'
+>;
+
+export const PATH_HOST_METHODS = [
+  'planPathEdit',
+  'beginPathEdit',
+  'updatePathDraft',
+  'commitPathEdit',
+  'cancelPathEdit',
+] as const satisfies readonly (keyof PathHostApi)[];
+
 export type ViewerHost = Pick<
   PdfWorkerApi,
   | 'getPageInfo'
@@ -40,7 +54,8 @@ export type ViewerHost = Pick<
   | 'searchText'
   | 'getPageLayout'
 > &
-  Partial<EditHostApi> & {
+  Partial<EditHostApi> &
+  Partial<PathHostApi> & {
     /** 진단 로그(예: 확장 뷰어의 DiagLog). 기능 비활성화·오류를 여기에 남긴다. */
     log(event: string, data?: unknown): void;
   };
@@ -55,4 +70,9 @@ export interface ViewerEnvironment {
 /** 호스트가 편집 RPC 를 모두 제공하는지. */
 export function hasEditHost(host: ViewerHost): host is ViewerHost & EditHostApi {
   return EDIT_HOST_METHODS.every((m) => typeof host[m] === 'function');
+}
+
+/** 호스트가 패스 편집 RPC 를 모두 제공하는지. */
+export function hasPathHost(host: ViewerHost): host is ViewerHost & PathHostApi {
+  return PATH_HOST_METHODS.every((m) => typeof host[m] === 'function');
 }
