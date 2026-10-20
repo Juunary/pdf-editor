@@ -110,9 +110,9 @@ describe('R-L5 폴백 폰트 로드 실패', () => {
 
 describe('R-M4 실패 상태에서의 저장', () => {
   /** 재적용이 중간에 실패한(문서가 일부만 바뀐) 세션. */
-  async function failedSession(): Promise<PdfSession> {
+  async function failedSession(text = 'kept before failure'): Promise<PdfSession> {
     const source = harness();
-    const edited = await editParagraph(source.s, 1, 'kept before failure');
+    const edited = await editParagraph(source.s, 1, text);
     const ops = [edited.op];
     const s = new PdfSession({
       editAdapter: createFakeAdapter(),
@@ -133,8 +133,10 @@ describe('R-M4 실패 상태에서의 저장', () => {
     const s = await failedSession();
     await expect(s.getEditHistory()).rejects.toThrow('다시 열어야');
     const plan = s.planSave({ changes: [] });
-    expect(plan.warnings).toHaveLength(1);
+    expect(plan.warnings).toHaveLength(2);
     expect(plan.warnings[0]).toContain('재적용 실패');
+    expect(plan.warnings[1]).toContain('일부만');
+    expect(plan.warnings[1]).toContain('취소한 초안');
     const saved = s.save({ changes: [] });
     expect(saved.warnings).toEqual(plan.warnings);
     // 실패 전에 적용된 편집은 저장 파일에 들어 있다.
@@ -143,6 +145,30 @@ describe('R-M4 실패 상태에서의 저장', () => {
     expect(page.toStructuredText('preserve-whitespace').asText()).toContain('kept before failure');
     // 저장은 저널 단계를 만들지 않는다(이 세션은 저널 보호 없이 내보냈지만 undo 불가 상태라 무해).
     expect(saved.method).toBe('full');
+    s.close();
+  });
+
+  it('실패 상태 저장도 폴백 서브셋 교체·이름 태그(R-L2)를 최선 노력으로 한다', async () => {
+    const s = await failedSession(HANGUL_TEXT);
+    const saved = s.save({ changes: [] });
+    expect(saved.warnings).toHaveLength(2);
+    const fonts = type0Fonts(reopen(saved.bytes)).filter((f) =>
+      /^[A-Z]{6}\+NotoSansKR$/.test(f.get('BaseFont').asName()),
+    );
+    expect(fonts).toHaveLength(1);
+    // 서브셋: 전체 폴백 폰트(FONT_BYTES)보다 작다.
+    const file = fonts[0]!.get('DescendantFonts').get(0).get('FontDescriptor').get('FontFile2');
+    const buf = file.readStream();
+    try {
+      expect(buf.getLength()).toBeLessThan(FONT_BYTES.byteLength);
+    } finally {
+      buf.destroy();
+    }
+    // 다시 저장해도 같은 이름(태그를 두 번 붙이지 않음).
+    const again = type0Fonts(reopen(s.save({ changes: [] }).bytes)).map((f) =>
+      f.get('BaseFont').asName(),
+    );
+    expect(again).toContain(fonts[0]!.get('BaseFont').asName());
     s.close();
   });
 

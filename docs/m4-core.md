@@ -65,9 +65,10 @@ RPC 짝은 초안 종류로 강제한다: 패스 초안 id 로 문단 RPC 를, �
 ### 3.1 R-M4 실패 상태 저장
 
 - 원인: `#failure`(재적용 실패·저널 불일치·작업 버리기 실패)가 되면 `runSave` 의 `#assertUsable` 이 던져 미저장 편집을 내보낼 수 없었다.
-- 처리: `runSave` 는 닫힌 문서만 거절하고, 실패 상태면 `requireNoDraft`·저널 감싸기 없이 `fn()` 을 바로 부른다(실패 상태는 undo 도 막혀 있어 저널에 저장 단계가 생겨도 해가 없다). `saveWarnings()` 가 사유를 포함한 경고 한 줄을 돌려주고 `PdfSession.planSave`·`save` 가 `warnings: string[]` 로 싣는다(정상이면 빈 배열).
+- 처리: `runSave` 는 닫힌 문서만 거절하고, 실패 상태면 `requireNoDraft`·저널 감싸기 없이 `fn()` 을 바로 부른다(실패 상태는 undo 도 막혀 있어 저널에 저장 단계가 생겨도 해가 없다). `saveWarnings()` 가 사유를 포함한 경고 두 줄(엔진 오류 사유, 마지막 편집 누락·일부 반영·취소한 초안 변경 포함 가능)을 돌려주고 `PdfSession.planSave`·`save` 가 `warnings: string[]` 로 싣는다(정상이면 빈 배열).
 - 실패 상태에서 열린 작업이 남아 있으면(작업 버리기 실패) 저장은 그 작업의 변경을 포함한다. 경고 문구가 이를 알린다.
-- shared-types 의 `SavePlan`·`SaveResult` 에는 `warnings` 가 없다. core 는 `SaveWarnings` 교차 타입으로 런타임 필드만 싣는다(6절 #2).
+- 실패 상태 저장도 폴백 서브셋 교체·서브셋 이름 태그(R-L2)를 최선 노력으로 한다(저널 없이 작업 문서에 남음, 오류 무시).
+- `SavePlan.warnings?`·`SaveResult.warnings?` 는 shared-types 선택 필드다(리뷰 M2). 뷰어 `decideSave` 가 비어 있지 않으면 확인 창 맨 앞에 보인다.
 
 ### 3.2 R-L5 폴백 폰트 로드 실패
 
@@ -144,7 +145,7 @@ RPC 짝은 초안 종류로 강제한다: 패스 초안 id 로 문단 RPC 를, �
 | # | 항목 | 내용 | 처리·제안 |
 | --- | --- | --- | --- |
 | 1 | `writePathEdit` 반환 | 계약 시그니처 `{ bbox, writeMs }` 에는 쓰는 도중 정해지는 경고(`color-space-changed`·`path-clipped`)를 실을 곳이 없다 | core 가 어댑터 타입에 `PathWriteResult = 반환 & { warnings?: EditWarning[] }` 를 두었다(pdf-ops 시그니처 변경 없음, 지금 구현은 그대로 대입 가능). pdf-ops 가 채우면 합쳐진다. `warnings` 를 공식 시그니처로 올릴지는 메인 세션 결정 |
-| 2 | R-M4 경고 전달 | `SavePlan`·`SaveResult` 에 경고 필드가 없다 | core 가 `warnings: string[]` 를 런타임에 싣는다. Comlink 구조 복제로 전달되지만 타입에는 없다. shared-types 에 선택 필드를 더해야 뷰어가 쓸 수 있다 |
+| 2 | R-M4 경고 전달 | `SavePlan`·`SaveResult` 에 경고 필드가 없다 | 해소(리뷰 M2): shared-types `SavePlan.warnings?`·`SaveResult.warnings?` 추가, 뷰어 확인 창 연결 |
 | 3 | `table-rule-removed`·`color-space-changed` 산출 | 계약은 경고 이름만 정하고 산출 주체가 없다 | core 가 계획(`PaintColor`)·레이아웃으로 근사한다(2.2). pdf-ops 가 같은 종류를 주면 합쳐진다. 근사는 거짓 양성이 있을 수 있다(예: 3 ICC 성분 공간은 Device 근사) |
 | 4 | 셀 재적용 | 계약 4.4 "셀 glyphSeqs 전체 일치" | 순서 무시 집합 일치 + 표 id·행·열 일치로 구현. 순서까지 요구하려면 S1 의 셀 문단 순서 규칙을 확인해야 한다 |
 | 5 | `getPageEditability.paths` 스텁 | pdf-ops 스텁은 "M4 미구현"을 던진다 | 그 메시지만 빈 목록으로 삼키고 다른 오류는 올린다. 통합 때 제거(5절 #2) |
