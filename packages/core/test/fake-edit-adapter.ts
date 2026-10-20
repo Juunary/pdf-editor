@@ -102,9 +102,21 @@ class FakeFonts extends FontManager {
     let offset = 0;
     let usesFallback = false;
     let missing = false;
+    // 폴백 폰트를 얻지 못했으면(R-L5) 실제 FontManager 처럼 폴백 없음으로 다룬다.
+    let fallbackAvailable = true;
+    try {
+      this.#source.bytes();
+    } catch {
+      fallbackAvailable = false;
+    }
     runs.forEach((run, runIndex) => {
       for (const ch of run.text) {
-        const kind = HANGUL.test(ch) ? 'fallback' : UNSUPPORTED.test(ch) ? 'missing' : 'original';
+        const kind =
+          HANGUL.test(ch) && fallbackAvailable
+            ? 'fallback'
+            : HANGUL.test(ch) || UNSUPPORTED.test(ch)
+              ? 'missing'
+              : 'original';
         if (kind === 'fallback') usesFallback = true;
         if (kind === 'missing') missing = true;
         segments.push({

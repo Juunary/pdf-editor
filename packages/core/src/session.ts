@@ -73,6 +73,14 @@ function remember<K, V>(cache: Map<K, V>, key: K, value: V): void {
   }
 }
 
+/**
+ * 저장 계획·결과에 붙는 경고(R-M4). shared-types 의 `SavePlan`·`SaveResult` 에는 없는 core 확장이라 타입 없이 구조 복제로
+ * 건너가며, 뷰어가 쓰려면 shared-types 에 선택 필드가 필요하다(docs/m4-core.md 5절).
+ */
+export interface SaveWarnings {
+  warnings: string[];
+}
+
 export interface PdfSessionOptions {
   /**
    * 한글 폴백 폰트(Noto Sans KR glyf 서브셋 TTF) 바이트. 문단 편집에서 처음 필요할 때 한 번 부른다
@@ -319,7 +327,7 @@ export class PdfSession {
    * (`SavePlan.edits`)을 채운다. 편집을 커밋·재적용한 문서와 전체 저장을 한 번이라도 한 세션은 전체 저장이다
    * (docs/m3-contract.md D9·A3-9). 초안이 열려 있으면 예외.
    */
-  planSave({ changes }: SaveRequest): SavePlan {
+  planSave({ changes }: SaveRequest): SavePlan & SaveWarnings {
     const edit = this.#edit;
     if (edit?.hasDraft) {
       throw new EditStateError(
@@ -356,11 +364,12 @@ export class PdfSession {
       canBeSavedIncrementally,
       heap: decision.heap,
       edits: edit?.editSummary() ?? null,
+      warnings: edit?.saveWarnings() ?? [],
     };
   }
 
   /** 저장. 편집 RPC 를 쓴 문서는 저널 작업으로 감싼다(`EditEngine.runSave`, D9). 초안이 열려 있으면 예외. */
-  save(request: SaveRequest): SaveResult {
+  save(request: SaveRequest): SaveResult & SaveWarnings {
     const doc = this.document;
     const plan = this.planSave(request);
     const t0 = performance.now();
@@ -382,6 +391,7 @@ export class PdfSession {
       saveMs: performance.now() - t0,
       wasmHeapBytes: wasmHeapBytes(),
       heap: plan.heap,
+      warnings: plan.warnings,
     };
   }
 
@@ -389,6 +399,11 @@ export class PdfSession {
 
   get #engine(): EditEngine {
     return this.#edit ?? noDocument();
+  }
+
+  /** 폴백 폰트 로드 실패 사유(R-L5, 진단용). 폴백을 얻었거나 시도하지 않았으면 null. */
+  get fallbackLoadError(): string | null {
+    return this.#edit?.fallbackLoadError ?? null;
   }
 
   async getPageEditability(pageIndex: number): Promise<PageEditability> {
