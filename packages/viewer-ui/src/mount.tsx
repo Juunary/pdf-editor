@@ -1,5 +1,6 @@
 import { render } from 'preact';
 import type { ViewerController } from './controller.js';
+import { DomInputBuffer } from './input-buffer.js';
 import { Controls } from './components/Controls.js';
 import { PageArrow } from './components/PageArrow.js';
 import { PageSurface } from './components/PageSurface.js';
@@ -19,6 +20,7 @@ const RESIZE_DEBOUNCE_MS = 150;
  * 하도록). 반환 함수는 마운트를 해제하고 컨트롤러를 정리한다. 컨트롤러는 호출자가 만든다(Worker 연결·환경 값 주입).
  */
 export function mountViewer(targets: MountTargets, controller: ViewerController): () => void {
+  controller.edit?.setInputBuffer(new DomInputBuffer());
   render(<Controls controller={controller} />, targets.controls);
   render(
     <>
@@ -42,6 +44,7 @@ export function mountViewer(targets: MountTargets, controller: ViewerController)
   return () => {
     window.removeEventListener('resize', onResize);
     if (timer !== null) clearTimeout(timer);
+    controller.edit?.setInputBuffer(null);
     render(null, targets.controls);
     render(null, targets.pages);
     controller.dispose();
