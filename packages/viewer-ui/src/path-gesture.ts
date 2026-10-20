@@ -3,7 +3,8 @@
  *
  * - 시작하면 `beginPathEdit` 를 비동기로 열고, `update()` 는 최신 편집만 보관한다. 서버 갱신(`updatePathDraft`)은
  *   마지막 갱신 뒤 `debounceMs`(200 ms) 정지 때와 `flush()`(놓을 때)만 보낸다.
- * - `commit()` 은 열린 초안에 최신 편집을 보내고 커밋한다. 편집이 한 번도 없으면 취소와 같다.
+ * - `commit()` 은 열린 초안에 최신 편집을 보내고 커밋한다. 편집이 없거나 바뀌는 것이 없는 편집(제자리 끌기 등)이면
+ *   취소와 같다(변경 없는 편집을 저널에 남기지 않는다).
  * - Worker 복구(`WorkerRecoveredError`)가 나면 같은 대상으로 다시 계획·시작하고 최신 편집을 다시 보낸다.
  * - 다시 계획(revision 재시도·복구 재시작)한 결과의 대상 지문(`target.fingerprints`)이 직전 계획과 다르면 같은 paintSeq 가
  *   다른 패스를 가리키는 것이므로 시작하지 않고 `PathTargetChangedError` 로 끝낸다(선택은 호출자가 푼다).
@@ -55,6 +56,22 @@ export type PathCommitOutcome =
   | { kind: 'committed'; result: CommitResult }
   | { kind: 'cancelled'; history: EditHistoryState | null }
   | { kind: 'failed'; error: string; targetChanged?: boolean };
+
+/** 바꾸는 것이 없는 편집(변환 없음·항등, 속성 없음, 점 없음, 삭제 아님). */
+export function isNoopPathEdit(edit: PathEdit): boolean {
+  const t = edit.transform;
+  const identity =
+    t === null ||
+    (t[0] === 1 && t[1] === 0 && t[2] === 0 && t[3] === 1 && t[4] === 0 && t[5] === 0);
+  return (
+    identity &&
+    edit.fill === null &&
+    edit.stroke === null &&
+    edit.lineWidth === null &&
+    (edit.points === null || edit.points.length === 0) &&
+    !edit.delete
+  );
+}
 
 /** 다시 계획한 대상이 처음 선택한 패스와 다르다(같은 paintSeq 가 다른 패스를 가리킴). */
 export class PathTargetChangedError extends Error {
@@ -272,7 +289,7 @@ export class PathGesture {
     this.emit();
     try {
       await this.begun;
-      if (this.latest === null) {
+      if (this.latest === null || isNoopPathEdit(this.latest)) {
         const history = await this.deps.rpc.cancelPathEdit(this.draftId!);
         return { kind: 'cancelled', history };
       }

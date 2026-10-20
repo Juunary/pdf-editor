@@ -253,6 +253,44 @@ describe('편집 동작', () => {
     expect(fake.pathInfos().find((i) => i.paintSeq === 11)?.color?.rgb).toEqual([0, 1, 0]);
   });
 
+  it('바뀌는 것이 없는 속성 편집은 초안을 열지 않는다(같은 색, 채움 전용 패스의 두께, 리뷰 L6)', async () => {
+    const { controller, fake } = await started();
+    const p = paths(controller);
+    await p.selectAt(0, [130, 120], 1, false);
+    expect(p.selectionPaints()).toEqual({ fills: true, strokes: false });
+    expect(await p.applyOnce(emptyPathEdit({ fill: [1, 0, 0] }))).toBe(true); // 현재 색과 같음
+    expect(await p.applyOnce(emptyPathEdit({ lineWidth: 3 }))).toBe(true); // 긋지 않는 패스
+    expect(await p.applyOnce(emptyPathEdit({ stroke: [0, 0, 1] }))).toBe(true);
+    expect(fake.count('beginPathEdit')).toBe(0);
+    expect(fake.count('commitPathEdit')).toBe(0);
+    expect(controller.getState().edit.history?.edits ?? 0).toBe(0);
+  });
+
+  it('선 두께는 긋는 패스에만 적용한다(다중 선택에 섞이면 긋는 패스가 있어 허용)', async () => {
+    const { controller, fake } = await started();
+    const p = paths(controller);
+    await p.selectAt(0, [420, 100], 1, false);
+    expect(p.selectionPaints()).toEqual({ fills: false, strokes: true });
+    expect(p.effectiveEdit(emptyPathEdit({ fill: [0, 1, 0] }))).toBeNull();
+    expect(p.effectiveEdit(emptyPathEdit({ lineWidth: 2 }))).toBeNull(); // 현재 두께와 같음
+    await p.applyOnce(emptyPathEdit({ lineWidth: 4 }));
+    expect(fake.count('commitPathEdit')).toBe(1);
+    await p.selectAt(0, [130, 120], 1, true);
+    expect(p.selectionPaints()).toEqual({ fills: true, strokes: true });
+  });
+
+  it('제자리로 돌아온 끌기(항등 변환)는 커밋하지 않고 취소한다', async () => {
+    const { controller, fake } = await started();
+    const p = paths(controller);
+    await p.selectAt(0, [130, 120], 1, false);
+    const g = p.beginGesture()!;
+    g.update(emptyPathEdit({ transform: [1, 0, 0, 1, 5, 0] }));
+    g.update(emptyPathEdit({ transform: [1, 0, 0, 1, 0, 0] }));
+    expect(await p.commitGesture()).toBe(true);
+    expect(fake.count('commitPathEdit')).toBe(0);
+    expect(fake.count('cancelPathEdit')).toBe(1);
+  });
+
   it('다중 선택은 같은 변환을 한 편집으로 적용한다', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
