@@ -69,6 +69,9 @@ importers:
       '@pdf-editor/pdf-ops':
         specifier: workspace:*
         version: link:../pdf-ops
+      '@pdf-editor/reflow':
+        specifier: workspace:*
+        version: link:../reflow
       '@pdf-editor/shared-types':
         specifier: workspace:*
         version: link:../shared-types
@@ -78,6 +81,10 @@ importers:
       mupdf:
         specifier: 1.28.1
         version: 1.28.1
+    devDependencies:
+      pdfjs-dist:
+        specifier: 6.4.299
+        version: 6.4.299
 
   packages/layout-recon:
     dependencies:
@@ -87,9 +94,29 @@ importers:
 
   packages/pdf-ops:
     dependencies:
+      '@pdf-editor/reflow':
+        specifier: workspace:*
+        version: link:../reflow
       '@pdf-editor/shared-types':
         specifier: workspace:*
         version: link:../shared-types
+      mupdf:
+        specifier: 1.28.1
+        version: 1.28.1
+    devDependencies:
+      pdfjs-dist:
+        specifier: 6.4.299
+        version: 6.4.299
+
+  packages/reflow:
+    dependencies:
+      '@pdf-editor/shared-types':
+        specifier: workspace:*
+        version: link:../shared-types
+      harfbuzzjs:
+        specifier: 1.6.2
+        version: 1.6.2
+    devDependencies:
       mupdf:
         specifier: 1.28.1
         version: 1.28.1
@@ -682,6 +709,9 @@ packages:
   globals@17.13.0:
     resolution: {integrity: sha512-RwMTC61u7hrG3ZJMkZQOK4JLJrKS8QtoTii63EmWvFXHqycY9FObBJQCbsLxSO8kjKhWE5kV1GC+Vb1g3RI0Zg==}
     engines: {node: '>=18'}
+
+  harfbuzzjs@1.6.2:
+    resolution: {integrity: sha512-95c1vWuzoHjM19d5fQgPbz1wcv1pTa0UM9dZrdPgSMUEVuSwuzeVPkq6UhHHw3jLOkE9AYzzTP8XQkRBpPYpEg==}
 
   hashery@1.5.1:
     resolution: {integrity: sha512-iZyKG96/JwPz1N55vj2Ie2vXbhu440zfUfJvSwEqEbeLluk7NnapfGqa7LH0mOsnDxTF85Mx8/dyR6HfqcbmbQ==}
@@ -1561,6 +1591,8 @@ snapshots:
       is-glob: 4.0.3
 
   globals@17.13.0: {}
+
+  harfbuzzjs@1.6.2: {}
 
   hashery@1.5.1:
     dependencies:

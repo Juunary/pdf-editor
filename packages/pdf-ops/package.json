@@ -23,8 +23,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@pdf-editor/reflow": "workspace:*",
     "@pdf-editor/shared-types": "workspace:*",
     "mupdf": "1.28.1"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "pdfjs-dist": "6.4.299"
+  }
 }
