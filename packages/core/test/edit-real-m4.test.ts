@@ -413,6 +413,32 @@ describe('패스 편집(실제 어댑터, D2·D3·D4)', () => {
     for (const x of [live, replayed]) x.close();
   });
 
+  it('redo 보존(리뷰 M1): 변경 없이 취소하면 redo 가 남고, 갱신 뒤 취소하면 redo 가 사라진다', async () => {
+    const s = session(pathSource());
+    const gray = pathAt(s, ...GRAY).paintSeq;
+    await pathEdit(s, [gray], { ...NO_EDIT, fill: [0, 1, 0] });
+    expect((await s.undo()).canRedo).toBe(true);
+
+    // 시작 → 갱신 없이 취소: 준비가 문서를 바꾸지 않아 redo 가 그대로다.
+    const p1 = await s.planPathEdit(0, [gray]);
+    const b1 = await s.beginPathEdit(0, [gray], p1.revision);
+    const c1 = await s.cancelPathEdit(b1.draftId);
+    expect(c1.canRedo).toBe(true);
+    expect(s.document.canRedo()).toBe(true);
+    expect((await s.redo()).canUndo).toBe(true);
+    expect(pathAt(s, ...GRAY).color?.rgb).toEqual([0, 1, 0]);
+
+    // 시작 → 실제 갱신 → 취소: 쓰기가 문서를 바꿔 MuPDF 가 redo 단계를 버린다(취소해도 돌아오지 않음, 문서화된 동작).
+    expect((await s.undo()).canRedo).toBe(true);
+    const p2 = await s.planPathEdit(0, [gray]);
+    const b2 = await s.beginPathEdit(0, [gray], p2.revision);
+    await s.updatePathDraft(b2.draftId, { ...NO_EDIT, fill: [1, 0, 0] }, 1);
+    const c2 = await s.cancelPathEdit(b2.draftId);
+    expect(c2.canRedo).toBe(false);
+    expect(pathAt(s, ...GRAY).color?.rgb).toEqual([0.5, 0.5, 0.5]);
+    s.close();
+  });
+
   it('저장·재열기 뒤 패스 편집이 유지되고 다시 편집할 수 있다', async () => {
     const s = session(pathSource());
     await pathEdit(s, [pathAt(s, ...GRAY).paintSeq], { ...NO_EDIT, fill: [0, 1, 0] });

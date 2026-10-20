@@ -136,7 +136,7 @@ RPC 짝은 초안 종류로 강제한다: 패스 초안 id 로 문단 RPC 를, �
 4. V4: 셀 하나 커밋 뒤 표 감지 유지·셀 문단 = 블록 하나(`table` 설정). core 쪽 연결(`fixedGroups` 힌트 전달)은 M3 9.6 그대로이고 판정은 S1 `reconstruct.ts` 에 있다. 실제 어댑터로 정렬 전략 3행 표·괘선 표를 만들어 `edit-real.test.ts` 에 더한다.
 5. 코퍼스 하네스(`edit-corpus-dod`)에 셀·패스 표본을 넓힌다(메인 세션, 계약 6.1). 재적용 결정성(원래 결과 = 재적용 결과)을 셀·패스 포함으로 비교한다.
 6. shared-types 변경 요청(메인 세션): `SavePlan.warnings?`·`SaveResult.warnings?`(R-M4 UI), `writePathEdit` 반환의 `warnings?: EditWarning[]`(6절 #1). 뷰어는 저장 계획 응답의 `warnings` 가 비어 있지 않으면 사용자에게 보인 뒤 저장한다.
-7. 뷰어(S3): 패스 초안은 시작해도 `canRedo` 가 유지된다(문서를 바꾸기 전까지는 `getEditHistory().canRedo` 가 false 로 보이지만 취소하면 되살아난다). 문단 초안은 시작하면 redo 가 사라진다. 커밋 후 `affectedPages` 는 한 쪽이다.
+7. 뷰어(S3): 패스 초안 시작은 쪽 /Contents 를 쓰지 않는다(Form 안 패스는 복제본·Resources 등록으로 시작 때 문서를 바꾼다). 초안 중에는 `getEditHistory().canRedo` 가 false 로 보인다. 갱신(`updatePathDraft`) 없이 취소하면 redo 가 되살아난다(쪽 /Contents 안 패스). 한 번이라도 갱신했거나 Form 복제가 일어났으면 MuPDF 가 redo 단계를 버려 취소해도 돌아오지 않는다(`edit-real-m4.test.ts` "redo 보존"). 문단 초안은 시작하면 redo 가 사라진다. 커밋 후 `affectedPages` 는 한 쪽이다.
 8. Worker 연결: `worker-api.ts`·`worker.ts` 는 계약 커밋에 이미 패스 RPC 가 연결돼 있다(변경 없음). `updatePathDraft` 반환의 `region.rgba.buffer` 전송은 `worker-api.ts` 에 이미 있다.
 
 ## 6. 계약 불일치·해석 차이
