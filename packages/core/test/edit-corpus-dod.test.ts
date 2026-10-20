@@ -1009,7 +1009,9 @@ async function m4Cells(
           tableKept: tableShape(layout) === shape0,
           cellParagraphs: cell?.paragraphs.length ?? -1,
           cellTable: cell
-            ? cell.paragraphs.every((id) => layout.paragraphs.find((x) => x.id === id)?.table)
+            ? cell.paragraphs.every(
+                (id) => layout.paragraphs.find((x) => x.id === id)?.table != null,
+              )
             : false,
         };
         const saved = s.save({ changes: [] }).bytes;
