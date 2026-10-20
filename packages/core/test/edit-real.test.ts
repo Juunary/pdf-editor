@@ -356,3 +356,41 @@ describe('마일스톤 리뷰 반영(docs/m3-integration.md 8절)', () => {
     s2.close();
   });
 });
+
+describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
+  it('B1: 커밋한 편집 블록을 레이아웃이 여러 문단으로 나눠도 편집 판정은 블록 하나(상자 = 블록 글자 상자)', async () => {
+    const s = session(source());
+    const { commit } = await edit(s, 'first paragraph', 'Short line one.\nShort line two.');
+    // 전제: 레이아웃 복원은 강제 줄바꿈 뒤 짧은 줄을 다른 문단으로 본다(블록 하나가 문단 둘).
+    const layout = s.getPageLayout(0);
+    expect(layout.paragraphs.filter((p) => p.text.startsWith('Short line')).length).toBe(2);
+    const e = await s.getPageEditability(0);
+    const own = e.paragraphs.filter((p) => p.editedBlock === commit.op.id);
+    expect(own).toHaveLength(1);
+    const lines = layout.paragraphs.filter((p) => p.text.startsWith('Short line'));
+    const [x0, y0, x1, y1] = own[0]!.bbox;
+    for (const p of lines) {
+      expect(p.bbox[0]).toBeGreaterThanOrEqual(x0 - 1);
+      expect(p.bbox[1]).toBeGreaterThanOrEqual(y0 - 1);
+      expect(p.bbox[2]).toBeLessThanOrEqual(x1 + 1);
+      expect(p.bbox[3]).toBeLessThanOrEqual(y1 + 1);
+    }
+    // 그 항목으로 다시 편집하면 대상은 블록 전체다.
+    const plan = await s.planParagraphEdit(0, own[0]!.paragraphId);
+    expect(plan.target.editedBlock).toBe(commit.op.id);
+    expect(plan.runs.map((r) => r.text).join('')).toBe('Short line one.\nShort line two.');
+    s.close();
+  });
+
+  it('B1: 블록이 이웃 문단과 한 레이아웃 문단으로 합쳐져도 판정 상자는 블록 글자만 덮는다', async () => {
+    const s = session(source());
+    const long = 'Short line one. Next starts. '.repeat(8).trim();
+    const { commit } = await edit(s, 'first paragraph', long);
+    const e = await s.getPageEditability(0);
+    const own = e.paragraphs.filter((p) => p.editedBlock === commit.op.id);
+    expect(own).toHaveLength(1);
+    // 둘째 문단(기준선 y = 792 − 640 = 152) 줄은 상자 밖이다.
+    expect(own[0]!.bbox[3]).toBeLessThan(150);
+    s.close();
+  });
+});
