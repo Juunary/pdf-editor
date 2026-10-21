@@ -16,6 +16,7 @@ export * from './failure.js';
 export * from './viewer-host.js';
 export * from './shortcuts.js';
 export * from './controller.js';
+export * from './render-cache.js';
 export * from './selection-dom.js';
 export * from './selection-rects.js';
 export * from './text-measure.js';
