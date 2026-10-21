@@ -20,6 +20,7 @@ import { classifyFailure } from './failure.js';
 import { fitWidthScale, pageLayout, renderScale, type PageLayout } from './layout.js';
 import { clampPage, parsePageInput, stepPage } from './page-nav.js';
 import { buildReadingOrder, type ReadingOrder } from './reading-order.js';
+import { RenderCache } from './render-cache.js';
 import {
   applySearchResult,
   clearResults,
@@ -110,6 +111,10 @@ export interface ViewerControllerOptions {
   editLog?: EditLog;
   /** 시각(ms, performance.now). 테스트에서 주입한다. */
   now?(): number;
+  /** 유휴 시 다음 쪽을 미리 렌더한다(기본 true, M5 계약 4.1). */
+  prefetch?: boolean;
+  /** 유휴 시점에 `fn` 을 실행한다. 기본: `requestIdleCallback`(없으면 `setTimeout`). 테스트에서 주입한다. */
+  scheduleIdle?(fn: () => void): void;
 }
 
 export type StateListener = (state: ViewerState) => void;
@@ -142,6 +147,9 @@ export class ViewerController {
   readonly editLog: EditLog;
   /** 편집 중에 들어온 창 크기 변화(편집이 끝난 뒤 반영). */
   private envRefreshPending = false;
+  /** 쪽 렌더 LRU(8쪽·64 MiB 중 작은 쪽). 문서가 바뀐 쪽은 `invalidatePages` 가 버린다. */
+  readonly renderCache = new RenderCache();
+  private prefetchRunning = false;
 
   constructor(private readonly options: ViewerControllerOptions) {
     this.host = options.host;
@@ -311,10 +319,13 @@ export class ViewerController {
     try {
       const info = await this.host.getPageInfo(target);
       const cssScale = this.cssScaleFor(info.size.width, env);
-      const rendered = await this.host.renderPage({
-        pageIndex: target,
-        scale: renderScale(cssScale, env.devicePixelRatio),
-      });
+      const scale = renderScale(cssScale, env.devicePixelRatio);
+      const epoch = this.renderCache.epoch;
+      let rendered = this.renderCache.get(target, scale);
+      if (!rendered) {
+        rendered = await this.host.renderPage({ pageIndex: target, scale });
+        this.renderCache.put(target, scale, rendered, epoch);
+      }
       if (token !== this.loadToken) return;
       const layout = pageLayout({
         bounds: info.bounds,
@@ -331,6 +342,49 @@ export class ViewerController {
       return;
     }
     await this.loadPageData(target);
+    this.schedulePrefetch(target);
+  }
+
+  /** 현재 쪽 처리가 끝난 유휴 시점에 다음 쪽을 같은 배율로 미리 렌더한다(1쪽). */
+  private schedulePrefetch(from: number): void {
+    if (this.options.prefetch === false || this.prefetchRunning) return;
+    const idle =
+      this.options.scheduleIdle ??
+      ((fn: () => void) =>
+        typeof requestIdleCallback === 'function'
+          ? requestIdleCallback(() => fn())
+          : setTimeout(fn, 0));
+    idle(() => void this.prefetchNext(from));
+  }
+
+  private async prefetchNext(from: number): Promise<void> {
+    const next = from + 1;
+    const state = this.state;
+    if (
+      this.disposed ||
+      this.prefetchRunning ||
+      next >= state.pageCount ||
+      state.pageIndex !== from ||
+      state.loading ||
+      this.edit?.active ||
+      !state.view
+    ) {
+      return;
+    }
+    this.prefetchRunning = true;
+    try {
+      const env = this.options.getEnvironment();
+      const info = await this.host.getPageInfo(next);
+      const scale = renderScale(this.cssScaleFor(info.size.width, env), env.devicePixelRatio);
+      if (this.renderCache.has(next, scale)) return;
+      const epoch = this.renderCache.epoch;
+      const rendered = await this.host.renderPage({ pageIndex: next, scale });
+      this.renderCache.put(next, scale, rendered, epoch);
+    } catch {
+      // 미리 렌더는 최선 노력이다. 실패는 실제 이동 때 다시 드러난다.
+    } finally {
+      this.prefetchRunning = false;
+    }
   }
 
   /** 렌더와 별개로 추출 모델(텍스트 층·디버그)을 불러온다. 실패는 기능 단위로 격리한다. */
@@ -349,6 +403,7 @@ export class ViewerController {
    * 검색 결과는 옛 위치이므로 지우고, 검색창이 열려 있으면 다시 검색한다.
    */
   async invalidatePages(pages: number[]): Promise<void> {
+    this.renderCache.invalidate(pages);
     const current = this.state.view?.pageIndex ?? this.state.pageIndex;
     if (!pages.includes(current)) return;
     this.patch({
@@ -378,6 +433,7 @@ export class ViewerController {
 
   /** 확장이 Worker 를 복구한 뒤 호출한다(편집 코디네이터가 초안 재시작·캐시 정리를 한다). */
   async handleWorkerRecovered(): Promise<void> {
+    this.renderCache.clear();
     if (!this.edit) {
       const view = this.state.view;
       if (view) await this.invalidatePages([view.pageIndex]);
