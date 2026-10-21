@@ -135,6 +135,14 @@ describe('지원 문서 크기 상한(SUPPORTED_INPUT_BYTES)', () => {
     expect(supportedSizeNotice(50 * MIB, 40 * MIB)).toContain('지원 크기 40 MiB');
   });
 
+  it('크기 알림 통합(I3): 각 문구에 상한 값은 한 번만 나온다', () => {
+    const count = (text: string, needle: string) => text.split(needle).length - 1;
+    expect(count(supportedSizeNotice(800 * MIB)!, '790 MiB')).toBe(1);
+    const warn = sizeLimitNotice(heap('warn'))!;
+    const over = sizeLimitNotice(heap('over-limit', { estimatedPeakBytes: 2500 * MIB }))!;
+    for (const text of [warn, over]) expect(count(text, '한계')).toBe(1);
+  });
+
   it('정보 대화상자의 지원 크기 줄이 같은 값을 보인다', () => {
     const base = { version: '1.0.0', sourceUrl: sourceUrl('1.0.0'), noticesUrl: null, heap: null };
     expect(aboutContent(base).lines.join('\n')).toContain('약 790 MiB 까지');

@@ -266,7 +266,7 @@ async function prepareSave(): Promise<boolean> {
   const decision = decideSave(plan, journal);
   lastHeap = plan.heap;
   lastPlanHadEdits = plan.edits !== null;
-  setNotice('size', sizeLimitNotice(plan.heap));
+  updateSizeNotice(plan.heap);
   diag.add('save-plan', {
     method: plan.method,
     options: plan.options,
@@ -296,6 +296,14 @@ async function prepareSave(): Promise<boolean> {
     }
   }
   return true;
+}
+
+/**
+ * 크기 알림 칸 하나(I3): 저장 전 판정이 warn·over-limit 이면 그 문구로 바꾸고, ok 면 열 때 바이트 기준 안내를 그대로 둔다.
+ */
+function updateSizeNotice(heap: SaveHeapEstimate): void {
+  const text = sizeLimitNotice(heap);
+  if (text) setNotice('size', text);
 }
 
 /** core 저널 상한 판정(계약 D4). 받지 못하면 진단 로그만 남기고 null(권고 없음). */
@@ -459,7 +467,6 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   setNotice('recovered', null);
   setNotice('redact', null);
   setNotice('size', null);
-  setNotice('supported-size', null);
   setNotice('journal', null);
   setNotice('history', null);
   lastHeap = null;
@@ -468,7 +475,8 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   // 원본은 복구 계층이 open 전에 Blob 으로 보관한 뒤 Worker 로 넘긴다(계약 D6).
   const info = await pdf.open(bytes);
   diag.add('open', info);
-  setNotice('supported-size', supportedSizeNotice(info.byteLength));
+  // 크기 알림(I3, 사용자 결정 2026-10-21): 열 때 바이트 기준 안내를 한 번 띄우고, 저장 전 판정은 같은 칸을 바꾼다.
+  setNotice('size', supportedSizeNotice(info.byteLength));
   documentName = label;
   document.title = `${label} - PDF Editor`;
 
@@ -525,7 +533,7 @@ async function reportSizeLimit(): Promise<void> {
     const plan = await pdf.planSave({ changes: [] });
     lastHeap = plan.heap;
     diag.add('size-plan', { level: plan.heap.level, model: plan.heap.model ?? null });
-    setNotice('size', sizeLimitNotice(plan.heap));
+    updateSizeNotice(plan.heap);
   } catch (e) {
     diag.add('size-plan-error', String(e));
   }
