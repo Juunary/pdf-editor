@@ -79,7 +79,7 @@ async function exercise(page: Page, frame: Frame, label: string) {
   const saves = log.filter((e) => e.event === 'save').map((e) => e.data);
   return {
     label,
-    badge: await frame.textContent('#context-badge'),
+    badge: await frame.getAttribute('body', 'data-context'),
     isTopLevel: env.isTopLevel,
     hasShowSaveFilePicker: env.hasShowSaveFilePicker,
     canvas: ink,
@@ -115,14 +115,14 @@ test('확장 로드: 서비스 워커, MIME handler 세 문맥 렌더, 저장 �
     // 1) 일반 뷰어 페이지(viewer.html?file=)
     const p1 = await context.newPage();
     await p1.goto(`chrome-extension://${extensionId}/viewer.html?file=${base}/m0-sample.pdf`);
-    await expect(p1.locator('#context-badge')).toHaveText('url-param');
+    await expect(p1.locator('body')).toHaveAttribute('data-context', 'url-param');
     results.push(await exercise(p1, p1.mainFrame(), 'viewer-page'));
 
     // 2) 최상위 MIME handler: http PDF 로 직접 이동
     const p2 = await context.newPage();
     await p2.goto(`${base}/m0-sample.pdf`);
     const [top] = await viewerFrames(p2, extensionId, 1);
-    await expect(top!.locator('#context-badge')).toHaveText('mime-handler-top');
+    await expect(top!.locator('body')).toHaveAttribute('data-context', 'mime-handler-top');
     results.push(await exercise(p2, top!, 'mime-handler-top'));
 
     // 3) 임베디드 MIME handler: <embed>, <iframe>, <object>
@@ -130,7 +130,7 @@ test('확장 로드: 서비스 워커, MIME handler 세 문맥 렌더, 저장 �
     await p3.goto(`${base}/embed-test.html`);
     const embedded = await viewerFrames(p3, extensionId, 3);
     for (const [i, f] of embedded.entries()) {
-      await expect(f.locator('#context-badge')).toHaveText('mime-handler-embedded');
+      await expect(f.locator('body')).toHaveAttribute('data-context', 'mime-handler-embedded');
       results.push(await exercise(p3, f, `mime-handler-embedded#${i}`));
     }
 
