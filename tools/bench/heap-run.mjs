@@ -1,6 +1,8 @@
 // 저장 힙 측정 실행기(docs/m5-heap.md 2절). 문서 × 저장 경로마다 heap-child.mjs 를 새 프로세스로 돌려 JSON 줄로 모은다.
 // 사용: node tools/bench/heap-run.mjs [--corpus <dir>] [--only id,id] [--jobs N] [--out out/m5-heap/measure.jsonl]
-// 합성 문서가 없으면 synth.mjs 로 만든다. 코퍼스는 fixtures/corpus/manifest.json 의 id 를 쓴다(PDF 는 git 밖).
+//   [--variants full,none] [--views 0,3,10,30] [--synth-dir <dir>]
+// 같은 세션 저장 2회는 --variants full2,none2(heap-child.mjs, docs/m5-heap.md 4.4). 판정은 heap-check-twice.mjs.
+// 합성 문서가 없으면 synth.mjs 로 만든다(--synth-dir 로 저장소 밖에 둘 수 있다). 코퍼스는 fixtures/corpus/manifest.json 의 id 를 쓴다(PDF 는 git 밖).
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -9,7 +11,7 @@ import { SYNTHETIC, writeSynthetic } from './synth.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const CHILD = join(ROOT, 'tools/bench/heap-child.mjs');
-const VARIANTS = ['full', 'none'];
+const VARIANTS = (arg('variants', 'full,none') ?? 'full,none').split(',');
 /** 저장 전에 넘겨 본 쪽 수(힙 이력). 같은 문서도 이력에 따라 피크 계단이 달라 시나리오마다 잰다(docs/m5-heap.md 2절). */
 const VIEWS = (arg('views', '0,3,10,30') ?? '0').split(',').map(Number);
 
@@ -20,7 +22,7 @@ function arg(name, fallback) {
 
 const docsCfg = JSON.parse(readFileSync(join(ROOT, 'tools/bench/heap-docs.json'), 'utf8'));
 const corpusDir = resolve(ROOT, arg('corpus', docsCfg.corpusDir));
-const synthDir = resolve(ROOT, docsCfg.synthDir);
+const synthDir = resolve(ROOT, arg('synth-dir', docsCfg.synthDir));
 const outPath = resolve(ROOT, arg('out', 'out/m5-heap/measure.jsonl'));
 const jobs = Number(arg('jobs', '6'));
 const only = arg('only', null)?.split(',');
