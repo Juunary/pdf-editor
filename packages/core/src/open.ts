@@ -63,6 +63,8 @@ export const DOCUMENT_STATS_BUDGET_MS = 1000;
 
 /** 시험 표본 간격(객체 번호). 이 간격으로 먼저 훑어 객체당 시간을 잰다. */
 const STATS_PILOT_STRIDE = 64;
+/** 층화 표본 위치를 고르는 의사난수 시드. */
+const STATS_SAMPLE_SEED = 0x2545f491;
 
 /**
  * 저장 힙 모델 입력 전체. shared-types `DocumentStats` 에 core 내부 값 `objectStreamBytes` 를 더한다(공개 응답에는 앞의 네
@@ -87,8 +89,8 @@ export interface DocumentStatsOptions {
  * `isStream()` 을 확인하고 사전의 /Length 를 더한다. 객체 스트림만 풀어서 길이를 재고(한 번에 하나, 바로 해제) 나머지
  * 스트림(이미지·콘텐츠)은 읽지 않는다.
  *
- * 먼저 `STATS_PILOT_STRIDE` 간격으로 훑어 객체당 시간을 재고, 전수 계산이 예산 안이면 전부 센다. 넘으면 예산에 맞춘 고정
- * 간격 `stride` 로 표본 추출하고 표본 값에 `stride` 를 곱한다(`approximate: true`). 앞에서부터 세다 예산에서 멈추지 않는
+ * 먼저 `STATS_PILOT_STRIDE` 개 구간마다 하나씩 훑어 객체당 시간을 재고, 전수 계산이 예산 안이면 전부 센다. 넘으면 예산에
+ * 맞춘 `stride` 개 구간마다 하나씩 층화 표본을 뽑고 표본 값에 구간 크기를 곱한다(`approximate: true`). 앞에서부터 세다 예산에서 멈추지 않는
  * 이유: 앞쪽 번호만 읽어 둔 문서는 뒤이은 저장의 피크가 크게 뛴다(합성 객체 2,000쪽 284 → 1,389 MiB, 간격 표본은 그대로,
  * docs/m5-heap.md 2.3).
  */
@@ -121,11 +123,16 @@ export function computeDocumentStats(
       ref.destroy();
     }
   };
-  // 고정 간격 `stride` 로 1 번부터(0 번은 xref 자유 목록 머리라 객체가 아니다). 마지막 표본은 남은 수만큼만 센다.
+  // 층화 표본: 1 번부터 `stride` 개씩 구간을 나눠 구간마다 한 객체를 고른다(0 번은 xref 자유 목록 머리라 객체가 아니다).
+  // 고르는 위치는 고정 시드 의사난수라 같은 문서는 같은 표본이다. 구간 첫 객체만 고르면 문서의 객체 배치 주기와 맞물려
+  // 한 종류(예: 쪽마다 콘텐츠 스트림)를 통째로 놓친다(docs/m5-heap.md 2.4). 마지막 구간은 남은 수만큼만 센다.
   const pass = (stride: number): void => {
     sum.streams = sum.bytes = sum.objstm = 0;
-    for (let num = 1; num < objectCount; num += stride) {
-      visit(num, Math.min(stride, objectCount - num));
+    let seed = STATS_SAMPLE_SEED;
+    for (let start = 1; start < objectCount; start += stride) {
+      const width = Math.min(stride, objectCount - start);
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      visit(stride === 1 ? start : start + (seed % width), width);
     }
   };
   const t0 = now();

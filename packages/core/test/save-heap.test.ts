@@ -65,8 +65,8 @@ describe('computeDocumentStats(D5)', () => {
     doc.destroy();
   });
 
-  it('시험 표본으로 본 예상 시간이 예산을 넘으면 고정 간격 표본으로 환산한다(approximate)', () => {
-    const pages = Array.from({ length: 60 }, (_, i) => `BT /F1 9 Tf 10 50 Td (p${i}) Tj ET`);
+  it('시험 표본으로 본 예상 시간이 예산을 넘으면 층화 표본으로 환산한다(approximate)', () => {
+    const pages = Array.from({ length: 600 }, (_, i) => `BT /F1 9 Tf 10 50 Td (p${i}) Tj ET`);
     const doc = openPdf(buildPdf(pages), { inputMode: 'stream' });
     const exact = computeDocumentStats(doc);
     // 부를 때마다 1 ms 가는 시계: 시험 표본(64 간격)의 객체당 시간이 커서 전수 예상이 예산을 넘는다.
@@ -77,6 +77,9 @@ describe('computeDocumentStats(D5)', () => {
     // 표본 값 × 간격: 마지막 표본이 남은 수만큼만 세므로 스트림 수는 객체 수를 넘지 않는다.
     expect(approx.streamCount).toBeLessThanOrEqual(exact.objectCount);
     expect(approx.streamCount).toBeGreaterThan(0);
+    // 쪽마다 같은 배치(쪽·콘텐츠)가 반복되는 문서에서도 한 종류를 통째로 놓치지 않는다(구간 첫 객체만 고르면 놓친다).
+    // 바이트 합은 큰 스트림 몇 개(여기서는 폰트 파일)를 놓치면 크게 틀린다(표본의 한계, docs/m5-heap.md 2.4).
+    expect(Math.abs(approx.streamCount - exact.streamCount) / exact.streamCount).toBeLessThan(0.35);
     // 예산이 넉넉하면 전수.
     expect(computeDocumentStats(doc, { budgetMs: 1e9 })).toEqual(exact);
     doc.destroy();

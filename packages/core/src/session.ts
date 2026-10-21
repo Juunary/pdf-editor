@@ -407,6 +407,7 @@ export class PdfSession {
         objectCount: stats.objectCount,
         rawStreamBytes: stats.rawStreamBytes,
         objectStreamBytes: stats.objectStreamBytes,
+        approximate: stats.approximate,
         currentHeapBytes: current,
         baseHeapBytes: this.#baseHeapBytes ?? current,
         journalBytes: this.#edit?.journalBytes ?? 0,
