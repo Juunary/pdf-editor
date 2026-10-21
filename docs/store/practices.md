@@ -12,7 +12,7 @@
 
 | 권한·항목 | 용도 | 정당화 문구(영어, 대시보드 입력용) |
 | --- | --- | --- |
-| `mime_types_handler` (`application/pdf`, `can_embed`) | PDF 응답을 이 뷰어로 연다 | Registers the extension's viewer as the handler for `application/pdf` so PDFs the user opens in Chrome are displayed and edited in the viewer. The browser hands the PDF stream to the viewer; the extension does not request the PDF URL itself. |
+| `mime_types_handler` (`application/pdf`, `can_embed`) | PDF 응답을 이 뷰어로 연다 | Registers the extension's viewer as the handler for `application/pdf` so PDFs the user opens in Chrome are displayed and edited in the viewer. The viewer reads the PDF stream supplied by the browser once and does not re-request the original URL. |
 | `downloads` | 파일 선택 창을 쓸 수 없을 때 저장 | Used only as a fallback to save the edited PDF to the user's Downloads folder when the File System Access save dialog is unavailable. No download history is read. |
 | `content_security_policy` 의 `'wasm-unsafe-eval'` | PDF 엔진(MuPDF)을 WebAssembly 로 실행 | Required to instantiate the bundled MuPDF WebAssembly module. All code is packaged in the extension. |
 | 호스트 권한 | 요청하지 않음 | No host permissions are requested. |
