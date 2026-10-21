@@ -38,7 +38,7 @@ export const ALL_SCENARIOS: readonly Scenario[] = [
 export interface BenchOptions {
   scenarios: readonly Scenario[];
   /** 열기·저장 반복 횟수. */
-  repeats: { open: number; save: number };
+  repeats: { open: number; save: number; breakdown: number };
   /** 순차 쪽 넘김 횟수와 임의 이동 횟수. */
   nav: { steps: number; jumps: number };
   /** 쪽 판정을 잴 쪽 수(문서 전체에 고르게 배치). */
@@ -53,7 +53,7 @@ export interface BenchOptions {
 
 export const DEFAULT_OPTIONS: BenchOptions = {
   scenarios: ALL_SCENARIOS,
-  repeats: { open: 5, save: 3 },
+  repeats: { open: 5, save: 3, breakdown: 3 },
   nav: { steps: 20, jumps: 10 },
   judgePages: 6,
   editChars: 30,
@@ -65,6 +65,8 @@ export interface BenchDoc {
   id: string;
   name: string;
   bytes: number;
+  /** 쪽 판정 시험에 꼭 넣을 쪽(0부터, 최대 패스 쪽 등). */
+  judgePages?: number[];
   load(): Promise<ArrayBuffer>;
 }
 
@@ -76,6 +78,8 @@ export interface BenchHooks {
    * 값이 없으면 null.
    */
   tabMemoryMiB(label: 'baseline' | 'end', docId: string): Promise<number | null>;
+  /** 중간 지점의 탭 메모리 자동 표본(수동 실행에는 없다). */
+  samplePhase?(label: string, docId: string): Promise<number | null>;
   /** 뷰어를 올릴 DOM. */
   targets: { controls: HTMLElement; pages: HTMLElement };
   /** 쪽 영역 폭(CSS px). */
@@ -118,6 +122,8 @@ export interface JudgeBreakdown {
   judgeColdMs: number;
   /** 코어가 보고한 판정 시간(`PageEditability.ms`, 따뜻한 호출). */
   coreReportedMs: number;
+  /** 값은 `reps` 번 반복(새 세션)의 중앙값. */
+  reps: number;
 }
 
 export interface MemResult {
@@ -130,6 +136,13 @@ export interface MemResult {
   saves: number;
   pass: { wasmHeap: boolean | null; tab: boolean | null };
   firstSavePeakHeapBytes: number | null;
+  /** 구간별 증가 원인 분석용 표본(자동 실행에서만 탭 메모리가 있다). */
+  phases: {
+    name: string;
+    wasmHeapBytes: number | null;
+    tabMiB: number | null;
+    jsHeapMiB: number | null;
+  }[];
 }
 
 interface Opened {
@@ -196,6 +209,26 @@ function evenlySpaced(pageCount: number, count: number, skip: number): number[] 
   return [...new Set(out)];
 }
 
+/** 반복 실행의 쪽별 중앙값. */
+function medianBreakdown(runs: readonly JudgeBreakdown[][]): JudgeBreakdown[] {
+  const first = runs[0] ?? [];
+  const keys = [
+    'extractMs',
+    'extractSegmentsMs',
+    'sourceMapMs',
+    'linkMs',
+    'layoutMs',
+    'judgeWarmMs',
+    'judgeColdMs',
+    'coreReportedMs',
+  ] as const;
+  return first.map((row, i) => {
+    const out = { ...row, reps: runs.length };
+    for (const k of keys) out[k] = summarize(runs.map((r) => r[i]![k])).p50;
+    return out;
+  });
+}
+
 export class BenchRunner {
   constructor(
     private readonly hooks: BenchHooks,
@@ -257,18 +290,32 @@ export class BenchRunner {
         const o = await this.openDoc(bytes.slice(0));
         try {
           result.pageCount ??= o.pageCount;
-          await this.scenarioJudge(o, result);
+          await this.scenarioJudge(o, result, doc.judgePages ?? []);
         } finally {
           o.dispose();
         }
       });
       await guard('judge-breakdown', async () => {
-        const o = await this.openDoc(bytes.slice(0));
-        try {
-          if (result.judge) result.judge.breakdown = await this.breakdown(o);
-        } finally {
-          o.dispose();
+        const reps = this.options.repeats.breakdown;
+        const runs: JudgeBreakdown[][] = [];
+        for (let r = 0; r < reps; r++) {
+          let pages: number[] = [];
+          let cold = new Map<number, number>();
+          const c = await this.openDoc(bytes.slice(0));
+          try {
+            pages = this.breakdownPages(c, doc.judgePages ?? []);
+            cold = await this.coldJudge(c, pages);
+          } finally {
+            c.dispose();
+          }
+          const o = await this.openDoc(bytes.slice(0));
+          try {
+            runs.push(await this.breakdown(o, cold, pages));
+          } finally {
+            o.dispose();
+          }
         }
+        if (result.judge) result.judge.breakdown = medianBreakdown(runs);
       });
     }
     if (want('mem')) await guard('mem', () => this.scenarioMem(doc, bytes, result));
@@ -441,8 +488,17 @@ export class BenchRunner {
     return enter !== null && ready !== null ? ready - enter : null;
   }
 
-  private async scenarioJudge(o: Opened, result: DocResult): Promise<void> {
-    const pages = evenlySpaced(o.pageCount, this.options.judgePages, o.pageCount > 1 ? 1 : 0);
+  private async scenarioJudge(
+    o: Opened,
+    result: DocResult,
+    extra: readonly number[],
+  ): Promise<void> {
+    const pages = [
+      ...new Set([
+        ...extra.filter((p) => p < o.pageCount),
+        ...evenlySpaced(o.pageCount, this.options.judgePages, o.pageCount > 1 ? 1 : 0),
+      ]),
+    ];
     const first: number[] = [];
     const reuse: number[] = [];
     const away = (p: number) => (p === 0 ? Math.min(1, o.pageCount - 1) : 0);
@@ -462,28 +518,46 @@ export class BenchRunner {
     };
   }
 
-  /** 첫 진입 판정의 구성: 추출·SourceMap·연결·레이아웃·판정을 캐시 없이 순서대로 잰다(새 세션). */
-  private async breakdown(o: Opened): Promise<JudgeBreakdown[]> {
+  /** 분해할 쪽: 지정한 쪽 + 문서 앞쪽 8쪽 뒤로 고르게 2쪽. */
+  private breakdownPages(o: Opened, extra: readonly number[]): number[] {
+    const total = o.pageCount;
+    const even = evenlySpaced(total, 2, Math.min(8, Math.max(0, total - 1)));
+    return [...new Set([...extra.filter((p) => p < total), ...even])];
+  }
+
+  /** 새 세션에서 쪽마다 `getPageEditability` 를 캐시 없이(그 쪽 처음) 부른 시간. 폰트 적재 같은 공통 초기화는 먼저 치운다. */
+  private async coldJudge(o: Opened, pages: readonly number[]): Promise<Map<number, number>> {
+    await o.pdf.getPageEditability(0).catch(() => undefined);
+    const out = new Map<number, number>();
+    for (const p of pages) {
+      const t0 = performance.now();
+      await o.pdf.getPageEditability(p);
+      out.set(p, performance.now() - t0);
+    }
+    return out;
+  }
+
+  /**
+   * 첫 진입 판정의 구성(RPC 왕복 시각): 추출·SourceMap·연결·레이아웃·판정을 캐시 없이 순서대로 잰다(새 세션).
+   * 값에는 결과를 메인 스레드로 돌려주는 구조화 복제가 들어 있다(SourceMap 등은 큼). Worker 안 순수 구성은
+   * `packages/core/bench/judge-breakdown.mjs` 가 잰다.
+   * 각 단계는 앞 단계 결과를 캐시로 재사용하므로 "그 단계가 새로 더한 시간"이다. `judgeColdMs` 는 별도 새 세션에서
+   * 같은 쪽의 판정만 처음 부른 전체 시간이다.
+   */
+  private async breakdown(
+    o: Opened,
+    cold: Map<number, number>,
+    pages: readonly number[],
+  ): Promise<JudgeBreakdown[]> {
     const pdf = o.pdf;
     const time = async <T>(fn: () => Promise<T>): Promise<[T, number]> => {
       const t0 = performance.now();
       const v = await fn();
       return [v, performance.now() - t0];
     };
-    // 폴백 폰트 적재 등 문서 공통 초기화 비용을 첫 호출에서 치우고 버린다.
     await pdf.getPageEditability(0).catch(() => undefined);
-    const total = o.pageCount;
-    const targets = evenlySpaced(total, 4, Math.min(8, Math.max(0, total - 1)));
     const out: JudgeBreakdown[] = [];
-    // 서로 이웃(±2)이 겹치지 않게 짝을 잡는다: 앞 절반은 단계별, 뒤 절반은 판정 단독(콜드).
-    const stepPages = targets.filter((_, i) => i % 2 === 0);
-    const coldPages = targets.filter((_, i) => i % 2 === 1);
-    const cold: number[] = [];
-    for (const p of coldPages) {
-      const [, ms] = await time(() => pdf.getPageEditability(p));
-      cold.push(ms);
-    }
-    for (const [i, p] of stepPages.entries()) {
+    for (const p of pages) {
       const [, extractMs] = await time(() => pdf.extractPage({ pageIndex: p }));
       const [, extractSegmentsMs] = await time(() =>
         pdf.extractPage({ pageIndex: p, includePathSegments: true }),
@@ -500,8 +574,9 @@ export class BenchRunner {
         linkMs,
         layoutMs,
         judgeWarmMs,
-        judgeColdMs: cold[i] ?? NaN,
+        judgeColdMs: cold.get(p) ?? NaN,
         coreReportedMs: e.ms,
+        reps: 1,
       });
     }
     return out;
@@ -665,11 +740,25 @@ export class BenchRunner {
       mark(M5_EVENTS.mem.start);
       const baseTab = await this.hooks.tabMemoryMiB('baseline', doc.id);
 
+      const phases: MemResult['phases'] = [];
+      const phase = async (name: string, wasmHeapBytes: number | null) => {
+        const perf = performance as Performance & { memory?: { usedJSHeapSize: number } };
+        phases.push({
+          name,
+          wasmHeapBytes,
+          tabMiB: (await this.hooks.samplePhase?.(name, doc.id)) ?? null,
+          jsHeapMiB: perf.memory ? perf.memory.usedJSHeapSize / MiB : null,
+        });
+      };
+      await phase('baseline', baseHeap);
+      // 구간 끝의 WASM 힙은 planSave 가 주지 않으므로 저장 없이 알 수 없다: 구간별 힙은 마지막 저장 값만 둔다.
+
       let navigations = 0;
       const span = Math.min(pages, o.pageCount);
       for (let p = 1; p < span; p++, navigations++) await o.controller.goToPage(p);
       for (let p = span - 2; p >= 0; p--, navigations++) await o.controller.goToPage(p);
 
+      await phase('after-navigation', null);
       let done = 0;
       for (let p = 0; p < o.pageCount && done < edits; p++) {
         const e = await o.pdf.getPageEditability(p);
@@ -680,9 +769,11 @@ export class BenchRunner {
         }
       }
 
+      await phase('after-edits', null);
       let endHeap: number | null = null;
       for (let i = 0; i < saves; i++) endHeap = (await o.pdf.save({ changes: [] })).wasmHeapBytes;
       mark(M5_EVENTS.mem.end);
+      await phase('end', endHeap);
       const endTab = await this.hooks.tabMemoryMiB('end', doc.id);
 
       const wasmDelta = baseHeap !== null && endHeap !== null ? (endHeap - baseHeap) / MiB : null;
@@ -700,6 +791,7 @@ export class BenchRunner {
           tab: tabDelta === null ? null : tabDelta <= MEM_LIMITS_MIB.tab,
         },
         firstSavePeakHeapBytes: baseHeap,
+        phases,
       };
     } finally {
       o.dispose();

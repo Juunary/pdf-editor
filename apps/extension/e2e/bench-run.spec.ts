@@ -76,6 +76,7 @@ test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
             name: `${d.id}.pdf`,
             url: `${base}/${d.id}.pdf`,
             bytes: d.bytes,
+            judgePages: d.judgePages,
           })),
           scenarios,
         ] as const,
