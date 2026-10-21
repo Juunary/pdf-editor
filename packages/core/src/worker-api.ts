@@ -39,6 +39,9 @@ export function createPdfWorkerApi(session = new PdfSession()): PdfWorkerApi {
       const result = session.save(request);
       return Comlink.transfer(result, [result.bytes.buffer]);
     },
+    async journalAdvice() {
+      return session.journalAdvice();
+    },
     async close() {
       session.close();
     },

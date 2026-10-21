@@ -14,3 +14,11 @@ export { defaultEditAdapter, type EditAdapter } from './edit-adapter.js';
 export { EditStateError, StaleRevisionError } from './edit-engine.js';
 export { PdfSession, type PdfSessionOptions } from './session.js';
 export { createPdfWorkerApi } from './worker-api.js';
+// 저장 힙 안내 값(M5 C7, docs/m5-heap.md 6절). 메인 스레드(뷰어)는 MuPDF 를 끌어오지 않는 `@pdf-editor/core/client` 를 쓴다.
+export {
+  SUPPORTED_INPUT_BYTES,
+  supportedInputBytes,
+  HEAP_WARN_FRACTION,
+  WASM_HEAP_LIMIT_BYTES,
+  type JournalAdvice,
+} from '@pdf-editor/pdf-ops';

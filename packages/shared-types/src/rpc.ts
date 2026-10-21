@@ -17,7 +17,7 @@ import type {
 } from './edit.js';
 import type { ExtractRequest, PageModel } from './page-model.js';
 import type { PageLayout } from './page-layout.js';
-import type { SaveRequest, SavePlan, SaveResult } from './save.js';
+import type { JournalAdvice, SaveRequest, SavePlan, SaveResult } from './save.js';
 import type { SearchRequest, SearchResult } from './search.js';
 import type { PageLinkage, SourceMap } from './source-map.js';
 
@@ -105,6 +105,8 @@ export interface PdfWorkerApi {
   /** 저장 전 판정(방식·옵션·예상 피크 힙). 저장하지 않는다. */
   planSave(request: SaveRequest): Promise<SavePlan>;
   save(request: SaveRequest): Promise<SaveResult>;
+  /** 저널 상한 판정(M5 D4). 문서를 바꾸지 않는다. 뷰어는 편집 커밋 뒤 물어 "저장 후 다시 열기" 안내에 쓴다. */
+  journalAdvice(): Promise<JournalAdvice>;
   close(): Promise<void>;
 
   // M3 문단 편집(docs/m3-contract.md 4절). 초안은 문서당 최대 1개.

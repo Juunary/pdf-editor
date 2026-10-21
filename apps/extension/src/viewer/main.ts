@@ -10,14 +10,16 @@ import {
 import '@pdf-editor/viewer-ui/style.css';
 import { decideInterceptionMode, parseChromeMajor } from '../interception.js';
 import { DiagLog } from './diag.js';
-import type { SaveHeapEstimate } from '@pdf-editor/shared-types';
+import type { CommitResult, JournalAdvice, SaveHeapEstimate } from '@pdf-editor/shared-types';
 import { aboutContent } from './about.js';
 import { alertDialog, confirmDialog, openDialog } from './dialog.js';
 import {
   fileAccessNotice,
   HISTORY_AFTER_SAVE_NOTICE,
+  journalNotice,
   redactNotice,
   sizeLimitNotice,
+  supportedSizeNotice,
 } from './notices.js';
 import { ResilientPdf, type WorkerHandle } from './recovery.js';
 import { SaveTarget, type SaveOutcome, type WritableFileHandle } from './save-target.js';
@@ -256,7 +258,8 @@ async function prepareSave(): Promise<boolean> {
     setStatus('error', `저장 전 판정 실패: ${String(e)}`);
     return false;
   }
-  const decision = decideSave(plan);
+  const journal = await queryJournalAdvice();
+  const decision = decideSave(plan, journal);
   lastHeap = plan.heap;
   lastPlanHadEdits = plan.edits !== null;
   setNotice('size', sizeLimitNotice(plan.heap));
@@ -264,6 +267,7 @@ async function prepareSave(): Promise<boolean> {
     method: plan.method,
     options: plan.options,
     heap: plan.heap.level,
+    journalAdvised: journal?.advised ?? null,
     edits: plan.edits,
     block: decision.block,
     warnings: decision.warnings,
@@ -287,6 +291,30 @@ async function prepareSave(): Promise<boolean> {
     }
   }
   return true;
+}
+
+/** core 저널 상한 판정(계약 D4). 받지 못하면 진단 로그만 남기고 null(권고 없음). */
+async function queryJournalAdvice(): Promise<JournalAdvice | null> {
+  try {
+    return await pdf.journalAdvice();
+  } catch (e) {
+    diag.add('journal-advice-error', String(e));
+    return null;
+  }
+}
+
+/** 편집 커밋 뒤 저널 상한을 물어 "저장 후 다시 열기" 안내를 갱신한다(계약 D4, docs/m5-heap.md 5.3). */
+async function reportJournal(): Promise<void> {
+  const advice = await queryJournalAdvice();
+  if (!advice) return;
+  diag.add('journal-advice', advice);
+  setNotice('journal', journalNotice(advice));
+}
+
+/** 커밋 RPC 결과를 그대로 돌려주고, 저널 판정은 기다리지 않고 뒤에서 한다. */
+function afterCommit(result: CommitResult): CommitResult {
+  void reportJournal();
+  return result;
 }
 
 /** 복구 알림 오류(저장 중 Worker 가 죽어 복구됨)인지. 저장 대상이 오류를 문자열로 감싸 돌려주는 경우도 본다. */
@@ -422,6 +450,8 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   setNotice('recovered', null);
   setNotice('redact', null);
   setNotice('size', null);
+  setNotice('supported-size', null);
+  setNotice('journal', null);
   setNotice('history', null);
   lastHeap = null;
   lastPlanHadEdits = false;
@@ -429,6 +459,7 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   // 원본은 복구 계층이 open 전에 Blob 으로 보관한 뒤 Worker 로 넘긴다(계약 D6).
   const info = await pdf.open(bytes);
   diag.add('open', info);
+  setNotice('supported-size', supportedSizeNotice(info.byteLength));
   documentName = label;
   document.title = `${label} - PDF Editor`;
 
@@ -445,12 +476,12 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
       planParagraphEdit: (i, p) => pdf.planParagraphEdit(i, p),
       beginParagraphEdit: (i, p, r, scale) => pdf.beginParagraphEdit(i, p, r, scale),
       updateParagraphDraft: (d, input) => pdf.updateParagraphDraft(d, input),
-      commitParagraphEdit: (d) => pdf.commitParagraphEdit(d),
+      commitParagraphEdit: (d) => pdf.commitParagraphEdit(d).then(afterCommit),
       cancelParagraphEdit: (d) => pdf.cancelParagraphEdit(d),
       planPathEdit: (i, s) => pdf.planPathEdit(i, s),
       beginPathEdit: (i, s, r) => pdf.beginPathEdit(i, s, r),
       updatePathDraft: (d, e, scale) => pdf.updatePathDraft(d, e, scale),
-      commitPathEdit: (d) => pdf.commitPathEdit(d),
+      commitPathEdit: (d) => pdf.commitPathEdit(d).then(afterCommit),
       cancelPathEdit: (d) => pdf.cancelPathEdit(d),
       undo: () => pdf.undo(),
       redo: () => pdf.redo(),

@@ -171,6 +171,55 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await expect(page.locator('#pe-edit-warnings li[data-kind="glyph-missing"]')).toBeVisible();
   });
 
+  test('저널 상한(D4, M5 C7): 커밋 뒤 journalAdvice 를 묻고, advised 이면 저장 후 다시 열기 알림을 보인다', async () => {
+    const page = await open(SAMPLE);
+    const p = await firstEditable(page);
+    const client = await cdp(page);
+    const journalEvents = async () =>
+      (
+        JSON.parse((await page.textContent('#diag-log')) ?? '[]') as {
+          event: string;
+          data: { advised: boolean; journalBytes: number };
+        }[]
+      ).filter((e) => e.event === 'journal-advice');
+
+    // 1) 실제 Worker 판정: 커밋 뒤 저널 보유 추정이 오고, 작은 문서라 권고는 없다.
+    await page.mouse.dblclick(p.x, p.y);
+    await expect(page.locator('#pe-edit-layer')).toBeVisible();
+    await client.send('Input.insertText', { text: '저널' });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
+    await expect.poll(async () => (await journalEvents()).length).toBe(1);
+    const [real] = await journalEvents();
+    expect(real!.data.advised).toBe(false);
+    expect(real!.data.journalBytes).toBeGreaterThan(0);
+    await expect(page.locator('#notice-bar [data-notice="journal"]')).toHaveCount(0);
+
+    // 2) 값 주입: 판정이 advised 이면 알림 줄에 저널 크기·경고선과 함께 권고가 뜬다.
+    await page.evaluate(() => {
+      const MIB = 2 ** 20;
+      (window as unknown as PeWindow).__pe.pdf.journalAdvice = async () => ({
+        advised: true,
+        journalBytes: 1600 * MIB,
+        incrementBytes: 100 * MIB,
+        thresholdBytes: 1536 * MIB,
+      });
+    });
+    await page.mouse.move(1, 1);
+    await page.mouse.move(p.x, p.y, { steps: 3 });
+    await expect(page.locator('#pe-edit-hover[data-editable="1"]')).toBeVisible();
+    await page.mouse.dblclick(p.x, p.y);
+    await expect(page.locator('#pe-edit-layer')).toBeVisible();
+    await client.send('Input.insertText', { text: '둘째' });
+    await page.keyboard.press('Escape');
+    const notice = page.locator('#notice-bar [data-notice="journal"]');
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('저장하고 파일을 다시 열면');
+    await expect(notice).toContainText('편집 기록 약 1600 MiB');
+    await expect(notice).toContainText('경고선 1536 MiB');
+    await page.close();
+  });
+
   test('Worker 치명 오류 → 복구 → replayEdits 결과 = 복구 전 화면(D6, A3-3)', async () => {
     // 복구는 활성 로그만 다시 적용하고 undo 이력은 잃는다(계약 D6). 그래서 편집 두 번 뒤 undo 의 렌더에서 트랩을 내고,
     // 복구 결과가 첫 편집만 반영한 화면과 같은지 본다(비어 있지 않은 로그의 재적용).

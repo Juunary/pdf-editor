@@ -30,6 +30,22 @@ export interface SaveHeapEstimate {
   model?: string;
 }
 
+/**
+ * 저널 상한 판정(M5 D4, `docs/m5-heap.md` 5.3). 저널 보유 추정 + 예상 전체 저장 증가분이 경고선(저장 힙 warn 경계 =
+ * `HEAP_WARN_FRACTION` × 상한)을 넘으면 `advised`. 뷰어는 편집 커밋 뒤 물어 "저장 후 다시 열기" 를 권한다.
+ * pdf-ops `JournalAdvice` 와 같은 모양이다.
+ */
+export interface JournalAdvice {
+  /** 저장 후 다시 열기를 권할 상태. */
+  advised: boolean;
+  /** 저널 보유 추정(byte). 계수 모델을 쓸 수 없는 환경(Buffer 입력·힙 측정 없음)이면 0. */
+  journalBytes: number;
+  /** 예상 전체 저장 증가분(byte). */
+  incrementBytes: number;
+  /** 경고선(byte). */
+  thresholdBytes: number;
+}
+
 export interface SaveRequest {
   /** 마지막 저장 이후 적용된 변경 유형. */
   changes: ChangeKind[];
