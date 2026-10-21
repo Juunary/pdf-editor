@@ -88,12 +88,22 @@ describe('저널 상한 안내', () => {
     thresholdBytes: 1536 * MIB,
   });
 
-  it('core 저널 판정이 advised 이면 저장 후 다시 열기를 권한다(warn 은 안내, over-limit 은 중단 문구에)', () => {
+  it('core 저널 판정이 advised 이면 저장할 수 있을 때 저장 후 다시 열기를 권하고, 중단 문구에는 편집 기록 크기만 붙인다(M2)', () => {
     expect(decideSave(plan(heap('warn')), advice(true)).infos).toContain(JOURNAL_REOPEN_ADVICE);
-    expect(decideSave(plan(heap('over-limit')), advice(true)).block).toContain(
-      JOURNAL_REOPEN_ADVICE,
-    );
+    const blocked = decideSave(plan(heap('over-limit')), advice(true)).block!;
+    expect(blocked).not.toContain(JOURNAL_REOPEN_ADVICE);
+    expect(blocked).toContain('편집 기록이 약 1200 MiB');
+    expect(blocked).toContain('저장하지 않은 편집은 모두 사라집니다');
     expect(decideSave(plan(heap('ok')), advice(true)).infos).toContain(JOURNAL_REOPEN_ADVICE);
+  });
+
+  it('힙 판정 문구와 저널 권고가 같은 문구를 두 번 붙이지 않는다(M2)', () => {
+    const d = decideSave(
+      plan(heap('warn', { message: '예상 피크 WASM 힙 1600 MiB' })),
+      advice(true),
+    );
+    const all = [...d.warnings, ...d.infos].join(' ');
+    expect(all.split('다시 열').length - 1).toBe(1);
   });
 
   it('advised 가 아니거나 판정을 받지 못했으면 힙 수준·journalBytes 와 무관하게 붙이지 않는다', () => {
