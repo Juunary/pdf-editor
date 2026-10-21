@@ -243,3 +243,44 @@ test('문맥 배지는 화면에 없고 body[data-context] 로 남는다', async
   await expect(page.locator('body')).toHaveAttribute('data-context', 'url-param');
   await page.close();
 });
+
+test('찾기 결과 스크롤은 문서 영역(#page-container)을 움직이고 창은 스크롤하지 않는다', async () => {
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 900, height: 420 });
+  await page.goto(`chrome-extension://${extensionId}/viewer.html?file=${base}/sample.pdf`);
+  await expect(page.locator('#status')).toHaveAttribute('data-state', 'rendered', {
+    timeout: 30_000,
+  });
+  await expect(page.locator('#pe-text-layer .pe-line').first()).toBeAttached();
+  // 쪽 아래쪽 줄에서 문서 전체에 한 번만 나오는 단어를 고른다(현재 결과가 그 자리에 오게).
+  const word = await page.evaluate(() => {
+    const lines = [...document.querySelectorAll<HTMLElement>('#pe-text-layer .pe-line')];
+    const all = lines.map((l) => l.textContent ?? '').join('\n');
+    const count = (w: string) => all.split(w).length - 1;
+    const byTop = lines
+      .map((l) => ({
+        text: l.textContent ?? '',
+        top: l.querySelector('span')?.getBoundingClientRect().top ?? 0,
+      }))
+      .sort((a, b) => b.top - a.top);
+    for (const l of byTop) {
+      for (const w of l.text.split(/\s+/)) {
+        if (/^[A-Za-z]{5,}$/.test(w) && count(w) === 1) return { w, top: l.top };
+      }
+    }
+    return null;
+  });
+  expect(word, '아래쪽 고유 단어').not.toBeNull();
+  const container = page.locator('#page-container');
+  const viewportH = await page.evaluate(() => document.documentElement.clientHeight);
+  expect(word!.top).toBeGreaterThan(viewportH);
+  await page.keyboard.press('Control+F');
+  await page.locator('#pe-find-input').fill(word!.w);
+  const current = page.locator('#pe-highlights .pe-hl[data-current="true"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toBeInViewport();
+  expect(await container.evaluate((c) => c.scrollTop)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => document.scrollingElement!.scrollTop)).toBe(0);
+  await expect(page.locator('#toolbar')).toBeInViewport();
+  await page.close();
+});
