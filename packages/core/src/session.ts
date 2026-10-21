@@ -1,3 +1,5 @@
+// 반드시 `mupdf` 보다 먼저 평가되어야 WASM 힙 측정 객체가 연결된다(번들에서 import 순서가 바뀌면 wasmHeapBytes 가 null 이 된다).
+import './wasm-module.js';
 import * as mupdf from 'mupdf';
 import {
   FULL_SAVE_OPTIONS,
