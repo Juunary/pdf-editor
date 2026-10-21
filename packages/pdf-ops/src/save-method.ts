@@ -89,6 +89,11 @@ export interface SaveModelInput {
   rawStreamBytes: number;
   /** 객체 스트림(/ObjStm)을 푼 크기 합 */
   objectStreamBytes: number;
+  /**
+   * 통계가 표본 추정이다. 표본은 큰 스트림 몇 개를 놓쳐 원 스트림 합을 크게 줄여 볼 수 있으므로, 증가분은 원 스트림 = 입력
+   * 크기(상한)로 계산한다(원 스트림 계수 > 객체 크기 계수라 예상이 커지는 쪽)
+   */
+  approximate?: boolean;
   /** 지금 WASM 선형 메모리 크기 */
   currentHeapBytes: number;
   /** 문서 열기 완료 직후 WASM 선형 메모리 크기 */
@@ -120,7 +125,7 @@ export const SAVE_HEAP_MODEL_ID = 'step-v1';
 export const SAVE_HEAP_COEFFICIENTS: Readonly<Record<SaveMethod, Readonly<SaveHeapCoefficients>>> =
   Object.freeze({
     full: Object.freeze({
-      intercept: 7 * 2 ** 20,
+      intercept: 8.2 * 2 ** 20,
       inputBytes: 0,
       objectCount: 420,
       rawStreamBytes: 2.43,
@@ -146,18 +151,19 @@ export const HEAP_GROWTH_CAP_BYTES = 96 * 2 ** 20;
 export function saveHeapIncrement(
   method: SaveMethod,
   inputBytes: number,
-  m: Pick<SaveModelInput, 'objectCount' | 'rawStreamBytes' | 'objectStreamBytes'>,
+  m: Pick<SaveModelInput, 'objectCount' | 'rawStreamBytes' | 'objectStreamBytes' | 'approximate'>,
   coefficients: Readonly<
     Record<SaveMethod, Readonly<SaveHeapCoefficients>>
   > = SAVE_HEAP_COEFFICIENTS,
 ): number {
   const c = coefficients[method];
-  const objectBytes = Math.max(0, inputBytes - m.rawStreamBytes) + m.objectStreamBytes;
+  const raw = m.approximate ? Math.max(m.rawStreamBytes, inputBytes) : m.rawStreamBytes;
+  const objectBytes = Math.max(0, inputBytes - raw) + m.objectStreamBytes;
   return (
     c.intercept +
     c.inputBytes * inputBytes +
     c.objectCount * m.objectCount +
-    c.rawStreamBytes * m.rawStreamBytes +
+    c.rawStreamBytes * raw +
     c.objectBytes * objectBytes
   );
 }

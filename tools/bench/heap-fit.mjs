@@ -38,8 +38,11 @@ const rows = files
     const journal = r.plan?.heap?.journalBytes ?? 0;
     const held = Math.max(current, base + journal);
     const peak = r.ok ? r.peak : LIMIT;
-    const objectBytes =
-      Math.max(0, r.inputBytes - r.stats.rawStreamBytes) + (r.stats.objectStreamBytes ?? 0);
+    // 표본 추정이면 원 스트림 = 입력(상한)으로 본다(`saveHeapIncrement` 와 같은 규칙).
+    const raw = r.stats.approximate
+      ? Math.max(r.stats.rawStreamBytes, r.inputBytes)
+      : r.stats.rawStreamBytes;
+    const objectBytes = Math.max(0, r.inputBytes - raw) + (r.stats.objectStreamBytes ?? 0);
     return {
       id: r.id,
       view: r.viewPages ?? 0,
@@ -49,7 +52,7 @@ const rows = files
       ok: r.ok,
       inputBytes: r.inputBytes,
       objectCount: r.stats.objectCount,
-      rawStreamBytes: r.stats.rawStreamBytes,
+      rawStreamBytes: raw,
       objectBytes,
       approximate: r.stats.approximate,
       current,

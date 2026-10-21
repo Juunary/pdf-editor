@@ -37,6 +37,7 @@ for (const r of rows) {
       objectCount: r.stats.objectCount,
       rawStreamBytes: r.stats.rawStreamBytes,
       objectStreamBytes: r.stats.objectStreamBytes ?? 0,
+      approximate: r.stats.approximate,
       currentHeapBytes: r.marks.plan,
       baseHeapBytes: r.marks.open,
       journalBytes: r.plan?.heap?.journalBytes ?? 0,
