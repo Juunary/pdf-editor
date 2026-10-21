@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   REPO,
-  extensionRssMiB,
+  exposeTabMemory,
   launchBenchBrowser,
   openBenchPage,
   serveDocs,
@@ -26,7 +26,7 @@ async function memoryRun(docs: BenchDocFile[]): Promise<BenchResult> {
   const b = await launchBenchBrowser();
   try {
     const page = await openBenchPage(b);
-    await page.exposeFunction('benchTabMemory', () => extensionRssMiB(b.userDataDir));
+    await exposeTabMemory(b, page);
     return (await page.evaluate(
       (list) => window.__bench.run(list, { scenarios: ['mem'] }),
       docs.map((d) => ({

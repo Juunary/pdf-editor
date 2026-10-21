@@ -20,7 +20,7 @@ import { classifyFailure } from './failure.js';
 import { fitWidthScale, pageLayout, renderScale, type PageLayout } from './layout.js';
 import { clampPage, parsePageInput, stepPage } from './page-nav.js';
 import { buildReadingOrder, type ReadingOrder } from './reading-order.js';
-import { RenderCache } from './render-cache.js';
+import { RenderCache, type RenderCacheLimits } from './render-cache.js';
 import {
   applySearchResult,
   clearResults,
@@ -111,6 +111,8 @@ export interface ViewerControllerOptions {
   editLog?: EditLog;
   /** 시각(ms, performance.now). 테스트에서 주입한다. */
   now?(): number;
+  /** 렌더 캐시 상한(기본 8쪽·64 MiB). 벤치마크의 비교 실험용. */
+  renderCacheLimits?: RenderCacheLimits;
   /** 유휴 시 다음 쪽을 미리 렌더한다(기본 true, M5 계약 4.1). */
   prefetch?: boolean;
   /** 유휴 시점에 `fn` 을 실행한다. 기본: `requestIdleCallback`(없으면 `setTimeout`). 테스트에서 주입한다. */
@@ -148,11 +150,12 @@ export class ViewerController {
   /** 편집 중에 들어온 창 크기 변화(편집이 끝난 뒤 반영). */
   private envRefreshPending = false;
   /** 쪽 렌더 LRU(8쪽·64 MiB 중 작은 쪽). 문서가 바뀐 쪽은 `invalidatePages` 가 버린다. */
-  readonly renderCache = new RenderCache();
+  readonly renderCache: RenderCache;
   private prefetchRunning = false;
 
   constructor(private readonly options: ViewerControllerOptions) {
     this.host = options.host;
+    this.renderCache = new RenderCache(options.renderCacheLimits);
     this.editLog = options.editLog ?? new EditLog();
     const pageIndex = clampPage(options.initialPage ?? 0, options.pageCount);
     this.state = {

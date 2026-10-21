@@ -156,3 +156,40 @@ export function gitHead(): string {
     return 'unknown';
   }
 }
+
+interface CdpLike {
+  send(method: string, params?: object, sessionId?: string): Promise<unknown>;
+}
+
+/**
+ * 측정 페이지의 `benchTabMemory` 를 등록한다: 렌더러 VmRSS(MiB). 라벨이 `phase:end-after-gc` 면 먼저 페이지와 전용 Worker 에서
+ * 강제 GC 를 돌려 수거 가능한 쓰레기를 뺀 값을 돌려준다(CDP `HeapProfiler.collectGarbage`).
+ */
+export async function exposeTabMemory(
+  b: BenchBrowser,
+  page: Page,
+  onSample?: (label: string, docId: string, mib: number | null) => void,
+): Promise<void> {
+  const cdp = (await b.context.newCDPSession(page)) as unknown as CdpLike & {
+    on(event: string, fn: (e: { sessionId: string }) => void): void;
+  };
+  const sessions: string[] = [];
+  cdp.on('Target.attachedToTarget', (e) => sessions.push(e.sessionId));
+  await cdp.send('Target.setAutoAttach', {
+    autoAttach: true,
+    waitForDebuggerOnStart: false,
+    flatten: true,
+  });
+  await page.exposeFunction('benchTabMemory', async (label: string, docId: string) => {
+    if (label === 'phase:end-after-gc') {
+      await cdp.send('HeapProfiler.collectGarbage').catch(() => undefined);
+      for (const id of sessions) {
+        await cdp.send('HeapProfiler.collectGarbage', {}, id).catch(() => undefined);
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    const mib = extensionRssMiB(b.userDataDir);
+    onSample?.(label, docId, mib);
+    return mib;
+  });
+}
