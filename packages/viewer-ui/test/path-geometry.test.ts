@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   boxTransform,
   buildCandidates,
+  companionPoints,
   candidateHit,
   flattenPath,
   insideFill,
@@ -154,5 +155,38 @@ describe('점 번호', () => {
     expect(pts[0]!.p).toEqual([10, 0]);
     expect(pts[1]!.anchor).toEqual([10, 0]);
     expect(pts[2]!.anchor).toEqual([20, 10]);
+  });
+});
+
+describe('붙은 제어점(리뷰 L3)', () => {
+  const curve = (segments: PathSegment[]) =>
+    pathPoints(
+      makePath(1, [0, 0, 100, 100], { op: 'stroke', lineWidth: 1, color: null, segments }),
+    );
+
+  it('y 끝점을 옮기면 겹친 둘째 제어점이 따라간다', () => {
+    const pts = curve([
+      { type: 'M', p: [0, 0] },
+      { type: 'C', p1: [10, 0], p2: [50, 50], p3: [50, 50] },
+    ]);
+    expect(companionPoints(pts, 3).map((c) => c.index)).toEqual([2]);
+    expect(companionPoints(pts, 2)).toEqual([]); // 제어점을 직접 끌 때는 단독
+  });
+
+  it('v 의 앞 꼭짓점을 옮기면 겹친 첫 제어점이 따라간다', () => {
+    const pts = curve([
+      { type: 'M', p: [0, 0] },
+      { type: 'C', p1: [0, 0], p2: [30, 40], p3: [50, 50] },
+    ]);
+    expect(companionPoints(pts, 0).map((c) => c.index)).toEqual([1]);
+  });
+
+  it('겹치지 않은 일반 곡선은 단독', () => {
+    const pts = curve([
+      { type: 'M', p: [0, 0] },
+      { type: 'C', p1: [10, 0], p2: [40, 50], p3: [50, 50] },
+    ]);
+    expect(companionPoints(pts, 0)).toEqual([]);
+    expect(companionPoints(pts, 3)).toEqual([]);
   });
 });

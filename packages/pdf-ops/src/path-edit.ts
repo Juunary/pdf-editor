@@ -48,6 +48,7 @@ import {
   fmt9,
   formKey,
   invert,
+  latin1String,
   StreamCache,
   union,
 } from './edit-common.js';
@@ -517,9 +518,7 @@ function planWarnings(ctx: ParagraphEditContext, items: readonly PathItem[]): Ed
 /** step 의 Do 피연산자가 이전 편집이 만든 복제본 이름(/PEFn)이면 그 이름, 아니면 null. */
 function clonedName(streams: StreamCache, step: FormStep): string | null {
   const bytes = streams.get(step.stream.objectNumber);
-  const text = new TextDecoder('latin1').decode(
-    bytes.subarray(step.nameRange[0], step.nameRange[1]),
-  );
+  const text = latin1String(bytes.subarray(step.nameRange[0], step.nameRange[1]));
   const m = /^\/(PEF\d+)$/.exec(text);
   return m ? m[1]! : null;
 }
