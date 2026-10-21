@@ -46,7 +46,7 @@ export function exposePdfWorker(endpoint: Comlink.Endpoint, options: PdfSessionO
     undo: async () => (await load()).undo(),
     redo: async () => (await load()).redo(),
     getEditHistory: async () => (await load()).getEditHistory(),
-    replayEdits: async (ops) => (await load()).replayEdits(ops),
+    replayEdits: async (ops, options) => (await load()).replayEdits(ops, options),
   };
   Comlink.expose(lazy, endpoint);
   void load();

@@ -7,6 +7,10 @@
  *   초안을 편집기 모델로 다시 시작하거나 저장을 다시 묻는다.
  * - 복구 전 세대의 초안 id 로 온 호출은 새 Worker 로 보내지 않고 같은 오류로 돌려준다.
  * - 동시에 여러 호출이 실패해도 복구는 한 번만 한다.
+ * - 복구 기준점(계약 D4 사용자 결정 2026-10-21): 사용자 저장이 성공하면(`confirmSaved`) 그 저장 바이트를 기준점으로 삼고,
+ *   복구 때 기준점을 열어 그 뒤 편집만 재적용한다. 활성 로그가 기준점 편집으로 시작하지 않으면(저장 전 편집까지 되돌림)
+ *   원본 + 활성 로그 전체를 재적용한다. 기준점에서 복구하면 기준점이 이 세션의 원본이 된다.
+ * - 재적용은 한 건씩 나눠 보내고(`replayEdits(…, { more })`) 진행(n/N)을 `onProgress` 로 알린다.
  */
 import type {
   EditHistoryState,
@@ -15,6 +19,7 @@ import type {
   PdfWorkerApi,
   RedactAnnotSummary,
   RenderRequest,
+  ReplayOptions,
   SaveRequest,
   SearchRequest,
 } from '@pdf-editor/shared-types';
@@ -47,6 +52,8 @@ export interface EditLogSnapshotLike {
 export interface RecoveryInfo {
   cause: string;
   replayedEdits: number;
+  /** 저장 기준점에서 복구했으면 true(원본에서 전체 로그를 재적용했으면 false). */
+  fromSavedBaseline: boolean;
   history: EditHistoryState | null;
   recoveries: number;
 }
@@ -59,7 +66,26 @@ export interface RecoveryDeps {
   editLog(): EditLogSnapshotLike;
   /** 복구가 끝난 뒤 비동기로 호출한다(복구 중 RPC 를 기다리는 교착을 피한다). */
   onRecovered(info: RecoveryInfo): void | Promise<void>;
+  /** 복구 진행: 열기 뒤 `done = 0`, 편집을 하나 다시 적용할 때마다 `done + 1`(전체 `total`). */
+  onProgress?(done: number, total: number): void;
   log(event: string, data?: unknown): void;
+}
+
+/** 복구 기준점: 저장한 바이트와 그 저장에 들어간 편집 id(저장 시점 활성 로그 순서). */
+interface SavedBaseline {
+  blob: Blob;
+  editIds: string[];
+}
+
+/** 기준점이 지금 활성 로그의 앞부분이면 그 뒤 편집만, 아니면 null. */
+export function opsAfterBaseline(
+  log: EditLogSnapshotLike,
+  baselineIds: readonly string[],
+): EditOp[] | null {
+  if (baselineIds.length > log.activeEditIds.length) return null;
+  for (const [i, id] of baselineIds.entries()) if (log.activeEditIds[i] !== id) return null;
+  const after = new Set(log.activeEditIds.slice(baselineIds.length));
+  return log.ops.filter((op) => after.has(op.id));
 }
 
 /** 치명적인 Worker 오류인지: wasm 트랩·메모리 부족·Worker 스크립트 오류. 일반 문서 오류(MuPDF 예외)는 아니다. */
@@ -105,6 +131,10 @@ export class ResilientPdf implements PdfWorkerApi {
   private broken: Error | null = null;
   private recoveries = 0;
   private original: Blob | null = null;
+  /** 사용자 저장이 성공해 확정된 복구 기준점. */
+  private baseline: SavedBaseline | null = null;
+  /** 마지막 `save` 결과(사용자 저장 성공이 확인되면 기준점이 된다). */
+  private pendingSave: SavedBaseline | null = null;
   /** 초안 id → 그 초안을 만든 Worker 세대. */
   private readonly drafts = new Map<string, number>();
 
@@ -168,10 +198,32 @@ export class ResilientPdf implements PdfWorkerApi {
     const handle = this.deps.spawn();
     this.current = handle;
     try {
-      const bytes = await this.original.arrayBuffer();
-      await handle.api.open(this.deps.transfer(bytes));
       const log = this.deps.editLog();
-      if (log.ops.length > 0) await handle.api.replayEdits(log.ops);
+      const baseline = this.baseline;
+      const afterBaseline = baseline ? opsAfterBaseline(log, baseline.editIds) : null;
+      const fromSavedBaseline = baseline !== null && afterBaseline !== null;
+      const source = fromSavedBaseline ? baseline.blob : this.original;
+      const ops = afterBaseline ?? log.ops;
+      this.deps.log('worker-recover-source', {
+        fromSavedBaseline,
+        baselineEdits: baseline?.editIds.length ?? null,
+        replay: ops.length,
+        activeEdits: log.ops.length,
+      });
+      this.deps.onProgress?.(0, ops.length);
+      const bytes = await source.arrayBuffer();
+      await handle.api.open(this.deps.transfer(bytes));
+      // 한 건씩 보내 진행을 알린다. 저널 켜기·메타 기록은 마지막 호출에서 한 번(core `replayEdits` more).
+      for (const [i, op] of ops.entries()) {
+        await handle.api.replayEdits([op], { more: i < ops.length - 1 });
+        this.deps.onProgress?.(i + 1, ops.length);
+      }
+      if (fromSavedBaseline) {
+        // 새 세션의 문서는 기준점에서 시작한다. 이후 복구도 이 바이트 + 이 세션의 활성 로그로 한다.
+        this.original = baseline.blob;
+        this.baseline = null;
+        this.pendingSave = null;
+      }
       let history: EditHistoryState | null = null;
       try {
         history = await handle.api.getEditHistory();
@@ -181,7 +233,8 @@ export class ResilientPdf implements PdfWorkerApi {
       this.recoveries++;
       const info: RecoveryInfo = {
         cause: message,
-        replayedEdits: log.ops.length,
+        replayedEdits: ops.length,
+        fromSavedBaseline,
         history,
         recoveries: this.recoveries,
       };
@@ -205,6 +258,8 @@ export class ResilientPdf implements PdfWorkerApi {
   async open(bytes: ArrayBuffer): Promise<Awaited<ReturnType<PdfWorkerApi['open']>>> {
     // 원본은 open 전에 Blob 으로 보관한다(transfer 하면 ArrayBuffer 가 비워지므로, 복구 때 이 Blob 을 다시 연다).
     this.original = new Blob([bytes]);
+    this.baseline = null;
+    this.pendingSave = null;
     this.drafts.clear();
     if (this.broken) {
       // 복구에 실패한 Worker 는 버리고 새로 시작한다.
@@ -258,8 +313,30 @@ export class ResilientPdf implements PdfWorkerApi {
     return this.invoke<Awaited<ReturnType<PdfWorkerApi['journalAdvice']>>>('journalAdvice', []);
   }
 
-  save(request: SaveRequest) {
-    return this.invoke<Awaited<ReturnType<PdfWorkerApi['save']>>>('save', [request]);
+  async save(request: SaveRequest) {
+    const result = await this.invoke<Awaited<ReturnType<PdfWorkerApi['save']>>>('save', [request]);
+    // 저장 바이트를 기준점 후보로 둔다(복사). 사용자 저장이 성공했을 때만 `confirmSaved` 가 기준점으로 올린다.
+    this.pendingSave = {
+      blob: new Blob([result.bytes]),
+      editIds: [...this.deps.editLog().activeEditIds],
+    };
+    return result;
+  }
+
+  /** 사용자 저장이 성공했다: 마지막 `save` 결과를 복구 기준점으로 삼는다(계약 D4). */
+  confirmSaved(): void {
+    if (this.pendingSave) this.baseline = this.pendingSave;
+    this.pendingSave = null;
+  }
+
+  /** 측정 등 사용자 저장이 아닌 `save` 결과는 기준점 후보에서 버린다. */
+  discardPendingSave(): void {
+    this.pendingSave = null;
+  }
+
+  /** 진단·시험용: 확정된 기준점의 편집 id(없으면 null). */
+  get baselineEditIds(): string[] | null {
+    return this.baseline ? [...this.baseline.editIds] : null;
   }
 
   close() {
@@ -388,8 +465,8 @@ export class ResilientPdf implements PdfWorkerApi {
     return this.invoke<EditHistoryState>('getEditHistory', []);
   }
 
-  replayEdits(ops: EditOp[]) {
-    return this.invoke<EditHistoryState>('replayEdits', [ops]);
+  replayEdits(ops: EditOp[], options?: ReplayOptions) {
+    return this.invoke<EditHistoryState>('replayEdits', [ops, options]);
   }
 
   /** Redact 주석 보고(A2-2, `PdfWorkerApi.listRedactAnnots`, 계약 수정 4). */
