@@ -478,4 +478,48 @@ describe('M4 후속 정리(M5 S5)', () => {
     expect(controller.getState().edit.path.selection?.plan?.target.bbox[0]).toBe(140);
     expect(p.beginGesture()).not.toBeNull();
   });
+
+  it('커밋 뒤 다시 판정하는 동안의 선택 클릭은 보류했다가 판정 뒤 처리한다(M5 리뷰 M8)', async () => {
+    const { controller, fake } = await started();
+    const p = paths(controller);
+    await p.selectAt(0, [130, 120], 1, false);
+    const g = p.beginGesture()!;
+    g.update(emptyPathEdit({ transform: [1, 0, 0, 1, 20, 0] }));
+    const release = fake.hold('planPathEdit');
+    const done = p.commitGesture();
+    await vi.waitFor(() => expect(controller.getState().edit.path.settling).toBe(true));
+    // 재판정 중 다른 패스(선, 13)를 고른다: 판정이 끝날 때까지 끝나지 않는다.
+    let picked: number[] | null = null;
+    const click = p.selectAt(0, [420, 100], 1, false).then((v) => (picked = v));
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(picked).toBeNull();
+    expect(controller.getState().edit.path.selection?.paintSeqs).toEqual([11]);
+    release();
+    await done;
+    await click;
+    // 재판정이 옛 선택(11)을 다시 판정한 뒤 보류한 클릭이 반영된다(덮어쓰이지 않음).
+    expect(picked).toEqual([13]);
+    const sel = controller.getState().edit.path.selection!;
+    expect(sel.paintSeqs).toEqual([13]);
+    expect(sel.plan?.target.paintSeqs).toEqual([13]);
+    expect(controller.getState().edit.path.settling).toBe(false);
+  });
+
+  it('삭제 커밋 뒤에도 다시 판정하는 동안의 클릭을 보류한다(M8)', async () => {
+    const { controller, fake } = await started();
+    const p = paths(controller);
+    await p.selectAt(0, [130, 120], 1, false);
+    const release = fake.hold('getPageEditability');
+    const deleting = p.deleteSelected();
+    await vi.waitFor(() => expect(controller.getState().edit.path.settling).toBe(true));
+    expect(controller.getState().edit.path.selection).toBeNull();
+    let picked: number[] | null = null;
+    const click = p.selectAt(0, [420, 100], 1, false).then((v) => (picked = v));
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    expect(picked).toBeNull();
+    release();
+    await deleting;
+    await click;
+    expect(picked).toEqual([13]);
+  });
 });

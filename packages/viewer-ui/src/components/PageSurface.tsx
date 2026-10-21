@@ -130,7 +130,8 @@ export function PageSurface({ controller }: Props) {
           busy={state.edit.starting || state.edit.busy}
         />
       )}
-      {!session && controller.edit?.paths && !state.disabled.path && entry && (
+      {/* 쪽 판정 전·재판정 중에도 둔다: 그 사이의 Alt+클릭을 받아 PathController 가 판정 뒤 처리한다(M8). */}
+      {!session && controller.edit?.paths && !state.disabled.path && (
         <PathLayer
           controller={controller}
           pageRef={pageRef}

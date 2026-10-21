@@ -48,7 +48,10 @@ export interface PathState {
   gesture: PathGestureView | null;
   /** 제한 사유 안내(선택한 패스가 편집 불가일 때). */
   note: string[] | null;
-  /** 커밋 뒤 모델·선택 판정을 다시 읽는 중. 끝나기 전의 선택 상자·계획은 옛 값이므로 동작을 막는다(리뷰 L7). */
+  /**
+   * 커밋 뒤 모델·선택 판정을 다시 읽는 중. 끝나기 전의 선택 상자·계획은 옛 값이므로 동작을 막고(리뷰 L7) 선택 상자를
+   * 숨긴다. 이 동안 들어온 선택 클릭은 보류했다가 끝난 뒤 처리한다(M5 리뷰 M8).
+   */
   settling: boolean;
 }
 
@@ -82,6 +85,8 @@ export class PathController {
   private ending: Promise<boolean> | null = null;
   /** 진행 중인 모델 읽기. 같은 쪽을 다시 요청하면 이 읽기를 기다린다(첫 Alt+클릭 소실의 원인 수정). */
   private loadingModel: { pageIndex: number; promise: Promise<void> } | null = null;
+  /** 진행 중인 커밋 뒤 재판정(`settling`). 그 사이의 선택 클릭은 이것을 기다린다. */
+  private settled: Promise<void> | null = null;
 
   constructor(private readonly ctx: PathContext) {}
 
@@ -161,6 +166,9 @@ export class PathController {
     if (this.gesture || this.ctx.getState().session || this.ctx.getState().starting) {
       return this.ctx.getPath().selection?.paintSeqs ?? [];
     }
+    // 커밋 직후 재판정 중이면 끝날 때까지 보류한다. 그대로 처리하면 옛 모델·판정으로 고르거나, 재판정이 새 선택을
+    // 덮어쓴다(M8: 패스 커밋 직후 약 100 ms 의 Alt+클릭이 무시되거나 이전 선택이 다시 보임).
+    while (this.settled) await this.settled;
     await Promise.all([this.ensureModel(pageIndex), this.ctx.ensureEditability?.(pageIndex)]);
     const hit = pickPath(this.candidates(pageIndex), point, STROKE_HIT_PX / cssScale);
     const cur = this.ctx.getPath().selection;
@@ -314,16 +322,20 @@ export class PathController {
     this.ctx.patch({ history: result.history });
     const edit = result.op.kind === 'edit-path' ? result.op.edit : null;
     if (edit?.delete) this.clear();
-    else this.ctx.patchPath({ settling: true });
+    this.ctx.patchPath({ settling: true });
+    let done = (): void => {};
+    const settled = new Promise<void>((resolve) => (done = resolve));
+    this.settled = settled;
     try {
       await this.ctx.invalidatePages([...new Set([pageIndex, ...result.history.affectedPages])]);
       this.ctx.logEvent('path-commit', { pageIndex, edits: result.history.edits });
-      if (!edit?.delete) {
-        await this.ensureModel(pageIndex);
-        await this.replan();
-      }
+      await this.ensureModel(pageIndex);
+      await this.ctx.ensureEditability?.(pageIndex);
+      if (!edit?.delete) await this.replan();
     } finally {
+      if (this.settled === settled) this.settled = null;
       if (this.ctx.getPath().settling) this.ctx.patchPath({ settling: false });
+      done();
     }
   }
 
@@ -404,6 +416,7 @@ export class PathController {
   reset(): void {
     this.gesture = null;
     this.loadingModel = null;
+    this.settled = null;
     this.ctx.patchPath(initialPathState());
   }
 
