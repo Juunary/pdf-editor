@@ -9,7 +9,7 @@
  *   BENCH_DOCS       문서 id 쉼표 목록(기본: tier 전체)
  *   BENCH_SCENARIOS  시나리오 쉼표 목록(기본: 전체)
  *   BENCH_LABEL      결과 파일 이름(기본: 시각)
- *   BENCH_BASELINE   직전 기록 JSON 경로(기본 out/m5-bench/baseline.json). +20% 초과 지표를 회귀로 표시한다.
+ *   BENCH_BASELINE   직전 기록 JSON 경로(기본 fixtures/bench/baseline-server.json). +20% 초과 지표를 회귀로 표시한다.
  *
  * 결과: out/m5-bench/<label>.json (측정 페이지 결과 + 렌더러 VmRSS 추적 + 회귀 표). 탭 메모리는 이 확장 렌더러의 VmRSS 다.
  */
@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   REPO,
+  exposeTabMemory,
   extensionRssMiB,
   gitHead,
   launchBenchBrowser,
@@ -50,39 +51,60 @@ test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
     const scenarios = (process.env.BENCH_SCENARIOS?.split(',') ??
       DEFAULT_OPTIONS.scenarios) as Scenario[];
 
+    // 문서마다 새 브라우저(새 렌더러 프로세스)로 잰다: 앞 문서가 남긴 JS·WASM 메모리가 탭 메모리 기준을 흐리지 않게.
     const { server, base } = await serveDocs(docs);
-    const b = await launchBenchBrowser();
-    const trace: { t: number; mib: number }[] = [];
-    const poll = setInterval(() => {
-      const mib = extensionRssMiB(b.userDataDir);
-      if (mib !== null) trace.push({ t: Date.now(), mib });
-    }, 250);
+    const trace: { t: number; mib: number; doc: string }[] = [];
+    const labels: { label: string; docId: string; mib: number | null; t: number }[] = [];
+    const parts: BenchResult[] = [];
     try {
-      const page = await openBenchPage(b);
-      const labels: { label: string; docId: string; mib: number | null; t: number }[] = [];
-      await page.exposeFunction('benchTabMemory', (label: string, docId: string) => {
-        const mib = extensionRssMiB(b.userDataDir);
-        labels.push({ label, docId, mib, t: Date.now() });
-        return mib;
-      });
-      page.on('console', (m) => {
-        if (m.type() === 'error') console.log('[page]', m.text());
-      });
-      const result = (await page.evaluate(
-        ([list, sc]) => window.__bench.run(list, { scenarios: sc as never }),
-        [
-          docs.map((d) => ({
-            id: d.id,
-            name: `${d.id}.pdf`,
-            url: `${base}/${d.id}.pdf`,
-            bytes: d.bytes,
-            judgePages: d.judgePages,
-          })),
-          scenarios,
-        ] as const,
-      )) as unknown as BenchResult;
-
-      const baselinePath = process.env.BENCH_BASELINE ?? join(OUT_DIR, 'baseline.json');
+      for (const d of docs) {
+        const b = await launchBenchBrowser();
+        const poll = setInterval(() => {
+          const mib = extensionRssMiB(b.userDataDir);
+          if (mib !== null) trace.push({ t: Date.now(), mib, doc: d.id });
+        }, 250);
+        try {
+          const page = await openBenchPage(b);
+          await exposeTabMemory(b, page, (label, docId, mib) =>
+            labels.push({ label, docId, mib, t: Date.now() }),
+          );
+          page.on('console', (m) => {
+            if (m.type() === 'error') console.log('[page]', m.text());
+          });
+          parts.push(
+            (await page.evaluate(
+              ([list, sc]) => window.__bench.run(list, { scenarios: sc as never }),
+              [
+                [
+                  {
+                    id: d.id,
+                    name: `${d.id}.pdf`,
+                    url: `${base}/${d.id}.pdf`,
+                    bytes: d.bytes,
+                    judgePages: d.judgePages,
+                  },
+                ],
+                scenarios,
+              ] as const,
+            )) as unknown as BenchResult,
+          );
+        } finally {
+          clearInterval(poll);
+          await b.close();
+        }
+      }
+    } finally {
+      server.close();
+    }
+    {
+      const result: BenchResult = {
+        ...parts[0]!,
+        finishedAt: parts.at(-1)!.finishedAt,
+        docs: parts.flatMap((p) => p.docs),
+        p95: Object.assign({}, ...parts.map((p) => p.p95)) as Record<string, number>,
+      };
+      const baselinePath =
+        process.env.BENCH_BASELINE ?? join(REPO, 'fixtures/bench/baseline-server.json');
       const regressions = existsSync(baselinePath)
         ? compareRuns(
             (JSON.parse(readFileSync(baselinePath, 'utf8')) as BenchResult).p95,
@@ -112,10 +134,6 @@ test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
         ),
       );
       for (const d of result.docs) expect(d.errors, `${d.id} 오류`).toEqual([]);
-    } finally {
-      clearInterval(poll);
-      await b.close();
-      server.close();
     }
   });
 });

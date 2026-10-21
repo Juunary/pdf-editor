@@ -4,7 +4,7 @@
  */
 import { expect, test } from '@playwright/test';
 import {
-  extensionRssMiB,
+  exposeTabMemory,
   launchBenchBrowser,
   openBenchPage,
   type BenchBrowser,
@@ -35,7 +35,7 @@ test.afterAll(async () => {
 
 test('bench.html: m0-sample.pdf 로 열기·판정·저장·메모리 지표가 나온다', async () => {
   const page = await openBenchPage(b);
-  await page.exposeFunction('benchTabMemory', () => extensionRssMiB(b.userDataDir));
+  await exposeTabMemory(b, page);
   const url = `chrome-extension://${b.extensionId}/diag/m0-sample.pdf`;
   const result = (await page.evaluate(
     (u) =>

@@ -49,6 +49,10 @@ export interface BenchOptions {
   pathSteps: number;
   /** 메모리 왕복: 넘김 쪽 수(왕복)·편집 횟수·저장 횟수. */
   mem: { pages: number; edits: number; saves: number };
+  /** 렌더 캐시 상한 재정의(비교 실험용). 없으면 기본 8쪽·64 MiB. */
+  renderCache?: { maxPages: number; maxBytes: number };
+  /** 미리 렌더 끄기(비교 실험용). */
+  prefetch?: boolean;
 }
 
 export const DEFAULT_OPTIONS: BenchOptions = {
@@ -131,6 +135,8 @@ export interface MemResult {
   end: { wasmHeapBytes: number | null; tabMiB: number | null };
   wasmHeapDeltaMiB: number | null;
   tabDeltaMiB: number | null;
+  /** 종료 뒤 강제 GC(서버 CDP) 후 탭 메모리 − 기준점. 수거 가능한 쓰레기와 잔류분을 가른다. 수동 실행에는 없다. */
+  tabDeltaAfterGcMiB: number | null;
   navigations: number;
   edits: number;
   saves: number;
@@ -299,15 +305,7 @@ export class BenchRunner {
         const reps = this.options.repeats.breakdown;
         const runs: JudgeBreakdown[][] = [];
         for (let r = 0; r < reps; r++) {
-          let pages: number[] = [];
-          let cold = new Map<number, number>();
-          const c = await this.openDoc(bytes.slice(0));
-          try {
-            pages = this.breakdownPages(c, doc.judgePages ?? []);
-            cold = await this.coldJudge(c, pages);
-          } finally {
-            c.dispose();
-          }
+          const { pages, cold } = await this.coldPass(bytes, doc.judgePages ?? []);
           const o = await this.openDoc(bytes.slice(0));
           try {
             runs.push(await this.breakdown(o, cold, pages));
@@ -347,6 +345,8 @@ export class BenchRunner {
     const controller = new ViewerController({
       host,
       pageCount: info.pageCount,
+      renderCacheLimits: this.options.renderCache,
+      prefetch: this.options.prefetch,
       getEnvironment: () => ({
         devicePixelRatio: window.devicePixelRatio || 1,
         availableWidth: this.hooks.availableWidth() - 2 * PAGE_ARROW_GUTTER,
@@ -523,6 +523,19 @@ export class BenchRunner {
     const total = o.pageCount;
     const even = evenlySpaced(total, 2, Math.min(8, Math.max(0, total - 1)));
     return [...new Set([...extra.filter((p) => p < total), ...even])];
+  }
+
+  private async coldPass(
+    bytes: ArrayBuffer,
+    extra: readonly number[],
+  ): Promise<{ pages: number[]; cold: Map<number, number> }> {
+    const c = await this.openDoc(bytes.slice(0));
+    try {
+      const pages = this.breakdownPages(c, extra);
+      return { pages, cold: await this.coldJudge(c, pages) };
+    } finally {
+      c.dispose();
+    }
   }
 
   /** 새 세션에서 쪽마다 `getPageEditability` 를 캐시 없이(그 쪽 처음) 부른 시간. 폰트 적재 같은 공통 초기화는 먼저 치운다. */
@@ -774,15 +787,18 @@ export class BenchRunner {
       for (let i = 0; i < saves; i++) endHeap = (await o.pdf.save({ changes: [] })).wasmHeapBytes;
       mark(M5_EVENTS.mem.end);
       await phase('end', endHeap);
+      await phase('end-after-gc', endHeap);
       const endTab = await this.hooks.tabMemoryMiB('end', doc.id);
 
       const wasmDelta = baseHeap !== null && endHeap !== null ? (endHeap - baseHeap) / MiB : null;
       const tabDelta = baseTab !== null && endTab !== null ? endTab - baseTab : null;
+      const gcTab = phases.find((p) => p.name === 'end-after-gc')?.tabMiB ?? null;
       result.mem = {
         baseline: { wasmHeapBytes: baseHeap, tabMiB: baseTab },
         end: { wasmHeapBytes: endHeap, tabMiB: endTab },
         wasmHeapDeltaMiB: wasmDelta,
         tabDeltaMiB: tabDelta,
+        tabDeltaAfterGcMiB: baseTab !== null && gcTab !== null ? gcTab - baseTab : null,
         navigations,
         edits: done,
         saves,
