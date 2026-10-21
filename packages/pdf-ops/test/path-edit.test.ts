@@ -427,6 +427,61 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
   });
 
+  it('쪽 사용 수 캐시는 판정(ctx)마다 새로 센다: 문서가 바뀐 뒤 shared-form 이 반영된다(리뷰 L5)', () => {
+    const doc = makeDoc(['q /X0 Do Q', { content: '', resources: { XObject: {} } }], (d) => ({
+      XObject: {
+        X0: d.addStream('0 0 1 rg 10 10 20 20 re f', {
+          Type: 'XObject',
+          Subtype: 'Form',
+          BBox: [0, 0, 100, 100],
+          Resources: {},
+        }),
+      },
+    }));
+    const kinds = () => {
+      const ctx = ctxOf(doc);
+      const list = planPathEditability(ctx);
+      return planPathEdit(ctx, [list[0]!.paintSeq]).warnings.map((w) => w.kind);
+    };
+    expect(kinds()).not.toContain('shared-form');
+    const x0 = doc.findPage(0).getInheritable('Resources').get('XObject').get('X0');
+    doc.findPage(1).getInheritable('Resources').get('XObject').put('X0', x0);
+    expect(kinds()).toContain('shared-form');
+  });
+
+  it('같은 Form 안 패스를 다시 편집하면 이전 복제본 이름을 지운다(리뷰 L2)', () => {
+    const doc = makeDoc(['q /X0 Do Q'], (d) => ({
+      XObject: {
+        X0: d.addStream('0 0 1 rg 10 10 20 20 re f', {
+          Type: 'XObject',
+          Subtype: 'Form',
+          BBox: [0, 0, 100, 100],
+          Resources: {},
+        }),
+      },
+    }));
+    const names = (d: mupdf.PDFDocument) => {
+      const out: string[] = [];
+      d.findPage(0)
+        .getInheritable('Resources')
+        .get('XObject')
+        .forEach((_v, k) => out.push(String(k)));
+      return out.sort();
+    };
+    let cur = doc;
+    for (let i = 0; i < 3; i++) {
+      const ctx = ctxOf(cur);
+      const list = planPathEditability(ctx);
+      const plan = planPathEdit(ctx, [list[0]!.paintSeq]);
+      const prep = preparePathEdit(ctx, plan, `e${i}`);
+      writePathEdit(ctx, prep, edit({ fill: [0, i === 1 ? 1 : 0.5, 0] }));
+      cur = reopen(cur);
+    }
+    // 원래 X0 는 쓰는 곳이 없어졌고, 복제본 이름은 하나만 남는다.
+    expect(names(cur).filter((n) => n.startsWith('PEF'))).toHaveLength(1);
+    expect(contentText(cur)).toMatch(/^q \/PEF\d+ Do Q$/);
+  });
+
   it('Resources 없는 Form(쪽 상속): 복제본이 쪽 Resources 사본을 갖고 글자 렌더가 그대로(세 엔진)', async () => {
     const doc = makeDoc(['q /X0 Do Q'], (d) => ({
       XObject: {
@@ -491,6 +546,23 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     apply(ctx, [p!.paintSeq], edit({ transform: [1, 0, 0, 1, 5, 0] }));
     expect(contentText(doc, 0)).toBe('15 10 20 20 re f');
     expect(contentText(doc, 1)).toBe('10 10 20 20 re f');
+  });
+
+  it('태그(MCID) 안 패스 삭제는 경고하고, 태그 밖 패스·이동은 경고하지 않는다(리뷰 L8)', () => {
+    const doc = makeDoc([
+      '/Figure << /MCID 0 >> BDC 1 0 0 rg 10 10 20 20 re f EMC 0 0 1 rg 50 50 20 20 re f',
+    ]);
+    const warn = (seq: number, e: Partial<PathEdit>) => {
+      const ctx = ctxOf(doc);
+      const list = planPathEditability(ctx);
+      const plan = planPathEdit(ctx, [list[seq]!.paintSeq]);
+      const prep = preparePathEdit(ctx, plan, `w${seq}${e.delete ? 'd' : 'm'}`);
+      writePathEdit(ctx, prep, edit(e));
+      return pathEditWarnings(ctx, prep).map((w) => w.kind);
+    };
+    expect(warn(0, { transform: [1, 0, 0, 1, 5, 0] })).toEqual([]);
+    expect(warn(1, { delete: true })).toEqual([]);
+    expect(warn(0, { delete: true })).toEqual(['tagged-structure-unlinked']);
   });
 
   it('표 괘선 삭제 경고(table-rule-removed)', () => {
