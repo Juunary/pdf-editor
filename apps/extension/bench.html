@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PDF Editor 벤치마크</title>
+    <link rel="stylesheet" href="./src/viewer/viewer.css" />
+    <link rel="stylesheet" href="./src/viewer/bench.css" />
+  </head>
+  <body>
+    <header id="toolbar">
+      <strong>M5 벤치마크</strong>
+      <span id="bench-status" data-state="idle">대기</span>
+      <div id="viewer-controls"></div>
+    </header>
+    <section id="bench-panel">
+      <fieldset>
+        <legend>1. 문서 선택</legend>
+        <input id="bench-files" type="file" accept="application/pdf,.pdf" multiple />
+        <span id="bench-file-list"></span>
+      </fieldset>
+      <fieldset>
+        <legend>2. 지표</legend>
+        <label><input type="checkbox" data-scenario="open" checked /> 열기</label>
+        <label><input type="checkbox" data-scenario="nav" checked /> 쪽 넘김</label>
+        <label><input type="checkbox" data-scenario="judge" checked /> 쪽 판정</label>
+        <label><input type="checkbox" data-scenario="edit" checked /> 편집 반응</label>
+        <label><input type="checkbox" data-scenario="path" checked /> 패스 끌기</label>
+        <label><input type="checkbox" data-scenario="save" checked /> 전체 저장</label>
+        <label><input type="checkbox" data-scenario="mem" checked /> 메모리 왕복</label>
+      </fieldset>
+      <fieldset>
+        <legend>3. 실행</legend>
+        <button id="bench-run" type="button" disabled>실행</button>
+        <button id="bench-continue" type="button" hidden>입력했음, 계속</button>
+        <p id="bench-manual" hidden>
+          작업 관리자(Shift+Esc) "메모리 사용 공간"에서 이 확장의 뷰어 프레임 행 값을 읽어 넣습니다.
+          <label>MiB <input id="bench-manual-mib" type="number" min="0" step="0.1" /></label>
+        </p>
+      </fieldset>
+      <fieldset>
+        <legend>4. 결과</legend>
+        <button id="bench-export" type="button" disabled>결과 JSON 내보내기</button>
+        <pre id="bench-summary"></pre>
+      </fieldset>
+    </section>
+    <main id="page-container"></main>
+    <script type="module" src="./src/viewer/bench.ts"></script>
+  </body>
+</html>
