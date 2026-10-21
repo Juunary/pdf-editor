@@ -450,3 +450,32 @@ describe('편집 가능 표시', () => {
     expect(host.extractPage).toHaveBeenCalledWith({ pageIndex: 1, includePathSegments: true });
   });
 });
+
+describe('M4 후속 정리(M5 S5)', () => {
+  it('모델을 읽는 중에 들어온 첫 선택(Alt+클릭)은 그 읽기를 기다려 선택된다', async () => {
+    const { controller, host } = await started();
+    const p = paths(controller);
+    void p.ensureModel(0); // 문서를 연 직후 패스 모델 재적재
+    const sel = await p.selectAt(0, [130, 120], 1, false);
+    expect(sel).toEqual([11]);
+    const pathReads = host.extractPage.mock.calls.filter((c) => c[0].includePathSegments);
+    expect(pathReads).toHaveLength(1);
+  });
+
+  it('커밋 뒤 다시 판정이 끝나기 전에는 패스 동작을 시작하지 않는다(리뷰 L7)', async () => {
+    const { controller, fake } = await started();
+    const p = paths(controller);
+    await p.selectAt(0, [130, 120], 1, false);
+    const g = p.beginGesture()!;
+    g.update(emptyPathEdit({ transform: [1, 0, 0, 1, 20, 0] }));
+    const release = fake.hold('planPathEdit');
+    const done = p.commitGesture();
+    await vi.waitFor(() => expect(controller.getState().edit.path.settling).toBe(true));
+    expect(p.beginGesture()).toBeNull();
+    release();
+    await done;
+    expect(controller.getState().edit.path.settling).toBe(false);
+    expect(controller.getState().edit.path.selection?.plan?.target.bbox[0]).toBe(140);
+    expect(p.beginGesture()).not.toBeNull();
+  });
+});
