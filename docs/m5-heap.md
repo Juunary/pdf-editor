@@ -5,11 +5,12 @@
 | 작성일 | 2026-10-21 |
 | 범위 | `docs/m5-contract.md` 4.2·D4·D5(작업 S1), 1.2 이관 A3-5·A3-8·A7-5, 리스크 8 core 값, M4 리뷰 L4 |
 | 브랜치 | `m5-heap`(기준 `m5` 6e4f3b2) |
-| 상태 | 모델·계수·검증 완료(미탐 0). D4 측정 완료, 체크포인트 도입 여부는 메인 세션 결정 대기. 100 MB 이상 실제 문서 미확정(합성 대체). 재적용 실패 2건 후속 |
+| 상태 | 모델·계수·검증 완료(미탐 0). D4 측정 완료, 체크포인트 도입 여부는 메인 세션 결정 대기. 100 MB 이상 실제 문서 미확정(합성 대체). 재적용 실패 2건 후속. 2026-10-21 M5 리뷰 대응: 같은 세션 두 번째 저장 거짓 차단 수정(모델 `step-v2`, 4.4), 객체 스트림 전수(4.5) |
 
 ## 1. 요약
 
 - 저장 힙 계수 모델 `step-v1` 을 `decideSaveMethod`·`planSave` 에 넣었다. 예상 피크 = max(현재 힙, min(필요량 × 1.2, 필요량 + 96 MiB)), 필요량 = max(현재 힙, 기본 + 저널) + 저장 증가분.
+- `step-v2`(M5 리뷰 H1, 4.4): 필요량의 "현재 힙" 을 "사용 중 힙" 으로 바꿨다. 첫 저장은 현재 힙 그대로(계수·저장 1회 결과 불변), 직전 저장이 있으면 그 저장의 사용 추정 + 저장 뒤 늘어난 힙. 두 번째 저장부터 저장 전 MuPDF 자원 캐시를 비운다. 같은 세션 저장 2회 312회 측정에서 미탐 0, 과탐(문서 기준) 전체 0/14·증분 1/17. 525 MiB 문서 재현: 두 번째 저장 예상 2,279 MiB over-limit → 1,404 MiB ok(실측 898 MiB).
 - 저장 증가분 = 고정분 + 객체 수 × b + 원 스트림 바이트 × c + 객체 크기 × e. 객체 크기 = (입력 − 원 스트림) + 객체 스트림을 푼 크기.
 - 검증(서버 Node, 304회 측정, 문서 단위 leave-one-out): 미탐 0/152(전체 저장)·0/152(증분). 과탐은 문서 기준 0%(전체)·5%(증분), 시나리오 기준 15%·48%(4.1 해석 참조).
 - 이전 배율 모델(입력 × 3.48·2.98)은 같은 데이터에서 미탐 106/152·108/152. 실제 문서 대부분을 과소 추정했다.
@@ -40,6 +41,7 @@
 | 합성 이미지 | `synth-image-{100,300,500,700,800,900,1000,1100,1200}`: 쪽마다 잡음 이미지 787 KB + 텍스트 1줄(`docs/m0-dod-xobject-redact-save.md` 3.2 와 같은 생성 방식·시드), 75–901 MiB | 적합·검증. 800–1,200쪽은 상한 경계 확인용(1,100·1,200쪽 일부 실패) |
 | 합성 객체 | `synth-object-{500,1000,2000}`: 태그 문서 모양, 쪽마다 줄 248개·구조 요소 248개. 2,000쪽 = 객체 502,007개 | 적합·검증 |
 | 대용량 합성 대체(계약 8절) | `large-image-mixed`(160쪽, 225 MiB, 쪽마다 잡음 이미지 + 압축 잘 되는 1024² 그러데이션 + 텍스트 40줄), `large-object-4000`(4,000쪽, 182 MiB, 객체 1,020,007개, 쪽마다 링크 주석 2개 추가) | 적합에서 빼고 검증만(적합용과 다른 구성) |
+| 객체 스트림 위주 합성(리뷰 M1) | `large-objstm-4000`(4,000쪽, 81.8 MiB, 객체 1,009,009개, 스트림이 아닌 객체를 객체 스트림 200개씩·xref 스트림으로 기록, 객체 스트림 푼 크기 87.2 MiB) | 검증만 |
 | 100 MB 이상 실제 문서 | 미확정. `tools/bench/heap-docs.json` `realLarge` 자리 2개(이미지 위주·객체 위주)를 비워 두었다. 채우면 `heap-run.mjs` 가 `real-large` 묶음으로 검증만 한다 | 메인 세션 |
 
 생성기: `tools/bench/synth.mjs`(WASM 을 거치지 않고 파일에 직접 쓴다, 같은 인자면 같은 바이트).
@@ -78,7 +80,8 @@
 | large-object-4000(객체 102만) | 640–780 | 57.1 | 표본 |
 
 - 표본: 객체 번호를 `stride` 개 구간으로 나눠 구간마다 고정 시드 의사난수 위치 하나를 읽고 구간 크기를 곱한다. 처음 구현(구간 첫 객체)은 large-object-4000 에서 객체 배치 주기(쪽마다 254개)와 간격(64)이 맞물려 콘텐츠 스트림을 하나도 고르지 않았다(원 스트림 0 MiB, 전수 66.7 MiB). 층화 표본은 66.1 MiB.
-- 표본은 큰 스트림 몇 개(폰트 파일 등)를 놓치면 원 스트림 합을 크게 줄여 본다(시험 문서: 전수 4.16 MB, 표본 0.02 MB). 그래서 `approximate` 이면 모델은 원 스트림 = 입력 크기(상한)로 계산한다. 원 스트림 계수(2.43) > 객체 크기 계수(1.58)라 예상이 커지는 쪽이다.
+- 표본은 큰 스트림 몇 개(폰트 파일 등)를 놓치면 원 스트림 합을 크게 줄여 본다(시험 문서: 전수 4.16 MB, 표본 0.02 MB). 그래서 `approximate` 이면 모델은 원 스트림 = max(표본 값, 입력 크기)로 계산한다. 이 보정은 (입력 − 원 스트림) 몫을 객체 크기 계수(1.58)에서 원 스트림 계수(2.43)로 옮겨 그 몫만 키우고, 객체 스트림 푼 크기는 덮지 않는다(정정: 처음 기록의 "예상이 커지는 쪽" 은 객체 스트림 몫에는 맞지 않았다, M5 리뷰 M1).
+- 객체 스트림 푼 크기는 표본과 무관하게 전수로 센다(M5 리뷰 M1, 4.5): 원본 바이트의 xref(전통 표·xref 스트림, /Prev·/XRefStm 사슬)에서 압축 객체가 든 객체 스트림 번호를 모아 그것만 하나씩 풀고 놓는다. xref 를 읽지 못하면(복구한 문서 등) 객체 스트림 번호를 모르므로 예산과 무관하게 전체를 전수로 센다.
 - 객체 스트림 디코드는 그 스트림만 하나씩 풀고 바로 놓는다(nasa-se-handbook 34 ms). 계약 D5 의 "디코드 합산 580 ms·+73 MiB" 는 모든 스트림을 푼 값이라 다르다.
 - 힙 증가는 객체를 읽어 둔 비용이다. 저장이 어차피 모든 객체를 읽으므로 그 몫이 현재 힙(모델 H)으로 옮겨 갈 뿐이다.
 
@@ -182,6 +185,73 @@ LOO(문서 단위, 여유 포함, 대용량 대체는 전체 적합 계수로 �
 - 첫 실행에서 `wasmHeapBytes` 가 null 로 와 planSave 가 배율 모델(예: 784 = 225 × 3.48)로 계산했다. 원인: Vite 번들의 session 청크에서 mupdf 초기화(`await …(globalThis.$libmupdf_wasm_Module)`)가 `wasm-module.ts` 의 설정 객체 등록보다 먼저 실행됐다(`session.ts` 가 `mupdf` 를 먼저 import). `session.ts` 첫 import 를 `./wasm-module.js` 로 바꿔 해결했다(위 표는 수정 뒤). 이 결함은 M5 이전부터 있었고 진단 "전체 저장 측정" 의 `wasmHeapBytes`·`SaveResult.wasmHeapBytes` 도 null 이었을 것으로 본다(M0 W6 Windows 측정 시점 빌드는 값이 있었다. 이후 청크 구성이 바뀐 시점은 확인 안 함).
 - Windows 정식 Chrome·탭 메모리는 확인하지 않았다(사용자 확인 항목, 계약 6절 4).
 
+### 4.4 같은 세션 저장 2회(M5 리뷰 H1)
+
+문제: WASM 선형 메모리는 줄지 않는다. `step-v1` 은 첫 저장 뒤 커진 힙(저장이 쓰고 놓은 출력 버퍼 등)을 "현재 힙 = 사용 중" 으로 보고 그 위에 증가분을 다시 더했다. 재현(합성 이미지 700쪽, 525 MiB, 편집 후 전체 저장 2회, 저장소 밖 재현 스크립트, 문서는 `tools/bench/synth.mjs`):
+
+| 저장 | 저장 전 힙 MiB | `step-v1` 예상 | `step-v2` 예상 | 실측 피크 MiB |
+| --- | --- | --- | --- | --- |
+| 1회째 | 22 | 1,404 ok | 1,404 ok | 898 |
+| 2회째 | 898 | 2,279 over-limit | 1,404 ok | 898 |
+
+식(`step-v2`, `estimateSaveHeapModel`·`usedHeapAfterSave`):
+
+```
+사용 중 = 현재 힙                                             (이 세션에 저장이 없었을 때, step-v1 과 같음)
+사용 중 = 직전 저장의 사용 중 + max(0, 현재 힙 − 직전 저장 직후 힙) (직전 저장이 있을 때)
+need   = max(사용 중, 기본 + 저널) + 증가분
+예상   = max(현재 힙, min(need × 1.2, need + 96 MiB))
+```
+
+- 직전 저장이 읽어 들인 객체는 힙에 남지만 그 몫은 직전 저장의 증가분이 이미 덮었다(같은 증가분을 다시 쓴다).
+- 저장 뒤 렌더가 저장이 놓은 빈 공간 안에 자원 캐시(풀린 이미지·글꼴)를 쌓으면 힙 크기는 그대로라 사용 중 추정이 놓친다. 1차 측정(v1, 캐시 비우기 없음)에서 코퍼스 2건이 미탐이었다: kogl-nabo-rnd107 증분 보기 30(예상 56, 실측 66 MiB), zen-beamer-7535020 증분 보기 30(예상 93, 실측 104 MiB). 그래서 두 번째 저장부터 저장 직전에 `mupdf.emptyStore()` 를 부른다.
+- 첫 저장 전에도 비우는 방식(v2)은 저장 1회 미탐 6건을 만들었다(합성 이미지 900쪽 전체 보기 10: 1,370 → 1,924 MiB, 빈 조각 때문으로 본다). 첫 저장 전에는 비우지 않는다(v3, 채택).
+- 판정 근거 표시 `grownHeapBasis`: warn·over-limit 이고, 사용 중 힙 대신 기본 + 저널로 계산한 수준이 더 낮으면 참. 뷰어는 over-limit 이라도 이때 "그래도 저장 시도" 를 허용한다(실패하면 Worker 복구 뒤 다시 묻는다).
+
+측정(서버 Node, `heap-run.mjs --variants full2,none2`, 코퍼스 24건 + 합성 15건 × 전체·증분 × 보기 0·3·10·30 = 312회, v3 = 채택 코드). 시나리오: 열기 → 1쪽 렌더 → 통계 → (전체) 편집 → 보기 N쪽 → 저장 → (전체) 같은 문단 다시 편집 → 다음 N쪽 렌더 → 저장. 판정 `node tools/bench/heap-check-twice.mjs out/m5-heap/twice-v3.jsonl`. 과탐 정의는 4.1(시나리오 기준 / 문서 기준).
+
+| 묶음 | 경로 | 표본(2회째) | 이전 식 미탐 | 이전 식 판정(over-limit) | 이전 식 과탐 시나리오 / 문서 | 새 식 미탐 | 새 식 판정(over-limit) | 새 식 과탐 시나리오 / 문서 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 코퍼스 | 전체 | 96 | 0 | 0(0) | 0 / 0 | 0 | 0(0) | 0 / 0 |
+| 코퍼스 | 증분 | 96 | 0 | 0(0) | 0 / 0 | 0 | 0(0) | 0 / 0 |
+| 대용량 대체 3건 | 전체 | 12 | 0 | 4(0) | 4 / 4 | 0 | 0(0) | 0 / 0 |
+| 대용량 대체 3건 | 증분 | 12 | 0 | 4(0) | 4 / 4 | 0 | 0(0) | 0 / 0 |
+| 합성 이미지·객체 | 전체 | 42 | 0 | 22(16) | 11 / 8 | 0 | 14(3) | 3 / 0 |
+| 합성 이미지·객체 | 증분 | 44 | 0 | 24(21) | 17 / 8 | 0 | 17(8) | 10 / 1 |
+
+- 표본 수 차이: 첫 저장이 실패한 10회(합성 1,100·1,200쪽, 모두 예상 over-limit)는 두 번째 저장이 없다. 두 번째 저장 실패는 0회.
+- 두 번째 저장 실측 피크는 모든 표본에서 첫 저장 피크와 같았다(저장이 놓은 공간을 다시 씀).
+- 새 식의 over-limit 은 합성 이미지 1,000쪽 이상뿐이고 첫 저장 판정과 같다. 그중 1,000쪽 전체 보기 30 1건은 `grownHeapBasis`(그래도 저장 시도 가능). 문서 기준 과탐 1건은 합성 이미지 700쪽 증분 보기 30(warn, 실측 1,019 MiB).
+- 같은 측정의 첫 저장(저장 1회와 같은 경로) 재판정(`heap-check.mjs`): 미탐 전체 0/144·증분 0/144·대용량 대체 0/24, 과탐 문서 기준 0/20·1/21(4.2 v5 와 같음).
+
+Chrome Worker(서버 Playwright 번들 Chromium, `chrome-heap.mjs <pdf>:full2`, 1회씩):
+
+| 문서 | 경로 | 1회째 예상 / 실측 MiB | 2회째 예상 / 실측 MiB | 판정(2회째) | 탭 크래시 | 미탐 |
+| --- | --- | --- | --- | --- | --- | --- |
+| synth-image-700 | 전체(편집 2회) | 1,414 / 639 | 1,414 / 639 | ok | 아니오 | 아니오 |
+| synth-image-700 | 증분 | 1,469 / 928 | 1,469 / 928 | ok | 아니오 | 아니오 |
+| synth-image-1000 | 전체(편집 2회) | 1,956 / 940 | 1,956 / 940 | warn | 아니오 | 아니오 |
+| large-image-mixed | 전체(편집 2회) | 684 / 594 | 684 / 594 | ok | 아니오 | 아니오 |
+| large-object-4000 | 전체(편집 2회) | 1,190 / 582 | 1,190 / 582 | ok | 아니오 | 아니오 |
+| large-objstm-4000 | 전체(편집 2회) | 1,245 / 578 | 1,245 / 578 | ok | 아니오 | 아니오 |
+| nist-sp800-53r5 | 전체(편집 2회) | 131 / 66 | 131 / 66 | ok | 아니오 | 아니오 |
+
+### 4.5 객체 스트림 전수(M5 리뷰 M1)
+
+- 문제: 표본 통계(`approximate`)에서 `objectStreamBytes` 가 표본 가중 추정이었다. 객체 스트림은 객체 수백 개당 1개라 표본이 놓치기 쉽고, 모델의 표본 보정(원 스트림 = 입력)은 이 몫을 덮지 않는다(2.4 정정).
+- 수정: `objectStreamNumbers` 가 원본 xref 에서 객체 스트림 번호를 읽고 그것만 풀어 센다. xref 를 못 읽으면 전체 전수.
+- 확인(`large-objstm-4000`, 객체 1,009,009개·객체 스트림 5,001개, 서버 단독 실행, 예산을 줄여 표본을 강제):
+
+| 방식 | 예산 ms | 계산 ms | 객체 스트림 푼 크기 MiB | 계산 뒤 힙 MiB |
+| --- | --- | --- | --- | --- |
+| 전수 | 무제한 | 461 | 87.2 | 112 |
+| 이전(표본 가중) | 300 / 100 / 30 | 154 / 76 / 39 | 76.8 / 76.8 / 77.6 | 54 / 45 / 45 |
+| 새(객체 스트림 전수) | 300 / 100 / 30 | 338 / 262 / 250 | 87.2 / 87.2 / 87.2 | 93 / 78 / 78 |
+
+- 이전 방식은 이 문서에서 11–12% 과소 추정했다(예상 증가분으로 약 16 MiB). 이 문서의 측정 피크(578 MiB)는 예상(1,245 MiB)보다 훨씬 작아 이번 표본에서는 미탐으로 이어지지 않았다.
+- 비용: 객체 스트림 5,001개를 하나씩 푸는 시간 약 200 ms 가 더해진다(유휴 계산, 열기 시간 밖). 상한 보정은 두지 않았다.
+- 검증 세트: 4.4 측정에서 `large-objstm-4000` 저장 1회·2회 16회 미탐 0(서버 부하 6프로세스에서도 전수 경로, 통계 501–532 ms), Chrome Worker 1회 미탐 0.
+
 ## 5. 저널 상한(D4)
 
 ### 5.1 저널 보유 추정
@@ -224,9 +294,9 @@ LOO(문서 단위, 여유 포함, 대용량 대체는 전체 적합 계수로 �
 
 | 파일 | 내용 |
 | --- | --- |
-| `packages/pdf-ops/src/save-method.ts` | `SaveModelInput`(`approximate` 포함), `SAVE_HEAP_COEFFICIENTS`, `SAVE_HEAP_MODEL_ID = 'step-v1'`, `saveHeapIncrement`, `estimateSaveHeapModel`, `journalAdvice`, `supportedInputBytes`·`SUPPORTED_INPUT_BYTES`, `BASE_HEAP_BYTES`, `HEAP_GROWTH_FACTOR`·`HEAP_GROWTH_CAP_BYTES`. `estimateSaveHeap` 은 `size.model` 이 있으면 계수 모델, 없으면 배율 모델(`estimateSaveHeapRatio`, `model: 'ratio-v0'`). `HeapEstimate` 에 `objectCount`·`rawStreamBytes`·`journalBytes`·`model` |
-| `packages/core/src/open.ts` | `computeDocumentStats`(`DocumentStatsDetail` = shared-types `DocumentStats` + `objectStreamBytes`, 시험 표본 → 전수 또는 층화 표본), `DOCUMENT_STATS_BUDGET_MS = 1000`. L4: `openFromBuffer` 의 임시 Buffer 래퍼 제거(mupdf.js 1.28.1 `openDocument` 가 스스로 해제), 주석 정정 |
-| `packages/core/src/session.ts` | 첫 import `./wasm-module.js`(4.3). 열기 직후 기본 힙 기록, 첫 쪽 전체 렌더 뒤 `setTimeout(0)` 으로 통계 1회 예약(닫으면 취소), `documentStats()`, planSave 계수 모델 입력(`#saveSize`, Stream 입력이고 힙 측정이 될 때만, 그 밖은 배율 모델), `journalAdvice()` |
+| `packages/pdf-ops/src/save-method.ts` | `SaveModelInput`(`approximate` 포함), `SAVE_HEAP_COEFFICIENTS`, `SAVE_HEAP_MODEL_ID = 'step-v1'`(리뷰 H1 뒤 `'step-v2'`: `usedHeapAfterSave`, `SaveModelInput.usedHeapBytes`·`priorSavePeakBytes`, `HeapEstimate.grownHeapBasis`, 힙 문구에서 다시 열기 권고 제거), `saveHeapIncrement`, `estimateSaveHeapModel`, `journalAdvice`, `supportedInputBytes`·`SUPPORTED_INPUT_BYTES`, `BASE_HEAP_BYTES`, `HEAP_GROWTH_FACTOR`·`HEAP_GROWTH_CAP_BYTES`. `estimateSaveHeap` 은 `size.model` 이 있으면 계수 모델, 없으면 배율 모델(`estimateSaveHeapRatio`, `model: 'ratio-v0'`). `HeapEstimate` 에 `objectCount`·`rawStreamBytes`·`journalBytes`·`model` |
+| `packages/core/src/open.ts` | `computeDocumentStats`(`DocumentStatsDetail` = shared-types `DocumentStats` + `objectStreamBytes`, 시험 표본 → 전수 또는 층화 표본), `DOCUMENT_STATS_BUDGET_MS = 1000`. L4: `openFromBuffer` 의 임시 Buffer 래퍼 제거(mupdf.js 1.28.1 `openDocument` 가 스스로 해제), 주석 정정. 리뷰 M1: `objectStreamNumbers`(xref 에서 객체 스트림 번호), 객체 스트림 푼 크기 전수 |
+| `packages/core/src/session.ts` | 첫 import `./wasm-module.js`(4.3). 열기 직후 기본 힙 기록, 첫 쪽 전체 렌더 뒤 `setTimeout(0)` 으로 통계 1회 예약(닫으면 취소), `documentStats()`, planSave 계수 모델 입력(`#saveSize`, Stream 입력이고 힙 측정이 될 때만, 그 밖은 배율 모델), `journalAdvice()`. 리뷰 H1: 직전 저장 기록(`#lastSave`: 사용 중 힙 추정·저장 직후 힙), 두 번째 저장부터 저장 전 `emptyStore()`, 통계에 원본 바이트 전달 |
 | `packages/core/src/edit-engine.ts` | `journalBytes`(5.1), 문단·패스 커밋에서 비용 기록 |
 | `packages/core/test/save-heap.test.ts`(새) | 통계 전수·객체 스트림·간격 표본, 통계 예약·취소, 저널 추정(커밋·undo·redo 버림) |
 | `packages/core/test/stream-input.test.ts` | planSave 판정 시험을 계수 모델·배율 모델 구분으로 갱신 |
@@ -248,6 +318,8 @@ LOO(문서 단위, 여유 포함, 대용량 대체는 전체 적합 계수로 �
 | C7 | `journalAdvice()`·`SUPPORTED_INPUT_BYTES` 를 뷰어에 전달할 RPC·core export 가 없다 | `PdfWorkerApi` 에 `journalAdvice` 추가(shared-types), core `index.ts` 재export 는 메인 세션 또는 S2 |
 | C8 | D4 체크포인트 도입 여부 | 5.3: 재적용 2 s 기준 초과(1.2 MB 쪽 5건 안팎) |
 | C9 | 100 MB 이상 실제 문서 | 합성 대체로 진행, `tools/bench/heap-docs.json` `realLarge` 자리만 둠 |
+| C10 | (M5 리뷰 H1) 계약 D5 식의 "현재 `wasmHeapBytes`" 를 "사용 중 힙"(직전 저장이 있으면 `usedHeapAfterSave`)으로 바꿨다. 두 번째 저장부터 저장 전 `emptyStore()` | 4.4. 저장 1회 결과는 그대로 |
+| C11 | (M5 리뷰 H1) shared-types `SaveHeapEstimate` 에 선택 필드 `usedHeapBytes`·`priorSavePeakBytes`·`grownHeapBasis` 추가 | 계약 3절은 shared-types 변경을 메인 세션 승인으로 둔다. 확인 필요 |
 
 ## 9. 남은 일
 

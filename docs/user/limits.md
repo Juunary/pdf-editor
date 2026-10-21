@@ -74,7 +74,10 @@
 
 - 편집한 문서는 저장할 때 문서 전체를 다시 쓰며, 브라우저의 WASM 메모리 상한(2 GiB) 안에서 처리됩니다. 출력은 스트리밍되지 않습니다.
 - 지원 문서 크기는 약 790 MiB 입니다(이미지 위주 문서를 열자마자 편집 후 저장하는 경우 기준). 이보다 큰 파일은 열 때 "편집·저장이 실패할 수 있음" 알림이 나오며, 열람은 됩니다.
-- 저장 전에 파일 크기·객체 수·스트림 크기·편집 기록으로 예상 메모리를 계산해, 2 GiB 의 75%(1,536 MiB)를 넘으면 경고(확인 창)하고 2 GiB 를 넘으면 저장하지 않고 안내합니다(`docs/m5-heap.md` 3·6절).
+- 저장 전에 파일 크기·객체 수·스트림 크기·편집 기록으로 예상 메모리를 계산해, 2 GiB 의 75%(1,536 MiB)를 넘으면 경고(확인 창)하고 2 GiB 를 넘으면 저장하지 않고 안내합니다(`docs/m5-heap.md` 3·4.4·6절).
+- 작업 메모리는 저장 뒤 줄지 않지만 다음 저장이 그 빈 공간을 다시 씁니다. 같은 문서를 두 번째 저장할 때 예상은 첫 저장과 비슷하게 계산됩니다.
+- 2 GiB 를 넘는 예상의 주된 이유가 이미 커진 작업 메모리(앞선 저장·쪽 보기)이면 저장을 막지 않고 "그래도 저장 시도" 를 고를 수 있습니다. 실패하면 작업 모듈을 복구하고 다시 저장할지 묻습니다.
+- 저장을 막은 경우 저장하지 않은 편집은 남아 있습니다. 파일을 다시 열면 메모리가 정리되지만 저장하지 않은 편집은 사라집니다.
 - 이미지가 많거나 객체 수가 많은 문서는 파일 크기가 작아도 저장 때 메모리를 더 쓸 수 있습니다.
 - 편집 기록(되돌리기용)도 메모리를 차지합니다. 편집을 마칠 때마다 편집 기록과 예상 저장 메모리를 합쳐 경고선(1,536 MiB)을 넘으면 "먼저 저장하고 파일을 다시 열기" 알림이 나옵니다. 다시 연 뒤에는 이전 편집을 되돌릴 수 없습니다.
 - 상한 근처 문서에서 저장이 실패하면 작업 모듈을 복구하고 다시 저장할지 묻습니다.
@@ -92,16 +95,16 @@
 | 글자쌍 커닝 | 편집한 줄 안의 글자 간격이 원본과 조금 다를 수 있습니다 |
 | 일부 표 | 같은 기준선에서 떨어진 조각이나 여러 열을 묶은 셀은 편집 시 글자가 최대 수 pt 이동하거나 표 모양 확인에 실패할 수 있습니다 |
 | 셀 넘침 | 셀 안에서 한글을 덧붙여 셀 상한을 넘으면 넘친 줄이 잘리고 경고가 나옵니다 |
-| 첫 Alt+클릭 | 문서를 연 직후 첫 Alt+클릭은 선택 없이 끝날 수 있습니다. 다시 클릭하십시오 |
-| 쪽 판정 시간 | 패스가 매우 많은 쪽은 처음 진입할 때 편집 가능 판정에 약 1.75 초(코퍼스 최대 쪽, 서버 측정)가 걸립니다 |
+| Alt+클릭 응답 | 쪽을 연 직후나 패스 편집 직후에는 편집 가능 판정이 끝날 때까지 선택 상자가 나타나지 않습니다(서버 약 0.1 초). 그동안의 Alt+클릭은 판정 뒤 반영되므로 다시 누르지 않아도 됩니다 |
+| 쪽 판정 시간 | 패스가 매우 많은 쪽은 처음 진입할 때 편집 가능 판정에 약 1.05 초(코퍼스 최대 패스 쪽, 서버 콜드 중앙값), 다시 들어갈 때 약 0.3 초가 걸립니다. Windows 측정 전입니다 |
 | 키보드 접근성 | 패스 선택·이동을 키보드로 할 수 없습니다 |
 | Redact 주석 | 적용되지 않은 Redact 주석은 적용하지 않습니다 |
 
-수치 출처: `docs/m4-integration.md` 4.2·4.3·7절, `docs/m3-integration.md` 7절.
+수치 출처: `docs/m4-integration.md` 4.2·4.3·7절, `docs/m3-integration.md` 7절, `docs/m5-perf.md` 3·4절, `docs/m5-integration.md` 8절.
 
 ## English summary
 
 - Scope: single-page view, text selection and search, paragraph and table-cell text editing (inside the edit area), vector path editing. Not supported: OCR, image editing, forms/signatures, row/column insertion, continuous scroll.
 - Content that cannot be edited shows a reason: vertical or rotated text, Type3 fonts, unresolved font encodings, clip text, invisible OCR text, content outside the page body, patterns/shadings, clip paths, soft masks, and structures the editor cannot safely rewrite.
-- Saving rewrites the whole file within a 2 GiB WASM memory limit. The viewer warns before saving a memory-heavy document and refuses when the estimate exceeds the limit (current thresholds for stream input: warn above ~441 MiB, stop above ~589 MiB; to be revised in M5).
+- Saving rewrites the whole file within a 2 GiB WASM memory limit. The viewer estimates the save peak from file size, object count, stream sizes and edit history; it asks for confirmation above 1,536 MiB and refuses above 2,048 MiB. Supported document size is about 790 MiB (image-heavy document, edited and saved right after opening); larger files show a notice on open. When the estimate is high mainly because working memory already grew (an earlier save or page views), the viewer offers "save anyway" instead of refusing.
 - Redo history can be lost right after a save or after crash recovery; undo history is lost after recovery.
