@@ -96,12 +96,21 @@ describe('Stream 입력(A3-1)', () => {
     s.close();
   });
 
-  it('저장 전 판정은 Stream 입력 배율(전체 3.48·증분 2.98), buffer 는 4.48·3.98', () => {
+  it('저장 전 판정은 Stream 입력이면 계수 모델(M5 D5), buffer 는 배율 모델 4.48·3.98', () => {
     const s = new PdfSession();
     s.open(threePagePdf());
-    expect(s.planSave({ changes: ['content-stream'] }).heap.ratio).toBe(3.48);
-    expect(s.planSave({ changes: [] }).heap.ratio).toBe(2.98);
+    const stats = s.documentStats();
+    const full = s.planSave({ changes: ['content-stream'] }).heap;
+    expect(full).toMatchObject({
+      model: 'step-v1',
+      objectCount: stats.objectCount,
+      rawStreamBytes: stats.rawStreamBytes,
+      journalBytes: 0,
+      level: 'ok',
+    });
+    expect(s.planSave({ changes: [] }).heap.model).toBe('step-v1');
     s.open(threePagePdf(), 'buffer');
+    expect(s.planSave({ changes: ['content-stream'] }).heap.model).toBe('ratio-v0');
     expect(s.planSave({ changes: ['content-stream'] }).heap.ratio).toBe(4.48);
     expect(s.planSave({ changes: [] }).heap.ratio).toBe(3.98);
     s.close();

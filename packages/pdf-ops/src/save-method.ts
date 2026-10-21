@@ -2,12 +2,11 @@ import type { ChangeKind, SaveMethod } from '@pdf-editor/shared-types';
 
 export type HeapLevel = 'ok' | 'warn' | 'over-limit';
 
-/** 저장 전 예상 피크 WASM 힙(PLAN.md 3.1·5.4, docs/m0-day1-log.md A4). */
+/** 저장 전 예상 피크 WASM 힙(PLAN.md 3.1·5.4, docs/m0-day1-log.md A4, docs/m5-heap.md). */
 export interface HeapEstimate {
   inputBytes: number;
-  /** 적용한 배율(피크 WASM 힙 ÷ 입력 파일 크기) */
+  /** 배율 모델: 적용한 배율. 계수 모델: estimatedPeakBytes ÷ inputBytes(참고값) */
   ratio: number;
-  /** inputBytes × ratio */
   estimatedPeakBytes: number;
   limitBytes: number;
   /** estimatedPeakBytes ÷ limitBytes */
@@ -15,6 +14,12 @@ export interface HeapEstimate {
   level: HeapLevel;
   /** level 이 ok 가 아니면 사용자 메시지 */
   message: string | null;
+  /** 계수 모델 입력(shared-types `SaveHeapEstimate` 와 같은 이름). 배율 모델이면 없음 */
+  objectCount?: number;
+  rawStreamBytes?: number;
+  journalBytes?: number;
+  /** 적용한 모델(`ratio-v0` 배율, `SAVE_HEAP_MODEL_ID` 계수) */
+  model?: string;
 }
 
 export interface SaveDecision {
@@ -68,20 +73,223 @@ export interface SaveSizeInput {
   inputBytes: number;
   limitBytes?: number;
   warnFraction?: number;
+  /** 배율 모델 배율(`model` 이 없을 때만 쓴다) */
   ratio?: Partial<Record<SaveMethod, number>>;
+  /** 계수 모델 입력. 있으면 계수 모델(`estimateSaveHeapModel`)로 계산한다 */
+  model?: SaveModelInput;
+}
+
+/**
+ * 계수 모델 입력(docs/m5-contract.md D5, docs/m5-heap.md 3절). 문서 통계는 첫 쪽 표시 뒤 유휴 시 한 번 계산하고
+ * (core `computeDocumentStats`), 힙 값은 planSave 시점에 읽는다.
+ */
+export interface SaveModelInput {
+  objectCount: number;
+  /** 원 스트림 /Length 합(디코드 안 함) */
+  rawStreamBytes: number;
+  /** 객체 스트림(/ObjStm)을 푼 크기 합 */
+  objectStreamBytes: number;
+  /** 지금 WASM 선형 메모리 크기 */
+  currentHeapBytes: number;
+  /** 문서 열기 완료 직후 WASM 선형 메모리 크기 */
+  baseHeapBytes: number;
+  /** 저널 보유 추정(교체한 스트림 길이 합, D4) */
+  journalBytes: number;
+}
+
+/** 저장 증가분 계수(byte 당 byte, 객체 1개당 byte). docs/m5-heap.md 3절 적합 결과. */
+export interface SaveHeapCoefficients {
+  /** 고정분 byte */
+  intercept: number;
+  inputBytes: number;
+  objectCount: number;
+  rawStreamBytes: number;
+  /** (입력 − 원 스트림) + 객체 스트림을 푼 크기: 객체 사전·배열 텍스트의 대략 크기 */
+  objectBytes: number;
+}
+
+/** 계수 모델 식별자. 계수나 식을 바꾸면 올린다. */
+export const SAVE_HEAP_MODEL_ID = 'step-v1';
+
+/**
+ * 저장 경로별 계수(docs/m5-heap.md 3·4절, `tools/bench/heap-fit.mjs` 형태 `lp/objbytes/step+d/prior`). 적합 표본 전부를
+ * 덮는다는 제약(미탐 0) 아래 상대 과대 추정 합을 최소화한 계수(선형 계획, 객체 수 ≥ 400 B/개·객체 크기 ≥ 1.5 하한)에
+ * 안전 여유(전체: 증가분 × 1.05 + 4 MiB, 증분: × 1.1)를 더하고 올림했다. 측정: 서버 Node 22, mupdf 1.28.1, Stream 입력,
+ * 코퍼스 24건 + 합성 이미지 100–1,200쪽 + 합성 객체 500–2,000쪽, 저장 전 보기 0·3·10·30쪽(304회).
+ */
+export const SAVE_HEAP_COEFFICIENTS: Readonly<Record<SaveMethod, Readonly<SaveHeapCoefficients>>> =
+  Object.freeze({
+    full: Object.freeze({
+      intercept: 7 * 2 ** 20,
+      inputBytes: 0,
+      objectCount: 420,
+      rawStreamBytes: 2.43,
+      objectBytes: 1.58,
+    }),
+    incremental: Object.freeze({
+      intercept: 0,
+      inputBytes: 0,
+      objectCount: 440,
+      rawStreamBytes: 2.57,
+      objectBytes: 1.65,
+    }),
+  });
+
+/**
+ * emscripten 힙 확장 규칙(docs/m0-dod-xobject-redact-save.md 3.1): 새 크기 = max(요청, 현재 × 1.2), 단 요청 + 96 MiB 이하.
+ * 필요량이 현재 힙을 넘으면 선형 메모리가 필요량의 최대 1.2배(또는 + 96 MiB)까지 커진다.
+ */
+export const HEAP_GROWTH_FACTOR = 1.2;
+export const HEAP_GROWTH_CAP_BYTES = 96 * 2 ** 20;
+
+/** 저장 증가분(byte): 계수 × 모델 입력. */
+export function saveHeapIncrement(
+  method: SaveMethod,
+  inputBytes: number,
+  m: Pick<SaveModelInput, 'objectCount' | 'rawStreamBytes' | 'objectStreamBytes'>,
+  coefficients: Readonly<
+    Record<SaveMethod, Readonly<SaveHeapCoefficients>>
+  > = SAVE_HEAP_COEFFICIENTS,
+): number {
+  const c = coefficients[method];
+  const objectBytes = Math.max(0, inputBytes - m.rawStreamBytes) + m.objectStreamBytes;
+  return (
+    c.intercept +
+    c.inputBytes * inputBytes +
+    c.objectCount * m.objectCount +
+    c.rawStreamBytes * m.rawStreamBytes +
+    c.objectBytes * objectBytes
+  );
 }
 
 const MIB = 2 ** 20;
 const mib = (n: number) => `${(n / MIB).toFixed(0)} MiB`;
 
-/** 예상 피크 힙 = 파일 크기 × 실측 배율. 상한 대비 비율로 수준을 정한다. */
+/** 예상 피크 힙. `size.model` 이 있으면 계수 모델, 없으면 배율 모델(이전 방식). */
 export function estimateSaveHeap(method: SaveMethod, size: SaveSizeInput): HeapEstimate {
+  return size.model ? estimateSaveHeapModel(method, size) : estimateSaveHeapRatio(method, size);
+}
+
+/** 상한 대비 비율로 수준을 정한다. */
+function levelOf(fraction: number, warnFraction: number): HeapLevel {
+  return fraction > 1 ? 'over-limit' : fraction > warnFraction ? 'warn' : 'ok';
+}
+
+/**
+ * 계수 모델(D5): 필요량 = max(현재 힙, 기본 + 저널) + 저장 증가분, 예상 피크 = max(현재 힙, min(필요량 × 1.2, 필요량 +
+ * 96 MiB)). 둘째 식은 힙 확장 계단(`HEAP_GROWTH_FACTOR`)을 덮는다: 같은 문서도 저장 전 이력에 따라 피크가 938 → 1,430 MiB 로
+ * 달라졌다(docs/m5-heap.md 2절).
+ */
+export function estimateSaveHeapModel(method: SaveMethod, size: SaveSizeInput): HeapEstimate {
+  const m = size.model;
+  if (!m) throw new Error('계수 모델 입력 없음');
+  const limitBytes = size.limitBytes ?? WASM_HEAP_LIMIT_BYTES;
+  const warnFraction = size.warnFraction ?? HEAP_WARN_FRACTION;
+  const increment = saveHeapIncrement(method, size.inputBytes, m);
+  const need = Math.max(m.currentHeapBytes, m.baseHeapBytes + m.journalBytes) + increment;
+  const estimatedPeakBytes = Math.ceil(
+    Math.max(m.currentHeapBytes, Math.min(need * HEAP_GROWTH_FACTOR, need + HEAP_GROWTH_CAP_BYTES)),
+  );
+  const fraction = estimatedPeakBytes / limitBytes;
+  const level = levelOf(fraction, warnFraction);
+  const advice = journalAdvice(method, size);
+  const basis = `예상 피크 WASM 힙 ${mib(estimatedPeakBytes)}`;
+  const reopen = advice.advised
+    ? ` 되돌리기 기록이 약 ${mib(m.journalBytes)} 를 쓰고 있습니다. 저장한 뒤 문서를 다시 열면 줄어듭니다.`
+    : '';
+  const message =
+    level === 'over-limit'
+      ? `${basis} 가 상한 ${mib(limitBytes)} 를 넘습니다. 저장이 메모리 부족으로 실패할 가능성이 높습니다.${reopen}`
+      : level === 'warn'
+        ? `${basis} 가 상한 ${mib(limitBytes)} 의 ${Math.round(fraction * 100)}% 입니다. 저장이 실패할 수 있습니다.${reopen}`
+        : null;
+  return {
+    inputBytes: size.inputBytes,
+    ratio: size.inputBytes > 0 ? estimatedPeakBytes / size.inputBytes : 0,
+    estimatedPeakBytes,
+    limitBytes,
+    fraction,
+    level,
+    message,
+    objectCount: m.objectCount,
+    rawStreamBytes: m.rawStreamBytes,
+    journalBytes: m.journalBytes,
+    model: SAVE_HEAP_MODEL_ID,
+  };
+}
+
+export interface JournalAdvice {
+  /** 저장 후 다시 열기를 권할 상태 */
+  advised: boolean;
+  journalBytes: number;
+  incrementBytes: number;
+  /** 경고선 = 저장 힙 warn 경계(`HEAP_WARN_FRACTION` × 상한) */
+  thresholdBytes: number;
+}
+
+/**
+ * 저널 상한 판정(D4): 저널 보유 추정 + 예상 저장 증가분 > 경고선이면 "저장 후 다시 열기" 를 권한다. 경고선은 저장 힙 판정의
+ * warn 경계와 같다. 저널은 MuPDF 에 오래된 단계를 버리는 API 가 없어 단계 수 대신 보유량으로 판정한다(docs/m5-heap.md 5절).
+ */
+export function journalAdvice(method: SaveMethod, size: SaveSizeInput): JournalAdvice {
+  const m = size.model;
+  const limitBytes = size.limitBytes ?? WASM_HEAP_LIMIT_BYTES;
+  const thresholdBytes = (size.warnFraction ?? HEAP_WARN_FRACTION) * limitBytes;
+  const journalBytes = m?.journalBytes ?? 0;
+  const incrementBytes = m ? saveHeapIncrement(method, size.inputBytes, m) : 0;
+  return {
+    advised: journalBytes > 0 && journalBytes + incrementBytes > thresholdBytes,
+    journalBytes,
+    incrementBytes,
+    thresholdBytes,
+  };
+}
+
+/**
+ * 지원 문서 크기 상한 안내 값(byte, PLAN.md 7절 리스크 8). 이미지 위주 문서(원 스트림 ≈ 입력, 객체 수·객체 크기 무시)를
+ * 열자마자 편집 후 전체 저장할 때 예상 피크가 상한을 넘기 시작하는 입력 크기. 이보다 큰 문서는 열 때 "편집·저장이 실패할 수
+ * 있음" 을 알린다(문구는 뷰어). 실제 판정은 planSave 의 예상 피크로 한다.
+ */
+export function supportedInputBytes(
+  method: SaveMethod = 'full',
+  baseHeapBytes = BASE_HEAP_BYTES,
+  limitBytes = WASM_HEAP_LIMIT_BYTES,
+): number {
+  const peak = (x: number) =>
+    estimateSaveHeapModel(method, {
+      inputBytes: x,
+      limitBytes,
+      model: {
+        objectCount: 0,
+        rawStreamBytes: x,
+        objectStreamBytes: 0,
+        currentHeapBytes: baseHeapBytes,
+        baseHeapBytes,
+        journalBytes: 0,
+      },
+    }).estimatedPeakBytes;
+  let lo = 0;
+  let hi = limitBytes;
+  if (peak(hi) <= limitBytes) return hi;
+  while (hi - lo > MIB) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (peak(mid) <= limitBytes) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** mupdf 1.28.1 WASM 초기 선형 메모리(문서 열기 직후 실측 22.0 MiB, docs/m5-heap.md 2절). */
+export const BASE_HEAP_BYTES = 22 * MIB;
+
+/** 예상 피크 힙 = 파일 크기 × 실측 배율(배율 모델 `ratio-v0`, M0–M4). 상한 대비 비율로 수준을 정한다. */
+export function estimateSaveHeapRatio(method: SaveMethod, size: SaveSizeInput): HeapEstimate {
   const ratio = size.ratio?.[method] ?? MEASURED_PEAK_HEAP_RATIO[method];
   const limitBytes = size.limitBytes ?? WASM_HEAP_LIMIT_BYTES;
   const warnFraction = size.warnFraction ?? HEAP_WARN_FRACTION;
   const estimatedPeakBytes = Math.ceil(size.inputBytes * ratio);
   const fraction = estimatedPeakBytes / limitBytes;
-  const level: HeapLevel = fraction > 1 ? 'over-limit' : fraction > warnFraction ? 'warn' : 'ok';
+  const level = levelOf(fraction, warnFraction);
   const basis = `예상 피크 WASM 힙 ${mib(estimatedPeakBytes)}(파일 ${mib(size.inputBytes)} × ${ratio})`;
   const message =
     level === 'over-limit'
@@ -97,6 +305,7 @@ export function estimateSaveHeap(method: SaveMethod, size: SaveSizeInput): HeapE
     fraction,
     level,
     message,
+    model: 'ratio-v0',
   };
 }
 
@@ -132,3 +341,9 @@ export function decideSaveMethod(
     reason: changes.length === 0 ? '변경 없음' : '주석·메타데이터 변경만 포함',
   });
 }
+
+/**
+ * 지원 문서 크기 상한 안내 값(byte): `supportedInputBytes('full')`. 이미지 위주 문서 기준 약 690 MiB(docs/m5-heap.md 6절).
+ * 뷰어는 열린 문서의 `OpenResult.byteLength` 가 이 값을 넘으면 "편집·저장이 실패할 수 있음" 을 알린다.
+ */
+export const SUPPORTED_INPUT_BYTES = supportedInputBytes('full');
