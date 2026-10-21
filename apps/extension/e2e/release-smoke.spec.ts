@@ -110,6 +110,8 @@ test('열기·렌더·저장: 최상위 MIME handler, 진단 UI 는 숨김', asy
   await expect(frame.locator('html')).toHaveAttribute('data-build', 'store');
   await expect(frame.locator('#diag')).toBeHidden();
   await expect(frame.locator('#bench-full-save')).toBeHidden();
+  // 벤치 측정 페이지는 개발 빌드 전용(D6): 링크가 없다.
+  expect(await frame.locator('#open-bench').count()).toBe(0);
   await expect(frame.locator('#save-downloads')).toBeHidden();
   expect(await frame.locator('#diag').count()).toBe(1);
 
