@@ -60,7 +60,6 @@ import { wasmHeapBytes } from './wasm-module.js';
 /** 추출 모델·원본 연결 정보를 캐시하는 최대 쪽 수(추출 모델은 요청 종류별로 센다). */
 const PAGE_CACHE_LIMIT = 16;
 
-/** 최근 사용 순 캐시에서 꺼내며 순서를 올린다. */
 /** 경로 세그먼트를 뺀 모델(나머지 배열은 공유한다). */
 function withoutPathSegments(model: PageModel): PageModel {
   return {
@@ -69,6 +68,7 @@ function withoutPathSegments(model: PageModel): PageModel {
   };
 }
 
+/** 최근 사용 순 캐시에서 꺼내며 순서를 올린다. */
 function touch<K, V>(cache: Map<K, V>, key: K): V | undefined {
   const value = cache.get(key);
   if (value !== undefined) {
