@@ -786,9 +786,10 @@ export class BenchRunner {
       let endHeap: number | null = null;
       for (let i = 0; i < saves; i++) endHeap = (await o.pdf.save({ changes: [] })).wasmHeapBytes;
       mark(M5_EVENTS.mem.end);
-      await phase('end', endHeap);
-      await phase('end-after-gc', endHeap);
       const endTab = await this.hooks.tabMemoryMiB('end', doc.id);
+      await phase('end', endHeap);
+      // 강제 GC 는 종료 값을 잰 뒤에 한다(수거 가능한 쓰레기를 뺀 값을 따로 남기려고).
+      await phase('end-after-gc', endHeap);
 
       const wasmDelta = baseHeap !== null && endHeap !== null ? (endHeap - baseHeap) / MiB : null;
       const tabDelta = baseTab !== null && endTab !== null ? endTab - baseTab : null;
