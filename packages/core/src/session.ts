@@ -6,8 +6,11 @@ import {
   decideSaveMethod,
   editBlockLineGroups,
   estimateSaveHeap,
+  journalAdvice,
   linkPage,
   listRedactAnnots,
+  type JournalAdvice,
+  type SaveSizeInput,
 } from '@pdf-editor/pdf-ops';
 import { reconstructPage } from '@pdf-editor/layout-recon';
 import type {
@@ -45,7 +48,7 @@ import type {
 import { defaultEditAdapter, type EditAdapter } from './edit-adapter.js';
 import { EditEngine, EditStateError, type EditHost } from './edit-engine.js';
 import { extractPageModel } from './extract.js';
-import { openPdf } from './open.js';
+import { computeDocumentStats, openPdf, type DocumentStatsDetail } from './open.js';
 import { pageRotation } from './page-geometry.js';
 import { renderPageRegionRgba, renderPageRgba } from './render.js';
 import { searchDocument } from './search.js';
@@ -109,6 +112,11 @@ export class PdfSession {
   #lastRenderScale = DEFAULT_RENDER_SCALE;
   /** 이 세션에서 전체 저장을 한 번이라도 했다(A3-9: 이후 저장도 전체 저장). */
   #fullSaved = false;
+  /** 저장 힙 모델 기본값: 문서 열기 완료 직후 WASM 힙(D5). 측정 객체가 없으면 null. */
+  #baseHeapBytes: number | null = null;
+  /** 저장 힙 모델 입력(D5). 첫 쪽 렌더 뒤 유휴 시나 첫 planSave 에서 한 번 계산한다. */
+  #stats: DocumentStatsDetail | null = null;
+  #statsTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: PdfSessionOptions = {}) {
     this.#options = options;
@@ -137,6 +145,7 @@ export class PdfSession {
     this.#doc = doc;
     this.#inputMode = inputMode;
     this.#fullSaved = false;
+    this.#stats = null;
     this.#lastRenderScale = DEFAULT_RENDER_SCALE;
     this.#edit = new EditEngine(this.#editHost(doc), {
       adapter: this.#options.editAdapter ?? defaultEditAdapter,
@@ -146,6 +155,7 @@ export class PdfSession {
     const page = doc.loadPage(0);
     const [x0, y0, x1, y1] = page.getBounds();
     page.destroy();
+    this.#baseHeapBytes = wasmHeapBytes();
     return {
       pageCount: doc.countPages(),
       firstPage: { width: x1 - x0, height: y1 - y0 },
@@ -192,6 +202,7 @@ export class PdfSession {
       }
       this.#lastRenderScale = scale;
       const { width, height, rgba } = renderPageRgba(page, scale);
+      this.#scheduleStats();
       return { pageIndex, width, height, rgba, renderMs: performance.now() - t0, clip: null };
     } finally {
       page.destroy();
@@ -310,6 +321,23 @@ export class PdfSession {
     for (const k of [-2, -1, 1, 2]) this.#layoutCache.delete(pageIndex + k);
   }
 
+  /**
+   * 저장 힙 모델 입력(D5, `computeDocumentStats`). 처음 부를 때 계산해 문서를 닫을 때까지 보관한다. 열기 시간에 넣지 않도록
+   * 첫 쪽 전체 렌더 뒤 다음 작업 틈에 미리 계산해 두고(`#scheduleStats`), 그 전에 planSave 가 부르면 그때 계산한다.
+   */
+  documentStats(): DocumentStatsDetail {
+    return (this.#stats ??= computeDocumentStats(this.document));
+  }
+
+  /** 첫 쪽 전체 렌더 응답이 나간 뒤(Worker 의 다음 작업 틈) 통계를 계산하도록 한 번 예약한다. */
+  #scheduleStats(): void {
+    if (this.#stats || this.#statsTimer) return;
+    this.#statsTimer = setTimeout(() => {
+      this.#statsTimer = null;
+      if (this.#doc) this.documentStats();
+    }, 0);
+  }
+
   searchText(request: SearchRequest): SearchResult {
     return searchDocument(this.document, request);
   }
@@ -327,11 +355,7 @@ export class PdfSession {
       );
     }
     const canBeSavedIncrementally = this.document.canBeSavedIncrementally();
-    const size = {
-      inputBytes: this.originalBytes.byteLength,
-      // Stream 입력은 입력 크기만큼의 힙을 쓰지 않으므로 실측 배율이 낮다(docs/m0-dod-xobject-redact-save.md 3.3).
-      ...(this.#inputMode === 'stream' ? { ratio: STREAM_INPUT_PEAK_HEAP_RATIO } : {}),
-    };
+    const size = this.#saveSize();
     const merged = [...new Set([...changes, ...(edit?.changeKinds() ?? [])])];
     let decision = decideSaveMethod(merged, canBeSavedIncrementally, size);
     if (
@@ -358,6 +382,41 @@ export class PdfSession {
       edits: edit?.editSummary() ?? null,
       warnings: edit?.saveWarnings() ?? [],
     };
+  }
+
+  /**
+   * 저장 힙 모델 입력(D5). 계수 모델은 Stream 입력에서 잰 값이라 Stream 열기이고 힙 측정 객체가 있을 때만 쓴다. 그 밖에는
+   * 배율 모델(`ratio-v0`). 문서 통계를 아직 계산하지 않았으면 여기서 계산한다(첫 쪽 렌더 뒤 유휴 계산이 보통 먼저 끝난다).
+   */
+  #saveSize(): SaveSizeInput {
+    const inputBytes = this.originalBytes.byteLength;
+    const current = wasmHeapBytes();
+    if (this.#inputMode !== 'stream' || current === null) {
+      return {
+        inputBytes,
+        ...(this.#inputMode === 'stream' ? { ratio: STREAM_INPUT_PEAK_HEAP_RATIO } : {}),
+      };
+    }
+    const stats = this.documentStats();
+    return {
+      inputBytes,
+      model: {
+        objectCount: stats.objectCount,
+        rawStreamBytes: stats.rawStreamBytes,
+        objectStreamBytes: stats.objectStreamBytes,
+        currentHeapBytes: current,
+        baseHeapBytes: this.#baseHeapBytes ?? current,
+        journalBytes: this.#edit?.journalBytes ?? 0,
+      },
+    };
+  }
+
+  /**
+   * 저널 상한 판정(D4): 저널 보유 추정 + 예상 전체 저장 증가분이 경고선(저장 힙 warn 경계)을 넘으면 `advised`. 뷰어가 커밋
+   * 뒤 "저장 후 다시 열기" 안내에 쓴다. 계수 모델을 쓸 수 없는 환경(Buffer 입력·힙 측정 없음)이면 저널 0 으로 본다.
+   */
+  journalAdvice(): JournalAdvice {
+    return journalAdvice('full', this.#saveSize());
   }
 
   /** 저장. 편집 RPC 를 쓴 문서는 저널 작업으로 감싼다(`EditEngine.runSave`, D9). 초안이 열려 있으면 예외. */
@@ -504,6 +563,9 @@ export class PdfSession {
   }
 
   close(): void {
+    if (this.#statsTimer) clearTimeout(this.#statsTimer);
+    this.#statsTimer = null;
+    this.#stats = null;
     this.#pageCache.clear();
     this.#sourceMapCache.clear();
     this.#layoutCache.clear();

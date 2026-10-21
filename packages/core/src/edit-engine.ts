@@ -141,6 +141,21 @@ const usesFallbackOf = (entry: LogEntry): boolean => isParagraphEntry(entry) && 
 /** 편집이 바꾸는 쪽. 지금은 둘 다 한 쪽이다. undo·redo 의 캐시 무효화·메타 기록이 쓴다. */
 const pagesOf = (op: EditOp): number[] => [op.target.pageIndex];
 
+/** 쪽 /Contents 스트림(하나 또는 배열)의 /Length 합. 사전만 조회한다. */
+function contentStreamBytes(doc: mupdf.PDFDocument, pageIndex: number): number {
+  const contents = doc.findPage(pageIndex).get('Contents');
+  const lengthOf = (o: mupdf.PDFObject): number => {
+    const n = o.get('Length');
+    return n.isNumber() ? Math.max(0, n.asNumber()) : 0;
+  };
+  if (contents.isArray()) {
+    let sum = 0;
+    for (let i = 0; i < contents.length; i++) sum += lengthOf(contents.get(i));
+    return sum;
+  }
+  return contents.isStream() ? lengthOf(contents) : 0;
+}
+
 interface ParagraphDraft {
   kind: 'paragraph';
   draftId: string;
@@ -217,6 +232,8 @@ export class EditEngine {
   #blocks = new Map<number, EditBlockRef[]>();
   #lastAffected: number[] = [];
   #pdfa: boolean | null = null;
+  /** 저널 보유 추정(D4): 커밋한 작업마다 그 작업이 고친 쪽의 콘텐츠 스트림 /Length 합. */
+  readonly #journalCost = new WeakMap<LogEntry, number>();
 
   constructor(host: EditHost, options: EditEngineOptions) {
     this.#host = host;
@@ -254,6 +271,31 @@ export class EditEngine {
 
   get revision(): number {
     return this.#revision;
+  }
+
+  /**
+   * 저널 보유 추정(byte, D4). 저널은 작업마다 바뀐 객체의 작업 전 내용을 보유하고(docs/m3-core.md 2.5: 교체한 스트림의
+   * 약 0.97배), undo 한 단계도 redo 를 위해 남는다. 그래서 undo·redo 목록에 있는 작업의 비용을 더한다. 새 편집이 redo 를
+   * 버리면 그 비용도 빠진다. 재적용한 편집(`#base`)은 저널 밖이라 세지 않는다.
+   */
+  get journalBytes(): number {
+    let total = 0;
+    for (const e of this.#undo) total += this.#journalCost.get(e) ?? 0;
+    for (const e of this.#redo) total += this.#journalCost.get(e) ?? 0;
+    return total;
+  }
+
+  /** 커밋한 작업의 저널 비용: 고친 쪽의 콘텐츠 스트림 /Length 합(사전 조회만, 스트림은 읽지 않는다). */
+  #noteJournalCost(entry: LogEntry, pages: readonly number[]): void {
+    let bytes = 0;
+    for (const pageIndex of pages) {
+      try {
+        bytes += contentStreamBytes(this.#doc, pageIndex);
+      } catch {
+        // 추정값이라 실패하면 0 으로 둔다.
+      }
+    }
+    this.#journalCost.set(entry, bytes);
   }
 
   /**
@@ -549,6 +591,7 @@ export class EditEngine {
     }
     this.#undo.push(entry);
     this.#redo = [];
+    this.#noteJournalCost(entry, [draft.pageIndex]);
     this.#edited = true;
     this.#revision++;
     this.#touched([draft.pageIndex]);
@@ -682,6 +725,7 @@ export class EditEngine {
     }
     this.#undo.push(entry);
     this.#redo = [];
+    this.#noteJournalCost(entry, pagesOf(op));
     this.#edited = true;
     this.#revision++;
     this.#touched(pagesOf(op));

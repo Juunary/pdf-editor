@@ -1,5 +1,5 @@
 import * as mupdf from 'mupdf';
-import type { InputMode } from '@pdf-editor/shared-types';
+import type { DocumentStats, InputMode } from '@pdf-editor/shared-types';
 
 export interface OpenPdfOptions {
   /**
@@ -33,16 +33,11 @@ function openFromStream(bytes: Uint8Array, onRead?: (length: number) => void): m
 }
 
 /**
- * 바이트를 WASM 버퍼로 복사해 연다. mupdf.js 에 Uint8Array 를 그대로 넘기면 임시 Buffer 래퍼의 해제가 GC 에 맡겨져
- * 문서를 닫아도 바이트 사본이 남는다. 문서가 버퍼 참조를 잡은 뒤 래퍼를 바로 놓는다.
+ * 바이트를 WASM 버퍼로 복사해 연다. mupdf.js 1.28.1 `Document.openDocument` 는 Uint8Array·ArrayBuffer 를 받으면 임시
+ * Buffer 를 만들고 문서를 연 직후 스스로 해제한다(문서는 버퍼 참조를 따로 잡는다). 그래서 여기서 래퍼를 따로 만들지 않는다.
  */
 function openFromBuffer(bytes: Uint8Array | ArrayBuffer): mupdf.Document {
-  const buffer = new mupdf.Buffer(bytes);
-  try {
-    return mupdf.Document.openDocument(buffer, 'application/pdf');
-  } finally {
-    buffer.destroy();
-  }
+  return mupdf.Document.openDocument(bytes, 'application/pdf');
 }
 
 /** PDF 바이트를 연다. PDF 가 아니면 예외. */
@@ -61,4 +56,93 @@ export function openPdf(
     throw new Error('PDF 문서가 아님');
   }
   return pdf;
+}
+
+/** 문서 통계 계산 시간 예산(ms). 넘으면 남은 객체를 고정 간격 표본으로 환산한다(docs/m5-contract.md D5). */
+export const DOCUMENT_STATS_BUDGET_MS = 1000;
+
+/** 시험 표본 간격(객체 번호). 이 간격으로 먼저 훑어 객체당 시간을 잰다. */
+const STATS_PILOT_STRIDE = 64;
+
+/**
+ * 저장 힙 모델 입력 전체. shared-types `DocumentStats` 에 core 내부 값 `objectStreamBytes` 를 더한다(공개 응답에는 앞의 네
+ * 필드만 쓴다).
+ */
+export interface DocumentStatsDetail extends DocumentStats {
+  /**
+   * 객체 스트림(/Type /ObjStm)을 푼 크기 합(byte). 전체 저장은 모든 객체를 읽어 들이므로 저장 힙이 압축된 객체 스트림
+   * 크기가 아니라 푼 크기를 따른다(nasa-se-handbook: 압축 0.38 MiB → 풀면 18.4 MiB, docs/m5-heap.md 3절).
+   */
+  objectStreamBytes: number;
+}
+
+export interface DocumentStatsOptions {
+  budgetMs?: number;
+  /** 시각(ms). 시험에서 바꾼다. 기본 `performance.now`. */
+  now?: () => number;
+}
+
+/**
+ * 저장 힙 모델 입력(D5): 객체 수, 스트림 수, 원 스트림 /Length 합, 객체 스트림을 푼 크기. 객체 번호마다 간접 참조를 만들어
+ * `isStream()` 을 확인하고 사전의 /Length 를 더한다. 객체 스트림만 풀어서 길이를 재고(한 번에 하나, 바로 해제) 나머지
+ * 스트림(이미지·콘텐츠)은 읽지 않는다.
+ *
+ * 먼저 `STATS_PILOT_STRIDE` 간격으로 훑어 객체당 시간을 재고, 전수 계산이 예산 안이면 전부 센다. 넘으면 예산에 맞춘 고정
+ * 간격 `stride` 로 표본 추출하고 표본 값에 `stride` 를 곱한다(`approximate: true`). 앞에서부터 세다 예산에서 멈추지 않는
+ * 이유: 앞쪽 번호만 읽어 둔 문서는 뒤이은 저장의 피크가 크게 뛴다(합성 객체 2,000쪽 284 → 1,389 MiB, 간격 표본은 그대로,
+ * docs/m5-heap.md 2.3).
+ */
+export function computeDocumentStats(
+  doc: mupdf.PDFDocument,
+  options: DocumentStatsOptions = {},
+): DocumentStatsDetail {
+  const budget = options.budgetMs ?? DOCUMENT_STATS_BUDGET_MS;
+  const now = options.now ?? (() => performance.now());
+  const objectCount = doc.countObjects();
+  const sum = { streams: 0, bytes: 0, objstm: 0 };
+  const visit = (num: number, weight: number): void => {
+    const ref = doc.newIndirect(num);
+    try {
+      if (!ref.isStream()) return;
+      sum.streams += weight;
+      const length = ref.get('Length');
+      if (length.isNumber()) sum.bytes += Math.max(0, length.asNumber()) * weight;
+      length.destroy();
+      const type = ref.get('Type');
+      if (type.isName() && type.asName() === 'ObjStm') {
+        const decoded = ref.readStream();
+        sum.objstm += decoded.getLength() * weight;
+        decoded.destroy();
+      }
+      type.destroy();
+    } catch {
+      // 손상된 객체는 세지 않는다(MuPDF 가 xref 복구로 연 문서).
+    } finally {
+      ref.destroy();
+    }
+  };
+  // 고정 간격 `stride` 로 1 번부터(0 번은 xref 자유 목록 머리라 객체가 아니다). 마지막 표본은 남은 수만큼만 센다.
+  const pass = (stride: number): void => {
+    sum.streams = sum.bytes = sum.objstm = 0;
+    for (let num = 1; num < objectCount; num += stride) {
+      visit(num, Math.min(stride, objectCount - num));
+    }
+  };
+  const t0 = now();
+  pass(STATS_PILOT_STRIDE);
+  const pilotMs = now() - t0;
+  const pilotCount = Math.max(1, Math.ceil((objectCount - 1) / STATS_PILOT_STRIDE));
+  const predictedMs = (pilotMs / pilotCount) * Math.max(0, objectCount - 1);
+  const stride =
+    predictedMs <= budget
+      ? 1
+      : Math.min(STATS_PILOT_STRIDE, Math.max(2, Math.ceil(predictedMs / budget)));
+  if (stride !== STATS_PILOT_STRIDE) pass(stride);
+  return {
+    objectCount,
+    streamCount: Math.round(sum.streams),
+    rawStreamBytes: Math.round(sum.bytes),
+    objectStreamBytes: Math.round(sum.objstm),
+    approximate: stride > 1,
+  };
 }
