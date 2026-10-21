@@ -20,7 +20,14 @@ interface Result {
     open?: { samples: number[] };
     save?: { clean: { samples: number[] } };
     judge?: { first: { samples: number[] }; breakdown: unknown[] };
-    mem?: { wasmHeapDeltaMiB: number | null; tabDeltaMiB: number | null; saves: number };
+    mem?: {
+      wasmHeapDeltaMiB: number | null;
+      wasmLinearDeltaMiB: number | null;
+      tabDeltaMiB: number | null;
+      tabDeltaBeforeWaitMiB: number | null;
+      settleMs: number;
+      saves: number;
+    };
   }[];
   p95: Record<string, number>;
 }
@@ -43,12 +50,12 @@ test('bench.html: m0-sample.pdf 로 열기·판정·저장·메모리 지표가 
         scenarios: ['open', 'judge', 'save', 'mem'],
         repeats: { open: 2, save: 2, breakdown: 1 },
         judgePages: 1,
-        mem: { pages: 3, edits: 1, saves: 1 },
+        mem: { pages: 3, edits: 1, saves: 1, settleMs: 0 },
       }),
     url,
   )) as unknown as Result;
 
-  expect(result.schema).toBe('m5-bench/1');
+  expect(result.schema).toBe('m5-bench/2');
   expect(result.mode).toBe('auto');
   const doc = result.docs[0]!;
   expect(doc.errors).toEqual([]);
@@ -56,8 +63,12 @@ test('bench.html: m0-sample.pdf 로 열기·판정·저장·메모리 지표가 
   expect(doc.open?.samples).toHaveLength(2);
   expect(doc.judge?.first.samples.length).toBeGreaterThan(0);
   expect(doc.save?.clean.samples).toHaveLength(2);
+  // 판정값(WASM: emptyStore 뒤 사용 중 힙, 탭: 대기 뒤)과 이전 정의 값(선형 메모리, 대기 전)이 모두 나온다.
   expect(doc.mem?.wasmHeapDeltaMiB).not.toBeNull();
+  expect(doc.mem?.wasmLinearDeltaMiB).not.toBeNull();
   expect(doc.mem?.tabDeltaMiB).not.toBeNull();
+  expect(doc.mem?.tabDeltaBeforeWaitMiB).not.toBeNull();
+  expect(doc.mem?.settleMs).toBe(0);
   expect(Object.keys(result.p95)).toContain('m0-sample.open');
 
   // 지표 이벤트가 performance 타임라인에 남는다.

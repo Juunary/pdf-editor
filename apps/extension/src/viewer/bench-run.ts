@@ -47,8 +47,8 @@ export interface BenchOptions {
   editChars: number;
   /** 패스 끌기 단계 수. */
   pathSteps: number;
-  /** 메모리 왕복: 넘김 쪽 수(왕복)·편집 횟수·저장 횟수. */
-  mem: { pages: number; edits: number; saves: number };
+  /** 메모리 왕복: 넘김 쪽 수(왕복)·편집 횟수·저장 횟수·끝 탭 메모리 대기(ms, 사용자 결정 2026-10-21 = 30 s). */
+  mem: { pages: number; edits: number; saves: number; settleMs: number };
   /** 렌더 캐시 상한 재정의(비교 실험용). 없으면 기본 8쪽·64 MiB. */
   renderCache?: { maxPages: number; maxBytes: number };
   /** 미리 렌더 끄기(비교 실험용). */
@@ -62,7 +62,7 @@ export const DEFAULT_OPTIONS: BenchOptions = {
   judgePages: 6,
   editChars: 30,
   pathSteps: 40,
-  mem: { pages: 50, edits: 20, saves: 2 },
+  mem: { pages: 50, edits: 20, saves: 2, settleMs: 30_000 },
 };
 
 export interface BenchDoc {
@@ -81,7 +81,7 @@ export interface BenchHooks {
    * 메모리 표본점에서 탭 메모리(MiB)를 받는다. 수동 실행은 사용자가 작업 관리자 값을 넣고, 서버 자동화는 렌더러 VmRSS 를 읽는다.
    * 값이 없으면 null.
    */
-  tabMemoryMiB(label: 'baseline' | 'end', docId: string): Promise<number | null>;
+  tabMemoryMiB(label: 'baseline' | 'end' | 'end-settled', docId: string): Promise<number | null>;
   /** 중간 지점의 탭 메모리 자동 표본(수동 실행에는 없다). */
   samplePhase?(label: string, docId: string): Promise<number | null>;
   /** 뷰어를 올릴 DOM. */
@@ -130,13 +130,40 @@ export interface JudgeBreakdown {
   reps: number;
 }
 
+/**
+ * 메모리 왕복 결과(계약 1.1·D1). 끝 측정 시점(사용자 결정 2026-10-21): WASM 은 MuPDF 캐시를 비운(`emptyStore`) 뒤 사용 중 힙,
+ * 탭은 30 s 대기 뒤 값으로 판정한다. 비우기 전(선형 메모리)·대기 전 값도 남긴다.
+ */
 export interface MemResult {
-  baseline: { wasmHeapBytes: number | null; tabMiB: number | null };
-  end: { wasmHeapBytes: number | null; tabMiB: number | null };
+  baseline: {
+    /** 첫 저장 직후 선형 메모리(byte). */
+    wasmHeapBytes: number | null;
+    /** 첫 저장 직후 `emptyStore` 뒤 사용 중 힙(byte, 벤치 RPC). */
+    wasmUsedBytes: number | null;
+    tabMiB: number | null;
+  };
+  end: {
+    /** 마지막 저장 뒤 선형 메모리(byte). */
+    wasmHeapBytes: number | null;
+    /** 끝 `emptyStore` 뒤 사용 중 힙(byte). */
+    wasmUsedBytes: number | null;
+    /** 끝 직후 탭 메모리(대기 전). */
+    tabMiB: number | null;
+    /** 끝 30 s 대기 뒤 탭 메모리(판정값). */
+    tabSettledMiB: number | null;
+  };
+  /** 판정값: 사용 중 힙(`emptyStore` 뒤) 증가. */
   wasmHeapDeltaMiB: number | null;
+  /** 비우기 전 값: 선형 메모리 증가(이전 정의). */
+  wasmLinearDeltaMiB: number | null;
+  /** 판정값: 30 s 대기 뒤 탭 메모리 증가. */
   tabDeltaMiB: number | null;
+  /** 대기 전 값: 끝 직후 탭 메모리 증가(이전 정의). */
+  tabDeltaBeforeWaitMiB: number | null;
   /** 종료 뒤 강제 GC(서버 CDP) 후 탭 메모리 − 기준점. 수거 가능한 쓰레기와 잔류분을 가른다. 수동 실행에는 없다. */
   tabDeltaAfterGcMiB: number | null;
+  /** 끝 대기 시간(ms). */
+  settleMs: number;
   navigations: number;
   edits: number;
   saves: number;
@@ -149,6 +176,19 @@ export interface MemResult {
     tabMiB: number | null;
     jsHeapMiB: number | null;
   }[];
+}
+
+/** 벤치 전용 Worker RPC(dev 빌드, `@pdf-editor/core/bench`). 없으면(이전 빌드) null. */
+async function probeHeap(pdf: PdfWorkerClient, emptyStore: boolean): Promise<number | null> {
+  const remote = pdf as unknown as {
+    benchProbeHeap?: (o: { emptyStore: boolean }) => Promise<{ usedBytes: number } | null>;
+  };
+  try {
+    const probe = await remote.benchProbeHeap?.({ emptyStore });
+    return probe?.usedBytes ?? null;
+  } catch {
+    return null;
+  }
 }
 
 interface Opened {
@@ -746,12 +786,14 @@ export class BenchRunner {
     const o = await this.openDoc(bytes.slice(0));
     try {
       result.pageCount ??= o.pageCount;
-      const { pages, edits, saves } = this.options.mem;
+      const { pages, edits, saves, settleMs } = this.options.mem;
       // 기준점 = 첫 저장 완료 직후.
       const first = await o.pdf.save({ changes: [] });
       const baseHeap = first.wasmHeapBytes;
       mark(M5_EVENTS.mem.start);
       const baseTab = await this.hooks.tabMemoryMiB('baseline', doc.id);
+      // 끝 값과 같은 정의(캐시 비운 뒤 사용 중 힙)로 기준점도 잰다. 측정이 캐시를 비우므로 탭 값을 먼저 읽는다.
+      const baseUsed = await probeHeap(o.pdf, true);
 
       const phases: MemResult['phases'] = [];
       const phase = async (name: string, wasmHeapBytes: number | null) => {
@@ -788,18 +830,37 @@ export class BenchRunner {
       mark(M5_EVENTS.mem.end);
       const endTab = await this.hooks.tabMemoryMiB('end', doc.id);
       await phase('end', endHeap);
-      // 강제 GC 는 종료 값을 잰 뒤에 한다(수거 가능한 쓰레기를 뺀 값을 따로 남기려고).
+      // 탭 판정값: 30 s 대기 뒤(사용자 결정 2026-10-21). 대기 중에는 아무 작업도 하지 않는다.
+      for (let left = settleMs; left > 0; left -= 1000) {
+        this.hooks.progress(`${doc.id}: 메모리 종료 뒤 대기 ${Math.ceil(left / 1000)} s`);
+        await new Promise((r) => setTimeout(r, Math.min(1000, left)));
+      }
+      const settledTab = await this.hooks.tabMemoryMiB('end-settled', doc.id);
+      await phase('end-settled', endHeap);
+      // WASM 판정값: 캐시를 비운 뒤 사용 중 힙.
+      const endUsed = await probeHeap(o.pdf, true);
+      // 강제 GC 는 판정값을 잰 뒤에 한다(수거 가능한 쓰레기를 뺀 값을 따로 남기려고).
       await phase('end-after-gc', endHeap);
 
-      const wasmDelta = baseHeap !== null && endHeap !== null ? (endHeap - baseHeap) / MiB : null;
-      const tabDelta = baseTab !== null && endTab !== null ? endTab - baseTab : null;
+      const delta = (a: number | null, b: number | null, scale = 1) =>
+        a !== null && b !== null ? (b - a) / scale : null;
+      const wasmDelta = delta(baseUsed, endUsed, MiB);
+      const tabDelta = delta(baseTab, settledTab);
       const gcTab = phases.find((p) => p.name === 'end-after-gc')?.tabMiB ?? null;
       result.mem = {
-        baseline: { wasmHeapBytes: baseHeap, tabMiB: baseTab },
-        end: { wasmHeapBytes: endHeap, tabMiB: endTab },
+        baseline: { wasmHeapBytes: baseHeap, wasmUsedBytes: baseUsed, tabMiB: baseTab },
+        end: {
+          wasmHeapBytes: endHeap,
+          wasmUsedBytes: endUsed,
+          tabMiB: endTab,
+          tabSettledMiB: settledTab,
+        },
         wasmHeapDeltaMiB: wasmDelta,
+        wasmLinearDeltaMiB: delta(baseHeap, endHeap, MiB),
         tabDeltaMiB: tabDelta,
-        tabDeltaAfterGcMiB: baseTab !== null && gcTab !== null ? gcTab - baseTab : null,
+        tabDeltaBeforeWaitMiB: delta(baseTab, endTab),
+        tabDeltaAfterGcMiB: delta(baseTab, gcTab),
+        settleMs,
         navigations,
         edits: done,
         saves,
