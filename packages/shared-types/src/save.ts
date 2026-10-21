@@ -28,6 +28,15 @@ export interface SaveHeapEstimate {
   journalBytes?: number;
   /** 적용한 모델 식별자(예: `ratio-v0`, `linear-v1`). */
   model?: string;
+  /** 계수 모델: 예상에 쓴 사용 중 힙 추정(byte). 직전 저장이 있으면 저장이 쓰고 놓은 공간을 뺀 값. */
+  usedHeapBytes?: number;
+  /** 계수 모델: 이 세션 직전 저장 직후 WASM 힙(실측 피크, byte). 저장한 적이 없으면 없음. */
+  priorSavePeakBytes?: number;
+  /**
+   * 계수 모델: warn·over-limit 판정이 이미 커진 힙(줄지 않는 WASM 선형 메모리) 때문이다. 기본 + 저널로 계산하면 수준이 더
+   * 낮다. 뷰어는 over-limit 이라도 "그래도 저장 시도" 를 허용한다(실패하면 Worker 복구 뒤 다시 묻는다).
+   */
+  grownHeapBasis?: boolean;
 }
 
 /**
