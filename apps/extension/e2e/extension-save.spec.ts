@@ -83,7 +83,7 @@ const plan = (extra: Record<string, unknown>) => ({
 test.describe('지원 문서 크기 상한(M5 C7, 리스크 8)', () => {
   test('열린 문서 바이트 수가 SUPPORTED_INPUT_BYTES(790 MiB)를 넘으면 열 때 알리고, 작은 문서는 알리지 않는다', async () => {
     const small = await openViewer();
-    await expect(small.locator('#notice-bar [data-notice="supported-size"]')).toHaveCount(0);
+    await expect(small.locator('#notice-bar [data-notice="size"]')).toHaveCount(0);
     await small.close();
     // 값 주입: open 응답의 byteLength 만 800 MiB 로 바꾼다(문서는 그대로).
     const page = await openViewer(async (p) => {
@@ -93,10 +93,59 @@ test.describe('지원 문서 크기 상한(M5 C7, 리스크 8)', () => {
         pdf.open = async (b: ArrayBuffer) => ({ ...(await real(b)), byteLength: 800 * 2 ** 20 });
       });
     });
-    const notice = page.locator('#notice-bar [data-notice="supported-size"]');
+    const notice = page.locator('#notice-bar [data-notice="size"]');
     await expect(notice).toBeVisible();
     await expect(notice).toContainText('지원 크기 790 MiB');
     await expect(notice).toContainText('편집·저장이 실패할 수 있습니다');
+    await page.close();
+  });
+
+  test('크기 알림 통합(I3): 열 때 바이트 기준 안내 → 판정 ok 는 유지, warn 이면 같은 칸을 바꾸고 상한은 한 번만', async () => {
+    const page = await openViewer(async (p) => {
+      await p.evaluate((okPlan) => {
+        const pdf = (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf;
+        const real = (pdf.open as (b: ArrayBuffer) => Promise<Record<string, unknown>>).bind(pdf);
+        pdf.open = async (b: ArrayBuffer) => ({ ...(await real(b)), byteLength: 800 * 2 ** 20 });
+        // 열기 직후 판정(reportSizeLimit)은 ok: 바이트 기준 안내를 그대로 둔다.
+        pdf.planSave = async () => okPlan;
+      }, plan({}));
+    });
+    const rows = page.locator(
+      '#notice-bar [data-notice="size"], #notice-bar [data-notice="supported-size"]',
+    );
+    await expect(rows).toHaveCount(1);
+    const notice = page.locator('#notice-bar [data-notice="size"]');
+    await expect(notice).toContainText('지원 크기 790 MiB');
+    await expect.poll(async () => (await diagEvents(page, 'size-plan')).length).toBe(1);
+    await expect(notice).toContainText('지원 크기 790 MiB');
+
+    // 저장 전 판정 warn: 같은 칸이 판정 문구로 바뀐다(알림은 여전히 하나).
+    await page.evaluate(
+      (warnPlan) => {
+        (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf.planSave =
+          async () => warnPlan;
+      },
+      plan({
+        heap: {
+          ...plan({}).heap,
+          estimatedPeakBytes: 1600 * 2 ** 20,
+          limitBytes: 2048 * 2 ** 20,
+          level: 'warn',
+          message: '큰 문서(테스트)',
+        },
+      }),
+    );
+    await page.click('#save-downloads');
+    const dialog = page.locator('#app-dialog');
+    await expect(dialog).toBeVisible();
+    await dialog.locator('[data-dialog-button="cancel"]').click();
+    await expect(rows).toHaveCount(1);
+    await expect(notice).toContainText(
+      '편집·저장이 실패할 수 있습니다(예상 저장 피크 1600 MiB / 한계 2048 MiB)',
+    );
+    await expect(notice).not.toContainText('790 MiB');
+    const text = (await notice.textContent()) ?? '';
+    expect(text.split('2048 MiB').length - 1).toBe(1);
     await page.close();
   });
 });
