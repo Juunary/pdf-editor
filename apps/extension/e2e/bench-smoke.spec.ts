@@ -41,7 +41,7 @@ test('bench.html: m0-sample.pdf 로 열기·판정·저장·메모리 지표가 
     (u) =>
       window.__bench.run([{ id: 'm0-sample', name: 'm0-sample.pdf', url: u, bytes: 11674 }], {
         scenarios: ['open', 'judge', 'save', 'mem'],
-        repeats: { open: 2, save: 2 },
+        repeats: { open: 2, save: 2, breakdown: 1 },
         judgePages: 1,
         mem: { pages: 3, edits: 1, saves: 1 },
       }),

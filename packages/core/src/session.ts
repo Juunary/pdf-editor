@@ -57,6 +57,14 @@ import { wasmHeapBytes } from './wasm-module.js';
 const PAGE_CACHE_LIMIT = 16;
 
 /** 최근 사용 순 캐시에서 꺼내며 순서를 올린다. */
+/** 경로 세그먼트를 뺀 모델(나머지 배열은 공유한다). */
+function withoutPathSegments(model: PageModel): PageModel {
+  return {
+    ...model,
+    paths: model.paths.map((p) => (p.segments === null ? p : { ...p, segments: null })),
+  };
+}
+
 function touch<K, V>(cache: Map<K, V>, key: K): V | undefined {
   const value = cache.get(key);
   if (value !== undefined) {
@@ -205,18 +213,23 @@ export class PdfSession {
    * 같은 객체를 돌려준다. 호출자는 바꾸지 않는다. 문서를 편집하면 `invalidatePageCache` 를 부른다.
    */
   extractPage(request: ExtractRequest): PageModel {
-    const key = `${request.pageIndex}:${request.includePathSegments === true ? 1 : 0}`;
+    const withSegments = request.includePathSegments === true;
+    const key = `${request.pageIndex}:${withSegments ? 1 : 0}`;
     const cached = touch(this.#pageCache, key);
     if (cached) return cached;
+    // 쪽 판정(M5 4.1): 텍스트 층용 추출(경로 세그먼트 없음) 뒤에 편집 판정이 세그먼트 포함 추출을 다시 요청하면
+    // 같은 쪽 콘텐츠를 두 번 해석한다. 한 번에 세그먼트까지 모아 두고 세그먼트 없는 모델은 거기서 만든다.
     const page = this.document.loadPage(request.pageIndex);
-    let model: PageModel;
+    let full: PageModel;
     try {
-      model = extractPageModel(page, request);
+      full = extractPageModel(page, { ...request, includePathSegments: true });
     } finally {
       page.destroy();
     }
-    remember(this.#pageCache, key, model);
-    return model;
+    const plain = withoutPathSegments(full);
+    remember(this.#pageCache, `${request.pageIndex}:1`, full);
+    remember(this.#pageCache, `${request.pageIndex}:0`, plain);
+    return withSegments ? full : plain;
   }
 
   /**

@@ -37,7 +37,7 @@ for (const doc of manifest.documents) {
     if (statSync(path).size !== entry.bytes || sha256(path) !== entry.sha256) {
       throw new Error(`${doc.id}: 코퍼스 해시 불일치`);
     }
-    list.push({ id: doc.id, path, bytes: entry.bytes, pages: entry.pages, role: doc.role });
+    list.push({ id: doc.id, path, bytes: entry.bytes, pages: entry.pages, role: doc.role, judgePages: doc.judgePages });
   } else if (doc.source === 'synthetic') {
     const path = join(outDir, `${doc.id}.pdf`);
     if (!existsSync(path) || statSync(path).size !== doc.bytes || sha256(path) !== doc.sha256) {

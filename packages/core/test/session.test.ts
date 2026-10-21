@@ -158,3 +158,25 @@ describe('PdfSession.getPageLayout', () => {
     s.close();
   });
 });
+
+describe('PdfSession.extractPage · 세그먼트 없는 모델', () => {
+  it('세그먼트 없는 요청이 먼저 와도 한 번의 추출로 두 모델을 만들고, 세그먼트 있는 모델과 일치한다', () => {
+    const s = new PdfSession();
+    s.open(bluePdf());
+    const plain = s.extractPage({ pageIndex: 0 });
+    const full = s.extractPage({ pageIndex: 0, includePathSegments: true });
+    expect(plain.paths.length).toBeGreaterThan(0);
+    expect(plain.paths.every((p) => p.segments === null)).toBe(true);
+    expect(full.paths.some((p) => p.segments !== null)).toBe(true);
+    expect(plain.chars).toBe(full.chars);
+    expect(plain.paths.map((p) => ({ ...p, segments: null }))).toEqual(
+      full.paths.map((p) => ({ ...p, segments: null })),
+    );
+    // 같은 요청은 같은 객체.
+    expect(s.extractPage({ pageIndex: 0 })).toBe(plain);
+    expect(s.extractPage({ pageIndex: 0, includePathSegments: true })).toBe(full);
+    // 쪽 캐시를 비우면 둘 다 다시 만든다.
+    s.invalidatePageCache(0);
+    expect(s.extractPage({ pageIndex: 0 })).not.toBe(plain);
+  });
+});

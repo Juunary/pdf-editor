@@ -113,6 +113,7 @@ function makeHooks(auto: AutoMemory | null): BenchHooks {
       const v = manualInput.valueAsNumber;
       return Number.isFinite(v) ? v : null;
     },
+    samplePhase: auto ? (label, docId) => auto(`phase:${label}`, docId) : undefined,
     targets: { controls: byId('viewer-controls'), pages: byId('page-container') },
     availableWidth: () => Math.min(document.documentElement.clientWidth, 1100),
     spawnWorker,
@@ -212,7 +213,13 @@ setStatus('idle', 'PDF 파일을 선택하세요');
 export interface BenchApi {
   /** 서버 자동화용. `url` 의 PDF 를 내려받아 실행한다(CORS 허용 서버). */
   run(
-    docs: readonly { id: string; name: string; url: string; bytes: number }[],
+    docs: readonly {
+      id: string;
+      name: string;
+      url: string;
+      bytes: number;
+      judgePages?: number[];
+    }[],
     options?: Partial<BenchOptions>,
   ): Promise<BenchResult>;
   scenarios: readonly Scenario[];
@@ -233,6 +240,7 @@ window.__bench = {
       id: d.id,
       name: d.name,
       bytes: d.bytes,
+      judgePages: d.judgePages,
       load: async () => (await fetch(d.url)).arrayBuffer(),
     }));
     const auto: AutoMemory = (label, docId) =>

@@ -6,21 +6,60 @@
   "tiers": {
     "core": "코퍼스 5건. 기본 실행",
     "synthetic": "합성 2건(저장 상한 시험용 900쪽, 객체 위주 2,000쪽). 디스크·시간이 큼",
-    "large-real": "8절 대용량 실제 문서 2건. 후보 확정 전까지 비어 있음"
+    "large-real": "8절 대용량 실제 문서 2건. 후보 확정 전까지 비어 있음",
+    "judge-stress": "쪽 판정 최대 패스 쪽 시험(M4 측정의 1.75 s 쪽). 쪽 번호는 0부터"
   },
   "documents": [
-    { "id": "nist-sp800-53r5", "source": "corpus", "tier": "core", "role": "492쪽 태그 PDF, 500쪽 이하 상한 문서" },
-    { "id": "nasa-se-handbook-sp2016-6105", "source": "corpus", "tier": "core", "role": "297쪽, 공유 Form 텍스트" },
-    { "id": "kogl-nabo-finstmt2025", "source": "corpus", "tier": "core", "role": "179쪽 한국어 재무제표 표" },
-    { "id": "zen-beamer-7535020", "source": "corpus", "tier": "core", "role": "11.8 MB, 삽입 PDF 그림" },
-    { "id": "arxiv-2609.09268", "source": "corpus", "tier": "core", "role": "벡터 도표(패스 끌기)" },
+    {
+      "id": "nist-sp800-53r5",
+      "source": "corpus",
+      "tier": "core",
+      "role": "492쪽 태그 PDF, 500쪽 이하 상한 문서"
+    },
+    {
+      "id": "nasa-se-handbook-sp2016-6105",
+      "source": "corpus",
+      "tier": "core",
+      "role": "297쪽, 공유 Form 텍스트"
+    },
+    {
+      "id": "kogl-nabo-finstmt2025",
+      "source": "corpus",
+      "tier": "core",
+      "role": "179쪽 한국어 재무제표 표"
+    },
+    {
+      "id": "zen-beamer-7535020",
+      "source": "corpus",
+      "tier": "core",
+      "role": "11.8 MB, 삽입 PDF 그림"
+    },
+    {
+      "id": "arxiv-2609.09268",
+      "source": "corpus",
+      "tier": "core",
+      "role": "벡터 도표(패스 끌기)"
+    },
+    {
+      "id": "kogl-mods-cpi-202609",
+      "source": "corpus",
+      "tier": "judge-stress",
+      "role": "최대 패스 쪽(4쪽) 판정 시간 분해",
+      "judgePages": [
+        3
+      ]
+    },
     {
       "id": "synthetic-image-900",
       "source": "synthetic",
       "tier": "synthetic",
       "role": "900쪽 이미지 위주(저장 상한 시험용, 약 675.6 MiB)",
       "generator": "fixtures/bench/synth.mjs",
-      "args": { "kind": "image", "pages": 900, "seed": 1 },
+      "args": {
+        "kind": "image",
+        "pages": 900,
+        "seed": 1
+      },
       "pages": 900,
       "bytes": 708427461,
       "sha256": "ee9ec6844a3803b81d2488a23f79a886d05c71ac1e54a7fcbd4e5b09a12abd60"
@@ -31,7 +70,11 @@
       "tier": "synthetic",
       "role": "2,000쪽 텍스트, 객체 524,003개(객체 위주)",
       "generator": "fixtures/bench/synth.mjs",
-      "args": { "kind": "objects", "pages": 2000, "seed": 2 },
+      "args": {
+        "kind": "objects",
+        "pages": 2000,
+        "seed": 2
+      },
       "pages": 2000,
       "bytes": 38746209,
       "sha256": "328687b6ff63d28d305c65750e94412e3acda34832b40ff811f17c56ece13c3b"

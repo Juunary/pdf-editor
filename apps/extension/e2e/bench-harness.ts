@@ -26,6 +26,7 @@ export interface BenchDocFile {
   path: string;
   bytes: number;
   pages: number | null;
+  judgePages?: number[];
 }
 
 export interface BenchBrowser {
