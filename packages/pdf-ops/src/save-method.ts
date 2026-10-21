@@ -1,4 +1,4 @@
-import type { ChangeKind, SaveMethod } from '@pdf-editor/shared-types';
+import type { ChangeKind, JournalAdvice, SaveMethod } from '@pdf-editor/shared-types';
 
 export type HeapLevel = 'ok' | 'warn' | 'over-limit';
 
@@ -224,14 +224,8 @@ export function estimateSaveHeapModel(method: SaveMethod, size: SaveSizeInput): 
   };
 }
 
-export interface JournalAdvice {
-  /** 저장 후 다시 열기를 권할 상태 */
-  advised: boolean;
-  journalBytes: number;
-  incrementBytes: number;
-  /** 경고선 = 저장 힙 warn 경계(`HEAP_WARN_FRACTION` × 상한) */
-  thresholdBytes: number;
-}
+/** 저널 상한 판정 결과(shared-types `JournalAdvice`, Worker RPC `journalAdvice` 응답과 같은 모양). */
+export type { JournalAdvice };
 
 /**
  * 저널 상한 판정(D4): 저널 보유 추정 + 예상 저장 증가분 > 경고선이면 "저장 후 다시 열기" 를 권한다. 경고선은 저장 힙 판정의
@@ -349,7 +343,7 @@ export function decideSaveMethod(
 }
 
 /**
- * 지원 문서 크기 상한 안내 값(byte): `supportedInputBytes('full')`. 이미지 위주 문서 기준 약 690 MiB(docs/m5-heap.md 6절).
+ * 지원 문서 크기 상한 안내 값(byte): `supportedInputBytes('full')`. 이미지 위주 문서 기준 790 MiB(828,375,040 B, docs/m5-heap.md 6절).
  * 뷰어는 열린 문서의 `OpenResult.byteLength` 가 이 값을 넘으면 "편집·저장이 실패할 수 있음" 을 알린다.
  */
 export const SUPPORTED_INPUT_BYTES = supportedInputBytes('full');

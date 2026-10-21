@@ -12,6 +12,10 @@
     "./measure": {
       "types": "./dist/measure.d.ts",
       "default": "./dist/measure.js"
+    },
+    "./save-method": {
+      "types": "./dist/save-method.d.ts",
+      "default": "./dist/save-method.js"
     }
   },
   "files": [

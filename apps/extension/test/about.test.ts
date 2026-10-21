@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { SaveHeapEstimate } from '@pdf-editor/shared-types';
 import { aboutContent } from '../src/viewer/about.js';
-import { HISTORY_AFTER_SAVE_NOTICE, sizeLimitNotice } from '../src/viewer/notices.js';
+import { SUPPORTED_INPUT_BYTES } from '@pdf-editor/core/client';
+import type { JournalAdvice } from '@pdf-editor/shared-types';
+import {
+  HISTORY_AFTER_SAVE_NOTICE,
+  journalNotice,
+  sizeLimitNotice,
+  supportedSizeNotice,
+} from '../src/viewer/notices.js';
 import { JOURNAL_REOPEN_ADVICE, decideSave } from '../src/viewer/save-plan.js';
 import { sourceUrl } from '../scripts/manifest.mjs';
 
@@ -74,18 +81,56 @@ describe('저널 상한 안내', () => {
     edits: null,
   });
 
-  it('힙이 ok 가 아니고 저널 보유 추정이 있으면 저장 후 다시 열기를 권한다', () => {
-    expect(decideSave(plan(heap('warn', { journalBytes: 300 * MIB }))).infos).toContain(
-      JOURNAL_REOPEN_ADVICE,
-    );
-    expect(decideSave(plan(heap('over-limit', { journalBytes: 300 * MIB }))).block).toContain(
-      JOURNAL_REOPEN_ADVICE,
-    );
+  const advice = (advised: boolean, journalBytes = 1200 * MIB): JournalAdvice => ({
+    advised,
+    journalBytes,
+    incrementBytes: 400 * MIB,
+    thresholdBytes: 1536 * MIB,
   });
 
-  it('ok 이거나 저널 추정이 없으면 붙이지 않는다', () => {
-    expect(decideSave(plan(heap('ok', { journalBytes: 300 * MIB }))).infos).toEqual([]);
-    expect(decideSave(plan(heap('warn'))).infos).toEqual([]);
+  it('core 저널 판정이 advised 이면 저장 후 다시 열기를 권한다(warn 은 안내, over-limit 은 중단 문구에)', () => {
+    expect(decideSave(plan(heap('warn')), advice(true)).infos).toContain(JOURNAL_REOPEN_ADVICE);
+    expect(decideSave(plan(heap('over-limit')), advice(true)).block).toContain(
+      JOURNAL_REOPEN_ADVICE,
+    );
+    expect(decideSave(plan(heap('ok')), advice(true)).infos).toContain(JOURNAL_REOPEN_ADVICE);
+  });
+
+  it('advised 가 아니거나 판정을 받지 못했으면 힙 수준·journalBytes 와 무관하게 붙이지 않는다', () => {
+    expect(
+      decideSave(plan(heap('warn', { journalBytes: 300 * MIB })), advice(false)).infos,
+    ).toEqual([]);
+    expect(decideSave(plan(heap('warn', { journalBytes: 300 * MIB }))).infos).toEqual([]);
+    expect(decideSave(plan(heap('over-limit')), null).block).not.toContain(JOURNAL_REOPEN_ADVICE);
+  });
+
+  it('커밋 뒤 알림 문구: advised 일 때만 저널 크기·경고선을 보인다', () => {
+    expect(journalNotice(null)).toBeNull();
+    expect(journalNotice(advice(false))).toBeNull();
+    const text = journalNotice(advice(true))!;
+    expect(text).toContain(JOURNAL_REOPEN_ADVICE);
+    expect(text).toContain('편집 기록 약 1200 MiB');
+    expect(text).toContain('경고선 1536 MiB');
+  });
+});
+
+describe('지원 문서 크기 상한(SUPPORTED_INPUT_BYTES)', () => {
+  it('core 값(790 MiB)을 쓰고, 넘을 때만 알린다', () => {
+    expect(Math.round(SUPPORTED_INPUT_BYTES / MIB)).toBe(790);
+    expect(supportedSizeNotice(SUPPORTED_INPUT_BYTES)).toBeNull();
+    expect(supportedSizeNotice(10 * MIB)).toBeNull();
+    const text = supportedSizeNotice(SUPPORTED_INPUT_BYTES + 1)!;
+    expect(text).toContain('지원 크기 790 MiB');
+    expect(text).toContain('편집·저장이 실패할 수 있습니다');
+    expect(supportedSizeNotice(50 * MIB, 40 * MIB)).toContain('지원 크기 40 MiB');
+  });
+
+  it('정보 대화상자의 지원 크기 줄이 같은 값을 보인다', () => {
+    const base = { version: '1.0.0', sourceUrl: sourceUrl('1.0.0'), noticesUrl: null, heap: null };
+    expect(aboutContent(base).lines.join('\n')).toContain('약 790 MiB 까지');
+    expect(aboutContent({ ...base, supportedBytes: 100 * MIB }).lines.join('\n')).toContain(
+      '약 100 MiB 까지',
+    );
   });
 });
 

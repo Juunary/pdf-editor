@@ -81,6 +81,7 @@ const RETRY_AFTER_RECOVERY = new Set<keyof PdfWorkerApi>([
   'searchText',
   'getPageLayout',
   'planSave',
+  'journalAdvice',
   'getPageEditability',
   'planParagraphEdit',
   'planPathEdit',
@@ -251,6 +252,10 @@ export class ResilientPdf implements PdfWorkerApi {
 
   planSave(request: SaveRequest) {
     return this.invoke<Awaited<ReturnType<PdfWorkerApi['planSave']>>>('planSave', [request]);
+  }
+
+  journalAdvice() {
+    return this.invoke<Awaited<ReturnType<PdfWorkerApi['journalAdvice']>>>('journalAdvice', []);
   }
 
   save(request: SaveRequest) {
