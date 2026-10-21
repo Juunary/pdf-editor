@@ -5,7 +5,7 @@
 | 작성일 | 2026-10-21 |
 | 브랜치 | `m5-release` (기준 `m5` 6e4f3b2, worktree `/mnt/nas4/kjune/pdf-editor-m5-release`) |
 | 범위 | `docs/m5-contract.md` 4.3·D6·D7 |
-| 상태 | 구현·시험 완료. 매니페스트 이름·설명·버전 값은 메인 세션 승인 대기(5절) |
+| 상태 | 구현·시험 완료(10절 툴바 수정 포함). 매니페스트 이름·설명·버전 값은 메인 세션 승인 대기(5절) |
 
 ## 1. 요약
 
@@ -137,7 +137,7 @@ pnpm --filter @pdf-editor/extension package
 | 버튼 설명 | 되돌리기·다시 실행 버튼 툴팁에 소실 조건 | 같음 |
 
 - 지원 크기 값의 연결부: UI 는 `SaveHeapEstimate` 의 `level`·`estimatedPeakBytes`·`limitBytes`·`journalBytes` 만 읽고 자체 경계값을 갖지 않습니다. S1 이 모델을 바꿔도 UI 변경이 필요 없습니다(`model`·`journalBytes` 는 S1 이 채우면 쓰임).
-- 진단 패널(`#diag`)·`downloads 저장`·컨텍스트 배지는 `html[data-build='store']` CSS 로만 숨깁니다(DOM 유지). 벤치 버튼은 진단 패널 안에 있어 함께 숨겨집니다.
+- 진단 패널(`#diag`)·`downloads 저장` 버튼은 `html[data-build='store']` CSS 로만 숨깁니다(DOM 유지). 벤치 버튼은 진단 패널 안에 있어 함께 숨겨집니다.
 
 ## 7. 시험
 
@@ -170,3 +170,21 @@ pnpm --filter @pdf-editor/extension package
 | 7 | Chrome 128–150 레거시 빌드를 따로 배포할 필요가 생기면 `dist`(dev) 매니페스트에서 이름·진단을 정리한 `legacy` 종류 추가 | 후속 |
 | 8 | 스토어 빌드의 `?e2e` 시험 이음매(`window.__pe`)는 코드에 남아 있음. 쿼리 `e2e` 를 붙여야만 노출되며 확장 페이지 안에서만 동작. 필요하면 스토어 빌드에서 제거 | 후속 |
 | 9 | 전체 e2e 1회 실행 중 `path-integration.spec.ts` 의 `#pe-path-fill` 이 활성화되지 않아 실패한 적이 1회 있음(첫 Alt+클릭 소실, S5 대상 M4 제한과 증상이 같으나 원인은 확인하지 못함). 단독 3회·재실행은 통과 | S5 |
+
+## 10. 뷰어 툴바 수정 (사용자 결정 2026-10-21)
+
+| 항목 | 변경 |
+| --- | --- |
+| 문맥 배지 삭제 | `#context-badge` 요소·CSS 삭제. 문맥 값은 `document.body.dataset.context = source.kind` 로 남기고 e2e(`extension.spec.ts`·`dnr-legacy.spec.ts`)는 `body[data-context]` 를 읽음 |
+| 툴바 고정 | `body` 를 세로 flex(`height: 100%`, `overflow: hidden`)로 두고 `#toolbar`·`#notice-bar` 는 `flex: none`, `#page-container` 가 `flex: 1; overflow: auto` 스크롤 상자. sticky 제거. 창 폭 그대로 맨 위에 있고 문서 영역만 가로·세로 스크롤 |
+| 검색창·알림 줄 위치 | `#notice-bar` 의 `top: 40px` 삭제(흐름 배치). 검색창 `--pe-find-top` 은 `main.ts` 의 `ResizeObserver`(툴바·알림 줄)가 실제 하단 + 4px 로 갱신 |
+| 가운데 정렬 | `justify-content: safe center`(창보다 넓으면 왼쪽부터 시작해 잘리지 않음) |
+| 쪽 화살표 | `.pe-arrow` 의 `top: calc(50vh - 22px)` → `calc(50% - 22px)`(스크롤 상자 높이 기준). `style.css` |
+| 사용 가능 폭 | `main.ts` `getEnvironment.availableWidth` 를 `documentElement.clientWidth` 에서 `#page-container.clientWidth` 로 변경(스크롤바 제외, 이전과 같은 값) |
+| 유동 배치 | `#toolbar` 는 `flex-wrap`, 컨트롤 묶음(쪽 이동·되돌리기·다시 실행·검색 등)이 앞, 저장 버튼이 그다음. 상태 줄은 말줄임. 600px 이하: 글자·패딩 축소, `다른 이름으로 저장` → `새 이름`, `downloads 저장` 숨김, 상태 줄은 자기 줄 |
+| 진단 패널(dev) | `<details id="diag">` 의 `open` 제거(기본 접힘). 열려 있으면 문서 영역을 줄여 `path-integration` e2e 의 클릭 좌표가 패널에 가려졌다. 진단 로그 텍스트는 접혀 있어도 읽힘 |
+| 알림·대화상자·검색창 | 대화상자 `max-width: min(460px, 100vw − 24px)`·`max-height: 100dvh − 24px`·스크롤, 검색창 `max-width: 100vw − 24px`·줄바꿈·입력창 `min(220px, 40vw)`, 알림 줄은 줄바꿈 |
+
+- window 스크롤 의존 조사: `scrollTo`·`scrollY`·`scrollTop` 등을 쓰는 코드가 뷰어·viewer-ui 소스에 없습니다. 위치 계산(`EditEntry`·`DebugLayer`·`EditableMarks`·`TextLayer`·`EditorLayer`·`PathLayer`)은 `getBoundingClientRect()`(뷰포트 기준)라 스크롤 상자가 바뀌어도 그대로 맞고, 찾기 결과 스크롤(`HighlightLayer` 의 `scrollIntoView`)은 가장 가까운 스크롤 조상(`#page-container`)을 따라갑니다. `PathLayer.tsx` 는 수정하지 않았고 보고할 문제도 없었습니다. `position: fixed` 요소(검색창, 디버그 HUD, 편집 안내, 표시 범례)는 뷰포트 기준이라 그대로입니다.
+- 시험: `e2e/toolbar-layout.spec.ts` 11건. 뷰포트 400·800·1280 px, 확대는 CDP `Emulation.setDeviceMetricsOverride`(CSS 뷰포트 1/배율, dpr 배율 — Ctrl +/− 와 같은 효과) 1·1.5·2, 문서 영역에 3000 px 요소를 더해 가로·세로로 끝까지 스크롤한 뒤 `#toolbar` 의 `top=0`·`left=0`·`width=창 폭`, 저장·다른 이름·정보 버튼과 툴바 모든 요소가 화면 안, 창 자체는 스크롤되지 않음, 왼쪽이 잘리지 않음을 확인합니다. 400 px 에서 개발 버튼 숨김, 넓은 창에서 쪽 가운데 정렬, 알림 줄·검색창·정보 대화상자가 화면 안(검색창은 알림 줄 아래), `#context-badge` 없음·`body[data-context]` 있음.
+- 한계: 실제 Ctrl +/− 와 Ctrl+휠 조작(브라우저 UI)은 자동화하지 못해 CDP 뷰포트·dpr 에뮬레이션으로 대신했습니다. 사용자 확인 항목으로 남깁니다.
