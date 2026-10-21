@@ -1,3 +1,6 @@
+// 첫 import 유지: mupdf 가 초기화되기 전에 Module 설정 객체를 등록해야 WASM 힙 측정(`wasmHeapBytes`)이 연결된다. Worker 번들은
+// 이 모듈과 mupdf 를 한 청크에 넣고 import 순서대로 실행한다(뒤에 두면 저장 힙 모델이 배율 모델로 떨어진다, docs/m5-heap.md 4.3).
+import './wasm-module.js';
 import * as mupdf from 'mupdf';
 import {
   FULL_SAVE_OPTIONS,
@@ -6,8 +9,12 @@ import {
   decideSaveMethod,
   editBlockLineGroups,
   estimateSaveHeap,
+  journalAdvice,
   linkPage,
   listRedactAnnots,
+  usedHeapAfterSave,
+  type JournalAdvice,
+  type SaveSizeInput,
 } from '@pdf-editor/pdf-ops';
 import { reconstructPage } from '@pdf-editor/layout-recon';
 import type {
@@ -45,7 +52,7 @@ import type {
 import { defaultEditAdapter, type EditAdapter } from './edit-adapter.js';
 import { EditEngine, EditStateError, type EditHost } from './edit-engine.js';
 import { extractPageModel } from './extract.js';
-import { openPdf } from './open.js';
+import { computeDocumentStats, openPdf, type DocumentStatsDetail } from './open.js';
 import { pageRotation } from './page-geometry.js';
 import { renderPageRegionRgba, renderPageRgba } from './render.js';
 import { searchDocument } from './search.js';
@@ -53,6 +60,14 @@ import { wasmHeapBytes } from './wasm-module.js';
 
 /** 추출 모델·원본 연결 정보를 캐시하는 최대 쪽 수(추출 모델은 요청 종류별로 센다). */
 const PAGE_CACHE_LIMIT = 16;
+
+/** 경로 세그먼트를 뺀 모델(나머지 배열은 공유한다). */
+function withoutPathSegments(model: PageModel): PageModel {
+  return {
+    ...model,
+    paths: model.paths.map((p) => (p.segments === null ? p : { ...p, segments: null })),
+  };
+}
 
 /** 최근 사용 순 캐시에서 꺼내며 순서를 올린다. */
 function touch<K, V>(cache: Map<K, V>, key: K): V | undefined {
@@ -109,6 +124,16 @@ export class PdfSession {
   #lastRenderScale = DEFAULT_RENDER_SCALE;
   /** 이 세션에서 전체 저장을 한 번이라도 했다(A3-9: 이후 저장도 전체 저장). */
   #fullSaved = false;
+  /** 저장 힙 모델 기본값: 문서 열기 완료 직후 WASM 힙(D5). 측정 객체가 없으면 null. */
+  #baseHeapBytes: number | null = null;
+  /** 저장 힙 모델 입력(D5). 첫 쪽 렌더 뒤 유휴 시나 첫 planSave 에서 한 번 계산한다. */
+  #stats: DocumentStatsDetail | null = null;
+  #statsTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 직전 저장 기록(H1): 그 저장의 사용 중 힙 추정과 저장 직후 WASM 힙(실측 피크). 다음 planSave 가 저장이 쓰고 놓은 공간을
+   * 사용 중으로 세지 않도록 쓴다(`usedHeapAfterSave`). 문서를 새로 열면 지운다.
+   */
+  #lastSave: { usedHeapBytes: number; heapAfterBytes: number } | null = null;
 
   constructor(options: PdfSessionOptions = {}) {
     this.#options = options;
@@ -137,6 +162,8 @@ export class PdfSession {
     this.#doc = doc;
     this.#inputMode = inputMode;
     this.#fullSaved = false;
+    this.#stats = null;
+    this.#lastSave = null;
     this.#lastRenderScale = DEFAULT_RENDER_SCALE;
     this.#edit = new EditEngine(this.#editHost(doc), {
       adapter: this.#options.editAdapter ?? defaultEditAdapter,
@@ -146,6 +173,7 @@ export class PdfSession {
     const page = doc.loadPage(0);
     const [x0, y0, x1, y1] = page.getBounds();
     page.destroy();
+    this.#baseHeapBytes = wasmHeapBytes();
     return {
       pageCount: doc.countPages(),
       firstPage: { width: x1 - x0, height: y1 - y0 },
@@ -192,6 +220,7 @@ export class PdfSession {
       }
       this.#lastRenderScale = scale;
       const { width, height, rgba } = renderPageRgba(page, scale);
+      this.#scheduleStats();
       return { pageIndex, width, height, rgba, renderMs: performance.now() - t0, clip: null };
     } finally {
       page.destroy();
@@ -203,18 +232,23 @@ export class PdfSession {
    * 같은 객체를 돌려준다. 호출자는 바꾸지 않는다. 문서를 편집하면 `invalidatePageCache` 를 부른다.
    */
   extractPage(request: ExtractRequest): PageModel {
-    const key = `${request.pageIndex}:${request.includePathSegments === true ? 1 : 0}`;
+    const withSegments = request.includePathSegments === true;
+    const key = `${request.pageIndex}:${withSegments ? 1 : 0}`;
     const cached = touch(this.#pageCache, key);
     if (cached) return cached;
+    // 쪽 판정(M5 4.1): 텍스트 층용 추출(경로 세그먼트 없음) 뒤에 편집 판정이 세그먼트 포함 추출을 다시 요청하면
+    // 같은 쪽 콘텐츠를 두 번 해석한다. 한 번에 세그먼트까지 모아 두고 세그먼트 없는 모델은 거기서 만든다.
     const page = this.document.loadPage(request.pageIndex);
-    let model: PageModel;
+    let full: PageModel;
     try {
-      model = extractPageModel(page, request);
+      full = extractPageModel(page, { ...request, includePathSegments: true });
     } finally {
       page.destroy();
     }
-    remember(this.#pageCache, key, model);
-    return model;
+    const plain = withoutPathSegments(full);
+    remember(this.#pageCache, `${request.pageIndex}:1`, full);
+    remember(this.#pageCache, `${request.pageIndex}:0`, plain);
+    return withSegments ? full : plain;
   }
 
   /**
@@ -310,6 +344,23 @@ export class PdfSession {
     for (const k of [-2, -1, 1, 2]) this.#layoutCache.delete(pageIndex + k);
   }
 
+  /**
+   * 저장 힙 모델 입력(D5, `computeDocumentStats`). 처음 부를 때 계산해 문서를 닫을 때까지 보관한다. 열기 시간에 넣지 않도록
+   * 첫 쪽 전체 렌더 뒤 다음 작업 틈에 미리 계산해 두고(`#scheduleStats`), 그 전에 planSave 가 부르면 그때 계산한다.
+   */
+  documentStats(): DocumentStatsDetail {
+    return (this.#stats ??= computeDocumentStats(this.document, { bytes: this.originalBytes }));
+  }
+
+  /** 첫 쪽 전체 렌더 응답이 나간 뒤(Worker 의 다음 작업 틈) 통계를 계산하도록 한 번 예약한다. */
+  #scheduleStats(): void {
+    if (this.#stats || this.#statsTimer) return;
+    this.#statsTimer = setTimeout(() => {
+      this.#statsTimer = null;
+      if (this.#doc) this.documentStats();
+    }, 0);
+  }
+
   searchText(request: SearchRequest): SearchResult {
     return searchDocument(this.document, request);
   }
@@ -327,11 +378,7 @@ export class PdfSession {
       );
     }
     const canBeSavedIncrementally = this.document.canBeSavedIncrementally();
-    const size = {
-      inputBytes: this.originalBytes.byteLength,
-      // Stream 입력은 입력 크기만큼의 힙을 쓰지 않으므로 실측 배율이 낮다(docs/m0-dod-xobject-redact-save.md 3.3).
-      ...(this.#inputMode === 'stream' ? { ratio: STREAM_INPUT_PEAK_HEAP_RATIO } : {}),
-    };
+    const size = this.#saveSize();
     const merged = [...new Set([...changes, ...(edit?.changeKinds() ?? [])])];
     let decision = decideSaveMethod(merged, canBeSavedIncrementally, size);
     if (
@@ -360,11 +407,58 @@ export class PdfSession {
     };
   }
 
+  /**
+   * 저장 힙 모델 입력(D5). 계수 모델은 Stream 입력에서 잰 값이라 Stream 열기이고 힙 측정 객체가 있을 때만 쓴다. 그 밖에는
+   * 배율 모델(`ratio-v0`). 문서 통계를 아직 계산하지 않았으면 여기서 계산한다(첫 쪽 렌더 뒤 유휴 계산이 보통 먼저 끝난다).
+   */
+  #saveSize(): SaveSizeInput {
+    const inputBytes = this.originalBytes.byteLength;
+    const current = wasmHeapBytes();
+    if (this.#inputMode !== 'stream' || current === null) {
+      return {
+        inputBytes,
+        ...(this.#inputMode === 'stream' ? { ratio: STREAM_INPUT_PEAK_HEAP_RATIO } : {}),
+      };
+    }
+    const stats = this.documentStats();
+    const last = this.#lastSave;
+    return {
+      inputBytes,
+      model: {
+        objectCount: stats.objectCount,
+        rawStreamBytes: stats.rawStreamBytes,
+        objectStreamBytes: stats.objectStreamBytes,
+        approximate: stats.approximate,
+        currentHeapBytes: current,
+        ...(last
+          ? {
+              usedHeapBytes: usedHeapAfterSave(last, current),
+              priorSavePeakBytes: last.heapAfterBytes,
+            }
+          : {}),
+        baseHeapBytes: this.#baseHeapBytes ?? current,
+        journalBytes: this.#edit?.journalBytes ?? 0,
+      },
+    };
+  }
+
+  /**
+   * 저널 상한 판정(D4): 저널 보유 추정 + 예상 전체 저장 증가분이 경고선(저장 힙 warn 경계)을 넘으면 `advised`. 뷰어가 커밋
+   * 뒤 "저장 후 다시 열기" 안내에 쓴다. 계수 모델을 쓸 수 없는 환경(Buffer 입력·힙 측정 없음)이면 저널 0 으로 본다.
+   */
+  journalAdvice(): JournalAdvice {
+    return journalAdvice('full', this.#saveSize());
+  }
+
   /** 저장. 편집 RPC 를 쓴 문서는 저널 작업으로 감싼다(`EditEngine.runSave`, D9). 초안이 열려 있으면 예외. */
   save(request: SaveRequest): SaveResult & { warnings: string[] } {
     const doc = this.document;
     const plan = this.planSave(request);
     const t0 = performance.now();
+    // 두 번째 저장부터는 렌더가 쌓은 자원 캐시(MuPDF store: 풀린 이미지·글꼴 등)를 저장 전에 비운다. 직전 저장이 놓은 빈 공간 안에
+    // 쌓인 캐시는 힙 크기로 보이지 않아 사용 중 힙 추정(`usedHeapAfterSave`)이 놓친다(비우지 않으면 코퍼스 2건 미탐). 첫 저장
+    // 전에는 비우지 않는다: 비우면 빈 조각 때문에 저장 피크가 오히려 커졌다(합성 이미지 900쪽 1,370 → 1,924 MiB, docs/m5-heap.md 4.4).
+    if (this.#lastSave) mupdf.emptyStore();
     const write = (): Uint8Array<ArrayBuffer> => {
       const buffer = doc.saveToBuffer(plan.options);
       try {
@@ -375,13 +469,17 @@ export class PdfSession {
     };
     const bytes = this.#edit ? this.#edit.runSave(write) : write();
     if (plan.method === 'full') this.#fullSaved = true;
+    const heapAfter = wasmHeapBytes();
+    if (heapAfter !== null && plan.heap.usedHeapBytes !== undefined) {
+      this.#lastSave = { usedHeapBytes: plan.heap.usedHeapBytes, heapAfterBytes: heapAfter };
+    }
     return {
       bytes,
       method: plan.method,
       canBeSavedIncrementally: plan.canBeSavedIncrementally,
       options: plan.options,
       saveMs: performance.now() - t0,
-      wasmHeapBytes: wasmHeapBytes(),
+      wasmHeapBytes: heapAfter,
       heap: plan.heap,
       warnings: plan.warnings,
     };
@@ -504,6 +602,9 @@ export class PdfSession {
   }
 
   close(): void {
+    if (this.#statsTimer) clearTimeout(this.#statsTimer);
+    this.#statsTimer = null;
+    this.#stats = null;
     this.#pageCache.clear();
     this.#sourceMapCache.clear();
     this.#layoutCache.clear();

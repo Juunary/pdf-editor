@@ -340,6 +340,9 @@ export class EditSession {
     if (this.latencies.length > MAX_LATENCY_SAMPLES) this.latencies.shift();
     try {
       performance.measure('pe-edit-latency', { start: region.t0, end });
+      // M5 벤치 지표 이벤트(계약 D1): 입력 → 미리보기 합성.
+      performance.mark('m5:edit:input', { startTime: region.t0 });
+      performance.mark('m5:edit:preview-composited', { startTime: end });
     } catch {
       // 측정 API 를 쓸 수 없는 환경은 배열 기록만 남긴다.
     }

@@ -93,7 +93,7 @@ async function inspectFrames(page: Page, extensionId: string, waitMs: number) {
     }[];
     viewers.push({
       url: f.url(),
-      badge: await f.textContent('#context-badge'),
+      badge: await f.getAttribute('body', 'data-context'),
       state: await f.getAttribute('#status', 'data-state'),
       status: await f.textContent('#status'),
       source: log.find((e) => e.event === 'source')?.data ?? null,

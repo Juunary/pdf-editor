@@ -1,0 +1,9 @@
+{
+  "description": "저장 힙 모델 측정 문서(docs/m5-heap.md 2절). corpus 는 fixtures/corpus/manifest.json 의 id, synthetic 은 tools/bench/synth.mjs 의 id 다. realLarge 는 계약 8절 100 MB 이상 실제 문서 자리로, 메인 세션이 fixtures/bench/manifest.json 에 확정하면 id·경로를 채운다. 비어 있는 동안 HOLDOUT 합성 대체로 검증한다.",
+  "corpusDir": "fixtures/corpus",
+  "synthDir": "out/m5-heap/docs",
+  "realLarge": [
+    { "slot": "image-heavy", "id": null, "path": null },
+    { "slot": "object-heavy", "id": null, "path": null }
+  ]
+}

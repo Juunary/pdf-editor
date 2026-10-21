@@ -58,3 +58,7 @@ export const TAGGED_NOTICE = '태그된 PDF 입니다. 구조(읽기 순서·태
 /** 편집한 쪽 번호가 파일에 남는다는 안내(계약 5.6). */
 export const EDIT_PAGES_NOTICE =
   '저장하면 편집한 쪽 번호가 파일 정보(PdfEditorEdits)에 기록됩니다.';
+
+/** 되돌린 뒤 새 편집을 시작할 때 보이는 안내(core 가 다시 실행 단계를 버린다, 계약 D9). */
+export const REDO_DISCARDED_NOTICE =
+  '새 편집을 시작해 다시 실행(redo) 기록이 사라졌습니다. 이 편집을 취소해도 돌아오지 않습니다.';
