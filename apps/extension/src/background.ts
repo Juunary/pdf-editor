@@ -8,6 +8,11 @@ import {
 } from './interception.js';
 
 async function syncInterception(): Promise<void> {
+  // Web Store 빌드(Chrome 151+)는 DNR 권한이 없다. MIME handler 만 쓰므로 폴백 규칙을 관리하지 않는다.
+  if (!chrome.declarativeNetRequest) {
+    console.info('[pdf-editor] interception mode = mime-handler (DNR 권한 없는 빌드)');
+    return;
+  }
   const mode = decideInterceptionMode({
     hasMimeHandlerApi: 'mimeHandler' in chrome && chrome.mimeHandler !== undefined,
     chromeMajor: parseChromeMajor(navigator.userAgent),
