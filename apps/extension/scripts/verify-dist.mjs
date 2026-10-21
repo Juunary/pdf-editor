@@ -8,7 +8,7 @@
 //
 // `--release [out/release 디렉터리]`: Web Store 패키지(스테이징·zip) 검사(docs/m5-contract.md D6·D7).
 // 위 공통 검사를 스테이징에 적용하고, 스토어 매니페스트(Chrome 151+, DNR·호스트 권한·WAR 없음), 개발 파일 부재
-// (`diag/`·`*.map`·`sourceMappingURL`), 크기 상한, 버전 일치, 아이콘·LICENSE·THIRD_PARTY_NOTICES.txt·저작권 고지,
+// (`diag/`·`*.map`·`sourceMappingURL`·벤치 페이지 `bench.html`·벤치 청크), 크기 상한, 버전 일치, 아이콘·LICENSE·THIRD_PARTY_NOTICES.txt·저작권 고지,
 // OFL 예약 이름, zip 과 스테이징의 일치를 확인한다.
 import { createHash } from 'node:crypto';
 import { unzipSync } from 'fflate';
@@ -180,6 +180,15 @@ if (releaseMode) {
   for (const f of files.filter((f) => /\.(js|html)$/.test(f))) {
     if (/diag\/(m0-sample|embed-test|chrome-probe)/.test(readFileSync(f, 'utf8'))) {
       errors.push(`진단 자산 참조: ${rel(f)}`);
+    }
+  }
+
+  // 벤치 측정 페이지(S2, docs/m5-perf.md)는 개발 빌드 전용이다(D6). 페이지·청크·링크 모두 없어야 한다.
+  const benchFiles = files.map(rel).filter((f) => /(^|\/)bench[^/]*\.(html|js|css)$/.test(f));
+  if (benchFiles.length > 0) errors.push(`벤치 파일 포함: ${benchFiles.join(', ')}`);
+  for (const f of files.filter((f) => /\.(js|html)$/.test(f))) {
+    if (/bench\.html|id="open-bench"/.test(readFileSync(f, 'utf8'))) {
+      errors.push(`벤치 페이지 참조: ${rel(f)}`);
     }
   }
 
