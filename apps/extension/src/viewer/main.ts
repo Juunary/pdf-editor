@@ -31,7 +31,6 @@ function byId<T extends HTMLElement>(id: string): T {
 }
 
 const statusEl = byId<HTMLSpanElement>('status');
-const badgeEl = byId<HTMLSpanElement>('context-badge');
 const openLabel = byId<HTMLLabelElement>('open-label');
 const openInput = byId<HTMLInputElement>('open-file');
 const diagLogEl = byId<HTMLPreElement>('diag-log');
@@ -54,7 +53,22 @@ function setStatus(state: string, text: string): void {
 }
 
 const noticeBar = byId<HTMLDivElement>('notice-bar');
+const pageContainerEl = byId<HTMLElement>('page-container');
 const dialogEl = byId<HTMLDialogElement>('app-dialog');
+
+/** 검색창(position: fixed)이 툴바·알림 줄 바로 아래에 오도록, 둘의 실제 높이로 CSS 변수를 갱신한다. */
+const toolbarEl = byId<HTMLElement>('toolbar');
+function syncFindTop(): void {
+  const bottom = Math.max(
+    toolbarEl.getBoundingClientRect().bottom,
+    noticeBar.hidden ? 0 : noticeBar.getBoundingClientRect().bottom,
+  );
+  document.documentElement.style.setProperty('--pe-find-top', `${Math.ceil(bottom) + 4}px`);
+}
+const toolbarObserver = new ResizeObserver(syncFindTop);
+toolbarObserver.observe(toolbarEl);
+toolbarObserver.observe(noticeBar);
+syncFindTop();
 
 /** 알림 줄(열기 시 보고·안내·복구). text 가 null 이면 그 id 의 알림을 지운다. */
 function setNotice(id: string, text: string | null): void {
@@ -447,7 +461,7 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
     getEnvironment: () => ({
       devicePixelRatio: window.devicePixelRatio || 1,
       // 쪽 좌우 화살표 칸을 뺀 너비에 맞춘다(화살표가 쪽을 가리지 않게).
-      availableWidth: document.documentElement.clientWidth - 2 * PAGE_ARROW_GUTTER,
+      availableWidth: pageContainerEl.clientWidth - 2 * PAGE_ARROW_GUTTER,
     }),
     onPagePainted,
     editLog,
@@ -542,7 +556,8 @@ async function main(): Promise<void> {
     now: () => performance.now(),
   });
   contextKind = source.kind;
-  badgeEl.textContent = source.kind;
+  // 문맥 이름은 화면에 보이지 않고 시험·진단용으로 body 에 남긴다.
+  document.body.dataset.context = source.kind;
   void reportFileAccess(
     source.displayUrl,
     decideInterceptionMode({

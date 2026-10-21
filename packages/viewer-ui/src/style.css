@@ -51,8 +51,11 @@
   right: 12px;
   z-index: 40;
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+  max-width: calc(100vw - 24px);
+  box-sizing: border-box;
   padding: 6px 8px;
   border-radius: 6px;
   background: #2b2f33;
@@ -60,7 +63,7 @@
   box-shadow: 0 2px 8px rgb(0 0 0 / 50%);
 }
 .pe-find-input {
-  width: 220px;
+  width: min(220px, 40vw);
   padding: 3px 6px;
   font: inherit;
 }
@@ -433,7 +436,8 @@
 }
 .pe-arrow {
   position: sticky;
-  top: calc(50vh - 22px);
+  /* 스크롤 상자(문서 영역) 높이의 가운데. 창 높이가 아니라 상자 기준이다. */
+  top: calc(50% - 22px);
   width: 32px;
   height: 44px;
   padding: 0;
