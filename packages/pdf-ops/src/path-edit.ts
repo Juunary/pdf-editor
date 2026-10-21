@@ -1166,6 +1166,7 @@ export function writePathEdit(
   const clipped: Rect[] = [];
   const spaceRects: Rect[] = [];
   const ruleRects: Rect[] = [];
+  const taggedRects: Rect[] = [];
   const single = st.items.length === 1;
   for (const it of st.items) {
     const r = itemReplacements(it, edit, single);
@@ -1176,6 +1177,9 @@ export function writePathEdit(
     if (r.spaceChanged) spaceRects.push(r.bbox);
     if (!edit.delete && it.clipRect && !inside(r.bbox, it.clipRect)) clipped.push(r.bbox);
     if (edit.delete && it.infos.some((i) => st.rulePaths.has(i))) ruleRects.push(it.bbox);
+    if (edit.delete && it.paint.markedContent?.some((m) => m.mcid !== null)) {
+      taggedRects.push(it.bbox);
+    }
   }
   for (const h of st.holders.values()) {
     h.write(applyReplacements(h.orig, [...h.fixed, ...(lists.get(h.key) ?? [])]));
@@ -1201,12 +1205,21 @@ export function writePathEdit(
       rects: ruleRects,
     });
   }
+  if (taggedRects.length > 0) {
+    // 새 경고 종류를 만들지 않고 기존 구조 경고를 쓴다(shared-types 는 M5 S5 범위 밖).
+    warnings.push({
+      kind: 'tagged-structure-unlinked',
+      message:
+        '태그(MCID)된 콘텐츠 안의 패스를 지웁니다. 태그 PDF 구조 트리에 내용 없는 항목이 남을 수 있습니다.',
+      rects: taggedRects,
+    });
+  }
   st.warnings = warnings;
   return { bbox: bbox ?? prepared.target.bbox, writeMs: now() - t0 };
 }
 
 /**
- * 마지막 writePathEdit 의 편집 경고(`color-space-changed`·`path-clipped`·`table-rule-removed`). 계획 경고
+ * 마지막 writePathEdit 의 편집 경고(`color-space-changed`·`path-clipped`·`table-rule-removed`·삭제 시 태그 `tagged-structure-unlinked`). 계획 경고
  * (PathEditPlan.warnings)는 포함하지 않는다. writePathEdit 의 반환 시그니처가 고정이라 따로 둔다.
  */
 export function pathEditWarnings(
