@@ -123,8 +123,27 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
   /**
    * Alt+클릭으로 패스를 고른다. 열린 직후에는 쪽 판정·패스 모델이 다시 불러와지며 첫 클릭이 선택 없이 끝날 수 있어
    * (모델 갱신과 겹침) 선택 상자가 보일 때까지 다시 누른다.
+   *
+   * 편집 커밋 직후에는 쪽을 다시 그리고 판정을 다시 받는 동안(약 100 ms) 패스 층(PathLayer)이 내려가 Alt+클릭이 무시된다.
+   * 이때 이전 선택의 상자가 판정 뒤 다시 보여 "상자 보임" 만으로는 새 선택을 확인할 수 없으므로(간헐 실패,
+   * docs/m5-integration.md 4.2), 먼저 쪽 판정·패스 재판정이 끝날 때까지 기다린다.
    */
   async function altSelect(page: Page, x: number, y: number) {
+    await page.waitForFunction(() => {
+      const s = (
+        window as unknown as {
+          __pe: {
+            controller: {
+              getState(): {
+                loading: boolean;
+                edit: { editability: { status: string }; path: { settling: boolean } };
+              };
+            };
+          };
+        }
+      ).__pe.controller.getState();
+      return !s.loading && s.edit.editability.status === 'ready' && !s.edit.path.settling;
+    });
     await expect(async () => {
       const p = await at(page, x, y);
       await page.keyboard.down('Alt');
