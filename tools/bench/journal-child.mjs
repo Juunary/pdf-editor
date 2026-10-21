@@ -1,6 +1,8 @@
 // 저널 보유량 측정(D4, docs/m5-heap.md 5절). 한 쪽의 같은 문단을 N 번 편집·커밋하며 WASM 힙과 저널 보유 추정을 기록하고,
 // 끝나면 예상 피크(planSave)·실제 저장 피크, 새 세션에 같은 로그를 재적용하는 시간을 잰다.
-// 사용: node tools/bench/journal-child.mjs <pdf> <page> <N> [--no-save] [--no-replay]
+// 사용: node tools/bench/journal-child.mjs <pdf> <page> <N> <same|distinct> [--no-save] [--no-replay]
+//   same: 같은 문단(첫 편집 뒤에는 그 편집 블록)을 N 번 고친다. 블록 스트림만 바뀐다.
+//   distinct: 아직 편집하지 않은 문단을 차례로 고친다(쪽 콘텐츠가 매번 바뀐다). 다 쓰면 편집 블록을 차례로 고친다.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PdfSession, wasmHeapBytes } from '../../packages/core/dist/index.js';
@@ -13,12 +15,12 @@ const FONT = new Uint8Array(
 const SCALE = 1.5;
 const EVERY = 10;
 
-const [path, pageArg, nArg] = process.argv.slice(2);
+const [path, pageArg, nArg, mode = 'same'] = process.argv.slice(2);
 const page = Number(pageArg);
 const n = Number(nArg);
-const flags = new Set(process.argv.slice(5));
+const flags = new Set(process.argv.slice(6));
 const bytes = new Uint8Array(readFileSync(path));
-const out = { path, page, n, steps: [], ok: false };
+const out = { path, page, n, mode, steps: [], ok: false };
 const s = new PdfSession({ loadFallbackFont: async () => FONT });
 s.open(bytes);
 out.baseHeap = wasmHeapBytes();
@@ -30,11 +32,22 @@ try {
   const para = ed.paragraphs.find((p) => p.editable);
   if (!para) throw new Error('편집 가능 문단 없음');
   out.paragraphId = para.paragraphId;
+  let blockTurn = 0;
   for (let i = 0; i < n; i++) {
-    // 편집 블록이 된 뒤에도 같은 문단 id 를 다시 찾는다(블록은 한 문단).
-    const cur = (await s.getPageEditability(page)).paragraphs.find(
-      (p) => p.editable && (i === 0 ? p.paragraphId === para.paragraphId : p.editedBlock !== null),
-    );
+    const paras = (await s.getPageEditability(page)).paragraphs.filter((p) => p.editable);
+    let cur;
+    if (mode === 'distinct') {
+      cur = paras.find((p) => p.editedBlock === null);
+      if (!cur) {
+        const blocks = paras.filter((p) => p.editedBlock !== null);
+        cur = blocks[blockTurn++ % Math.max(1, blocks.length)];
+      }
+    } else {
+      // 편집 블록이 된 뒤에도 같은 문단을 다시 찾는다(블록은 한 문단).
+      cur = paras.find((p) =>
+        i === 0 ? p.paragraphId === para.paragraphId : p.editedBlock !== null,
+      );
+    }
     if (!cur) throw new Error(`${i}회: 편집할 문단을 다시 찾지 못함`);
     const plan = await s.planParagraphEdit(page, cur.paragraphId);
     const started = await s.beginParagraphEdit(page, cur.paragraphId, plan.revision);
@@ -53,6 +66,7 @@ try {
         heap: wasmHeapBytes(),
         // 엔진 내부 값: 세션 공개 경로(planSave)와 같은 값.
         journalBytes: s.planSave({ changes: [] }).heap.journalBytes ?? null,
+        firstEdits: paras.filter((p) => p.editedBlock === null).length,
         ms: performance.now() - t0,
       });
     }
