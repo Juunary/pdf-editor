@@ -80,6 +80,11 @@ export interface DocumentStatsDetail extends DocumentStats {
 
 export interface DocumentStatsOptions {
   budgetMs?: number;
+  /**
+   * 원본 파일 바이트. 있으면 xref 에서 객체 스트림 번호를 읽어 객체 스트림만 전수로 푼다(`objectStreamNumbers`). 없거나 xref 를
+   * 읽지 못하면 객체 스트림 번호를 알 수 없으므로 예산과 무관하게 전수로 센다.
+   */
+  bytes?: Uint8Array;
   /** 시각(ms). 시험에서 바꾼다. 기본 `performance.now`. */
   now?: () => number;
 }
@@ -93,6 +98,10 @@ export interface DocumentStatsOptions {
  * 맞춘 `stride` 개 구간마다 하나씩 층화 표본을 뽑고 표본 값에 구간 크기를 곱한다(`approximate: true`). 앞에서부터 세다 예산에서 멈추지 않는
  * 이유: 앞쪽 번호만 읽어 둔 문서는 뒤이은 저장의 피크가 크게 뛴다(합성 객체 2,000쪽 284 → 1,389 MiB, 간격 표본은 그대로,
  * docs/m5-heap.md 2.3).
+ *
+ * 객체 스트림 푼 크기는 표본으로 세지 않는다(M1): 객체 스트림은 객체 수에 비해 드물어(수백 객체당 1개) 표본이 놓치면 0 에
+ * 가깝게 과소 추정하고, 모델의 표본 보정(원 스트림 = 입력)은 이 몫을 덮지 않는다. `options.bytes` 의 xref 에서 객체 스트림
+ * 번호를 읽어 그것만 전수로 풀고, 번호를 알 수 없으면 전체를 전수로 센다.
  */
 export function computeDocumentStats(
   doc: mupdf.PDFDocument,
@@ -101,7 +110,16 @@ export function computeDocumentStats(
   const budget = options.budgetMs ?? DOCUMENT_STATS_BUDGET_MS;
   const now = options.now ?? (() => performance.now());
   const objectCount = doc.countObjects();
+  const objstms = options.bytes ? objectStreamNumbers(doc, options.bytes) : null;
   const sum = { streams: 0, bytes: 0, objstm: 0 };
+  const decodedLength = (ref: mupdf.PDFObject): number => {
+    const decoded = ref.readStream();
+    try {
+      return decoded.getLength();
+    } finally {
+      decoded.destroy();
+    }
+  };
   const visit = (num: number, weight: number): void => {
     const ref = doc.newIndirect(num);
     try {
@@ -110,12 +128,9 @@ export function computeDocumentStats(
       const length = ref.get('Length');
       if (length.isNumber()) sum.bytes += Math.max(0, length.asNumber()) * weight;
       length.destroy();
+      if (objstms) return;
       const type = ref.get('Type');
-      if (type.isName() && type.asName() === 'ObjStm') {
-        const decoded = ref.readStream();
-        sum.objstm += decoded.getLength() * weight;
-        decoded.destroy();
-      }
+      if (type.isName() && type.asName() === 'ObjStm') sum.objstm += decodedLength(ref) * weight;
       type.destroy();
     } catch {
       // 손상된 객체는 세지 않는다(MuPDF 가 xref 복구로 연 문서).
@@ -140,11 +155,28 @@ export function computeDocumentStats(
   const pilotMs = now() - t0;
   const pilotCount = Math.max(1, Math.ceil((objectCount - 1) / STATS_PILOT_STRIDE));
   const predictedMs = (pilotMs / pilotCount) * Math.max(0, objectCount - 1);
+  // 객체 스트림 번호를 모르면 표본이 객체 스트림을 놓칠 수 있으므로 예산을 넘어도 전수로 센다.
   const stride =
-    predictedMs <= budget
+    predictedMs <= budget || !objstms
       ? 1
       : Math.min(STATS_PILOT_STRIDE, Math.max(2, Math.ceil(predictedMs / budget)));
   if (stride !== STATS_PILOT_STRIDE) pass(stride);
+  if (objstms) {
+    sum.objstm = 0;
+    for (const num of objstms) {
+      if (num <= 0 || num >= objectCount) continue;
+      const ref = doc.newIndirect(num);
+      try {
+        const type = ref.isStream() ? ref.get('Type') : null;
+        if (type?.isName() && type.asName() === 'ObjStm') sum.objstm += decodedLength(ref);
+        type?.destroy();
+      } catch {
+        // 손상된 객체 스트림은 세지 않는다.
+      } finally {
+        ref.destroy();
+      }
+    }
+  }
   return {
     objectCount,
     streamCount: Math.round(sum.streams),
@@ -152,4 +184,139 @@ export function computeDocumentStats(
     objectStreamBytes: Math.round(sum.objstm),
     approximate: stride > 1,
   };
+}
+
+/** `bytes[from..to)` 를 latin1 문자열로. */
+function latin1(bytes: Uint8Array, from: number, to: number): string {
+  let out = '';
+  for (let i = Math.max(0, from); i < Math.min(to, bytes.length); i++)
+    out += String.fromCharCode(bytes[i]!);
+  return out;
+}
+
+/** ASCII `pattern` 이 `from` 이후 처음 나오는 위치. 없으면 -1. */
+function indexOfAscii(bytes: Uint8Array, pattern: string, from: number): number {
+  const first = pattern.charCodeAt(0);
+  outer: for (let i = Math.max(0, from); i <= bytes.length - pattern.length; i++) {
+    if (bytes[i] !== first) continue;
+    for (let k = 1; k < pattern.length; k++)
+      if (bytes[i + k] !== pattern.charCodeAt(k)) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+/** ASCII `pattern` 이 마지막으로 나오는 위치. 없으면 -1. */
+function lastIndexOfAscii(bytes: Uint8Array, pattern: string): number {
+  const first = pattern.charCodeAt(0);
+  outer: for (let i = bytes.length - pattern.length; i >= 0; i--) {
+    if (bytes[i] !== first) continue;
+    for (let k = 1; k < pattern.length; k++)
+      if (bytes[i + k] !== pattern.charCodeAt(k)) continue outer;
+    return i;
+  }
+  return -1;
+}
+
+/** 정수 PDF 객체 값. 숫자가 아니면 null. 객체는 놓는다. */
+function takeNumber(obj: mupdf.PDFObject): number | null {
+  try {
+    return obj.isNumber() ? obj.asNumber() : null;
+  } finally {
+    obj.destroy();
+  }
+}
+
+/**
+ * xref 스트림 하나에서 압축 객체(유형 2)가 든 객체 스트림 번호를 모으고 /Prev 를 `queue` 에 넣는다. xref 스트림이 아니거나
+ * 형식이 맞지 않으면 false.
+ */
+function readXrefStream(ref: mupdf.PDFObject, out: Set<number>, queue: number[]): boolean {
+  if (!ref.isStream()) return false;
+  const type = ref.get('Type');
+  const isXref = type.isName() && type.asName() === 'XRef';
+  type.destroy();
+  if (!isXref) return false;
+  const wObj = ref.get('W');
+  const w =
+    wObj.isArray() && wObj.length === 3 ? [0, 1, 2].map((i) => takeNumber(wObj.get(i))) : [];
+  wObj.destroy();
+  if (w.length !== 3 || w.some((v) => v === null || v < 0 || v > 8)) return false;
+  const [w0, w1, w2] = w as [number, number, number];
+  const size = takeNumber(ref.get('Size'));
+  if (size === null) return false;
+  const idxObj = ref.get('Index');
+  const index: number[] = [];
+  if (idxObj.isArray()) {
+    for (let i = 0; i < idxObj.length; i++) index.push(takeNumber(idxObj.get(i)) ?? -1);
+  } else index.push(0, size);
+  idxObj.destroy();
+  if (index.length % 2 !== 0 || index.some((v) => v < 0)) return false;
+  const prev = takeNumber(ref.get('Prev'));
+  if (prev !== null) queue.push(prev);
+  const buffer = ref.readStream();
+  try {
+    const data = buffer.asUint8Array();
+    const record = w0 + w1 + w2;
+    const field = (at: number, width: number): number => {
+      let v = 0;
+      for (let k = 0; k < width; k++) v = v * 256 + data[at + k]!;
+      return v;
+    };
+    let at = 0;
+    for (let k = 0; k < index.length; k += 2) {
+      for (let i = 0; i < index[k + 1]!; i++, at += record) {
+        if (at + record > data.length) return false;
+        const kind = w0 === 0 ? 1 : field(at, w0);
+        if (kind === 2) out.add(field(at + w0, w1));
+      }
+    }
+  } finally {
+    buffer.destroy();
+  }
+  return true;
+}
+
+/**
+ * 원본 파일의 xref(전통 표·xref 스트림, /Prev·/XRefStm 사슬)에서 압축 객체가 든 객체 스트림 번호를 모은다. xref 를 읽지
+ * 못하면(손상·앞쪽 쓰레기 바이트로 MuPDF 가 복구한 문서 등) null. 전통 표만 있는 문서는 빈 집합이다.
+ */
+export function objectStreamNumbers(doc: mupdf.PDFDocument, bytes: Uint8Array): Set<number> | null {
+  try {
+    const sx = lastIndexOfAscii(bytes, 'startxref');
+    const start = sx < 0 ? null : /^startxref\s+(\d+)/.exec(latin1(bytes, sx, sx + 40));
+    if (!start) return null;
+    const out = new Set<number>();
+    const queue = [Number(start[1])];
+    const seen = new Set<number>();
+    while (queue.length > 0) {
+      const offset = queue.shift()!;
+      if (seen.has(offset)) continue;
+      if (offset < 0 || offset >= bytes.length) return null;
+      seen.add(offset);
+      const head = latin1(bytes, offset, offset + 64).replace(/^\s+/, '');
+      if (head.startsWith('xref')) {
+        const t = indexOfAscii(bytes, 'trailer', offset);
+        if (t < 0) return null;
+        const end = indexOfAscii(bytes, 'startxref', t);
+        const trailer = latin1(bytes, t, end < 0 ? t + 4096 : end);
+        for (const key of ['Prev', 'XRefStm']) {
+          const m = new RegExp(`/${key}\\s+(\\d+)`).exec(trailer);
+          if (m) queue.push(Number(m[1]));
+        }
+        continue;
+      }
+      const obj = /^(\d+)\s+\d+\s+obj\b/.exec(head);
+      if (!obj) return null;
+      const ref = doc.newIndirect(Number(obj[1]));
+      try {
+        if (!readXrefStream(ref, out, queue)) return null;
+      } finally {
+        ref.destroy();
+      }
+    }
+    return out;
+  } catch {
+    return null;
+  }
 }

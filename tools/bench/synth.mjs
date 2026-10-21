@@ -21,10 +21,16 @@ export const SYNTHETIC = {
   // 계약 8절 대용량 문서 합성 대체(검증 전용, 적합에서 뺀다). 적합용과 다른 구성으로 만들어 외삽을 본다.
   'large-image-mixed': { kind: 'image-mixed', pages: 160 },
   'large-object-4000': { kind: 'object-annot', pages: 4000 },
+  // 객체 스트림 위주(M1 검증 전용): large-object-4000 과 같은 객체 배치를 객체 스트림(200개씩)과 xref 스트림으로 쓴다.
+  // 압축 객체가 대부분이고 객체 스트림은 객체 200개당 1개라 표본 통계가 놓치기 쉽다.
+  'large-objstm-4000': { kind: 'objstm', pages: 4000 },
 };
 
 /** 적합에서 빼고 검증에만 쓰는 대용량 문서(계약 4.2). */
-export const HOLDOUT = new Set(['large-image-mixed', 'large-object-4000']);
+export const HOLDOUT = new Set(['large-image-mixed', 'large-object-4000', 'large-objstm-4000']);
+
+/** 객체 스트림 하나에 넣는 객체 수. */
+export const OBJSTM_PER_STREAM = 200;
 
 /** 이미지 위주 시드(`tools/spike-m0/src/save-bench.ts` writeLargePdf 와 같은 값, 같은 바이트). */
 export const IMAGE_SEED = 0x12345678;
@@ -236,11 +242,139 @@ export function writeImageMixedPdf(path, pages) {
   return finish(4 + pages * per);
 }
 
+/**
+ * 객체 스트림 위주: `writeObjectPdf` 와 같은 객체(쪽마다 콘텐츠 1개 + 구조 요소 249개 + 쪽 사전)를 쓰되 스트림이 아닌 객체는
+ * 모두 객체 스트림(`OBJSTM_PER_STREAM` 개씩, FlateDecode)에 넣고 xref 스트림으로 끝낸다. 객체 스트림 번호는 일반 객체 뒤,
+ * xref 스트림은 맨 끝 번호다.
+ */
+export function writeObjStmPdf(path, pages) {
+  const fd = openSync(path, 'w');
+  let offset = 0;
+  const write = (chunk) => {
+    const b = typeof chunk === 'string' ? Buffer.from(chunk, 'latin1') : chunk;
+    writeSync(fd, b);
+    offset += b.byteLength;
+  };
+  const per = STRUCT_PER_PAGE;
+  const perPage = 3 + per;
+  const first = 7;
+  const pageNum = (i) => first + i * perPage;
+  const regular = first + pages * perPage; // 일반 객체 번호 1..regular-1
+  const packedCount = first - 1 + pages * (perPage - 1); // 콘텐츠 스트림 빼고 전부
+  const objstmCount = Math.ceil(packedCount / OBJSTM_PER_STREAM);
+  const xrefNum = regular + objstmCount;
+  const size = xrefNum + 1;
+  const type = new Uint8Array(size);
+  const f2 = new Uint32Array(size); // 유형 1: 오프셋, 유형 2: 객체 스트림 번호
+  const f3 = new Uint16Array(size); // 유형 2: 객체 스트림 안 순번
+  let nextStm = regular;
+  let pending = [];
+  const flush = () => {
+    if (pending.length === 0) return;
+    const num = nextStm++;
+    const heads = [];
+    const bodies = [];
+    let at = 0;
+    pending.forEach(([n, body], i) => {
+      heads.push(`${n} ${at}`);
+      bodies.push(body);
+      at += Buffer.byteLength(body, 'latin1') + 1;
+      type[n] = 2;
+      f2[n] = num;
+      f3[n] = i;
+    });
+    const header = `${heads.join(' ')}\n`;
+    const data = deflateSync(Buffer.from(`${header}${bodies.join('\n')}\n`, 'latin1'), {
+      level: 6,
+    });
+    type[num] = 1;
+    f2[num] = offset;
+    write(
+      `${num} 0 obj\n<</Type/ObjStm/N ${pending.length}/First ${header.length}/Filter/FlateDecode/Length ${data.byteLength}>>\nstream\n`,
+    );
+    write(data);
+    write('\nendstream\nendobj\n');
+    pending = [];
+  };
+  const packed = (n, body) => {
+    pending.push([n, body]);
+    if (pending.length === OBJSTM_PER_STREAM) flush();
+  };
+  write('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
+  packed(1, '<</Type/Catalog/Pages 2 0 R/StructTreeRoot 4 0 R/MarkInfo<</Marked true>>>>');
+  packed(
+    2,
+    `<</Type/Pages/Count ${pages}/Kids[${Array.from({ length: pages }, (_, i) => `${pageNum(i)} 0 R`).join(' ')}]>>`,
+  );
+  packed(3, '<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>');
+  packed(4, '<</Type/StructTreeRoot/ParentTree 5 0 R/K 6 0 R>>');
+  const nums = [];
+  for (let i = 0; i < pages; i++) {
+    const p = pageNum(i);
+    nums.push(`${i}[${Array.from({ length: per }, (_, k) => `${p + 3 + k} 0 R`).join(' ')}]`);
+  }
+  packed(5, `<</Nums[${nums.join(' ')}]>>`);
+  packed(
+    6,
+    `<</Type/StructElem/S/Document/P 4 0 R/K[${Array.from({ length: pages }, (_, i) => `${pageNum(i) + 2} 0 R`).join(' ')}]>>`,
+  );
+  for (let i = 0; i < pages; i++) {
+    const p = pageNum(i);
+    packed(
+      p,
+      `<</Type/Page/Parent 2 0 R/MediaBox[0 0 595 842]/StructParents ${i}/Resources<</Font<</F1 3 0 R>>>>/Contents ${p + 1} 0 R>>`,
+    );
+    const lines = [];
+    for (let k = 0; k < per; k++) {
+      const y = 800 - (k % 62) * 12.5;
+      const x = 40 + Math.floor(k / 62) * 130;
+      lines.push(
+        `/P<</MCID ${k}>>BDC BT /F1 6 Tf ${x} ${y.toFixed(1)} Td (p${i + 1} l${k + 1} text) Tj ET EMC`,
+      );
+    }
+    const content = lines.join('\n');
+    type[p + 1] = 1;
+    f2[p + 1] = offset;
+    write(`${p + 1} 0 obj\n<</Length ${content.length}>>\nstream\n${content}\nendstream\nendobj\n`);
+    packed(
+      p + 2,
+      `<</Type/StructElem/S/Sect/P 6 0 R/Pg ${p} 0 R/K[${Array.from({ length: per }, (_, k) => `${p + 3 + k} 0 R`).join(' ')}]>>`,
+    );
+    for (let k = 0; k < per; k++)
+      packed(p + 3 + k, `<</Type/StructElem/S/P/P ${p + 2} 0 R/Pg ${p} 0 R/K ${k}>>`);
+  }
+  flush();
+  if (nextStm !== xrefNum)
+    throw new Error(`객체 스트림 수 불일치: ${nextStm - regular}/${objstmCount}`);
+  // xref 스트림: W [1 4 2]. 0 번은 자유 목록 머리.
+  const xrefOffset = offset;
+  const rows = Buffer.alloc(size * 7);
+  for (let n = 0; n < size; n++) {
+    const o = n * 7;
+    if (n === 0) {
+      rows.writeUInt16BE(0xffff, o + 5);
+      continue;
+    }
+    rows[o] = n === xrefNum ? 1 : type[n];
+    rows.writeUInt32BE(n === xrefNum ? xrefOffset : f2[n], o + 1);
+    rows.writeUInt16BE(type[n] === 2 ? f3[n] : 0, o + 5);
+  }
+  const xrefData = deflateSync(rows);
+  write(
+    `${xrefNum} 0 obj\n<</Type/XRef/Size ${size}/W[1 4 2]/Root 1 0 R/Filter/FlateDecode/Length ${xrefData.byteLength}>>\nstream\n`,
+  );
+  write(xrefData);
+  write(`\nendstream\nendobj\nstartxref\n${xrefOffset}\n%%EOF\n`);
+  closeSync(fd);
+  return offset;
+}
+
 /** id 의 합성 문서를 `path` 에 쓴다. 쓴 바이트 수. */
 export function writeSynthetic(id, path) {
   const spec = SYNTHETIC[id];
   if (!spec) throw new Error(`알 수 없는 합성 문서: ${id}`);
   if (spec.kind === 'image') return writeImagePdf(path, spec.pages);
   if (spec.kind === 'image-mixed') return writeImageMixedPdf(path, spec.pages);
+  if (spec.kind === 'objstm') return writeObjStmPdf(path, spec.pages);
   return writeObjectPdf(path, spec.pages, spec.kind === 'object-annot');
 }
