@@ -20,6 +20,16 @@ export interface HeapEstimate {
   journalBytes?: number;
   /** 적용한 모델(`ratio-v0` 배율, `SAVE_HEAP_MODEL_ID` 계수) */
   model?: string;
+  /** 계수 모델: 예상에 쓴 사용 중 힙 추정(직전 저장이 있으면 `usedHeapAfterSave`, 없으면 현재 힙) */
+  usedHeapBytes?: number;
+  /** 계수 모델: 이 세션 직전 저장 직후 WASM 힙(실측 피크). 저장한 적이 없으면 없음 */
+  priorSavePeakBytes?: number;
+  /**
+   * 계수 모델: warn·over-limit 판정이 이미 커진 힙 때문이다. 사용 중 힙 추정 대신 기본 + 저널로 계산하면 수준이 더 낮다.
+   * WASM 선형 메모리는 줄지 않아 커진 힙에는 다시 쓸 수 있는 빈 공간이 섞여 있으므로, 뷰어는 over-limit 이라도 "그래도 저장
+   * 시도" 를 허용한다(실패하면 Worker 복구 경로)
+   */
+  grownHeapBasis?: boolean;
 }
 
 export interface SaveDecision {
@@ -98,6 +108,13 @@ export interface SaveModelInput {
   approximate?: boolean;
   /** 지금 WASM 선형 메모리 크기 */
   currentHeapBytes: number;
+  /**
+   * 사용 중 힙 추정. 생략하면 `currentHeapBytes`. WASM 선형 메모리는 줄지 않아 저장 뒤 현재 힙은 저장이 쓰고 놓은 빈 공간을
+   * 포함한다. 세션은 직전 저장이 있으면 `usedHeapAfterSave` 로 계산해 넣는다
+   */
+  usedHeapBytes?: number;
+  /** 이 세션 직전 저장 직후 WASM 힙(결과 표시용) */
+  priorSavePeakBytes?: number;
   /** 문서 열기 완료 직후 WASM 선형 메모리 크기 */
   baseHeapBytes: number;
   /** 저널 보유 추정(교체한 스트림 길이 합, D4) */
@@ -116,7 +133,7 @@ export interface SaveHeapCoefficients {
 }
 
 /** 계수 모델 식별자. 계수나 식을 바꾸면 올린다. */
-export const SAVE_HEAP_MODEL_ID = 'step-v1';
+export const SAVE_HEAP_MODEL_ID = 'step-v2';
 
 /**
  * 저장 경로별 계수(docs/m5-heap.md 3·4절, `tools/bench/heap-fit.mjs` 형태 `lp/objbytes/step+d/prior`). 적합 표본 전부를
@@ -178,15 +195,35 @@ export function estimateSaveHeap(method: SaveMethod, size: SaveSizeInput): HeapE
   return size.model ? estimateSaveHeapModel(method, size) : estimateSaveHeapRatio(method, size);
 }
 
+const LEVEL_RANK: Readonly<Record<HeapLevel, number>> = { ok: 0, warn: 1, 'over-limit': 2 };
+
 /** 상한 대비 비율로 수준을 정한다. */
 function levelOf(fraction: number, warnFraction: number): HeapLevel {
   return fraction > 1 ? 'over-limit' : fraction > warnFraction ? 'warn' : 'ok';
 }
 
 /**
- * 계수 모델(D5): 필요량 = max(현재 힙, 기본 + 저널) + 저장 증가분, 예상 피크 = max(현재 힙, min(필요량 × 1.2, 필요량 +
+ * 직전 저장이 있는 세션의 사용 중 힙 추정: 그 저장 직전 사용 추정 + 저장 뒤 늘어난 힙. 저장 출력 버퍼 등 저장이 쓰고 놓은
+ * 공간은 선형 메모리에 남지만(줄지 않음) 다음 저장이 다시 쓴다. 저장 뒤 커진 몫(렌더·편집)만 새로 쓰는 것으로 본다.
+ * 저장이 읽어 들인 객체는 계속 힙에 남지만 직전 저장 증가분이 이미 그 몫을 덮었다(docs/m5-heap.md 4.4).
+ */
+export function usedHeapAfterSave(
+  prior: { usedHeapBytes: number; heapAfterBytes: number },
+  currentHeapBytes: number,
+): number {
+  return prior.usedHeapBytes + Math.max(0, currentHeapBytes - prior.heapAfterBytes);
+}
+
+/** 필요량에 힙 확장 계단을 더한 피크(`HEAP_GROWTH_FACTOR`·`HEAP_GROWTH_CAP_BYTES`). */
+function grownPeak(need: number): number {
+  return Math.min(need * HEAP_GROWTH_FACTOR, need + HEAP_GROWTH_CAP_BYTES);
+}
+
+/**
+ * 계수 모델(D5): 필요량 = max(사용 중 힙, 기본 + 저널) + 저장 증가분, 예상 피크 = max(현재 힙, min(필요량 × 1.2, 필요량 +
  * 96 MiB)). 둘째 식은 힙 확장 계단(`HEAP_GROWTH_FACTOR`)을 덮는다: 같은 문서도 저장 전 이력에 따라 피크가 938 → 1,430 MiB 로
- * 달라졌다(docs/m5-heap.md 2절).
+ * 달라졌다(docs/m5-heap.md 2절). 사용 중 힙은 처음 저장이면 현재 힙, 직전 저장이 있으면 `usedHeapAfterSave`(4.4: 현재 힙을 그대로
+ * 쓰면 525 MiB 문서 두 번째 저장이 예상 2,279 MiB over-limit, 실측 898 MiB 였다).
  */
 export function estimateSaveHeapModel(method: SaveMethod, size: SaveSizeInput): HeapEstimate {
   const m = size.model;
@@ -194,22 +231,21 @@ export function estimateSaveHeapModel(method: SaveMethod, size: SaveSizeInput): 
   const limitBytes = size.limitBytes ?? WASM_HEAP_LIMIT_BYTES;
   const warnFraction = size.warnFraction ?? HEAP_WARN_FRACTION;
   const increment = saveHeapIncrement(method, size.inputBytes, m);
-  const need = Math.max(m.currentHeapBytes, m.baseHeapBytes + m.journalBytes) + increment;
-  const estimatedPeakBytes = Math.ceil(
-    Math.max(m.currentHeapBytes, Math.min(need * HEAP_GROWTH_FACTOR, need + HEAP_GROWTH_CAP_BYTES)),
-  );
+  const used = m.usedHeapBytes ?? m.currentHeapBytes;
+  const docHeap = m.baseHeapBytes + m.journalBytes;
+  const need = Math.max(used, docHeap) + increment;
+  const estimatedPeakBytes = Math.ceil(Math.max(m.currentHeapBytes, grownPeak(need)));
   const fraction = estimatedPeakBytes / limitBytes;
   const level = levelOf(fraction, warnFraction);
-  const advice = journalAdvice(method, size);
+  // 커진 힙을 빼고(기본 + 저널) 계산한 수준이 더 낮으면 판정 근거가 커진 힙이다.
+  const docLevel = levelOf(grownPeak(docHeap + increment) / limitBytes, warnFraction);
+  const grownHeapBasis = level !== 'ok' && LEVEL_RANK[docLevel] < LEVEL_RANK[level];
   const basis = `예상 피크 WASM 힙 ${mib(estimatedPeakBytes)}`;
-  const reopen = advice.advised
-    ? ` 되돌리기 기록이 약 ${mib(m.journalBytes)} 를 쓰고 있습니다. 저장한 뒤 문서를 다시 열면 줄어듭니다.`
-    : '';
   const message =
     level === 'over-limit'
-      ? `${basis} 가 상한 ${mib(limitBytes)} 를 넘습니다. 저장이 메모리 부족으로 실패할 가능성이 높습니다.${reopen}`
+      ? `${basis} 가 상한 ${mib(limitBytes)} 를 넘습니다. 저장이 메모리 부족으로 실패할 가능성이 높습니다.`
       : level === 'warn'
-        ? `${basis} 가 상한 ${mib(limitBytes)} 의 ${Math.round(fraction * 100)}% 입니다. 저장이 실패할 수 있습니다.${reopen}`
+        ? `${basis} 가 상한 ${mib(limitBytes)} 의 ${Math.round(fraction * 100)}% 입니다. 저장이 실패할 수 있습니다.`
         : null;
   return {
     inputBytes: size.inputBytes,
@@ -223,6 +259,9 @@ export function estimateSaveHeapModel(method: SaveMethod, size: SaveSizeInput): 
     rawStreamBytes: m.rawStreamBytes,
     journalBytes: m.journalBytes,
     model: SAVE_HEAP_MODEL_ID,
+    usedHeapBytes: used,
+    ...(m.priorSavePeakBytes !== undefined ? { priorSavePeakBytes: m.priorSavePeakBytes } : {}),
+    grownHeapBasis,
   };
 }
 
@@ -230,7 +269,8 @@ export function estimateSaveHeapModel(method: SaveMethod, size: SaveSizeInput): 
 export type { JournalAdvice };
 
 /**
- * 저널 상한 판정(D4): 저널 보유 추정 + 예상 저장 증가분 > 경고선이면 "저장 후 다시 열기" 를 권한다. 경고선은 저장 힙 판정의
+ * 저널 상한 판정(D4): 저널 보유 추정 + 예상 저장 증가분 > 경고선이면 "저장 후 다시 열기" 를 권한다(문구는 뷰어, 힙 판정
+ * `message` 에는 붙이지 않는다). 경고선은 저장 힙 판정의
  * warn 경계와 같다. 저널은 MuPDF 에 오래된 단계를 버리는 API 가 없어 단계 수 대신 보유량으로 판정한다(docs/m5-heap.md 5절).
  */
 export function journalAdvice(method: SaveMethod, size: SaveSizeInput): JournalAdvice {

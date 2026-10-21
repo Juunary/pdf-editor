@@ -17,6 +17,7 @@ import {
   SUPPORTED_INPUT_BYTES,
   supportedInputBytes,
   WASM_HEAP_LIMIT_BYTES,
+  usedHeapAfterSave,
   type SaveModelInput,
 } from '../src/save-method.js';
 
@@ -323,7 +324,44 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
     expect(journalAdvice('full', size).advised).toBe(true);
     const e = estimateSaveHeap('full', size);
     expect(e.level).not.toBe('ok');
-    expect(e.message).toMatch(/되돌리기 기록이 약 1500 MiB/);
+    // 다시 열기 권고는 뷰어가 상태에 맞춰 붙인다(M2: 힙 문구에 넣으면 같은 권고가 두 번 붙었다).
+    expect(e.message).not.toMatch(/다시 열/);
+    expect(e.grownHeapBasis).toBe(false);
     expect(journalAdvice('full', { inputBytes: MIB }).advised).toBe(false);
+  });
+
+  it('직전 저장이 있으면 사용 중 힙 = 그 저장의 사용 추정 + 저장 뒤 늘어난 힙(H1)', () => {
+    const prior = { usedHeapBytes: 22 * MIB, heapAfterBytes: 898 * MIB };
+    expect(usedHeapAfterSave(prior, 898 * MIB)).toBe(22 * MIB);
+    expect(usedHeapAfterSave(prior, 950 * MIB)).toBe(74 * MIB);
+    // 525 MiB 이미지 문서 두 번째 저장(재현): 현재 힙 898 MiB 를 사용 중으로 보면 over-limit, 사용 추정이면 첫 저장과 같다.
+    const input = 525 * MIB;
+    const m = model({
+      objectCount: 2104,
+      rawStreamBytes: input,
+      objectStreamBytes: 0,
+      currentHeapBytes: 898 * MIB,
+      baseHeapBytes: 22 * MIB,
+    });
+    const old = estimateSaveHeap('full', { inputBytes: input, model: m });
+    expect(old.level).toBe('over-limit');
+    expect(old.grownHeapBasis).toBe(true);
+    const next = estimateSaveHeap('full', {
+      inputBytes: input,
+      model: { ...m, usedHeapBytes: 22 * MIB, priorSavePeakBytes: 898 * MIB },
+    });
+    const first = estimateSaveHeap('full', {
+      inputBytes: input,
+      model: { ...m, currentHeapBytes: 22 * MIB },
+    });
+    expect(next.estimatedPeakBytes).toBe(first.estimatedPeakBytes);
+    expect(next.level).toBe('ok');
+    expect(next).toMatchObject({ usedHeapBytes: 22 * MIB, priorSavePeakBytes: 898 * MIB });
+    // 예상은 현재 힙보다 작지 않다(선형 메모리는 줄지 않음).
+    const tiny = estimateSaveHeap('full', {
+      inputBytes: MIB,
+      model: model({ currentHeapBytes: 898 * MIB, usedHeapBytes: 22 * MIB }),
+    });
+    expect(tiny.estimatedPeakBytes).toBe(898 * MIB);
   });
 });

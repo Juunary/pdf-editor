@@ -102,13 +102,13 @@ describe('Stream 입력(A3-1)', () => {
     const stats = s.documentStats();
     const full = s.planSave({ changes: ['content-stream'] }).heap;
     expect(full).toMatchObject({
-      model: 'step-v1',
+      model: 'step-v2',
       objectCount: stats.objectCount,
       rawStreamBytes: stats.rawStreamBytes,
       journalBytes: 0,
       level: 'ok',
     });
-    expect(s.planSave({ changes: [] }).heap.model).toBe('step-v1');
+    expect(s.planSave({ changes: [] }).heap.model).toBe('step-v2');
     s.open(threePagePdf(), 'buffer');
     expect(s.planSave({ changes: ['content-stream'] }).heap.model).toBe('ratio-v0');
     expect(s.planSave({ changes: ['content-stream'] }).heap.ratio).toBe(4.48);

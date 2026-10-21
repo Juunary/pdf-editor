@@ -1,6 +1,6 @@
 // M5 S1 저장 힙 모델(docs/m5-heap.md): 문서 통계·저널 보유 추정·planSave 입력.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PdfSession } from '../src/index.js';
+import { PdfSession, wasmHeapBytes } from '../src/index.js';
 import { computeDocumentStats, objectStreamNumbers, openPdf } from '../src/open.js';
 import * as mupdf from 'mupdf';
 import { buildPdf } from './pdf-fixtures.js';
@@ -167,4 +167,21 @@ describe('PdfSession 저장 힙 입력', () => {
     s.close();
   });
 
+  it('저장 뒤 판정은 저장이 쓰고 놓은 힙을 사용 중으로 세지 않는다(H1)', () => {
+    const s = new PdfSession();
+    s.open(buildPdf(['BT /F1 12 Tf 10 50 Td (a) Tj ET']));
+    const first = s.planSave({ changes: ['content-stream'] }).heap;
+    expect(first.priorSavePeakBytes).toBeUndefined();
+    expect(first.usedHeapBytes).toBe(wasmHeapBytes());
+    const saved = s.save({ changes: ['content-stream'] });
+    const second = s.planSave({ changes: ['content-stream'] }).heap;
+    expect(second.priorSavePeakBytes).toBe(saved.wasmHeapBytes);
+    // 저장 뒤 힙이 늘지 않았으면 사용 중 추정은 첫 저장 때 값 그대로다.
+    const grown = Math.max(0, wasmHeapBytes()! - saved.wasmHeapBytes!);
+    expect(second.usedHeapBytes).toBe(first.usedHeapBytes! + grown);
+    // 다시 열면 기록을 지운다.
+    s.open(buildPdf(['BT /F1 12 Tf 10 50 Td (b) Tj ET']));
+    expect(s.planSave({ changes: [] }).heap.priorSavePeakBytes).toBeUndefined();
+    s.close();
+  });
 });

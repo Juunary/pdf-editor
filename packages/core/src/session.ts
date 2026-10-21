@@ -12,6 +12,7 @@ import {
   journalAdvice,
   linkPage,
   listRedactAnnots,
+  usedHeapAfterSave,
   type JournalAdvice,
   type SaveSizeInput,
 } from '@pdf-editor/pdf-ops';
@@ -128,6 +129,11 @@ export class PdfSession {
   /** 저장 힙 모델 입력(D5). 첫 쪽 렌더 뒤 유휴 시나 첫 planSave 에서 한 번 계산한다. */
   #stats: DocumentStatsDetail | null = null;
   #statsTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * 직전 저장 기록(H1): 그 저장의 사용 중 힙 추정과 저장 직후 WASM 힙(실측 피크). 다음 planSave 가 저장이 쓰고 놓은 공간을
+   * 사용 중으로 세지 않도록 쓴다(`usedHeapAfterSave`). 문서를 새로 열면 지운다.
+   */
+  #lastSave: { usedHeapBytes: number; heapAfterBytes: number } | null = null;
 
   constructor(options: PdfSessionOptions = {}) {
     this.#options = options;
@@ -157,6 +163,7 @@ export class PdfSession {
     this.#inputMode = inputMode;
     this.#fullSaved = false;
     this.#stats = null;
+    this.#lastSave = null;
     this.#lastRenderScale = DEFAULT_RENDER_SCALE;
     this.#edit = new EditEngine(this.#editHost(doc), {
       adapter: this.#options.editAdapter ?? defaultEditAdapter,
@@ -414,6 +421,7 @@ export class PdfSession {
       };
     }
     const stats = this.documentStats();
+    const last = this.#lastSave;
     return {
       inputBytes,
       model: {
@@ -422,6 +430,12 @@ export class PdfSession {
         objectStreamBytes: stats.objectStreamBytes,
         approximate: stats.approximate,
         currentHeapBytes: current,
+        ...(last
+          ? {
+              usedHeapBytes: usedHeapAfterSave(last, current),
+              priorSavePeakBytes: last.heapAfterBytes,
+            }
+          : {}),
         baseHeapBytes: this.#baseHeapBytes ?? current,
         journalBytes: this.#edit?.journalBytes ?? 0,
       },
@@ -441,6 +455,10 @@ export class PdfSession {
     const doc = this.document;
     const plan = this.planSave(request);
     const t0 = performance.now();
+    // 두 번째 저장부터는 렌더가 쌓은 자원 캐시(MuPDF store: 풀린 이미지·글꼴 등)를 저장 전에 비운다. 직전 저장이 놓은 빈 공간 안에
+    // 쌓인 캐시는 힙 크기로 보이지 않아 사용 중 힙 추정(`usedHeapAfterSave`)이 놓친다(비우지 않으면 코퍼스 2건 미탐). 첫 저장
+    // 전에는 비우지 않는다: 비우면 빈 조각 때문에 저장 피크가 오히려 커졌다(합성 이미지 900쪽 1,370 → 1,924 MiB, docs/m5-heap.md 4.4).
+    if (this.#lastSave) mupdf.emptyStore();
     const write = (): Uint8Array<ArrayBuffer> => {
       const buffer = doc.saveToBuffer(plan.options);
       try {
@@ -451,13 +469,17 @@ export class PdfSession {
     };
     const bytes = this.#edit ? this.#edit.runSave(write) : write();
     if (plan.method === 'full') this.#fullSaved = true;
+    const heapAfter = wasmHeapBytes();
+    if (heapAfter !== null && plan.heap.usedHeapBytes !== undefined) {
+      this.#lastSave = { usedHeapBytes: plan.heap.usedHeapBytes, heapAfterBytes: heapAfter };
+    }
     return {
       bytes,
       method: plan.method,
       canBeSavedIncrementally: plan.canBeSavedIncrementally,
       options: plan.options,
       saveMs: performance.now() - t0,
-      wasmHeapBytes: wasmHeapBytes(),
+      wasmHeapBytes: heapAfter,
       heap: plan.heap,
       warnings: plan.warnings,
     };
