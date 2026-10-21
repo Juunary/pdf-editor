@@ -20,6 +20,14 @@ export interface SaveHeapEstimate {
   level: HeapLevel;
   /** level 이 ok 가 아니면 사용자 메시지. */
   message: string | null;
+  /** 모델 입력: 문서 객체 수(M5 D5, `docs/m5-contract.md` 3절). 없으면 배율 모델. */
+  objectCount?: number;
+  /** 모델 입력: 원 스트림 /Length 합(디코드 안 함, byte). */
+  rawStreamBytes?: number;
+  /** 모델 입력: 저널 보유 추정(교체한 스트림 길이 합, byte). */
+  journalBytes?: number;
+  /** 적용한 모델 식별자(예: `ratio-v0`, `linear-v1`). */
+  model?: string;
 }
 
 export interface SaveRequest {

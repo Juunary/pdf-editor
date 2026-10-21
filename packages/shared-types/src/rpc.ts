@@ -38,6 +38,20 @@ export interface OpenResult {
   byteLength: number;
   openMs: number;
   inputMode: InputMode;
+  /**
+   * 저장 힙 모델 입력(M5 D5). 첫 쪽 표시 뒤 유휴 시 계산하므로 열기 시점에는 비어 있을 수 있다(열기 시간에 넣지 않음).
+   */
+  documentStats?: DocumentStats;
+}
+
+/** 문서 통계(`docs/m5-contract.md` 3절). 스트림은 디코드하지 않고 /Length 만 더한다. */
+export interface DocumentStats {
+  objectCount: number;
+  streamCount: number;
+  /** 원(압축된) 스트림 /Length 합(byte). */
+  rawStreamBytes: number;
+  /** 1 s 넘어 고정 간격 표본으로 추정했으면 true. */
+  approximate: boolean;
 }
 
 /** 기존 Redact 주석 요약(pdf-ops listRedactAnnots 의 수·쪽). */
