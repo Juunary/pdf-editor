@@ -46,8 +46,8 @@ Chrome 에 올리기: `chrome://extensions` → 개발자 모드 → "압축해�
 | 재적용 결정성(새 세션 재적용 = 원래) | 셀 63/63, 패스 60/60 | 같은 문서 4.2 |
 | 레이아웃 복원(test2, 라벨 14쪽) | 문단 F1 0.881, 표 P/R 1.0 | `docs/m2-accuracy.md` |
 | 패스 끌기 갱신(코퍼스 최대 패스 쪽, 서버) | p95 89.3 ms(배율 2) | `docs/m4-integration.md` 4.3 |
-| 단위 시험 | pdf-ops 443, core 278, viewer-ui 285, reflow 60, layout-recon 60, extension 46 | 같은 문서 8.2 |
-| e2e | 119 통과 | 같은 문서 8.2 |
+| 단위 시험 | pdf-ops 451, core 290, viewer-ui 302, reflow 60, layout-recon 60, extension 74, spike-m0 33, shared-types 4(합계 1,274 통과, 14 건너뜀) | `docs/m5-integration.md` 8.4 |
+| e2e | 141 통과, 5 건너뜀(옵트인) | 같은 문서 8.4 |
 
 모든 수치는 서버(Linux, Node 22, Playwright 번들 Chromium) 측정입니다. Windows 기준 PC 성능 측정은 M5 에서 진행합니다(`docs/m5-contract.md` D1).
 

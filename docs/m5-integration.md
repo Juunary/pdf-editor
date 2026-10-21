@@ -102,7 +102,7 @@ S3 가 창 스크롤을 `#page-container` 스크롤로 옮긴 뒤 window 스크�
 | `bench-memory.spec.ts` 합성 60쪽 | 탭 증가 178·183 MiB > 150 MiB 로 실패(4회 중 2회) | 종료 직후 VmRSS 는 수거 전 JS 쓰레기 양(종료 시 JS 힙 36–109 MiB)에 따라 96–183 MiB 로 흔들림. 강제 GC 뒤 증가는 54–87 MiB | 탭 증가 단언을 강제 GC 뒤 값(`tabDeltaAfterGcMiB`)으로. 종료 직후 값은 로그 기록만. WASM 증가 ≤ 64 MiB 단언(계약 4.1 의 서버 시험 대상)은 그대로 | 3회 연속 통과(GC 뒤 54·58·73 MiB) |
 | `path-integration.spec.ts` "점 편집·삭제·선 두께" | `#pe-path-fill` 비활성(채움 대신 선이 선택된 채). `docs/m5-release.md` 9절 #9 와 같은 증상 | 선 두께 커밋 직후 쪽을 다시 그리고 판정을 다시 받는 동안(약 100 ms) `PageSurface` 가 `PathLayer` 를 내려 Alt+클릭이 무시된다. 판정 뒤 이전 선택(선)의 상자가 다시 보여 `altSelect` 가 "상자 보임" 으로 성공 처리. 단독 20회 중 7회 재현 | `altSelect` 가 먼저 `loading=false`·쪽 판정 ready·`settling=false` 를 기다린 뒤 누른다 | 패스 통합 5건 × 15회 75/75, 전체 e2e 3회 연속 통과 |
 
-- 두 번째 원인의 제품 동작(커밋 직후 약 100 ms 동안 Alt+클릭 무시)은 고치지 않았다. 남은 일 #8.
+- 두 번째 원인의 제품 동작(커밋 직후 약 100 ms 동안 Alt+클릭 무시)은 리뷰 대응에서 고쳤다(8.2 M8). 위 e2e 대기는 뺐다.
 
 ## 5. 패키지
 
@@ -133,5 +133,58 @@ S3 가 창 스크롤을 `#page-container` 스크롤로 옮긴 뒤 window 스크�
 | 5 | 100 MB 이상 실제 문서 2건(이미지 위주·객체 위주) 확정, `heap-run.mjs` 검증·Chrome Worker 1회, 벤치 `large-real-*` 항목 채움(현재 합성 대체) | 메인 세션 → S1·S2 후속, 출처·라이선스 사람 확인 |
 | 6 | Windows 확인: 압축해제 `dist` 측정 페이지 실행·탭 메모리 수동 입력·결과 JSON 회신, 대용량 문서 Chrome Worker 1회, 설치 안내대로 설치 후 M4 기능 확인, 실제 툴바 Ctrl +/−·Ctrl+휠 확대에서 툴바 고정·버튼 화면 안(서버는 CDP 에뮬레이션으로 대신함), 지원 크기·저널 안내 표시 | 사용자 |
 | 7 | 스토어: 매니페스트 이름·설명 승인, 릴리스 태그 `v1.0.0`(소스 링크 유효 조건), 대시보드 초안 업로드 확인, 서드파티 고지 법적 검토(`docs/m5-release.md` 9절) | 사용자·메인 세션 |
-| 8 | 편집 커밋 직후 쪽 재판정 동안(약 100 ms) `PathLayer` 가 내려가 Alt+클릭이 무시된다(4.2). 판정 동안 이전 판정으로 층을 유지하거나 클릭을 보류하는 방안 | 후속(viewer-ui) |
+| 8 | ~~편집 커밋 직후 쪽 재판정 동안 Alt+클릭 무시~~ 리뷰 대응에서 처리(8.2 M8) | 완료 |
 | 9 | OOB 감시 200회 릴리스 전 재실행(`docs/m5-perf.md` 7절 #7) | 사용자·메인 세션 |
+
+## 8. 마일스톤 리뷰 대응(2026-10-21, 판정 REVISE)
+
+### 8.1 커밋
+
+| 커밋 | 내용 |
+| --- | --- |
+| 3ec498e | M1 객체 스트림 전수, 합성 `large-objstm-4000` |
+| 8b90d99 | H1·M2 저장 힙 모델 `step-v2`(core·pdf-ops·shared-types) |
+| 20ce8b1 | H1·M2 뷰어 저장 전 판정 문구·"그래도 저장 시도" |
+| 1184969 | H1 벤치: 같은 세션 저장 2회 시나리오 |
+| 2352fbe | M8 패스 커밋 직후 Alt+클릭 보류 |
+| 0dcae46 | M7 메모리 왕복 e2e 정정 |
+| a7389d7 | M5 URW 글꼴 고지 |
+| (이 커밋) | 문서: M3·M6·L6, `docs/m5-heap.md` 4.4·4.5, 이 절 |
+
+### 8.2 지적별 처리
+
+| # | 지적 | 처리 | 근거·결과 |
+| --- | --- | --- | --- |
+| H1 | 두 번째 저장 거짓 차단(줄지 않는 선형 메모리를 사용 중으로 셈) | 처리 | 모델 `step-v2`: 사용 중 힙 = 직전 저장의 사용 추정 + 저장 뒤 늘어난 힙, 두 번째 저장부터 저장 전 `emptyStore()`. over-limit 근거가 커진 힙이면 "그래도 저장 시도". 같은 세션 저장 2회 312회 미탐 0, Chrome Worker 7건 미탐 0(`docs/m5-heap.md` 4.4). 525 MiB 재현: 예상 2,279 → 1,404 MiB, 실측 898 |
+| M1 | 표본 통계의 ObjStm 과소 추정 | 처리 | xref 에서 객체 스트림 번호를 읽어 전수. 잘못된 주석 정정. 합성 `large-objstm-4000` 에서 이전 방식 −11–12%, 새 방식 = 전수, 미탐 0(`docs/m5-heap.md` 4.5) |
+| M2 | 차단 문구 모순·중복 | 처리 | 중단 상태에서 "저장 후 다시 열기" 권고 제거, 다시 열면 저장하지 않은 편집이 사라짐을 안내. 힙 문구에서 권고를 빼 중복 제거. 되돌리기는 저널 추정을 줄이지 않아(되돌린 단계도 다시 실행 기록으로 메모리에 남음) 권하지 않았다 |
+| M3 | `docs/user/limits.md` 수치 | 처리 | 영어 요약 790 MiB·1,536/2,048 MiB. 알려진 제한: Alt+클릭(M8 뒤 상태), 쪽 판정 서버 콜드 1.05 s |
+| M4 | 진단값 노출 | 미처리 | 범위 밖으로 남김(지시) |
+| M5 | URW 글꼴 고지 | 처리 | mupdf 1.28.1 태그 `resources/fonts/urw/OFL.txt`(SIL OFL 1.1, 2026-10-21 GitHub 에서 확인). `third-party-extra.json` 항목·`licenses/mupdf-urw-OFL.txt`, `verify-dist` 가 `(URW)++` 확인 |
+| M6 | PLAN.md 반영 | 처리 | v2.15: 2절 폰트 크기, 5.1 D7, 5.4 렌더 캐시·D5·지원 크기, 6절 M5 행, 7절 리스크 3·8, 8절 성능 축 D1, 11절, M0 DoD 가로채기 행 |
+| M7 | 메모리 왕복 e2e 이름·주석 | 처리 | "회귀 감시(합성 60쪽)", DoD 고정 주장 삭제, 종료 직후 탭 증가 ≤ 250 MiB 단언 추가 |
+| M8 | 커밋 직후 약 100 ms Alt+클릭 | 처리 | 재판정 중 선택 상자 숨김, 클릭 보류 뒤 처리, `PathLayer` 상시 마운트. e2e 대기 제거, 회귀 e2e(판정 400 ms 지연, 한 번 클릭) 수정 전 3/3 실패·수정 뒤 15/15 통과 |
+| L1–L5 | — | 미처리 | 지시에 따라 남김 |
+| L6 | README 결과 표 시험 수 | 처리 | 8.4 검증 실행 값 |
+| L7 | — | 미처리 | 지시에 따라 남김 |
+
+### 8.3 계약과 다른 점·결정 필요
+
+| # | 내용 |
+| --- | --- |
+| R1 | shared-types `SaveHeapEstimate` 에 선택 필드 `usedHeapBytes`·`priorSavePeakBytes`·`grownHeapBasis` 를 더했다(계약 3절: 메인 세션 승인 대상) |
+| R2 | 계약 D5 식의 "현재 `wasmHeapBytes`" 를 "사용 중 힙" 으로 바꿨고 두 번째 저장부터 저장 전 MuPDF 자원 캐시를 비운다(`docs/m5-heap.md` 8절 C10) |
+| R3 | M2 예시의 "되돌리기로 편집 줄이기" 는 안내하지 않았다. 저널 추정·실제 메모리 모두 되돌리기로 줄지 않는다 |
+| R4 | "그래도 저장 시도" 는 over-limit 이고 `grownHeapBasis` 일 때만 둔다. 측정에서 해당 표본은 1건(합성 이미지 1,000쪽 전체 보기 30, 두 번째 저장 성공) |
+
+### 8.4 검증(코드 최종 커밋 a7389d7, 2026-10-21)
+
+| 명령 | 결과 |
+| --- | --- |
+| `pnpm install --frozen-lockfile` | 성공(잠금 파일 변경 없음) |
+| `pnpm exec turbo run build typecheck test test:e2e --force` | 25/25 작업 성공, 캐시 0 |
+| 단위 시험 | shared-types 4, layout-recon 60(+3), reflow 60, pdf-ops 451(+5), core 290(+5), viewer-ui 302, extension 74, spike-m0 33(+1). 합계 1,274 통과, 14 건너뜀 |
+| e2e | 1회째(turbo) 141 통과·5 건너뜀, 2회째(`pnpm --filter @pdf-editor/extension test:e2e`) 141 통과·5 건너뜀 |
+| `pnpm lint` | 오류 0 |
+| `pnpm exec prettier --check .` | 통과 |
+| `pnpm --filter @pdf-editor/extension package` + `verify-dist --release` | 성공, `release OK`. zip 7,155,754 B(6.82 MiB, 상한 15 MiB, sha256 `49238c59…`), 스테이징 15,692,018 B(상한 25 MiB), 소스맵 zip 620,607 B. 직전 기록 대비 zip +1,633 B(URW 고지·코드 변경). `THIRD_PARTY_NOTICES.txt` 에 `(URW)++` 포함 |
