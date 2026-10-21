@@ -48,6 +48,8 @@ export interface PathState {
   gesture: PathGestureView | null;
   /** 제한 사유 안내(선택한 패스가 편집 불가일 때). */
   note: string[] | null;
+  /** 커밋 뒤 모델·선택 판정을 다시 읽는 중. 끝나기 전의 선택 상자·계획은 옛 값이므로 동작을 막는다(리뷰 L7). */
+  settling: boolean;
 }
 
 export function initialPathState(): PathState {
@@ -57,6 +59,7 @@ export function initialPathState(): PathState {
     pointMode: false,
     gesture: null,
     note: null,
+    settling: false,
   };
 }
 
@@ -77,6 +80,8 @@ export interface PathContext extends EditContext {
 export class PathController {
   private gesture: PathGesture | null = null;
   private ending: Promise<boolean> | null = null;
+  /** 진행 중인 모델 읽기. 같은 쪽을 다시 요청하면 이 읽기를 기다린다(첫 Alt+클릭 소실의 원인 수정). */
+  private loadingModel: { pageIndex: number; promise: Promise<void> } | null = null;
 
   constructor(private readonly ctx: PathContext) {}
 
@@ -86,18 +91,40 @@ export class PathController {
 
   // ── 모델·후보 ────────────────────────────────────────────────────────
 
-  async ensureModel(pageIndex: number): Promise<void> {
+  /**
+   * 쪽의 패스 모델이 준비될 때까지 기다린다. 같은 쪽을 이미 읽는 중이면 그 읽기를 기다린다: 읽는 중이라고 바로
+   * 돌려보내면 호출자(`selectAt`)가 빈 후보로 판정해 클릭이 선택 없이 끝난다.
+   */
+  ensureModel(pageIndex: number): Promise<void> {
     const cur = this.ctx.getPath().model;
-    if ((cur.status === 'ready' || cur.status === 'loading') && cur.pageIndex === pageIndex) return;
+    if (cur.status === 'ready' && cur.pageIndex === pageIndex) return Promise.resolve();
+    if (this.loadingModel?.pageIndex === pageIndex && cur.status === 'loading') {
+      return this.loadingModel.promise;
+    }
     this.ctx.patchPath({ model: { status: 'loading', pageIndex } });
+    const entry: { pageIndex: number; promise: Promise<void> } = {
+      pageIndex,
+      promise: Promise.resolve(),
+    };
+    entry.promise = this.loadModel(pageIndex, entry).finally(() => {
+      if (this.loadingModel === entry) this.loadingModel = null;
+    });
+    this.loadingModel = entry;
+    return entry.promise;
+  }
+
+  private async loadModel(pageIndex: number, entry: object): Promise<void> {
     try {
       const value = await this.ctx.extractPaths(pageIndex);
+      // 읽는 동안 모델을 버렸거나(invalidateModel·reset) 다른 읽기로 바뀌었으면 결과를 버린다.
+      if (this.loadingModel !== entry) return;
       if (this.ctx.isStalePage(pageIndex)) {
         this.ctx.patchPath({ model: { status: 'idle' } });
         return;
       }
       this.ctx.patchPath({ model: { status: 'ready', pageIndex, value } });
     } catch (e) {
+      if (this.loadingModel !== entry) return;
       const failure = classifyFailure(e);
       this.ctx.logEvent('path-model-error', { pageIndex, error: failure.message });
       this.ctx.patchPath({ model: { status: 'error', pageIndex, message: failure.message } });
@@ -212,6 +239,7 @@ export class PathController {
     const sel = this.ctx.getPath().selection;
     const state = this.ctx.getState();
     if (!sel || !sel.plan || !sel.plan.editable) return null;
+    if (this.ctx.getPath().settling) return null;
     if (this.gesture || state.session || state.starting || state.busy) return null;
     const g = new PathGesture(
       {
@@ -286,11 +314,16 @@ export class PathController {
     this.ctx.patch({ history: result.history });
     const edit = result.op.kind === 'edit-path' ? result.op.edit : null;
     if (edit?.delete) this.clear();
-    await this.ctx.invalidatePages([...new Set([pageIndex, ...result.history.affectedPages])]);
-    this.ctx.logEvent('path-commit', { pageIndex, edits: result.history.edits });
-    if (!edit?.delete) {
-      await this.ensureModel(pageIndex);
-      await this.replan();
+    else this.ctx.patchPath({ settling: true });
+    try {
+      await this.ctx.invalidatePages([...new Set([pageIndex, ...result.history.affectedPages])]);
+      this.ctx.logEvent('path-commit', { pageIndex, edits: result.history.edits });
+      if (!edit?.delete) {
+        await this.ensureModel(pageIndex);
+        await this.replan();
+      }
+    } finally {
+      if (this.ctx.getPath().settling) this.ctx.patchPath({ settling: false });
     }
   }
 
@@ -370,11 +403,13 @@ export class PathController {
   /** 쪽을 바꾸거나 문서 undo/redo 를 하기 전: 선택·모델을 비운다. */
   reset(): void {
     this.gesture = null;
+    this.loadingModel = null;
     this.ctx.patchPath(initialPathState());
   }
 
   /** 쪽 캐시를 버릴 때: 모델을 다시 읽게 하고 선택은 유지한다(편집 뒤 재판정 대상). */
   invalidateModel(): void {
+    this.loadingModel = null;
     this.ctx.patchPath({ model: { status: 'idle' } });
   }
 

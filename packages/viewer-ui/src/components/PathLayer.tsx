@@ -9,6 +9,7 @@ import type { PathGesture } from '../path-gesture.js';
 import {
   HANDLE_NAMES,
   boxTransform,
+  companionPoints,
   pathPoints,
   resizeBox,
   transformRect,
@@ -49,6 +50,8 @@ type Drag =
       index: number;
       start: Point;
       at: Point;
+      /** 함께 옮길 붙은 제어점(v·y 유지, 리뷰 L3). */
+      companions: PathPoint[];
       clientX: number;
       clientY: number;
       gesture: PathGesture | null;
@@ -148,7 +151,7 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
 
   if (!paths || !selection || !baseBox) return null;
 
-  const editable = plan?.editable === true;
+  const editable = plan?.editable === true && !path.settling;
   const gEdit = gesture?.edit ?? null;
   const transform: Matrix | null = gEdit?.transform ?? null;
   const shownBox: Rect = transform ? transformRect(transform, baseBox) : baseBox;
@@ -156,10 +159,10 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     path.pointMode && selected.length === 1
       ? pathPoints(selected[0]!.infos.find((i) => i.segments) ?? selected[0]!.infos[0]!)
       : [];
-  const dragged = gEdit?.points?.[0] ?? null;
-  const shownPoints = points.map((pt) =>
-    dragged && dragged.index === pt.index ? { ...pt, p: dragged.to } : pt,
-  );
+  const shownPoints = points.map((pt) => {
+    const moved = gEdit?.points?.find((q) => q.index === pt.index);
+    return moved ? { ...pt, p: moved.to } : pt;
+  });
 
   const pointOf = (e: PointerEvent): Point => {
     const page = pageRef.current!;
@@ -193,7 +196,17 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     const dy = now[1] - d.start[1];
     if (d.kind === 'point') {
       const to: Point = [d.at[0] + dx, d.at[1] + dy];
-      d.gesture.update(emptyPathEdit({ points: [{ index: d.index, to }] }));
+      d.gesture.update(
+        emptyPathEdit({
+          points: [
+            { index: d.index, to },
+            ...d.companions.map((c) => ({
+              index: c.index,
+              to: [c.p[0] + dx, c.p[1] + dy] as Point,
+            })),
+          ],
+        }),
+      );
     } else {
       const next =
         d.kind === 'move' || !d.handle
@@ -239,6 +252,7 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
       index: pt.index,
       start: pointOf(e),
       at: pt.p,
+      companions: companionPoints(points, pt.index),
       clientX: e.clientX,
       clientY: e.clientY,
       gesture: null,
