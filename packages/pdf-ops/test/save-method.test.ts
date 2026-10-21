@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import {
+  BASE_HEAP_BYTES,
   decideSaveMethod,
   estimateSaveHeap,
   FULL_SAVE_OPTIONS,
+  HEAP_GROWTH_CAP_BYTES,
+  HEAP_GROWTH_FACTOR,
+  HEAP_WARN_FRACTION,
+  journalAdvice,
   MEASURED_PEAK_HEAP_RATIO,
+  SAVE_HEAP_COEFFICIENTS,
+  SAVE_HEAP_MODEL_ID,
+  saveHeapIncrement,
   STREAM_INPUT_PEAK_HEAP_RATIO,
+  SUPPORTED_INPUT_BYTES,
+  supportedInputBytes,
   WASM_HEAP_LIMIT_BYTES,
+  usedHeapAfterSave,
+  type SaveModelInput,
 } from '../src/save-method.js';
 
 describe('decideSaveMethod', () => {
@@ -221,5 +233,135 @@ describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
       .filter((a) => a.getContents() === 'A3-7');
     expect(notes).toHaveLength(1);
     re.destroy();
+  });
+});
+
+describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
+  const MIB = 2 ** 20;
+  const model = (over: Partial<SaveModelInput> = {}): SaveModelInput => ({
+    objectCount: 10_000,
+    rawStreamBytes: 10 * MIB,
+    objectStreamBytes: 2 * MIB,
+    currentHeapBytes: 40 * MIB,
+    baseHeapBytes: 22 * MIB,
+    journalBytes: 0,
+    ...over,
+  });
+
+  it('필요량 = max(현재, 기본 + 저널) + 증가분, 예상 피크 = max(현재, min(필요량 × 1.2, 필요량 + 96 MiB))', () => {
+    const m = model();
+    const inc = saveHeapIncrement('full', 12 * MIB, m);
+    const c = SAVE_HEAP_COEFFICIENTS.full;
+    expect(inc).toBeCloseTo(
+      c.intercept + c.objectCount * 10_000 + c.rawStreamBytes * 10 * MIB + c.objectBytes * 4 * MIB,
+    );
+    const e = estimateSaveHeap('full', { inputBytes: 12 * MIB, model: m });
+    expect(e.model).toBe(SAVE_HEAP_MODEL_ID);
+    expect(e.estimatedPeakBytes).toBe(Math.ceil((40 * MIB + inc) * HEAP_GROWTH_FACTOR));
+    expect(e).toMatchObject({ objectCount: 10_000, rawStreamBytes: 10 * MIB, journalBytes: 0 });
+    // 큰 필요량은 + 96 MiB 가 더 작다.
+    const big = estimateSaveHeap('full', {
+      inputBytes: 600 * MIB,
+      model: model({ rawStreamBytes: 600 * MIB, objectStreamBytes: 0 }),
+    });
+    const bigNeed =
+      40 * MIB +
+      saveHeapIncrement(
+        'full',
+        600 * MIB,
+        model({ rawStreamBytes: 600 * MIB, objectStreamBytes: 0 }),
+      );
+    expect(big.estimatedPeakBytes).toBe(Math.ceil(bigNeed + HEAP_GROWTH_CAP_BYTES));
+    // 저널이 현재 힙보다 크면 기본 + 저널을 쓴다.
+    const j = estimateSaveHeap('full', {
+      inputBytes: 12 * MIB,
+      model: model({ journalBytes: 100 * MIB }),
+    });
+    expect(j.estimatedPeakBytes).toBe(Math.ceil((122 * MIB + inc) * HEAP_GROWTH_FACTOR));
+  });
+
+  it('decideSaveMethod 는 model 이 있으면 계수 모델로 heap 을 채운다', () => {
+    const d = decideSaveMethod(['annotation'], true, { inputBytes: MIB, model: model() });
+    expect(d.method).toBe('incremental');
+    expect(d.heap!.model).toBe(SAVE_HEAP_MODEL_ID);
+    expect(decideSaveMethod(['annotation'], true, { inputBytes: MIB }).heap!.model).toBe(
+      'ratio-v0',
+    );
+  });
+
+  it('지원 크기 상한: 이미지 위주 문서의 전체 저장 예상 피크가 상한을 넘기 시작하는 입력 크기', () => {
+    const limit = supportedInputBytes('full');
+    expect(SUPPORTED_INPUT_BYTES).toBe(limit);
+    expect(limit / MIB).toBeGreaterThan(700);
+    expect(limit / MIB).toBeLessThan(850);
+    const at = (x: number) =>
+      estimateSaveHeap('full', {
+        inputBytes: x,
+        model: model({
+          objectCount: 0,
+          rawStreamBytes: x,
+          objectStreamBytes: 0,
+          currentHeapBytes: BASE_HEAP_BYTES,
+          baseHeapBytes: BASE_HEAP_BYTES,
+        }),
+      }).level;
+    expect(at(limit)).not.toBe('over-limit');
+    expect(at(limit + 2 * MIB)).toBe('over-limit');
+  });
+
+  it('저널 상한(D4): 저널 + 증가분 > warn 경계면 다시 열기 권고, 메시지에 붙는다', () => {
+    const threshold = HEAP_WARN_FRACTION * WASM_HEAP_LIMIT_BYTES;
+    const small = journalAdvice('full', {
+      inputBytes: MIB,
+      model: model({ journalBytes: 10 * MIB }),
+    });
+    expect(small).toMatchObject({
+      advised: false,
+      journalBytes: 10 * MIB,
+      thresholdBytes: threshold,
+    });
+    const size = { inputBytes: MIB, model: model({ journalBytes: 1500 * MIB }) };
+    expect(journalAdvice('full', size).advised).toBe(true);
+    const e = estimateSaveHeap('full', size);
+    expect(e.level).not.toBe('ok');
+    // 다시 열기 권고는 뷰어가 상태에 맞춰 붙인다(M2: 힙 문구에 넣으면 같은 권고가 두 번 붙었다).
+    expect(e.message).not.toMatch(/다시 열/);
+    expect(e.grownHeapBasis).toBe(false);
+    expect(journalAdvice('full', { inputBytes: MIB }).advised).toBe(false);
+  });
+
+  it('직전 저장이 있으면 사용 중 힙 = 그 저장의 사용 추정 + 저장 뒤 늘어난 힙(H1)', () => {
+    const prior = { usedHeapBytes: 22 * MIB, heapAfterBytes: 898 * MIB };
+    expect(usedHeapAfterSave(prior, 898 * MIB)).toBe(22 * MIB);
+    expect(usedHeapAfterSave(prior, 950 * MIB)).toBe(74 * MIB);
+    // 525 MiB 이미지 문서 두 번째 저장(재현): 현재 힙 898 MiB 를 사용 중으로 보면 over-limit, 사용 추정이면 첫 저장과 같다.
+    const input = 525 * MIB;
+    const m = model({
+      objectCount: 2104,
+      rawStreamBytes: input,
+      objectStreamBytes: 0,
+      currentHeapBytes: 898 * MIB,
+      baseHeapBytes: 22 * MIB,
+    });
+    const old = estimateSaveHeap('full', { inputBytes: input, model: m });
+    expect(old.level).toBe('over-limit');
+    expect(old.grownHeapBasis).toBe(true);
+    const next = estimateSaveHeap('full', {
+      inputBytes: input,
+      model: { ...m, usedHeapBytes: 22 * MIB, priorSavePeakBytes: 898 * MIB },
+    });
+    const first = estimateSaveHeap('full', {
+      inputBytes: input,
+      model: { ...m, currentHeapBytes: 22 * MIB },
+    });
+    expect(next.estimatedPeakBytes).toBe(first.estimatedPeakBytes);
+    expect(next.level).toBe('ok');
+    expect(next).toMatchObject({ usedHeapBytes: 22 * MIB, priorSavePeakBytes: 898 * MIB });
+    // 예상은 현재 힙보다 작지 않다(선형 메모리는 줄지 않음).
+    const tiny = estimateSaveHeap('full', {
+      inputBytes: MIB,
+      model: model({ currentHeapBytes: 898 * MIB, usedHeapBytes: 22 * MIB }),
+    });
+    expect(tiny.estimatedPeakBytes).toBe(898 * MIB);
   });
 });

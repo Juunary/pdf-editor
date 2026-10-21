@@ -80,6 +80,27 @@ const plan = (extra: Record<string, unknown>) => ({
   ...extra,
 });
 
+test.describe('지원 문서 크기 상한(M5 C7, 리스크 8)', () => {
+  test('열린 문서 바이트 수가 SUPPORTED_INPUT_BYTES(790 MiB)를 넘으면 열 때 알리고, 작은 문서는 알리지 않는다', async () => {
+    const small = await openViewer();
+    await expect(small.locator('#notice-bar [data-notice="supported-size"]')).toHaveCount(0);
+    await small.close();
+    // 값 주입: open 응답의 byteLength 만 800 MiB 로 바꾼다(문서는 그대로).
+    const page = await openViewer(async (p) => {
+      await p.evaluate(() => {
+        const pdf = (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf;
+        const real = (pdf.open as (b: ArrayBuffer) => Promise<Record<string, unknown>>).bind(pdf);
+        pdf.open = async (b: ArrayBuffer) => ({ ...(await real(b)), byteLength: 800 * 2 ** 20 });
+      });
+    });
+    const notice = page.locator('#notice-bar [data-notice="supported-size"]');
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('지원 크기 790 MiB');
+    await expect(notice).toContainText('편집·저장이 실패할 수 있습니다');
+    await page.close();
+  });
+});
+
 test.describe('저장 전 판정(5.8)', () => {
   test('over-limit 은 저장하지 않고 중단 안내를 보인다', async () => {
     const page = await openViewer();
@@ -100,6 +121,36 @@ test.describe('저장 전 판정(5.8)', () => {
     await expect(dialog).toBeHidden();
     await expect(page.locator('#status')).toContainText('저장 중단');
     expect(await diagEvents(page, 'save')).toHaveLength(0);
+    await page.close();
+  });
+
+  test('over-limit 근거가 이미 커진 힙이면 "그래도 저장 시도" 를 고를 수 있다(H1)', async () => {
+    const page = await openViewer();
+    await page.evaluate(
+      (p) => {
+        (window as unknown as { __pe: Pe }).__pe.pdf.planSave = async () => p;
+      },
+      plan({
+        heap: {
+          ...plan({}).heap,
+          level: 'over-limit',
+          message: '메모리 한계를 넘습니다(테스트)',
+          grownHeapBasis: true,
+        },
+      }),
+    );
+    const dialog = page.locator('#app-dialog');
+    await page.click('#save-downloads');
+    await expect(dialog.locator('h2')).toHaveText('저장 전 확인');
+    await expect(dialog).toContainText('메모리 한계를 넘습니다(테스트)');
+    await expect(dialog).toContainText('이미 커진 작업 메모리');
+    await expect(dialog.locator('[data-dialog-button="ok"]')).toHaveText('그래도 저장 시도');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      dialog.locator('[data-dialog-button="ok"]').click(),
+    ]);
+    expect(statSync(await download.path()).size).toBe(statSync(SAMPLE).size);
+    expect((await diagEvents(page, 'save')).length).toBe(1);
     await page.close();
   });
 

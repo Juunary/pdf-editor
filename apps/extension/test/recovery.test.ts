@@ -171,6 +171,20 @@ describe('ResilientPdf', () => {
     expect(infos[0]!.history?.activeEditIds).toEqual(['a', 'b']);
   });
 
+  it('journalAdvice(D4)는 읽기 호출이라 복구 뒤 새 Worker 에서 다시 묻는다', async () => {
+    const advice = { advised: true, journalBytes: 9, incrementBytes: 1, thresholdBytes: 5 };
+    const w1 = fakeWorker({
+      journalAdvice: vi.fn(async () => {
+        throw fatal();
+      }),
+    });
+    const w2 = fakeWorker({ journalAdvice: vi.fn(async () => advice) });
+    const { pdf } = setup([w1, w2]);
+    await pdf.open(bytes());
+    await expect(pdf.journalAdvice()).resolves.toEqual(advice);
+    expect(w2.api.journalAdvice).toHaveBeenCalledTimes(1);
+  });
+
   it('로그가 비어 있으면 replayEdits 를 부르지 않는다', async () => {
     const w1 = fakeWorker({
       renderPage: vi.fn(async () => {

@@ -195,3 +195,18 @@ M4 읽기 전용 마일스톤 리뷰(2026-10-21)의 다음 지적은 기록만 �
 | 단위 | shared-types 4, layout-recon 60(3 skip), reflow 60, pdf-ops 443(5 skip), core 278(5 skip), viewer-ui 285, extension 46, spike-m0 33(1 skip) |
 | e2e | 119건 통과, 3건 skip(옵트인 측정·기존 동적 skip) |
 | `pnpm lint`·`pnpm exec prettier --check .` | 통과 |
+
+## 9. 후속 처리(M5 S5, 브랜치 `m5-cleanup`)
+
+8.1 후속 중 L4(`open.ts` 주석)는 S1 소관이라 제외한다. 시험 이름은 해당 파일의 `it` 제목이다.
+
+| 항목 | 처리 | 시험 |
+| --- | --- | --- |
+| L2 | `path-edit.ts` `formHolder`: 편집하는 Form 이 이전 복제본(Do 피연산자 `/PEFn`)이고 이 쪽에서 한 곳만 쓰며 Resources 항목이 그 객체를 가리키면, 새 복제본을 넣기 전에 이전 이름을 지운다(객체는 저장 garbage 가 걷는다) | `pdf-ops/test/path-edit.test.ts` "같은 Form 안 패스를 다시 편집하면 이전 복제본 이름을 지운다": 세 번 편집해도 `PEF*` 이름 1개 |
+| L3 | `path-geometry.ts` `companionPoints`, `PathLayer.tsx`: 꼭짓점 끌기에 그 꼭짓점과 같은 자리에 겹친 제어점(`v` 첫 제어점·`y` 둘째 제어점)을 같이 옮겨 `v`·`y` 를 유지한다. 제어점을 직접 끌 때는 단독 | `viewer-ui/test/path-geometry.test.ts` "붙은 제어점": y 끝점·v 앞 꼭짓점·일반 곡선·제어점 직접 끌기 |
+| L5 | `pageUseCache` 를 문서 키에서 판정 컨텍스트(ctx) 키로 바꿈. ctx 는 호출(= revision)마다 새로 만들어져 문서가 바뀐 뒤 옛 값이 남지 않는다. `pageUses` 루프의 `findPage`·`getInheritable`·`get` 래퍼와 `planWarnings` 의 `newIndirect` 래퍼를 쓰는 즉시 `destroy()` 한다. `preparePathEdit`/`formHolder` 의 호출당 래퍼 몇 개(`pageObj` 등)는 그대로 둔다 | `path-edit.test.ts` "쪽 사용 수 캐시는 판정(ctx)마다 새로 센다": 다른 쪽이 Form 을 쓰기 시작한 뒤 새 판정에 `shared-form` 반영 |
+| L7 | `PathState.settling`: 커밋 뒤 `invalidatePages`·모델 재적재·`replan` 이 끝날 때까지 true. `beginGesture` 가 거절하고 `PathLayer` 는 편집 불가로 취급(상자·손잡이 끌기 안 됨) | `viewer-ui/test/path-controller.test.ts` "커밋 뒤 다시 판정이 끝나기 전에는 패스 동작을 시작하지 않는다" |
+| L8 | `writePathEdit`: 삭제하는 패스가 MCID 가 있는 marked content 안이면 경고. 새 경고 종류는 만들지 않고(`shared-types` 는 S5 범위 밖) 기존 `tagged-structure-unlinked` 에 삭제용 문구를 쓴다. core `edit-engine.ts` 는 어댑터 경고를 그대로 병합하므로 변경 없음 | `path-edit.test.ts` "태그(MCID) 안 패스 삭제는 경고하고…": 태그 안 삭제 경고, 태그 밖 삭제·태그 안 이동은 경고 없음 |
+| 첫 Alt+클릭 소실(7절 #5) | 원인: `ensureModel` 이 같은 쪽을 이미 읽는 중(`loading`)이면 바로 반환해, 문서를 연 직후 재적재와 겹친 `selectAt` 이 빈 후보로 판정하고 선택을 풀었다. 수정: 진행 중인 읽기 promise 를 보관해 같은 쪽 요청이 그것을 기다린다. `invalidateModel`·`reset` 은 진행 중 읽기를 버려 낡은 결과가 모델을 덮지 않는다 | `path-controller.test.ts` "모델을 읽는 중에 들어온 첫 선택(Alt+클릭)은 그 읽기를 기다려 선택된다" |
+
+7절 #5(첫 Alt+클릭)는 위 수정으로 해소된다. e2e 재시도 코드는 그대로 둔다.

@@ -23,6 +23,7 @@ export function exposePdfWorker(endpoint: Comlink.Endpoint, options: PdfSessionO
     getPageLayout: async (pageIndex) => (await load()).getPageLayout(pageIndex),
     planSave: async (request) => (await load()).planSave(request),
     save: async (request) => (await load()).save(request),
+    journalAdvice: async () => (await load()).journalAdvice(),
     close: async () => (await load()).close(),
     getPageEditability: async (pageIndex) => (await load()).getPageEditability(pageIndex),
     planParagraphEdit: async (pageIndex, paragraphId) =>

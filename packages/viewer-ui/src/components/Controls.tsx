@@ -163,7 +163,7 @@ export function Controls({ controller }: Props) {
             id="pe-doc-undo"
             type="button"
             class="pe-btn"
-            title="편집 되돌리기 (Ctrl+Z)"
+            title="편집 되돌리기 (Ctrl+Z). 작업 모듈이 복구되면 되돌리기 기록이 사라집니다"
             disabled={session !== null || state.edit.busy || state.edit.history?.canUndo !== true}
             onClick={() => void controller.edit?.undo()}
           >
@@ -173,7 +173,7 @@ export function Controls({ controller }: Props) {
             id="pe-doc-redo"
             type="button"
             class="pe-btn"
-            title="다시 실행 (Ctrl+Shift+Z, Ctrl+Y)"
+            title="다시 실행 (Ctrl+Shift+Z, Ctrl+Y). 새 편집을 시작하거나 복구되면 다시 실행 기록이 사라집니다"
             disabled={session !== null || state.edit.busy || state.edit.history?.canRedo !== true}
             onClick={() => void controller.edit?.redo()}
           >

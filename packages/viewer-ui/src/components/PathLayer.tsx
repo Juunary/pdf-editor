@@ -9,6 +9,7 @@ import type { PathGesture } from '../path-gesture.js';
 import {
   HANDLE_NAMES,
   boxTransform,
+  companionPoints,
   pathPoints,
   resizeBox,
   transformRect,
@@ -49,6 +50,8 @@ type Drag =
       index: number;
       start: Point;
       at: Point;
+      /** 함께 옮길 붙은 제어점(v·y 유지, 리뷰 L3). */
+      companions: PathPoint[];
       clientX: number;
       clientY: number;
       gesture: PathGesture | null;
@@ -146,7 +149,9 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     return () => document.removeEventListener('keydown', onKey);
   }, [paths, selection, plan, controller]);
 
-  if (!paths || !selection || !baseBox) return null;
+  // 커밋 뒤 재판정 중(`settling`)에는 선택 상자를 숨긴다: 옛 모델·판정의 상자라 위치가 틀릴 수 있고, 보이면 그 사이의
+  // 클릭이 반영된 것처럼 보인다(M8). 클릭 처리(위 효과)는 마운트된 채 유지하고 PathController 가 보류한다.
+  if (!paths || !selection || !baseBox || path.settling) return null;
 
   const editable = plan?.editable === true;
   const gEdit = gesture?.edit ?? null;
@@ -156,10 +161,10 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     path.pointMode && selected.length === 1
       ? pathPoints(selected[0]!.infos.find((i) => i.segments) ?? selected[0]!.infos[0]!)
       : [];
-  const dragged = gEdit?.points?.[0] ?? null;
-  const shownPoints = points.map((pt) =>
-    dragged && dragged.index === pt.index ? { ...pt, p: dragged.to } : pt,
-  );
+  const shownPoints = points.map((pt) => {
+    const moved = gEdit?.points?.find((q) => q.index === pt.index);
+    return moved ? { ...pt, p: moved.to } : pt;
+  });
 
   const pointOf = (e: PointerEvent): Point => {
     const page = pageRef.current!;
@@ -193,7 +198,17 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     const dy = now[1] - d.start[1];
     if (d.kind === 'point') {
       const to: Point = [d.at[0] + dx, d.at[1] + dy];
-      d.gesture.update(emptyPathEdit({ points: [{ index: d.index, to }] }));
+      d.gesture.update(
+        emptyPathEdit({
+          points: [
+            { index: d.index, to },
+            ...d.companions.map((c) => ({
+              index: c.index,
+              to: [c.p[0] + dx, c.p[1] + dy] as Point,
+            })),
+          ],
+        }),
+      );
     } else {
       const next =
         d.kind === 'move' || !d.handle
@@ -239,6 +254,7 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
       index: pt.index,
       start: pointOf(e),
       at: pt.p,
+      companions: companionPoints(points, pt.index),
       clientX: e.clientX,
       clientY: e.clientY,
       gesture: null,

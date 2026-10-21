@@ -314,6 +314,28 @@ export function pathPoints(info: PathInfo): PathPoint[] {
   return out;
 }
 
+const SAME_POINT = 1e-9;
+const sameSpot = (a: Point, b: Point) =>
+  Math.abs(a[0] - b[0]) <= SAME_POINT * Math.max(1, Math.abs(a[0])) &&
+  Math.abs(a[1] - b[1]) <= SAME_POINT * Math.max(1, Math.abs(a[1]));
+
+/**
+ * 꼭짓점 `index` 를 옮길 때 함께 옮길 붙은 제어점. `v`(첫 제어점 = 앞 꼭짓점)·`y`(둘째 제어점 = 끝점)는 모델에서
+ * 제어점이 꼭짓점과 같은 자리에 겹쳐 나타난다. 꼭짓점만 옮기면 겹침이 깨져 연산이 `c` 로 바뀌므로(M4 리뷰 L3)
+ * 겹친 제어점을 같이 옮겨 `v`·`y` 를 유지한다. 제어점을 직접 끌 때는 해당 없음(빈 목록).
+ */
+export function companionPoints(points: readonly PathPoint[], index: number): PathPoint[] {
+  const moved = points.find((p) => p.index === index);
+  if (!moved || moved.kind !== 'anchor') return [];
+  return points.filter(
+    (c) =>
+      c.kind === 'control' &&
+      c.anchor !== undefined &&
+      sameSpot(c.p, c.anchor) &&
+      sameSpot(c.anchor, moved.p),
+  );
+}
+
 /** 점 하나를 `to` 로 옮긴 편집 값(점 단위 편집, 한 번에 한 점). */
 export function pointEdit(index: number, to: Point): { index: number; to: Point }[] {
   return [{ index, to }];

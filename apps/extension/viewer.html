@@ -8,12 +8,13 @@
   </head>
   <body>
     <header id="toolbar">
-      <span id="context-badge">-</span>
       <label id="open-label" hidden>
         PDF 열기 <input id="open-file" type="file" accept="application/pdf,.pdf" />
       </label>
       <div id="viewer-controls"></div>
-      <button id="save-as" type="button" disabled>다른 이름으로 저장</button>
+      <button id="save-as" type="button" disabled>
+        <span class="long">다른 이름으로 저장</span><span class="short">새 이름</span>
+      </button>
       <button id="save" type="button" disabled title="Ctrl+S">저장</button>
       <button
         id="save-downloads"
@@ -24,17 +25,19 @@
         downloads 저장
       </button>
       <span id="status" data-state="idle">대기</span>
+      <button id="about" type="button" title="버전·라이선스·소스 코드">정보</button>
     </header>
     <div id="notice-bar" hidden></div>
     <main id="page-container"></main>
     <dialog id="app-dialog"></dialog>
-    <details id="diag" open>
+    <details id="diag">
       <summary>M0 진단</summary>
       <pre id="diag-log"></pre>
       <button id="copy-diag" type="button">진단 결과 복사</button>
       <button id="bench-full-save" type="button" disabled title="파일은 저장하지 않는다">
         전체 저장 측정
       </button>
+      <a id="open-bench" href="./bench.html" target="_blank">M5 벤치마크 페이지</a>
     </details>
     <script type="module" src="./src/viewer/main.ts"></script>
   </body>

@@ -17,7 +17,7 @@ import type {
 } from './edit.js';
 import type { ExtractRequest, PageModel } from './page-model.js';
 import type { PageLayout } from './page-layout.js';
-import type { SaveRequest, SavePlan, SaveResult } from './save.js';
+import type { JournalAdvice, SaveRequest, SavePlan, SaveResult } from './save.js';
 import type { SearchRequest, SearchResult } from './search.js';
 import type { PageLinkage, SourceMap } from './source-map.js';
 
@@ -38,6 +38,20 @@ export interface OpenResult {
   byteLength: number;
   openMs: number;
   inputMode: InputMode;
+  /**
+   * 저장 힙 모델 입력(M5 D5). 첫 쪽 표시 뒤 유휴 시 계산하므로 열기 시점에는 비어 있을 수 있다(열기 시간에 넣지 않음).
+   */
+  documentStats?: DocumentStats;
+}
+
+/** 문서 통계(`docs/m5-contract.md` 3절). 스트림은 디코드하지 않고 /Length 만 더한다. */
+export interface DocumentStats {
+  objectCount: number;
+  streamCount: number;
+  /** 원(압축된) 스트림 /Length 합(byte). */
+  rawStreamBytes: number;
+  /** 1 s 넘어 고정 간격 표본으로 추정했으면 true. */
+  approximate: boolean;
 }
 
 /** 기존 Redact 주석 요약(pdf-ops listRedactAnnots 의 수·쪽). */
@@ -91,6 +105,8 @@ export interface PdfWorkerApi {
   /** 저장 전 판정(방식·옵션·예상 피크 힙). 저장하지 않는다. */
   planSave(request: SaveRequest): Promise<SavePlan>;
   save(request: SaveRequest): Promise<SaveResult>;
+  /** 저널 상한 판정(M5 D4). 문서를 바꾸지 않는다. 뷰어는 편집 커밋 뒤 물어 "저장 후 다시 열기" 안내에 쓴다. */
+  journalAdvice(): Promise<JournalAdvice>;
   close(): Promise<void>;
 
   // M3 문단 편집(docs/m3-contract.md 4절). 초안은 문서당 최대 1개.

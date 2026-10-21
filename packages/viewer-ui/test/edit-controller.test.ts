@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PageInfo, PageModel, RenderRequest, RenderedPage } from '@pdf-editor/shared-types';
 import { ViewerController } from '../src/controller.js';
 import { EditLog } from '../src/edit-log.js';
+import { REDO_DISCARDED_NOTICE } from '../src/edit-labels.js';
 import { WORKER_RECOVERED_ERROR_NAME } from '../src/failure.js';
 import type { ViewerHost } from '../src/viewer-host.js';
 import { FakeEditHost, type FakeParagraph } from './fake-edit-host.js';
@@ -305,6 +306,17 @@ describe('문서 undo/redo', () => {
     await controller.edit!.redo();
     expect(editLog.snapshot().ops).toHaveLength(1); // redo 로 되살린다(EditOp 는 유지)
     expect(controller.getState().edit.history).toMatchObject({ canUndo: true, canRedo: false });
+  });
+
+  it('되돌린 뒤 새 편집을 시작하면 다시 실행 기록이 사라진다는 안내를 보인다', async () => {
+    const { controller } = await started();
+    await controller.edit!.begin(0, 1, null);
+    controller.edit!.currentSession()!.typeText('a');
+    await controller.edit!.commitActive();
+    await controller.edit!.undo();
+    expect(controller.getState().edit.history?.canRedo).toBe(true);
+    await controller.edit!.begin(0, 1, null);
+    expect(controller.getState().edit.notice).toBe(REDO_DISCARDED_NOTICE);
   });
 
   it('할 수 없는 동작(canUndo=false)은 RPC 를 부르지 않고, 편집 중에는 막는다', async () => {

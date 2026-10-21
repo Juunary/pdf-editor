@@ -3,34 +3,58 @@
   font-family: system-ui, 'Malgun Gothic', sans-serif;
   font-size: 13px;
 }
+/* 창 전체를 세로 flex 로 쓴다: 툴바·알림 줄은 창 폭 그대로 맨 위에 고정되고, 문서 영역(#page-container)만
+   가로·세로로 스크롤한다. 브라우저 확대·축소와 좁은 창에서도 툴바가 밀려나지 않는다. */
+html,
 body {
+  height: 100%;
+}
+body {
+  display: flex;
+  flex-direction: column;
   margin: 0;
+  overflow: hidden;
   background: #525659;
 }
 #toolbar {
-  position: sticky;
-  top: 0;
+  flex: none;
   /* 페이지 오버레이(position: relative)와 검색창이 툴바 위에 그려지지 않게 한다. */
   z-index: 20;
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   align-items: center;
   padding: 6px 10px;
   background: #323639;
   color: #eee;
 }
-#context-badge {
-  padding: 2px 6px;
-  border-radius: 3px;
-  background: #555;
-  font-family: monospace;
+#toolbar > * {
+  min-width: 0;
+}
+#viewer-controls {
+  /* 쪽 이동·되돌리기·다시 실행이 들어 있는 컨트롤 묶음: 앞쪽에 두고 자체 줄바꿈 */
+  flex: 0 1 auto;
+}
+#toolbar .pe-controls {
+  flex-wrap: wrap;
+}
+#status {
+  flex: 1 1 8em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 #status[data-state='error'] {
   color: #ff8a80;
 }
 #page-container {
+  /* 문서 영역: 이 상자만 스크롤한다. 창보다 넓은 쪽도 왼쪽이 잘리지 않게 safe center. */
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
   display: flex;
-  justify-content: center;
+  justify-content: safe center;
+  align-items: flex-start;
   padding: 16px;
 }
 #page-canvas {
@@ -38,6 +62,9 @@ body {
   box-shadow: 0 1px 4px rgb(0 0 0 / 50%);
 }
 #diag {
+  flex: none;
+  max-height: 30vh;
+  overflow: auto;
   margin: 0 16px 16px;
   padding: 8px;
   background: #f5f5f5;
@@ -54,8 +81,7 @@ body.embedded #diag {
 
 /* 알림 줄: 열기 시 보고(Redact·file:// 안내)·복구 안내. */
 #notice-bar {
-  position: sticky;
-  top: 40px;
+  flex: none;
   z-index: 19;
   display: flex;
   flex-direction: column;
@@ -82,7 +108,10 @@ body.embedded #diag {
   cursor: pointer;
 }
 #app-dialog {
-  max-width: 460px;
+  box-sizing: border-box;
+  max-width: min(460px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
   padding: 16px 20px;
   border: 1px solid #666;
   border-radius: 8px;
@@ -105,4 +134,42 @@ body.embedded #diag {
   gap: 8px;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+/* Web Store 빌드: 진단 패널·진단 버튼은 DOM 에 남기고 CSS 로만 숨긴다(계약 D6). 벤치 버튼은 진단 패널 안에 있다. */
+html[data-build='store'] #diag,
+html[data-build='store'] #save-downloads {
+  display: none;
+}
+
+#app-dialog a {
+  color: #8ab4f8;
+}
+
+.short {
+  display: none;
+}
+
+/* 좁은 창(분할 화면 포함, 약 600px 이하): 버튼 글자를 줄이고 개발 전용 버튼을 숨기며 상태 줄은 자기 줄을 쓴다. */
+@media (max-width: 600px) {
+  #toolbar {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+  #toolbar button,
+  #toolbar .pe-btn {
+    padding: 2px 5px;
+    font-size: 12px;
+  }
+  #toolbar .long,
+  #save-downloads {
+    display: none;
+  }
+  #toolbar .short {
+    display: inline;
+  }
+  #status {
+    flex-basis: 100%;
+    order: 10;
+  }
 }
