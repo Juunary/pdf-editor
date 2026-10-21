@@ -6,7 +6,14 @@ import * as Comlink from 'comlink';
 import type { PdfWorkerApi } from '@pdf-editor/shared-types';
 import type { PdfSessionOptions } from './session.js';
 
-export function exposePdfWorker(endpoint: Comlink.Endpoint, options: PdfSessionOptions = {}): void {
+/**
+ * `extra` 는 같은 Comlink 객체에 더할 RPC(확장 dev 빌드의 벤치 전용 `benchProbeHeap` 등). 스토어 빌드는 넘기지 않는다.
+ */
+export function exposePdfWorker(
+  endpoint: Comlink.Endpoint,
+  options: PdfSessionOptions = {},
+  extra: Record<string, (...args: never[]) => unknown> = {},
+): void {
   let api: Promise<PdfWorkerApi> | null = null;
   const load = (): Promise<PdfWorkerApi> =>
     (api ??= Promise.all([import('./worker-api.js'), import('./session.js')]).then(([m, s]) =>
@@ -46,8 +53,8 @@ export function exposePdfWorker(endpoint: Comlink.Endpoint, options: PdfSessionO
     undo: async () => (await load()).undo(),
     redo: async () => (await load()).redo(),
     getEditHistory: async () => (await load()).getEditHistory(),
-    replayEdits: async (ops) => (await load()).replayEdits(ops),
+    replayEdits: async (ops, options) => (await load()).replayEdits(ops, options),
   };
-  Comlink.expose(lazy, endpoint);
+  Comlink.expose({ ...extra, ...lazy }, endpoint);
   void load();
 }

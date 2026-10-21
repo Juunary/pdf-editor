@@ -16,6 +16,10 @@
     "./worker": {
       "types": "./dist/worker.d.ts",
       "default": "./dist/worker.js"
+    },
+    "./bench": {
+      "types": "./dist/bench-memory.d.ts",
+      "default": "./dist/bench-memory.js"
     }
   },
   "files": [

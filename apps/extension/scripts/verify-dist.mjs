@@ -191,6 +191,12 @@ if (releaseMode) {
       errors.push(`벤치 페이지 참조: ${rel(f)}`);
     }
   }
+  // 벤치 전용 Worker RPC(WASM 사용 중 힙 측정, @pdf-editor/core/bench)도 스토어 빌드에 없어야 한다(D1 사용자 결정 2026-10-21).
+  for (const f of files.filter((f) => f.endsWith('.js'))) {
+    if (/benchProbeHeap|probeWasmHeap/.test(readFileSync(f, 'utf8'))) {
+      errors.push(`벤치 전용 RPC 포함: ${rel(f)}`);
+    }
+  }
 
   // 필수 파일
   for (const required of ['LICENSE', 'THIRD_PARTY_NOTICES.txt']) {

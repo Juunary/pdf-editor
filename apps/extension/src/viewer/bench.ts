@@ -18,7 +18,7 @@ import {
   type Scenario,
 } from './bench-run.js';
 
-export const RESULT_SCHEMA = 'm5-bench/1';
+export const RESULT_SCHEMA = 'm5-bench/2';
 
 export interface BenchResult {
   schema: typeof RESULT_SCHEMA;
@@ -97,10 +97,9 @@ function makeHooks(auto: AutoMemory | null): BenchHooks {
     progress: (text) => setStatus('running', text),
     tabMemoryMiB: async (label, docId) => {
       if (auto) return auto(label, docId);
-      setStatus(
-        'waiting',
-        `${docId}: 탭 메모리(${label === 'baseline' ? '기준점' : '종료'}) 입력 대기`,
-      );
+      const name =
+        label === 'baseline' ? '기준점' : label === 'end' ? '종료 직후' : '종료 30초 뒤(판정값)';
+      setStatus('waiting', `${docId}: 탭 메모리(${name}) 입력 대기`);
       manualEl.hidden = false;
       continueBtn.hidden = false;
       manualInput.value = '';
@@ -160,7 +159,7 @@ function render(result: BenchResult): string {
     ].join(' | ');
   });
   return [
-    '문서 | 쪽 | 열기 | 넘김 | 판정 | 편집 | 패스 | 저장 (p95 ms) | WASM Δ MiB | 탭 Δ MiB | 오류',
+    '문서 | 쪽 | 열기 | 넘김 | 판정 | 편집 | 패스 | 저장 (p95 ms) | WASM Δ MiB(캐시 비운 뒤) | 탭 Δ MiB(30초 뒤) | 오류',
     ...rows,
   ].join('\n');
 }

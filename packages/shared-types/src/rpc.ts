@@ -54,6 +54,12 @@ export interface DocumentStats {
   approximate: boolean;
 }
 
+/** `replayEdits` 선택 인자(계약 D4 사용자 결정 2026-10-21: 복구 진행 표시). */
+export interface ReplayOptions {
+  /** true 면 적용 뒤 저널을 켜지 않고 다음 `replayEdits` 호출을 이어 받는다. 마지막 호출은 생략하거나 false. */
+  more?: boolean;
+}
+
 /** 기존 Redact 주석 요약(pdf-ops listRedactAnnots 의 수·쪽). */
 export interface RedactAnnotSummary {
   total: number;
@@ -147,6 +153,9 @@ export interface PdfWorkerApi {
   getEditHistory(): Promise<EditHistoryState>;
   /** 문서의 기존 Redact 주석 수·쪽(A2-2 열기 시 보고, 계약 수정 4). */
   listRedactAnnots(): Promise<RedactAnnotSummary>;
-  /** 새로 연 문서에 로그를 다시 적용한다(Worker 복구, 계약 D6). */
-  replayEdits(ops: EditOp[]): Promise<EditHistoryState>;
+  /**
+   * 새로 연 문서에 로그를 다시 적용한다(Worker 복구, 계약 D6). `options.more` 가 true 면 저널을 켜지 않고 다음
+   * `replayEdits` 를 이어 받는다(복구 진행 표시 n/N 용으로 나눠 적용, 계약 D4 사용자 결정 2026-10-21).
+   */
+  replayEdits(ops: EditOp[], options?: ReplayOptions): Promise<EditHistoryState>;
 }

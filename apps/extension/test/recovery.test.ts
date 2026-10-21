@@ -5,6 +5,7 @@ import {
   ResilientPdf,
   WorkerRecoveredError,
   isFatalWorkerError,
+  opsAfterBaseline,
   type RecoveryInfo,
   type WorkerHandle,
 } from '../src/viewer/recovery.js';
@@ -159,7 +160,11 @@ describe('ResilientPdf', () => {
     expect(w1.terminated()).toBe(true);
     expect(spawned()).toBe(2);
     expect(w2.api.open).toHaveBeenCalledTimes(1);
-    expect(w2.api.replayEdits).toHaveBeenCalledWith(log);
+    // 한 건씩 나눠 보내고(진행 표시), 마지막 호출에서 저널을 켠다(more: false).
+    expect(w2.api.replayEdits!.mock.calls).toEqual([
+      [[log[0]], { more: true }],
+      [[log[1]], { more: false }],
+    ]);
     // open 이 replayEdits 보다 먼저
     expect(w2.api.open!.mock.invocationCallOrder[0]!).toBeLessThan(
       w2.api.replayEdits!.mock.invocationCallOrder[0]!,
@@ -169,6 +174,126 @@ describe('ResilientPdf', () => {
     expect(infos).toHaveLength(1);
     expect(infos[0]).toMatchObject({ replayedEdits: 2, recoveries: 1 });
     expect(infos[0]!.history?.activeEditIds).toEqual(['a', 'b']);
+  });
+
+  describe('복구 기준점(D4 사용자 결정 2026-10-21)', () => {
+    const crashOnRender = () =>
+      fakeWorker({
+        renderPage: vi.fn(async () => {
+          throw fatal();
+        }),
+        save: vi.fn(async () => ({ bytes: new Uint8Array([9, 9]) })),
+      });
+    const openedBytes = (w: FakeWorker) =>
+      [...new Uint8Array(w.api.open!.mock.calls[0]![0] as ArrayBuffer)] as number[];
+
+    it('사용자 저장이 성공하면 복구는 저장 바이트를 열고 저장 뒤 편집만 다시 적용하며 진행을 알린다', async () => {
+      const log = [op('a'), op('b')];
+      const w1 = crashOnRender();
+      const w2 = fakeWorker();
+      let next = 0;
+      const workers = [w1, w2];
+      const progress: string[] = [];
+      const infos: RecoveryInfo[] = [];
+      const pdf = new ResilientPdf({
+        spawn: () => workers[next++]!.handle,
+        transfer: (b) => b,
+        editLog: () => ({ ops: log, activeEditIds: log.map((o) => o.id) }),
+        onRecovered: (info) => {
+          infos.push(info);
+        },
+        onProgress: (done, total) => progress.push(`${done}/${total}`),
+        log: () => {},
+      });
+      await pdf.open(bytes());
+      await pdf.save({ changes: [] });
+      pdf.confirmSaved();
+      expect(pdf.baselineEditIds).toEqual(['a', 'b']);
+      log.push(op('c'));
+      await pdf.renderPage({ pageIndex: 0, scale: 1 });
+      expect(openedBytes(w2)).toEqual([9, 9]);
+      expect(w2.api.replayEdits!.mock.calls).toEqual([[[log[2]], { more: false }]]);
+      expect(progress).toEqual(['0/1', '1/1']);
+      await new Promise((r) => setTimeout(r, 5));
+      expect(infos[0]).toMatchObject({ replayedEdits: 1, fromSavedBaseline: true });
+      // 기준점에서 복구한 뒤에는 기준점이 원본이다(확정 기준점은 비운다).
+      expect(pdf.baselineEditIds).toBeNull();
+    });
+
+    it('기준점 복구 직후 뷰어 로그가 바뀌기 전에 다시 복구해도 기준점 편집을 두 번 적용하지 않는다', async () => {
+      const log = [op('a'), op('b')];
+      const w1 = crashOnRender();
+      const w2 = crashOnRender();
+      const w3 = fakeWorker();
+      const { pdf } = setup([w1, w2, w3], log);
+      await pdf.open(bytes());
+      await pdf.save({ changes: [] });
+      pdf.confirmSaved(); // 기준점 = 저장 시점 활성 [a, b]
+      log.push(op('c'));
+      // w1 실패 → w2 가 기준점 + [c] 로 복구, 재시도도 w2 에서 실패 → w3 으로 복구(재시도는 한 번뿐이라 오류로 알린다).
+      await expect(pdf.renderPage({ pageIndex: 0, scale: 1 })).rejects.toBeInstanceOf(
+        WorkerRecoveredError,
+      );
+      expect(openedBytes(w2)).toEqual([9, 9]);
+      expect(w2.api.replayEdits!.mock.calls.map((c) => (c[0] as EditOp[])[0]!.id)).toEqual(['c']);
+      // 로그는 아직 [a, b, c] 그대로다: w3 은 기준점 바이트(이제 원본)에 c 만 다시 적용해야 한다.
+      expect(openedBytes(w3)).toEqual([9, 9]);
+      expect(w3.api.replayEdits!.mock.calls.map((c) => (c[0] as EditOp[])[0]!.id)).toEqual(['c']);
+    });
+
+    it('저장 결과를 확정하지 않으면(취소·실패·측정 저장) 원본에서 전체 로그를 다시 적용한다', async () => {
+      const log = [op('a')];
+      const w1 = crashOnRender();
+      const w2 = fakeWorker();
+      const { pdf, infos } = setup([w1, w2], log);
+      await pdf.open(bytes());
+      await pdf.save({ changes: [] });
+      pdf.discardPendingSave();
+      pdf.confirmSaved(); // 확정할 후보가 없다
+      expect(pdf.baselineEditIds).toBeNull();
+      await pdf.renderPage({ pageIndex: 0, scale: 1 });
+      expect(openedBytes(w2)).toEqual([1, 2, 3, 4]);
+      expect(w2.api.replayEdits!.mock.calls).toEqual([[[log[0]], { more: false }]]);
+      await new Promise((r) => setTimeout(r, 5));
+      expect(infos[0]).toMatchObject({ replayedEdits: 1, fromSavedBaseline: false });
+    });
+
+    it('저장 전 편집까지 되돌려 활성 로그가 기준점으로 시작하지 않으면 원본 + 활성 로그 전체', async () => {
+      const log = [op('a'), op('b')];
+      const w1 = crashOnRender();
+      const w2 = fakeWorker();
+      const { pdf } = setup([w1, w2], log);
+      await pdf.open(bytes());
+      await pdf.save({ changes: [] });
+      pdf.confirmSaved();
+      log.splice(1, 1, op('x')); // b 를 되돌리고 x 를 새로 커밋
+      await pdf.renderPage({ pageIndex: 0, scale: 1 });
+      expect(openedBytes(w2)).toEqual([1, 2, 3, 4]);
+      expect(w2.api.replayEdits!.mock.calls.map((c) => (c[0] as EditOp[])[0]!.id)).toEqual([
+        'a',
+        'x',
+      ]);
+    });
+
+    it('다른 문서를 열면 기준점을 버린다', async () => {
+      const w1 = fakeWorker({ save: vi.fn(async () => ({ bytes: new Uint8Array([9]) })) });
+      const { pdf } = setup([w1], [op('a')]);
+      await pdf.open(bytes());
+      await pdf.save({ changes: [] });
+      pdf.confirmSaved();
+      expect(pdf.baselineEditIds).toEqual(['a']);
+      await pdf.open(bytes());
+      expect(pdf.baselineEditIds).toBeNull();
+    });
+
+    it('opsAfterBaseline: 앞부분 일치일 때만 뒤 편집, 아니면 null', () => {
+      const snap = { ops: [op('a'), op('b'), op('c')], activeEditIds: ['a', 'b', 'c'] };
+      expect(opsAfterBaseline(snap, ['a', 'b'])!.map((o) => o.id)).toEqual(['c']);
+      expect(opsAfterBaseline(snap, [])!.map((o) => o.id)).toEqual(['a', 'b', 'c']);
+      expect(opsAfterBaseline(snap, ['a', 'b', 'c'])).toEqual([]);
+      expect(opsAfterBaseline(snap, ['b'])).toBeNull();
+      expect(opsAfterBaseline(snap, ['a', 'b', 'c', 'd'])).toBeNull();
+    });
   });
 
   it('journalAdvice(D4)는 읽기 호출이라 복구 뒤 새 Worker 에서 다시 묻는다', async () => {

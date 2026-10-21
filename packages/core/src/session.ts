@@ -42,6 +42,7 @@ import type {
   Rect,
   RenderRequest,
   RenderedPage,
+  ReplayOptions,
   SavePlan,
   SaveRequest,
   SaveResult,
@@ -575,8 +576,8 @@ export class PdfSession {
     return this.#engine.getEditHistory();
   }
 
-  async replayEdits(ops: EditOp[]): Promise<EditHistoryState> {
-    return this.#engine.replayEdits(ops);
+  async replayEdits(ops: EditOp[], options?: ReplayOptions): Promise<EditHistoryState> {
+    return this.#engine.replayEdits(ops, options);
   }
 
   /** 편집 엔진에 빌려주는 쪽 캐시·렌더. */
