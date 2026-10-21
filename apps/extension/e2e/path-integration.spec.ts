@@ -124,26 +124,10 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
    * Alt+클릭으로 패스를 고른다. 열린 직후에는 쪽 판정·패스 모델이 다시 불러와지며 첫 클릭이 선택 없이 끝날 수 있어
    * (모델 갱신과 겹침) 선택 상자가 보일 때까지 다시 누른다.
    *
-   * 편집 커밋 직후에는 쪽을 다시 그리고 판정을 다시 받는 동안(약 100 ms) 패스 층(PathLayer)이 내려가 Alt+클릭이 무시된다.
-   * 이때 이전 선택의 상자가 판정 뒤 다시 보여 "상자 보임" 만으로는 새 선택을 확인할 수 없으므로(간헐 실패,
-   * docs/m5-integration.md 4.2), 먼저 쪽 판정·패스 재판정이 끝날 때까지 기다린다.
+   * 편집 커밋 직후 재판정(settling) 동안의 클릭은 뷰어가 보류했다가 판정 뒤 처리하고 이전 선택 상자는 숨기므로
+   * (M5 리뷰 M8) 재판정이 끝나기를 따로 기다리지 않는다.
    */
   async function altSelect(page: Page, x: number, y: number) {
-    await page.waitForFunction(() => {
-      const s = (
-        window as unknown as {
-          __pe: {
-            controller: {
-              getState(): {
-                loading: boolean;
-                edit: { editability: { status: string }; path: { settling: boolean } };
-              };
-            };
-          };
-        }
-      ).__pe.controller.getState();
-      return !s.loading && s.edit.editability.status === 'ready' && !s.edit.path.settling;
-    });
     await expect(async () => {
       const p = await at(page, x, y);
       await page.keyboard.down('Alt');
@@ -152,6 +136,22 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
       await expect(page.locator('#pe-path-box')).toBeVisible({ timeout: 1_000 });
     }).toPass({ timeout: 15_000 });
   }
+
+  const pathState = (page: Page) =>
+    page.evaluate(() => {
+      const s = (
+        window as unknown as {
+          __pe: {
+            controller: {
+              getState(): {
+                edit: { path: { settling: boolean; selection: { paintSeqs: number[] } | null } };
+              };
+            };
+          };
+        }
+      ).__pe.controller.getState().edit.path;
+      return { settling: s.settling, seqs: s.selection?.paintSeqs ?? null };
+    });
 
   async function selectFill(page: Page) {
     await altSelect(page, 200, 142); // 채움 사각형(페이지 공간 y 는 위에서부터: 792−650)
@@ -216,6 +216,40 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     const after = await paths(reopened);
     expect(after.some((p) => p.op === 'fill')).toBe(false);
     expect(after.find((p) => p.op === 'stroke')!.w).toBeCloseTo(6, 3);
+  });
+
+  test('커밋 직후 재판정 중의 Alt+클릭은 한 번으로 판정 뒤 반영되고, 그동안 이전 선택 상자는 숨긴다(M5 리뷰 M8)', async () => {
+    const page = await open(sample);
+    await altSelect(page, 200, 292); // 선
+    await expect(page.locator('#pe-path-width')).toBeEnabled();
+    const lineSeqs = (await pathState(page)).seqs;
+    // 커밋 뒤 쪽 판정을 400 ms 늦춰 재판정 구간을 넓힌다(실제는 약 100 ms).
+    await page.evaluate(() => {
+      const pdf = (window as unknown as PeWindow).__pe.pdf;
+      const real = pdf.getPageEditability!.bind(pdf);
+      pdf.getPageEditability = async (...args: unknown[]) => {
+        await new Promise((r) => setTimeout(r, 400));
+        return real(...args);
+      };
+    });
+    const width = page.locator('#pe-path-width');
+    await width.fill('5');
+    await width.dispatchEvent('change');
+    await expect(page.locator('#pe-doc-undo')).toBeEnabled();
+    expect((await pathState(page)).settling).toBe(true);
+    await expect(page.locator('#pe-path-box')).toHaveCount(0);
+    // 다시 누르지 않는다: 이 한 번이 판정 뒤 채움 사각형 선택으로 반영되어야 한다.
+    const p = await at(page, 200, 142);
+    await page.keyboard.down('Alt');
+    await page.mouse.click(p.x, p.y);
+    await page.keyboard.up('Alt');
+    await expect(page.locator('#pe-path-fill')).toBeEnabled({ timeout: 10_000 });
+    await expect(page.locator('#pe-path-box')).toBeVisible();
+    const after = await pathState(page);
+    expect(after.settling).toBe(false);
+    expect(after.seqs).toHaveLength(1);
+    expect(after.seqs).not.toEqual(lineSeqs);
+    await page.close();
   });
 
   test('패스 끌기 반응 시간(V5): 갱신 → 영역 합성 p95 ≤ 100 ms(잠정)', async () => {

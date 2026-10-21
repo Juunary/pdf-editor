@@ -149,9 +149,11 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     return () => document.removeEventListener('keydown', onKey);
   }, [paths, selection, plan, controller]);
 
-  if (!paths || !selection || !baseBox) return null;
+  // 커밋 뒤 재판정 중(`settling`)에는 선택 상자를 숨긴다: 옛 모델·판정의 상자라 위치가 틀릴 수 있고, 보이면 그 사이의
+  // 클릭이 반영된 것처럼 보인다(M8). 클릭 처리(위 효과)는 마운트된 채 유지하고 PathController 가 보류한다.
+  if (!paths || !selection || !baseBox || path.settling) return null;
 
-  const editable = plan?.editable === true && !path.settling;
+  const editable = plan?.editable === true;
   const gEdit = gesture?.edit ?? null;
   const transform: Matrix | null = gEdit?.transform ?? null;
   const shownBox: Rect = transform ? transformRect(transform, baseBox) : baseBox;
