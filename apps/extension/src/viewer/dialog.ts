@@ -8,10 +8,17 @@ export interface DialogButton {
   primary?: boolean;
 }
 
+export interface DialogLink {
+  label: string;
+  href: string;
+}
+
 export interface DialogOptions {
   title: string;
   /** 본문 단락(각각 `<p>`). */
   lines: string[];
+  /** 본문 뒤에 나열하는 링크(새 탭에서 연다). */
+  links?: DialogLink[];
   buttons: DialogButton[];
 }
 
@@ -25,6 +32,16 @@ export function openDialog(dialog: HTMLDialogElement, options: DialogOptions): P
     for (const line of options.lines) {
       const p = document.createElement('p');
       p.textContent = line;
+      body.append(p);
+    }
+    for (const link of options.links ?? []) {
+      const p = document.createElement('p');
+      const a = document.createElement('a');
+      a.href = link.href;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = link.label;
+      p.append(a);
       body.append(p);
     }
     const actions = document.createElement('div');
