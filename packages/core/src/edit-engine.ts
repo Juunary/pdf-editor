@@ -141,19 +141,20 @@ const usesFallbackOf = (entry: LogEntry): boolean => isParagraphEntry(entry) && 
 /** 편집이 바꾸는 쪽. 지금은 둘 다 한 쪽이다. undo·redo 의 캐시 무효화·메타 기록이 쓴다. */
 const pagesOf = (op: EditOp): number[] => [op.target.pageIndex];
 
-/** 쪽 /Contents 스트림(하나 또는 배열)의 /Length 합. 사전만 조회한다. */
-function contentStreamBytes(doc: mupdf.PDFDocument, pageIndex: number): number {
-  const contents = doc.findPage(pageIndex).get('Contents');
-  const lengthOf = (o: mupdf.PDFObject): number => {
-    const n = o.get('Length');
-    return n.isNumber() ? Math.max(0, n.asNumber()) : 0;
-  };
-  if (contents.isArray()) {
-    let sum = 0;
-    for (let i = 0; i < contents.length; i++) sum += lengthOf(contents.get(i));
-    return sum;
+/** 객체 번호들 중 스트림의 /Length 합. 사전만 조회한다(스트림은 읽지 않는다). */
+function streamLengths(doc: mupdf.PDFDocument, objectNumbers: readonly number[]): number {
+  let sum = 0;
+  for (const num of objectNumbers) {
+    const obj = doc.newIndirect(num);
+    try {
+      if (!obj.isStream()) continue;
+      const n = obj.get('Length');
+      if (n.isNumber()) sum += Math.max(0, n.asNumber());
+    } finally {
+      obj.destroy();
+    }
   }
-  return contents.isStream() ? lengthOf(contents) : 0;
+  return sum;
 }
 
 interface ParagraphDraft {
@@ -232,7 +233,7 @@ export class EditEngine {
   #blocks = new Map<number, EditBlockRef[]>();
   #lastAffected: number[] = [];
   #pdfa: boolean | null = null;
-  /** 저널 보유 추정(D4): 커밋한 작업마다 그 작업이 고친 쪽의 콘텐츠 스트림 /Length 합. */
+  /** 저널 보유 추정(D4): 커밋한 작업마다 그 작업이 바꾸거나 만든 스트림 객체의 /Length 합. */
   readonly #journalCost = new WeakMap<LogEntry, number>();
 
   constructor(host: EditHost, options: EditEngineOptions) {
@@ -285,15 +286,17 @@ export class EditEngine {
     return total;
   }
 
-  /** 커밋한 작업의 저널 비용: 고친 쪽의 콘텐츠 스트림 /Length 합(사전 조회만, 스트림은 읽지 않는다). */
-  #noteJournalCost(entry: LogEntry, pages: readonly number[]): void {
+  /**
+   * 커밋한 작업의 저널 비용: pdf-ops 가 알려 준 바뀐·새 객체(`changedObjects`, 편집 블록 포함) 중 스트림의 /Length 합(사전
+   * 조회만). 처음 고치는 문단은 쪽 콘텐츠와 새 블록, 이미 편집한 블록을 다시 고치면 그 블록만 든다. 원본 파일에 있던 스트림의
+   * 첫 교체는 MuPDF 가 내용을 복사하지 않을 수 있어 과대 추정 쪽이다(docs/m5-heap.md 5절).
+   */
+  #noteJournalCost(entry: LogEntry, changedObjects: readonly number[]): void {
     let bytes = 0;
-    for (const pageIndex of pages) {
-      try {
-        bytes += contentStreamBytes(this.#doc, pageIndex);
-      } catch {
-        // 추정값이라 실패하면 0 으로 둔다.
-      }
+    try {
+      bytes = streamLengths(this.#doc, changedObjects);
+    } catch {
+      // 추정값이라 실패하면 0 으로 둔다.
     }
     this.#journalCost.set(entry, bytes);
   }
@@ -591,7 +594,9 @@ export class EditEngine {
     }
     this.#undo.push(entry);
     this.#redo = [];
-    this.#noteJournalCost(entry, [draft.pageIndex]);
+    this.#noteJournalCost(entry, [
+      ...new Set([...draft.prepared.changedObjects, draft.prepared.block.objectNumber]),
+    ]);
     this.#edited = true;
     this.#revision++;
     this.#touched([draft.pageIndex]);
@@ -725,7 +730,7 @@ export class EditEngine {
     }
     this.#undo.push(entry);
     this.#redo = [];
-    this.#noteJournalCost(entry, pagesOf(op));
+    this.#noteJournalCost(entry, draft.prepared.changedObjects);
     this.#edited = true;
     this.#revision++;
     this.#touched(pagesOf(op));

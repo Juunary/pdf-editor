@@ -1,3 +1,6 @@
+// 첫 import 유지: mupdf 가 초기화되기 전에 Module 설정 객체를 등록해야 WASM 힙 측정(`wasmHeapBytes`)이 연결된다. Worker 번들은
+// 이 모듈과 mupdf 를 한 청크에 넣고 import 순서대로 실행한다(뒤에 두면 저장 힙 모델이 배율 모델로 떨어진다, docs/m5-heap.md 4.3).
+import './wasm-module.js';
 import * as mupdf from 'mupdf';
 import {
   FULL_SAVE_OPTIONS,
