@@ -220,6 +220,27 @@ describe('ResilientPdf', () => {
       expect(pdf.baselineEditIds).toBeNull();
     });
 
+    it('기준점 복구 직후 뷰어 로그가 바뀌기 전에 다시 복구해도 기준점 편집을 두 번 적용하지 않는다', async () => {
+      const log = [op('a'), op('b')];
+      const w1 = crashOnRender();
+      const w2 = crashOnRender();
+      const w3 = fakeWorker();
+      const { pdf } = setup([w1, w2, w3], log);
+      await pdf.open(bytes());
+      await pdf.save({ changes: [] });
+      pdf.confirmSaved(); // 기준점 = 저장 시점 활성 [a, b]
+      log.push(op('c'));
+      // w1 실패 → w2 가 기준점 + [c] 로 복구, 재시도도 w2 에서 실패 → w3 으로 복구(재시도는 한 번뿐이라 오류로 알린다).
+      await expect(pdf.renderPage({ pageIndex: 0, scale: 1 })).rejects.toBeInstanceOf(
+        WorkerRecoveredError,
+      );
+      expect(openedBytes(w2)).toEqual([9, 9]);
+      expect(w2.api.replayEdits!.mock.calls.map((c) => (c[0] as EditOp[])[0]!.id)).toEqual(['c']);
+      // 로그는 아직 [a, b, c] 그대로다: w3 은 기준점 바이트(이제 원본)에 c 만 다시 적용해야 한다.
+      expect(openedBytes(w3)).toEqual([9, 9]);
+      expect(w3.api.replayEdits!.mock.calls.map((c) => (c[0] as EditOp[])[0]!.id)).toEqual(['c']);
+    });
+
     it('저장 결과를 확정하지 않으면(취소·실패·측정 저장) 원본에서 전체 로그를 다시 적용한다', async () => {
       const log = [op('a')];
       const w1 = crashOnRender();

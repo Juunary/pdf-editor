@@ -131,6 +131,11 @@ export class ResilientPdf implements PdfWorkerApi {
   private broken: Error | null = null;
   private recoveries = 0;
   private original: Blob | null = null;
+  /**
+   * `original` 에 이미 들어 있는 편집 id. 기준점에서 복구하면 기준점 편집이 된다. 뷰어 로그가 새 세션 이력으로 바뀌기 전에
+   * 다시 복구해도 그 편집을 두 번 적용하지 않도록, 활성 로그가 이 id 로 시작하면 뺀다.
+   */
+  private originIds: string[] = [];
   /** 사용자 저장이 성공해 확정된 복구 기준점. */
   private baseline: SavedBaseline | null = null;
   /** 마지막 `save` 결과(사용자 저장 성공이 확인되면 기준점이 된다). */
@@ -203,7 +208,7 @@ export class ResilientPdf implements PdfWorkerApi {
       const afterBaseline = baseline ? opsAfterBaseline(log, baseline.editIds) : null;
       const fromSavedBaseline = baseline !== null && afterBaseline !== null;
       const source = fromSavedBaseline ? baseline.blob : this.original;
-      const ops = afterBaseline ?? log.ops;
+      const ops = afterBaseline ?? opsAfterBaseline(log, this.originIds) ?? log.ops;
       this.deps.log('worker-recover-source', {
         fromSavedBaseline,
         baselineEdits: baseline?.editIds.length ?? null,
@@ -221,6 +226,7 @@ export class ResilientPdf implements PdfWorkerApi {
       if (fromSavedBaseline) {
         // 새 세션의 문서는 기준점에서 시작한다. 이후 복구도 이 바이트 + 이 세션의 활성 로그로 한다.
         this.original = baseline.blob;
+        this.originIds = baseline.editIds;
         this.baseline = null;
         this.pendingSave = null;
       }
@@ -258,6 +264,7 @@ export class ResilientPdf implements PdfWorkerApi {
   async open(bytes: ArrayBuffer): Promise<Awaited<ReturnType<PdfWorkerApi['open']>>> {
     // 원본은 open 전에 Blob 으로 보관한다(transfer 하면 ArrayBuffer 가 비워지므로, 복구 때 이 Blob 을 다시 연다).
     this.original = new Blob([bytes]);
+    this.originIds = [];
     this.baseline = null;
     this.pendingSave = null;
     this.drafts.clear();
