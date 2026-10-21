@@ -496,7 +496,11 @@ function planWarnings(ctx: ParagraphEditContext, items: readonly PathItem[]): Ed
   const tagged = rects((it) =>
     it.op.formPath.some((s) => {
       const f = ctx.doc.newIndirect(s.objectNumber);
-      return !f.get('StructParents').isNull() || !f.get('StructParent').isNull();
+      try {
+        return !f.get('StructParents').isNull() || !f.get('StructParent').isNull();
+      } finally {
+        f.destroy();
+      }
     }),
   );
   if (tagged.length > 0) {
@@ -510,26 +514,46 @@ function planWarnings(ctx: ParagraphEditContext, items: readonly PathItem[]): Ed
   return warnings;
 }
 
-/** 다른 쪽 Resources /XObject 에서 같은 Form 을 가리키는 쪽 수(+ 이 쪽). */
-const pageUseCache = new WeakMap<mupdf.PDFDocument, Map<number, number>>();
+/** step 의 Do 피연산자가 이전 편집이 만든 복제본 이름(/PEFn)이면 그 이름, 아니면 null. */
+function clonedName(streams: StreamCache, step: FormStep): string | null {
+  const bytes = streams.get(step.stream.objectNumber);
+  const text = new TextDecoder('latin1').decode(
+    bytes.subarray(step.nameRange[0], step.nameRange[1]),
+  );
+  const m = /^\/(PEF\d+)$/.exec(text);
+  return m ? m[1]! : null;
+}
+
+/**
+ * 다른 쪽 Resources /XObject 에서 같은 Form 을 가리키는 쪽 수(+ 이 쪽).
+ * 캐시는 판정 컨텍스트(ctx)에 묶는다. ctx 는 호출마다(= revision 마다) 새로 만들어지므로 문서가 바뀐 뒤의 옛 값이
+ * 남지 않는다(M4 리뷰 L5).
+ */
+const pageUseCache = new WeakMap<ParagraphEditContext, Map<number, number>>();
 function pageUses(ctx: ParagraphEditContext, step: FormStep): number {
-  let m = pageUseCache.get(ctx.doc);
+  let m = pageUseCache.get(ctx);
   if (!m) {
     m = new Map();
-    pageUseCache.set(ctx.doc, m);
+    pageUseCache.set(ctx, m);
   }
   const hit = m.get(step.objectNumber);
   if (hit !== undefined) return hit;
   let n = 0;
   const pages = ctx.doc.countPages();
   for (let i = 0; i < pages; i++) {
-    const xo = ctx.doc.findPage(i).getInheritable('Resources');
-    const dict = xo.isNull() ? xo : xo.get('XObject');
-    if (dict.isNull() || !dict.isDictionary()) continue;
+    const page = ctx.doc.findPage(i);
+    const res = page.getInheritable('Resources');
+    const dict = res.isNull() ? res : res.get('XObject');
     let used = false;
-    dict.forEach((v) => {
-      if (v.isIndirect() && v.asIndirect() === step.objectNumber) used = true;
-    });
+    if (!dict.isNull() && dict.isDictionary()) {
+      dict.forEach((v) => {
+        if (v.isIndirect() && v.asIndirect() === step.objectNumber) used = true;
+      });
+    }
+    // 래퍼는 쓰는 즉시 해제한다(쪽 수만큼 쌓이지 않게).
+    if (dict !== res) dict.destroy();
+    res.destroy();
+    page.destroy();
     if (used) n++;
   }
   m.set(step.objectNumber, n);
@@ -904,7 +928,15 @@ export function preparePathEdit(
     // Resources 사본을 복제본 소유로 둔다(아래 putUniqueResource 전에 복사해 자기 자신 항목은 들어가지 않는다).
     const res = ownResources(doc, clone, orig.get('Resources').isNull() ? parentRes : null);
     changed.add(clone.asIndirect());
-    const name = putUniqueResource(ownSubdict(doc, parentRes, 'XObject'), clone, 'PEF');
+    const xobjects = ownSubdict(doc, parentRes, 'XObject');
+    // 이미 복제본(PEFn)인 Form 을 다시 편집하는 것이면 쓰이지 않게 될 이전 이름을 지운다(M4 리뷰 L2). 이 쪽에서
+    // 이 Form 을 한 곳만 부르고 Resources 항목이 이 객체를 가리킬 때만 지운다(저장 garbage 가 객체를 걷는다).
+    const oldName = clonedName(streams, step);
+    if (oldName !== null && formUses(ctx, step.objectNumber) === 1) {
+      const ref = xobjects.get(oldName);
+      if (ref.isIndirect() && ref.asIndirect() === step.objectNumber) xobjects.delete(oldName);
+    }
+    const name = putUniqueResource(xobjects, clone, 'PEF');
     parent.fixed.push({ start: step.nameRange[0], end: step.nameRange[1], text: `/${name}` });
     h = {
       key,
