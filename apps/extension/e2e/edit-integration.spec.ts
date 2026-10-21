@@ -282,6 +282,105 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     );
     await expect.poll(canvas, { timeout: 30_000 }).toBe(afterFirst);
   });
+  test('복구 기준점(D4): 저장 → 편집 → 복구는 저장 바이트에서 저장 뒤 편집만 다시 적용하고 진행 n/N 을 보인다', async () => {
+    const page = await open(SAMPLE);
+    const client = await cdp(page);
+    const canvas = () =>
+      page.evaluate(() =>
+        (document.getElementById('page-canvas') as HTMLCanvasElement).toDataURL(),
+      );
+    const editOnce = async (text: string) => {
+      // 저장 뒤 알림 줄이 생기면 쪽이 내려가므로 자리를 매번 다시 잰다.
+      const q = await firstEditable(page);
+      await page.mouse.move(1, 1);
+      await page.mouse.move(q.x, q.y, { steps: 3 });
+      await expect(page.locator('#pe-edit-hover[data-editable="1"]')).toBeVisible();
+      await page.mouse.dblclick(q.x, q.y);
+      await expect(page.locator('#pe-edit-layer')).toBeVisible();
+      await client.send('Input.insertText', { text });
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
+    };
+    const pageText = () =>
+      page.evaluate(async () => {
+        const m = (await (window as unknown as PeWindow).__pe.pdf.extractPage!({
+          pageIndex: 0,
+        })) as { chars: { text: string }[] };
+        return m.chars.map((c) => c.text).join('');
+      });
+    const diagEvents = async (name: string) =>
+      (
+        JSON.parse((await page.textContent('#diag-log')) ?? '[]') as {
+          event: string;
+          data: Record<string, unknown>;
+        }[]
+      ).filter((e) => e.event === name);
+
+    await editOnce('저장전');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.click('#save-downloads'),
+    ]);
+    await download.path();
+    await expect(page.locator('#status')).toHaveAttribute('data-state', 'saved');
+    // 저장 뒤 같은 블록을 두 번 더 고치고 마지막 것을 되돌린다: 활성 = [저장 전 1건, 저장 뒤 1건].
+    await editOnce('저장뒤');
+    const afterSecond = await canvas();
+    const textAfterSecond = await pageText();
+    await editOnce('셋째');
+
+    // 다음 progress 표시를 모두 남겨 둔다(알림 칸은 마지막 문구로 바뀐다).
+    await page.evaluate(() => {
+      const bar = document.getElementById('notice-bar')!;
+      const seen: string[] = [];
+      (window as unknown as { __recoverySeen: string[] }).__recoverySeen = seen;
+      new MutationObserver(() => {
+        const row = bar.querySelector('[data-notice="recovered"]');
+        if (row?.textContent) seen.push(row.textContent);
+      }).observe(bar, { childList: true, subtree: true, characterData: true });
+      const handle = (window as unknown as PeWindow).__pe.pdf.current as { api: unknown };
+      const real = handle.api as Record<string, (...a: unknown[]) => Promise<unknown>>;
+      let armed = true;
+      handle.api = new Proxy(
+        {},
+        {
+          get:
+            (_t, name: string) =>
+            (...args: unknown[]) => {
+              if (armed && name === 'renderPage') {
+                armed = false;
+                const e = new Error('memory access out of bounds');
+                e.name = 'RuntimeError';
+                return Promise.reject(e);
+              }
+              return real[name]!(...args);
+            },
+        },
+      );
+    });
+    await page.click('#pe-doc-undo');
+    const notice = page.locator('#notice-bar [data-notice="recovered"]');
+    await expect(notice).toContainText('마지막 저장 시점에서 편집 1건 다시 적용', {
+      timeout: 30_000,
+    });
+    await page.waitForFunction(
+      () => (window as unknown as PeWindow).__pe.controller.getState().edit.session === null,
+    );
+    await expect.poll(canvas, { timeout: 30_000 }).toBe(afterSecond);
+    // 저장 전 편집은 한 번만 들어 있다(기준점 + 저장 뒤 편집만 재적용).
+    const text = await pageText();
+    expect(text).toBe(textAfterSecond);
+    expect(text.split('저장전').length - 1).toBe(1);
+    const seen = await page.evaluate(
+      () => (window as unknown as { __recoverySeen: string[] }).__recoverySeen,
+    );
+    expect(seen.some((t) => t.includes('편집 0/1'))).toBe(true);
+    expect(seen.some((t) => t.includes('편집 1/1'))).toBe(true);
+    const source = await diagEvents('worker-recover-source');
+    expect(source.at(-1)?.data).toMatchObject({ fromSavedBaseline: true, replay: 1 });
+    await page.close();
+  });
+
   test('B1·9.6(docs/m3-integration.md 9절): 커밋한 블록은 레이아웃 문단 하나, 오버레이 상자 하나, 마우스 오버 테두리 하나', async () => {
     const page = await open(SAMPLE);
     const geo = () =>

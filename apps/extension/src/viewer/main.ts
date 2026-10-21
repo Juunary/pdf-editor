@@ -17,6 +17,8 @@ import {
   fileAccessNotice,
   HISTORY_AFTER_SAVE_NOTICE,
   journalNotice,
+  recoveredNotice,
+  recoveryProgressNotice,
   redactNotice,
   sizeLimitNotice,
   supportedSizeNotice,
@@ -147,11 +149,13 @@ const pdf = new ResilientPdf({
   transfer: transferBytes,
   editLog: () => editLog.snapshot(),
   log: (event, data) => diag.add(event, data),
+  onProgress: (done, total) => {
+    // 계약 D4(사용자 결정 2026-10-21): 복구 중 진행 n/N.
+    setNotice('recovered', recoveryProgressNotice(done, total));
+    setStatus('opening', `문서 복구 중: 편집 ${done}/${total}`);
+  },
   onRecovered: async (info) => {
-    setNotice(
-      'recovered',
-      `작업 모듈이 중단되어 문서를 복구했습니다(편집 ${info.replayedEdits}건 다시 적용). 복구 전 되돌리기 이력은 사라졌습니다.`,
-    );
+    setNotice('recovered', recoveredNotice(info.replayedEdits, info.fromSavedBaseline));
     await controllerRef?.handleWorkerRecovered();
   },
 });
@@ -352,6 +356,9 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
     ...outcome,
   });
   const where = outcome.channel === 'fsa' ? `파일 ${outcome.fileName}` : 'chrome.downloads';
+  // 계약 D4: 사용자 저장이 성공하면 그 바이트가 복구 기준점이다.
+  if (outcome.status === 'saved') pdf.confirmSaved();
+  else pdf.discardPendingSave();
   setStatus(
     outcome.status === 'saved' ? 'saved' : outcome.status,
     `${outcome.status === 'saved' ? '저장됨' : outcome.status}: ${where}${outcome.reusedHandle ? ' (같은 대상 재저장)' : ''}`,
@@ -382,6 +389,7 @@ async function askSaveAgain(trigger: SaveTrigger): Promise<void> {
 async function benchFullSave(): Promise<void> {
   setStatus('saving', '전체 저장 측정 중');
   const r = await pdf.save({ changes: ['content-stream'] });
+  pdf.discardPendingSave(); // 측정 저장은 복구 기준점이 아니다
   const result = {
     method: r.method,
     options: r.options,

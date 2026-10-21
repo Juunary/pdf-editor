@@ -76,3 +76,16 @@ export function journalNotice(advice: JournalAdvice | null | undefined): string 
 /** 저장 직후 다시 실행 소실 조건 안내(계약 D9). 편집이 있는 문서를 처음 저장한 뒤 한 번 보인다. */
 export const HISTORY_AFTER_SAVE_NOTICE =
   '저장한 뒤에도 되돌리기(Ctrl+Z)는 됩니다. 다만 폴백 글꼴을 쓴 편집을 되돌린 직후에 저장하면 다시 실행(Ctrl+Shift+Z) 기록이 사라질 수 있습니다.';
+
+/** Worker 복구 중 진행(계약 D4 사용자 결정 2026-10-21): 다시 적용한 편집 수 / 전체. */
+export function recoveryProgressNotice(done: number, total: number): string {
+  return total > 0
+    ? `작업 모듈이 중단되어 문서를 복구하는 중입니다: 편집 ${done}/${total} 다시 적용`
+    : '작업 모듈이 중단되어 문서를 복구하는 중입니다';
+}
+
+/** Worker 복구 완료. 저장 기준점에서 복구했으면 마지막 저장 뒤 편집만 다시 적용했다고 알린다. */
+export function recoveredNotice(replayedEdits: number, fromSavedBaseline: boolean): string {
+  const source = fromSavedBaseline ? '마지막 저장 시점에서 ' : '';
+  return `작업 모듈이 중단되어 문서를 복구했습니다(${source}편집 ${replayedEdits}건 다시 적용). 복구 전 되돌리기 이력은 사라졌습니다.`;
+}

@@ -34,6 +34,7 @@ import type {
   PathEditability,
   PathTarget,
   Rect,
+  ReplayOptions,
   RenderedPage,
   ReflowSummary,
   SaveEditSummary,
@@ -221,6 +222,8 @@ export class EditEngine {
   #fallbackRef: mupdf.PDFObject | null = null;
 
   #journalOn = false;
+  /** 나눠 적용하는 재적용(`replayEdits(…, { more: true })`)이 이어지는 중. 저널은 아직 꺼져 있다. */
+  #replayOpen = false;
   /** 커밋이나 재적용으로 문서가 한 번이라도 바뀌었다(undo 로 되돌렸어도 true). */
   #edited = false;
   #disposed = false;
@@ -810,11 +813,11 @@ export class EditEngine {
    * undo 할 수 없다). 편집 RPC 를 한 번도 부르지 않은 세션에서만 쓸 수 있다. 중간에 실패하면 문서가 일부만 바뀐
    * 상태이므로 이 세션의 편집 RPC 는 모두 막고 문서를 다시 열어야 한다.
    */
-  async replayEdits(ops: EditOp[]): Promise<EditHistoryState> {
+  async replayEdits(ops: EditOp[], options: ReplayOptions = {}): Promise<EditHistoryState> {
     await this.#loadFallbackBytes();
     this.#assertUsable();
     this.#requireNoDraft('replayEdits');
-    if (this.#journalOn || this.#base.length > 0 || this.#undo.length > 0) {
+    if (this.#journalOn || this.#undo.length > 0 || (this.#base.length > 0 && !this.#replayOpen)) {
       throw new EditStateError(
         'replayEdits 는 편집 RPC 를 부르기 전, 새로 연 문서에서만 쓸 수 있습니다.',
       );
@@ -822,18 +825,28 @@ export class EditEngine {
     const fonts = this.#ensureFonts();
     // 저널이 꺼진 채라 Info 와 폴백 폰트는 기준 문서에 들어간다. 재적용한 글자가 폴백 폰트를 쓰므로 먼저 만든다.
     this.#prepareDocument();
-    const pages = new Set<number>();
+    const pages = new Set<number>(this.#replayOpen ? this.#lastAffected : []);
+    const done = this.#base.length;
     for (const [index, op] of ops.entries()) {
       try {
         this.#replayOne(fonts, op);
       } catch (error) {
-        this.#failure = `재적용 실패(${index + 1}/${ops.length}번째, 편집 ${op.id})`;
+        this.#replayOpen = false;
+        this.#failure = `재적용 실패(${done + index + 1}/${done + ops.length}번째, 편집 ${op.id})`;
         const reason = error instanceof Error ? error.message : String(error);
         throw new EditStateError(`${this.#failure}: ${reason}`);
       }
       for (const page of pagesOf(op)) pages.add(page);
       this.#releaseDraftState();
     }
+    if (options.more === true) {
+      // 나눠 적용(계약 D4 진행 표시): 메타 기록·저널 켜기는 마지막 호출에서 한 번 한다.
+      this.#replayOpen = true;
+      this.#edited ||= ops.length > 0;
+      this.#lastAffected = [...pages].sort((a, b) => a - b);
+      return this.#history();
+    }
+    this.#replayOpen = false;
     if (this.#base.length > 0) {
       try {
         this.#writeMetadata(this.#base);
@@ -844,7 +857,7 @@ export class EditEngine {
       }
     }
     this.#startJournal();
-    this.#edited ||= ops.length > 0;
+    this.#edited ||= this.#base.length > 0;
     this.#revision++;
     this.#lastAffected = [...pages].sort((a, b) => a - b);
     return this.#history();
@@ -1120,6 +1133,9 @@ export class EditEngine {
   async #prepareEdit(): Promise<void> {
     await this.#prepareRead();
     if (this.#journalOn) return;
+    if (this.#replayOpen) {
+      throw new EditStateError('재적용이 끝나지 않았습니다(replayEdits 마지막 호출 전).');
+    }
     this.#prepareDocument();
     this.#startJournal();
   }

@@ -76,7 +76,7 @@ export function createPdfWorkerApi(session = new PdfSession()): PdfWorkerApi {
     undo: () => session.undo(),
     redo: () => session.redo(),
     getEditHistory: () => session.getEditHistory(),
-    replayEdits: (ops) => session.replayEdits(ops),
+    replayEdits: (ops, options) => session.replayEdits(ops, options),
     listRedactAnnots: async () => session.listRedactAnnots(),
   };
 }
