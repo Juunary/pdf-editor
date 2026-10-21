@@ -548,6 +548,23 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(contentText(doc, 1)).toBe('10 10 20 20 re f');
   });
 
+  it('태그(MCID) 안 패스 삭제는 경고하고, 태그 밖 패스·이동은 경고하지 않는다(리뷰 L8)', () => {
+    const doc = makeDoc([
+      '/Figure << /MCID 0 >> BDC 1 0 0 rg 10 10 20 20 re f EMC 0 0 1 rg 50 50 20 20 re f',
+    ]);
+    const warn = (seq: number, e: Partial<PathEdit>) => {
+      const ctx = ctxOf(doc);
+      const list = planPathEditability(ctx);
+      const plan = planPathEdit(ctx, [list[seq]!.paintSeq]);
+      const prep = preparePathEdit(ctx, plan, `w${seq}${e.delete ? 'd' : 'm'}`);
+      writePathEdit(ctx, prep, edit(e));
+      return pathEditWarnings(ctx, prep).map((w) => w.kind);
+    };
+    expect(warn(0, { transform: [1, 0, 0, 1, 5, 0] })).toEqual([]);
+    expect(warn(1, { delete: true })).toEqual([]);
+    expect(warn(0, { delete: true })).toEqual(['tagged-structure-unlinked']);
+  });
+
   it('표 괘선 삭제 경고(table-rule-removed)', () => {
     const doc = makeDoc([{ content: gridTable(), mediabox: [0, 0, 500, 300] }]);
     const ctx = ctxOf(doc, 0, true);
