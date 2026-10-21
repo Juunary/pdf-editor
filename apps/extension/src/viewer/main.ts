@@ -10,8 +10,15 @@ import {
 import '@pdf-editor/viewer-ui/style.css';
 import { decideInterceptionMode, parseChromeMajor } from '../interception.js';
 import { DiagLog } from './diag.js';
-import { alertDialog, confirmDialog } from './dialog.js';
-import { fileAccessNotice, redactNotice } from './notices.js';
+import type { SaveHeapEstimate } from '@pdf-editor/shared-types';
+import { aboutContent } from './about.js';
+import { alertDialog, confirmDialog, openDialog } from './dialog.js';
+import {
+  fileAccessNotice,
+  HISTORY_AFTER_SAVE_NOTICE,
+  redactNotice,
+  sizeLimitNotice,
+} from './notices.js';
 import { ResilientPdf, type WorkerHandle } from './recovery.js';
 import { SaveTarget, type SaveOutcome, type WritableFileHandle } from './save-target.js';
 import { decideSave } from './save-plan.js';
@@ -95,8 +102,28 @@ function spawnWorker(): WorkerHandle {
   return { api, dead, terminate: () => worker.terminate() };
 }
 
+byId<HTMLButtonElement>('about').addEventListener('click', () => {
+  const about = aboutContent({
+    version: __APP_VERSION__,
+    sourceUrl: __SOURCE_URL__,
+    // 고지 파일은 스토어 빌드 패키지에만 들어간다(scripts/release/package.mjs).
+    noticesUrl:
+      __BUILD_KIND__ === 'store' ? chrome.runtime.getURL('THIRD_PARTY_NOTICES.txt') : null,
+    heap: lastHeap,
+  });
+  void openDialog(dialogEl, {
+    ...about,
+    buttons: [{ id: 'ok', label: '닫기', primary: true }],
+  });
+});
+
 /** 복구용 편집 로그(계약 D6): 커밋한 EditOp 와 지금 문서에 반영된 편집 id. */
 const editLog = new EditLog();
+/** 최근 저장 전 판정의 힙 추정(지원 크기 안내·정보 대화상자용). */
+let lastHeap: SaveHeapEstimate | null = null;
+/** 편집이 있는 문서를 저장한 뒤 되돌리기 안내를 문서당 한 번만 보인다. */
+let historyNoticeShown = false;
+let lastPlanHadEdits = false;
 let controllerRef: ViewerController | null = null;
 
 const pdf = new ResilientPdf({
@@ -216,6 +243,9 @@ async function prepareSave(): Promise<boolean> {
     return false;
   }
   const decision = decideSave(plan);
+  lastHeap = plan.heap;
+  lastPlanHadEdits = plan.edits !== null;
+  setNotice('size', sizeLimitNotice(plan.heap));
   diag.add('save-plan', {
     method: plan.method,
     options: plan.options,
@@ -283,6 +313,10 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
     outcome.status === 'saved' ? 'saved' : outcome.status,
     `${outcome.status === 'saved' ? '저장됨' : outcome.status}: ${where}${outcome.reusedHandle ? ' (같은 대상 재저장)' : ''}`,
   );
+  if (outcome.status === 'saved' && lastPlanHadEdits && !historyNoticeShown) {
+    historyNoticeShown = true;
+    setNotice('history', HISTORY_AFTER_SAVE_NOTICE);
+  }
 }
 
 /** 저장 중 Worker 가 죽어 복구한 뒤(계약 5.8, A3-3): 다시 저장할지 묻는다. */
@@ -373,6 +407,11 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   editLog.reset();
   setNotice('recovered', null);
   setNotice('redact', null);
+  setNotice('size', null);
+  setNotice('history', null);
+  lastHeap = null;
+  lastPlanHadEdits = false;
+  historyNoticeShown = false;
   // 원본은 복구 계층이 open 전에 Blob 으로 보관한 뒤 Worker 로 넘긴다(계약 D6).
   const info = await pdf.open(bytes);
   diag.add('open', info);
@@ -423,6 +462,19 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   // 첫 페이지를 그리지 못하면 열기 실패로 본다(MIME handler 에서는 Chrome 기본 뷰어로 넘긴다).
   if (!view) throw new Error(renderError ?? '첫 페이지 렌더 실패');
   void reportRedactAnnots();
+  void reportSizeLimit();
+}
+
+/** 열기 직후 저장 전 판정으로 지원 크기 안내를 낸다(편집 전 추정). 판정을 못 받으면 진단 로그만 남긴다. */
+async function reportSizeLimit(): Promise<void> {
+  try {
+    const plan = await pdf.planSave({ changes: [] });
+    lastHeap = plan.heap;
+    diag.add('size-plan', { level: plan.heap.level, model: plan.heap.model ?? null });
+    setNotice('size', sizeLimitNotice(plan.heap));
+  } catch (e) {
+    diag.add('size-plan-error', String(e));
+  }
 }
 
 /** 열기 시 Redact 주석 보고(A2-2). 보고를 받지 못하면 진단 로그만 남긴다. */

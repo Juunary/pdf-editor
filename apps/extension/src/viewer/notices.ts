@@ -1,3 +1,5 @@
+import type { SaveHeapEstimate } from '@pdf-editor/shared-types';
+
 /** 뷰어 알림(문서 열기 직후 보고·안내) 문구 구성(순수). 표시는 main.ts 의 알림 줄이 한다. */
 
 export interface RedactReportLike {
@@ -33,3 +35,21 @@ export function fileAccessNotice(input: FileAccessInput): string | null {
   if (input.displayUrl !== null && !input.displayUrl.startsWith('file:')) return null;
   return `로컬 파일(file://) PDF 를 이 뷰어로 자동으로 열려면 chrome://extensions/?id=${input.extensionId} 에서 "파일 URL에 대한 액세스 허용" 을 켜세요. 꺼져 있으면 로컬 PDF 는 Chrome 기본 뷰어로 열립니다.`;
 }
+
+const mib = (bytes: number) => `${(bytes / 2 ** 20).toFixed(0)} MiB`;
+
+/**
+ * 지원 문서 크기 상한 안내(PLAN.md 7절 리스크 8). 예상 저장 피크가 core 가 정한 경고선·한계를 넘으면
+ * "편집·저장이 실패할 수 있음" 을 알린다. 값(경고선·한계)은 core 의 `SaveHeapEstimate` 를 그대로 쓴다.
+ */
+export function sizeLimitNotice(heap: SaveHeapEstimate | null | undefined): string | null {
+  if (!heap || heap.level === 'ok') return null;
+  const figures = `예상 저장 피크 ${mib(heap.estimatedPeakBytes)} / 한계 ${mib(heap.limitBytes)}`;
+  return heap.level === 'over-limit'
+    ? `이 문서는 지원 크기를 넘습니다(${figures}). 열람은 되지만 편집한 뒤 저장할 수 없습니다.`
+    : `이 문서는 큰 편이라 편집·저장이 실패할 수 있습니다(${figures}). 저장이 실패하면 작업 모듈을 복구하고 다시 저장할지 묻습니다.`;
+}
+
+/** 저장 직후 다시 실행 소실 조건 안내(계약 D9). 편집이 있는 문서를 처음 저장한 뒤 한 번 보인다. */
+export const HISTORY_AFTER_SAVE_NOTICE =
+  '저장한 뒤에도 되돌리기(Ctrl+Z)는 됩니다. 다만 폴백 글꼴을 쓴 편집을 되돌린 직후에 저장하면 다시 실행(Ctrl+Shift+Z) 기록이 사라질 수 있습니다.';

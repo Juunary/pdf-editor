@@ -106,3 +106,17 @@ body.embedded #diag {
   justify-content: flex-end;
   margin-top: 12px;
 }
+
+/* Web Store 빌드: 진단 패널·진단 버튼은 DOM 에 남기고 CSS 로만 숨긴다(계약 D6). 벤치 버튼은 진단 패널 안에 있다. */
+html[data-build='store'] #diag,
+html[data-build='store'] #save-downloads,
+html[data-build='store'] #context-badge {
+  display: none;
+}
+
+#about {
+  margin-left: auto;
+}
+#app-dialog a {
+  color: #8ab4f8;
+}
