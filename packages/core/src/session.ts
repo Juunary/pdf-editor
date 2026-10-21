@@ -342,7 +342,7 @@ export class PdfSession {
    * 첫 쪽 전체 렌더 뒤 다음 작업 틈에 미리 계산해 두고(`#scheduleStats`), 그 전에 planSave 가 부르면 그때 계산한다.
    */
   documentStats(): DocumentStatsDetail {
-    return (this.#stats ??= computeDocumentStats(this.document));
+    return (this.#stats ??= computeDocumentStats(this.document, { bytes: this.originalBytes }));
   }
 
   /** 첫 쪽 전체 렌더 응답이 나간 뒤(Worker 의 다음 작업 틈) 통계를 계산하도록 한 번 예약한다. */

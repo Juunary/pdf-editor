@@ -1,7 +1,7 @@
 // M5 S1 저장 힙 모델(docs/m5-heap.md): 문서 통계·저널 보유 추정·planSave 입력.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PdfSession } from '../src/index.js';
-import { computeDocumentStats, openPdf } from '../src/open.js';
+import { computeDocumentStats, objectStreamNumbers, openPdf } from '../src/open.js';
 import * as mupdf from 'mupdf';
 import { buildPdf } from './pdf-fixtures.js';
 import { editParagraph, harness } from './edit-harness.js';
@@ -67,11 +67,12 @@ describe('computeDocumentStats(D5)', () => {
 
   it('시험 표본으로 본 예상 시간이 예산을 넘으면 층화 표본으로 환산한다(approximate)', () => {
     const pages = Array.from({ length: 600 }, (_, i) => `BT /F1 9 Tf 10 50 Td (p${i}) Tj ET`);
-    const doc = openPdf(buildPdf(pages), { inputMode: 'stream' });
+    const bytes = buildPdf(pages);
+    const doc = openPdf(bytes, { inputMode: 'stream' });
     const exact = computeDocumentStats(doc);
     // 부를 때마다 1 ms 가는 시계: 시험 표본(64 간격)의 객체당 시간이 커서 전수 예상이 예산을 넘는다.
     let t = 0;
-    const approx = computeDocumentStats(doc, { budgetMs: 0.5, now: () => (t += 1) });
+    const approx = computeDocumentStats(doc, { budgetMs: 0.5, now: () => (t += 1), bytes });
     expect(approx.approximate).toBe(true);
     expect(approx.objectCount).toBe(exact.objectCount);
     // 표본 값 × 간격: 마지막 표본이 남은 수만큼만 세므로 스트림 수는 객체 수를 넘지 않는다.
@@ -82,6 +83,43 @@ describe('computeDocumentStats(D5)', () => {
     expect(Math.abs(approx.streamCount - exact.streamCount) / exact.streamCount).toBeLessThan(0.35);
     // 예산이 넉넉하면 전수.
     expect(computeDocumentStats(doc, { budgetMs: 1e9 })).toEqual(exact);
+    // 원본 바이트가 없으면 객체 스트림 번호를 모르므로 예산을 넘어도 전수(M1).
+    t = 0;
+    expect(computeDocumentStats(doc, { budgetMs: 0.5, now: () => (t += 1) })).toEqual(exact);
+    doc.destroy();
+  });
+
+  it('표본이어도 객체 스트림 푼 크기는 xref 에서 찾은 객체 스트림 전수 값이다(M1)', () => {
+    // 객체 600쪽 분량을 객체 스트림으로 저장: 압축 객체가 대부분이고 객체 스트림은 드물다.
+    const src = openPdf(
+      buildPdf(Array.from({ length: 600 }, (_, i) => `BT /F1 9 Tf 10 50 Td (p${i}) Tj ET`)),
+      { inputMode: 'buffer' },
+    );
+    const saved = src.saveToBuffer('objstms');
+    const bytes = saved.asUint8Array().slice();
+    saved.destroy();
+    src.destroy();
+    const doc = openPdf(bytes, { inputMode: 'stream' });
+    const exact = computeDocumentStats(doc);
+    expect(exact.objectStreamBytes).toBeGreaterThan(0);
+    const numbers = objectStreamNumbers(doc, bytes);
+    expect(numbers?.size).toBeGreaterThan(0);
+    let t = 0;
+    const approx = computeDocumentStats(doc, { budgetMs: 0.5, now: () => (t += 1), bytes });
+    expect(approx.approximate).toBe(true);
+    expect(approx.objectStreamBytes).toBe(exact.objectStreamBytes);
+    doc.destroy();
+  });
+
+  it('xref 를 읽지 못하면 객체 스트림 번호는 null, 전통 표만 있으면 빈 집합', () => {
+    const bytes = buildPdf(['BT /F1 9 Tf 10 50 Td (a) Tj ET']);
+    const doc = openPdf(bytes, { inputMode: 'stream' });
+    expect(objectStreamNumbers(doc, bytes)).toEqual(new Set());
+    expect(objectStreamNumbers(doc, new Uint8Array(10))).toBeNull();
+    const shifted = new Uint8Array(bytes.length + 7);
+    shifted.set(new TextEncoder().encode('garbage'), 0);
+    shifted.set(bytes, 7);
+    expect(objectStreamNumbers(doc, shifted)).toBeNull();
     doc.destroy();
   });
 });
@@ -128,4 +166,5 @@ describe('PdfSession 저장 힙 입력', () => {
     expect(s.journalAdvice()).toMatchObject({ advised: false, journalBytes: three });
     s.close();
   });
+
 });
