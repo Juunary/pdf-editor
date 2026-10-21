@@ -205,6 +205,7 @@ if (releaseMode) {
       'preact',
       'comlink',
       'Noto Sans KR',
+      '(URW)++',
       'Copyright',
     ]) {
       if (!notices.includes(needle)) errors.push(`THIRD_PARTY_NOTICES.txt 에 '${needle}' 없음`);

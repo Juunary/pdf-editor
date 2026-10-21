@@ -80,6 +80,16 @@
       "evidence": "mupdf-wasm.wasm 에 'cmark ...' 문자열(마크다운 기능은 끄지 않음)"
     },
     {
+      "name": "MuPDF WASM 에 내장: URW base35 글꼴(Nimbus Sans·Nimbus Roman·Nimbus Mono PS·Standard Symbols PS·Dingbats)",
+      "version": "mupdf 1.28.1 resources/fonts/urw",
+      "license": "SIL Open Font License 1.1",
+      "homepage": "https://github.com/ArtifexSoftware/urw-base35-fonts",
+      "copyright": "Copyright 2016 by (URW)++ Design & Development",
+      "notice": "PDF 표준 14 글꼴 대체용으로 MuPDF 가 WASM 안에 넣은 CFF 글꼴이다. 라이선스는 mupdf 1.28.1 태그 resources/fonts/urw/OFL.txt(2026-10-21 확인)",
+      "licenseFiles": ["licenses/mupdf-urw-OFL.txt"],
+      "evidence": "mupdf-wasm.wasm 에 'Copyright 2013/2014 by (URW)++ Design & Development', 'Copyright 2015 by URW' 와 Nimbus Sans·Nimbus Roman·Nimbus Mono PS·Standard Symbols PS·Dingbats 글꼴 이름 문자열"
+    },
+    {
       "name": "WASM 런타임: Emscripten 과 musl 기반 libc",
       "version": "emscripten 4.0.8(mupdf 1.28.1 빌드 스크립트 지정)",
       "license": "MIT 또는 University of Illinois/NCSA (Emscripten), MIT (musl)",
