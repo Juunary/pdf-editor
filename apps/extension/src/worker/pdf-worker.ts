@@ -15,4 +15,18 @@ async function loadFallbackFont(): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-exposePdfWorker(self as unknown as Parameters<typeof exposePdfWorker>[0], { loadFallbackFont });
+// 벤치 전용 RPC(계약 D1 메모리 측정 시점, 사용자 결정 2026-10-21): dev 빌드에서만 더한다. 스토어 빌드는 이 분기가 상수로
+// 접혀 `@pdf-editor/core/bench` 를 번들에 넣지 않는다(verify-dist --release 가 확인).
+const benchExtra: Record<string, (...args: never[]) => unknown> =
+  __BUILD_KIND__ === 'dev'
+    ? {
+        benchProbeHeap: async (options?: { emptyStore?: boolean }) =>
+          (await import('@pdf-editor/core/bench')).probeWasmHeap(options),
+      }
+    : {};
+
+exposePdfWorker(
+  self as unknown as Parameters<typeof exposePdfWorker>[0],
+  { loadFallbackFont },
+  benchExtra,
+);
