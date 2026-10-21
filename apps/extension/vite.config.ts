@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 
 // MV3 확장 빌드. 출력은 dist/ 이며 Chrome "압축해제된 확장 프로그램 로드" 대상이다.
 // - viewer.html: 뷰어(일반 페이지·MIME handler 공용)
+// - bench.html: M5 벤치마크 측정 페이지(진단 기능, docs/m5-perf.md)
 // - background.js: 서비스 워커(파일명 고정, manifest 에서 참조)
 // - MuPDF WASM: Worker 번들이 `new URL('mupdf-wasm.wasm', import.meta.url)` 로 참조 → 자산으로 출력
 export default defineConfig({
@@ -17,6 +18,7 @@ export default defineConfig({
     rolldownOptions: {
       input: {
         viewer: 'viewer.html',
+        bench: 'bench.html',
         background: 'src/background.ts',
       },
       output: {
