@@ -235,7 +235,7 @@ export class BenchRunner {
 
     if (want('open')) await guard('open', () => this.scenarioOpen(bytes, result));
     // 나머지 시나리오는 공용 세션 하나를 쓴다(메모리·breakdown 은 자기 세션).
-    const needShared = (['nav', 'judge', 'edit', 'path', 'save'] as const).some(want);
+    const needShared = (['nav', 'edit', 'path', 'save'] as const).some(want);
     if (needShared) {
       let o: Opened | null = null;
       await guard('open-shared', async () => {
@@ -245,7 +245,6 @@ export class BenchRunner {
       if (o) {
         const opened: Opened = o;
         if (want('nav')) await guard('nav', () => this.scenarioNav(opened, result));
-        if (want('judge')) await guard('judge', () => this.scenarioJudge(opened, result));
         if (want('edit')) await guard('edit', () => this.scenarioEdit(opened, result));
         if (want('path')) await guard('path', () => this.scenarioPath(opened, result));
         if (want('save')) await guard('save', () => this.scenarioSave(opened, result));
@@ -253,10 +252,19 @@ export class BenchRunner {
       }
     }
     if (want('judge')) {
-      await guard('judge-breakdown', async () => {
+      // 첫 진입 판정은 캐시가 비어 있어야 하므로 새 세션에서 잰다. 구성 분해도 새 세션이다.
+      await guard('judge', async () => {
         const o = await this.openDoc(bytes.slice(0));
         try {
           result.pageCount ??= o.pageCount;
+          await this.scenarioJudge(o, result);
+        } finally {
+          o.dispose();
+        }
+      });
+      await guard('judge-breakdown', async () => {
+        const o = await this.openDoc(bytes.slice(0));
+        try {
           if (result.judge) result.judge.breakdown = await this.breakdown(o);
         } finally {
           o.dispose();
@@ -399,10 +407,10 @@ export class BenchRunner {
   private async judgeVisit(o: Opened, pageIndex: number): Promise<number | null> {
     let enter: number | null = null;
     let ready: number | null = null;
-    let pathsReady: number | null = null;
+    const startView = o.controller.getState().view;
     const done = new Promise<void>((resolve) => {
       const unsub = o.controller.subscribe((s) => {
-        if (enter === null && s.view?.pageIndex === pageIndex) {
+        if (enter === null && s.view && s.view !== startView && s.view.pageIndex === pageIndex) {
           enter = mark(M5_EVENTS.judge.start);
         }
         const e = s.edit.editability;
@@ -410,13 +418,14 @@ export class BenchRunner {
           ready = mark(M5_EVENTS.judge.end);
         }
         const m = s.edit.path.model;
-        if (
-          enter !== null &&
-          pathsReady === null &&
-          m.status === 'ready' &&
-          m.pageIndex === pageIndex
-        ) {
-          pathsReady = mark(M5_JUDGE_PATHS_READY);
+        if (enter !== null && m.status === 'ready' && m.pageIndex === pageIndex) {
+          if (
+            !performance
+              .getEntriesByName(M5_JUDGE_PATHS_READY, 'mark')
+              .some((x) => x.startTime >= enter!)
+          ) {
+            mark(M5_JUDGE_PATHS_READY);
+          }
         }
         if (ready !== null || (e.status === 'error' && e.pageIndex === pageIndex)) {
           unsub();
@@ -424,13 +433,16 @@ export class BenchRunner {
         }
       });
     });
-    await o.controller.goToPage(pageIndex);
+    // 같은 쪽을 다시 진입시킬 때는 쪽 캐시(추출·판정)를 비워 다시 읽게 한다.
+    if (o.controller.getState().pageIndex === pageIndex)
+      await o.controller.invalidatePages([pageIndex]);
+    else await o.controller.goToPage(pageIndex);
     await done;
     return enter !== null && ready !== null ? ready - enter : null;
   }
 
   private async scenarioJudge(o: Opened, result: DocResult): Promise<void> {
-    const pages = evenlySpaced(o.pageCount, this.options.judgePages, 0);
+    const pages = evenlySpaced(o.pageCount, this.options.judgePages, o.pageCount > 1 ? 1 : 0);
     const first: number[] = [];
     const reuse: number[] = [];
     const away = (p: number) => (p === 0 ? Math.min(1, o.pageCount - 1) : 0);
