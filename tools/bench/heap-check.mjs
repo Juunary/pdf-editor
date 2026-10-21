@@ -21,16 +21,18 @@ const rows = process.argv
       .map((l) => JSON.parse(l)),
   )
   .filter((r) => r.stats);
+/** 첫 저장 실측 피크. 첫 저장에서 실패했으면 상한(저장 2회 시나리오는 두 번째 저장 실패가 r.ok=false 로 온다). */
+const firstPeak = (r) => (typeof r.peak === 'number' ? r.peak : LIMIT);
 const docMax = new Map();
 for (const r of rows) {
   const key = `${r.id}:${r.variant}`;
-  docMax.set(key, Math.max(docMax.get(key) ?? 0, r.ok ? r.peak : LIMIT));
+  docMax.set(key, Math.max(docMax.get(key) ?? 0, firstPeak(r)));
 }
 const tally = {};
 const lines = [];
 for (const r of rows) {
-  const method = r.variant === 'none' ? 'incremental' : 'full';
-  const peak = r.ok ? r.peak : LIMIT;
+  const method = r.plan?.method ?? (r.variant.startsWith('none') ? 'incremental' : 'full');
+  const peak = firstPeak(r);
   const model = estimateSaveHeapModel(method, {
     inputBytes: r.inputBytes,
     model: {
