@@ -267,6 +267,7 @@ async function prepareSave(): Promise<boolean> {
     method: plan.method,
     options: plan.options,
     heap: plan.heap.level,
+    grownHeapBasis: plan.heap.grownHeapBasis ?? null,
     journalAdvised: journal?.advised ?? null,
     edits: plan.edits,
     block: decision.block,
@@ -282,7 +283,7 @@ async function prepareSave(): Promise<boolean> {
       dialogEl,
       '저장 전 확인',
       [...decision.warnings, ...decision.infos],
-      '저장',
+      decision.confirmLabel ?? '저장',
       '취소',
     );
     if (!ok) {

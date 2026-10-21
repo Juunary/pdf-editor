@@ -124,6 +124,36 @@ test.describe('저장 전 판정(5.8)', () => {
     await page.close();
   });
 
+  test('over-limit 근거가 이미 커진 힙이면 "그래도 저장 시도" 를 고를 수 있다(H1)', async () => {
+    const page = await openViewer();
+    await page.evaluate(
+      (p) => {
+        (window as unknown as { __pe: Pe }).__pe.pdf.planSave = async () => p;
+      },
+      plan({
+        heap: {
+          ...plan({}).heap,
+          level: 'over-limit',
+          message: '메모리 한계를 넘습니다(테스트)',
+          grownHeapBasis: true,
+        },
+      }),
+    );
+    const dialog = page.locator('#app-dialog');
+    await page.click('#save-downloads');
+    await expect(dialog.locator('h2')).toHaveText('저장 전 확인');
+    await expect(dialog).toContainText('메모리 한계를 넘습니다(테스트)');
+    await expect(dialog).toContainText('이미 커진 작업 메모리');
+    await expect(dialog.locator('[data-dialog-button="ok"]')).toHaveText('그래도 저장 시도');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      dialog.locator('[data-dialog-button="ok"]').click(),
+    ]);
+    expect(statSync(await download.path()).size).toBe(statSync(SAMPLE).size);
+    expect((await diagEvents(page, 'save')).length).toBe(1);
+    await page.close();
+  });
+
   test('warn·구조 연결 끊김·PDF/A 는 확인 창, 취소하면 저장하지 않고 확인하면 저장한다', async () => {
     const page = await openViewer();
     await page.evaluate(

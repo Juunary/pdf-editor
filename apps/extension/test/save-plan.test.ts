@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { SaveHeapEstimate, SavePlan } from '@pdf-editor/shared-types';
 import { fileAccessNotice, redactNotice } from '../src/viewer/notices.js';
-import { decideSave } from '../src/viewer/save-plan.js';
+import {
+  BLOCKED_SAVE_OPTIONS,
+  GROWN_HEAP_RETRY_NOTE,
+  RETRY_SAVE_LABEL,
+  decideSave,
+} from '../src/viewer/save-plan.js';
 
 const heap = (
   level: SaveHeapEstimate['level'],
@@ -31,11 +36,24 @@ describe('decideSave', () => {
     expect(decideSave(plan())).toEqual({ block: null, warnings: [], infos: [] });
   });
 
-  it('over-limit 은 중단 안내(코어 메시지 우선)', () => {
+  it('over-limit 은 중단 안내(코어 메시지 우선) + 할 수 있는 일, 저장 후 다시 열기는 권하지 않는다', () => {
     const d = decideSave(plan({ heap: heap('over-limit', '메모리 한계 초과') }));
-    expect(d.block).toBe('메모리 한계 초과');
+    expect(d.block).toBe(`메모리 한계 초과 ${BLOCKED_SAVE_OPTIONS}`);
+    expect(d.block).not.toContain('저장하고');
     expect(d.warnings).toEqual([]);
-    expect(decideSave(plan({ heap: heap('over-limit') })).block).toContain('저장하지 않습니다');
+    expect(decideSave(plan({ heap: heap('over-limit') })).block).toContain('저장하지 않았습니다');
+  });
+
+  it('over-limit 근거가 이미 커진 힙이면 중단하지 않고 "그래도 저장 시도" 확인 창(H1)', () => {
+    const d = decideSave(
+      plan({ heap: { ...heap('over-limit', '메모리 한계 초과'), grownHeapBasis: true } }),
+    );
+    expect(d.block).toBeNull();
+    expect(d.warnings).toEqual(['메모리 한계 초과', GROWN_HEAP_RETRY_NOTE]);
+    expect(d.confirmLabel).toBe(RETRY_SAVE_LABEL);
+    // warn 은 커진 힙이어도 일반 확인 창.
+    const w = decideSave(plan({ heap: { ...heap('warn', '경고'), grownHeapBasis: true } }));
+    expect(w.confirmLabel).toBeUndefined();
   });
 
   it('warn 은 확인 창(경고 문구)', () => {
@@ -88,7 +106,7 @@ describe('decideSave', () => {
 
   it('over-limit 이면 core 경고가 있어도 중단한다', () => {
     const d = decideSave(plan({ warnings: ['x'], heap: heap('over-limit', '한계') }));
-    expect(d.block).toBe('한계');
+    expect(d.block).toBe(`한계 ${BLOCKED_SAVE_OPTIONS}`);
   });
 
   it('warn 과 편집 경고가 겹치면 모두 모은다', () => {
