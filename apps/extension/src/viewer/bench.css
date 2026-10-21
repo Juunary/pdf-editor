@@ -1,4 +1,9 @@
+/* viewer.css 는 창을 세로 flex 로 쓰고 창 스크롤을 막는다(#page-container 만 스크롤). 설정 패널은 고정 높이로 두고
+   넘치면 패널 안에서 스크롤해 좁은 창에서도 실행·내보내기 버튼에 닿게 한다. */
 #bench-panel {
+  flex: none;
+  max-height: 45vh;
+  overflow: auto;
   margin: 8px 16px;
   padding: 8px;
   background: #f5f5f5;

@@ -115,7 +115,8 @@ function makeHooks(auto: AutoMemory | null): BenchHooks {
     },
     samplePhase: auto ? (label, docId) => auto(`phase:${label}`, docId) : undefined,
     targets: { controls: byId('viewer-controls'), pages: byId('page-container') },
-    availableWidth: () => Math.min(document.documentElement.clientWidth, 1100),
+    // 뷰어(main.ts)와 같이 스크롤 상자(#page-container) 폭을 쓴다(창 스크롤바가 아니라 문서 영역 스크롤바를 뺀 폭).
+    availableWidth: () => Math.min(byId('page-container').clientWidth, 1100),
     spawnWorker,
   };
 }

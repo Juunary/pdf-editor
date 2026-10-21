@@ -130,4 +130,37 @@ describe('ViewerController · 렌더 캐시', () => {
       0, 1, 0,
     ]);
   });
+  it('Worker 복구 뒤에는 모든 쪽을 새 Worker 에서 다시 렌더한다(새 세션의 첫 전체 렌더가 문서 통계를 예약한다)', async () => {
+    const host = fakeHost();
+    const c = make(host, false);
+    await c.goToPage(0);
+    await c.goToPage(1);
+    await c.handleWorkerRecovered();
+    await c.goToPage(0);
+    expect(host.renderPage.mock.calls.map((a) => (a[0] as RenderRequest).pageIndex)).toEqual([
+      0, 1, 1, 0,
+    ]);
+  });
+
+  it('미리 렌더 중에 그 쪽이 바뀌면(편집 커밋·undo) 도착한 옛 렌더를 캐시에 넣지 않는다', async () => {
+    const host = fakeHost();
+    let release!: () => void;
+    const c = make(host);
+    await c.goToPage(0);
+    host.renderPage.mockImplementationOnce(
+      (req: RenderRequest) =>
+        new Promise((resolve) => {
+          release = () => resolve(page(req.pageIndex, 16));
+        }),
+    );
+    for (const fn of idle.splice(0)) fn();
+    await vi.waitFor(() => expect(host.renderPage).toHaveBeenCalledTimes(2));
+    await c.invalidatePages([1]);
+    release();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    await c.goToPage(1);
+    expect(host.renderPage.mock.calls.map((a) => (a[0] as RenderRequest).pageIndex)).toEqual([
+      0, 1, 1,
+    ]);
+  });
 });
