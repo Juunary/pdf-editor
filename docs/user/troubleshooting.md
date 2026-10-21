@@ -4,7 +4,7 @@
 
 | 원인 | 확인·조치 |
 | --- | --- |
-| 다른 PDF 확장이 나중에 설치됨 | PDF 를 여는 확장은 하나만 가로챌 수 있습니다. 나중에 설치한 PDF 확장이 있으면 그쪽이 PDF 를 엽니다. `chrome://extensions` 에서 다른 PDF 뷰어 확장을 끄거나 삭제한 뒤 PDF 를 다시 엽니다. 이 확장을 껐다 켜거나 삭제 후 다시 설치하면 이 확장이 나중에 설치된 것으로 처리되어 우선합니다 |
+| 다른 PDF 확장이 나중에 설치됨 | PDF 를 여는 확장은 하나만 가로챌 수 있습니다. 나중에 설치한 PDF 확장이 있으면 그쪽이 PDF 를 엽니다. `chrome://extensions` 에서 다른 PDF 뷰어 확장을 끄거나 삭제한 뒤 PDF 를 다시 엽니다. |
 | Chrome 버전이 낮음 | Chrome 151 미만에서는 Web Store 판이 PDF 를 가로채지 못합니다. `chrome://settings/help` 에서 Chrome 을 업데이트합니다 |
 | 확장이 꺼져 있음 | `chrome://extensions` 에서 켭니다. 압축해제 설치는 개발자 모드가 꺼지면 비활성화됩니다([install.md](install.md)) |
 | 지원하지 않는 응답 | POST 로 만든 PDF, 첨부 파일로 내려받는 응답(`content-disposition: attachment`)은 가로채지 않습니다(레거시 경로). 뷰어가 PDF 로 판단하지 못한 문서는 기본 뷰어로 되돌립니다 |
