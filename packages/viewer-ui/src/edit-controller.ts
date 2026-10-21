@@ -13,7 +13,7 @@ import type {
   Rect,
 } from '@pdf-editor/shared-types';
 import { offsetAtPagePoint } from './edit-geometry.js';
-import { limitLabel, TAGGED_BLOCKED_LABEL } from './edit-labels.js';
+import { limitLabel, REDO_DISCARDED_NOTICE, TAGGED_BLOCKED_LABEL } from './edit-labels.js';
 import type { EditLog } from './edit-log.js';
 import type { InputBufferPort } from './input-buffer.js';
 import { EditSession, isWorkerRecovered, type EditSessionView } from './edit-session.js';
@@ -282,6 +282,7 @@ export class EditController {
     const state = this.ctx.getState();
     if (this.session || state.starting || state.busy || this.paths?.active) return;
     this.paths?.clear();
+    const hadRedo = state.history?.canRedo === true;
     this.ctx.patch({ starting: true, popover: null, notice: null });
     // 편집기가 열리는 동안(plan → begin) 친 글자를 모은다. 열리면 넣고, 열리지 못하면 버린다.
     this.buffer?.open();
@@ -344,6 +345,8 @@ export class EditController {
       this.ctx.patch({ session: this.session.view() });
       this.session.start();
       started = true;
+      // 새 편집을 시작하면 core 가 다시 실행(redo) 단계를 버린다(계약 D9, 취소해도 복원 안 됨).
+      if (hadRedo) this.ctx.patch({ notice: REDO_DISCARDED_NOTICE });
       const buffered = this.buffer?.take() ?? '';
       if (buffered !== '') {
         this.session.typeText(buffered);
