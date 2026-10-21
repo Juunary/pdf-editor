@@ -857,8 +857,23 @@ export class EditEngine {
     }
     const pageIndex = op.target.pageIndex;
     const ctx = this.#context(pageIndex);
-    const paragraphId = findParagraphId(ctx, op.target);
-    const plan = this.#adapter.planParagraphEdit(ctx, fonts, paragraphId);
+    const plans = new Map<number, Omit<ParagraphEditPlan, 'revision'>>();
+    const planOf = (id: number): Omit<ParagraphEditPlan, 'revision'> => {
+      let plan = plans.get(id);
+      if (!plan) {
+        plan = this.#adapter.planParagraphEdit(ctx, fonts, id);
+        plans.set(id, plan);
+      }
+      return plan;
+    };
+    const paragraphId = findParagraphId(ctx, op.target, (id) => {
+      try {
+        return planOf(id).target;
+      } catch {
+        return null;
+      }
+    });
+    const plan = planOf(paragraphId);
     if (!plan.editable) {
       const reasons = plan.limits.map((l) => l.reason).join(', ');
       throw new EditStateError(`편집할 수 없는 문단입니다: ${reasons || '사유 없음'}`);
@@ -1379,7 +1394,11 @@ const sortedEqual = (a: number[], b: number[]): boolean =>
  * 로그의 대상 글리프 목록(glyphSeq)과 같은 문단을 현재 쪽 레이아웃에서 찾는다. 재적용은 같은 순서로 하므로
  * 적용 시점의 PageModel 이 같고 글리프 목록이 일치해야 한다(계약 `ParagraphTarget`).
  */
-export function findParagraphId(ctx: ParagraphEditContext, target: ParagraphTarget): number {
+export function findParagraphId(
+  ctx: ParagraphEditContext,
+  target: ParagraphTarget,
+  targetOf?: (paragraphId: number) => ParagraphTarget | null,
+): number {
   const wanted = target.glyphSeqs;
   if (target.cell && wanted.length > 0) return findCellParagraphId(ctx, target, target.cell);
   if (wanted.length > 0) {
@@ -1387,6 +1406,31 @@ export function findParagraphId(ctx: ParagraphEditContext, target: ParagraphTarg
       if (paragraph.chars.length !== wanted.length) continue;
       if (paragraph.chars.every((ci, k) => ctx.model.chars[ci]?.glyphSeq === wanted[k])) {
         return paragraph.id;
+      }
+    }
+    // 편집 블록 재편집(R4): 커밋한 블록의 줄을 레이아웃이 여러 문단으로 나누거나 이웃 문단 줄과 합칠 수 있다. 그 경우
+    // 판정은 블록 첫 문단 하나만 내보내고 대상 글자를 블록 전체로 넓히므로(pdf-ops analyzeParagraph), 로그의
+    // glyphSeqs 는 어느 레이아웃 문단과도 같지 않다. 블록 글자를 가진 문단마다 계획의 대상이 로그와 같은지 확인한다.
+    if (target.editedBlock !== null && targetOf) {
+      const wantedSet = new Set(wanted);
+      const seqOf = (ci: number): number => ctx.model.chars[ci]?.glyphSeq ?? -1;
+      const candidates = ctx.layout.paragraphs
+        .filter((p) => p.chars.some((ci) => wantedSet.has(seqOf(ci))))
+        .sort(
+          (a, b) =>
+            Number(b.chars.some((ci) => seqOf(ci) === wanted[0])) -
+            Number(a.chars.some((ci) => seqOf(ci) === wanted[0])),
+        );
+      for (const paragraph of candidates) {
+        const planned = targetOf(paragraph.id);
+        if (
+          planned &&
+          planned.editedBlock === target.editedBlock &&
+          planned.glyphSeqs.length === wanted.length &&
+          planned.glyphSeqs.every((seq, k) => seq === wanted[k])
+        ) {
+          return paragraph.id;
+        }
       }
     }
   }
