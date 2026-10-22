@@ -35,14 +35,17 @@ test.afterAll(async () => {
   if (userDataDir) rmSync(userDataDir, { recursive: true, force: true });
 });
 
-/** FSA 피커를 없앤(=저장이 chrome.downloads 로 가는) 뷰어에 문서를 연다. 헤드리스는 피커를 바로 취소하기 때문이다. */
-async function openViewer(width = 1280, height = 800): Promise<Page> {
+/**
+ * FSA 피커를 없앤(=저장이 chrome.downloads 로 가는) 뷰어에 문서를 연다. 헤드리스는 피커를 바로 취소하기 때문이다.
+ * 메뉴 세 항목(개발 빌드의 downloads 저장 포함)을 보려면 진단 표시(`?diag`)를 켠다(사용자 요청 2026-10-23).
+ */
+async function openViewer(width = 1280, height = 800, diag = true): Promise<Page> {
   const page = await context.newPage();
   await page.setViewportSize({ width, height });
   await page.addInitScript(() => {
     Object.defineProperty(window, 'showSaveFilePicker', { value: undefined, configurable: true });
   });
-  await page.goto(`chrome-extension://${extensionId}/viewer.html?e2e`);
+  await page.goto(`chrome-extension://${extensionId}/viewer.html?e2e${diag ? '&diag' : ''}`);
   await page.setInputFiles('#open-file', SAMPLE);
   await expect(page.locator('#status')).toHaveAttribute('data-state', 'rendered', {
     timeout: 20_000,
@@ -81,7 +84,26 @@ test('문서가 없으면 비활성, 아이콘은 인라인 SVG, 이름·제목�
   await page.close();
 });
 
-test('마우스: 열면 세 항목(개발 빌드), 바깥을 누르면 닫히고, 항목을 고르면 닫힌 뒤 저장한다', async () => {
+test('진단 표시가 꺼져 있으면(기본) 메뉴는 두 항목이고 ↑↓ 는 두 항목만 돈다', async () => {
+  const page = await openViewer(1280, 800, false);
+  const menu = page.locator('#save-menu');
+  await page.locator('#save-menu-button').focus();
+  await page.keyboard.press('Enter');
+  await expect(menu).toBeVisible();
+  await expect(page.locator('#save-downloads')).toBeHidden();
+  const visible = await menu
+    .locator('[role="menuitem"]')
+    .evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).map((e) => e.id));
+  expect(visible).toEqual(['save', 'save-as']);
+  await page.keyboard.press('ArrowUp');
+  expect(await focusedId(page)).toBe('save-as');
+  await page.keyboard.press('ArrowDown');
+  expect(await focusedId(page)).toBe('save');
+  await page.keyboard.press('Escape');
+  await page.close();
+});
+
+test('마우스: 열면 세 항목(개발 빌드, 진단 표시), 바깥을 누르면 닫히고, 항목을 고르면 닫힌 뒤 저장한다', async () => {
   const page = await openViewer();
   const button = page.locator('#save-menu-button');
   const menu = page.locator('#save-menu');

@@ -9,7 +9,7 @@ import {
 } from '@pdf-editor/viewer-ui';
 import '@pdf-editor/viewer-ui/style.css';
 import { decideInterceptionMode, parseChromeMajor } from '../interception.js';
-import { DiagLog } from './diag.js';
+import { DiagLog, diagRequested, isDiagShortcut } from './diag.js';
 import type { CommitResult, JournalAdvice, SaveHeapEstimate } from '@pdf-editor/shared-types';
 import { aboutContent } from './about.js';
 import { alertDialog, confirmDialog, openDialog } from './dialog.js';
@@ -63,8 +63,28 @@ byId<HTMLButtonElement>('copy-diag').addEventListener('click', () => {
   void navigator.clipboard.writeText(diag.toJSON());
 });
 
-function setStatus(state: string, text: string): void {
+/**
+ * 개발 표시(진단 패널·downloads 저장·렌더 경과 상태 줄, 사용자 요청 2026-10-23): 기본은 숨기고 `html[data-diag]` 일 때만
+ * 보인다(viewer.css). 개발 빌드에서 주소에 `?diag` 를 붙여 열거나 Ctrl+Alt+Shift+D 로 켜고 끈다. 스토어 빌드에는 이 코드가
+ * 없고 진단 패널은 늘 숨긴다(계약 D6). 진단 기록 수집(`diag.add`)과 `#diag-log` 내용은 숨겨져 있어도 그대로다.
+ */
+if (__BUILD_KIND__ !== 'store') {
+  const setDiagVisible = (on: boolean) => {
+    document.documentElement.toggleAttribute('data-diag', on);
+    diag.add('diag-visible', on);
+  };
+  if (diagRequested(location.search)) setDiagVisible(true);
+  document.addEventListener('keydown', (e) => {
+    if (!isDiagShortcut(e)) return;
+    e.preventDefault();
+    setDiagVisible(!document.documentElement.hasAttribute('data-diag'));
+  });
+}
+
+/** 상태 줄. `dev` 면 개발 표시(렌더 경과 등)라 진단 표시를 켰을 때만 보인다. */
+function setStatus(state: string, text: string, dev = false): void {
   statusEl.dataset.state = state;
+  statusEl.toggleAttribute('data-dev', dev);
   statusEl.textContent = text;
 }
 
@@ -459,7 +479,7 @@ async function askSaveAgain(trigger: SaveTrigger): Promise<void> {
 
 /** M0 진단: 브라우저 Worker 에서 전체 저장 시간·WASM 힙 측정(파일은 저장하지 않음). */
 async function benchFullSave(): Promise<void> {
-  setStatus('saving', t.statusBenchSaving);
+  setStatus('saving', t.statusBenchSaving, true);
   const r = await pdf.save({ changes: ['content-stream'] });
   pdf.discardPendingSave(); // 측정 저장은 복구 기준점이 아니다
   const result = {
@@ -471,7 +491,7 @@ async function benchFullSave(): Promise<void> {
     context: contextKind,
   };
   diag.add('bench-full-save', result);
-  setStatus('rendered', t.statusBenchResult(r.saveMs, (r.wasmHeapBytes ?? 0) / 2 ** 20));
+  setStatus('rendered', t.statusBenchResult(r.saveMs, (r.wasmHeapBytes ?? 0) / 2 ** 20), true);
 }
 
 /**
@@ -524,7 +544,8 @@ function onPagePainted(e: PagePaintedEvent): void {
     saveEnabled = true;
     enableSave();
   }
-  setStatus('rendered', t.statusRendered(e.pageCount, e.pageIndex + 1));
+  // 렌더 경과는 개발 표시다(쪽 수는 툴바 "/ N" 에 있다).
+  setStatus('rendered', t.statusRendered(e.pageCount, e.pageIndex + 1), true);
 }
 
 async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {

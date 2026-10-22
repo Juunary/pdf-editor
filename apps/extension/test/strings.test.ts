@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SaveHeapEstimate, SavePlan } from '@pdf-editor/shared-types';
 import { aboutContent } from '../src/viewer/about.js';
+import { diagRequested, isDiagShortcut, type ShortcutKeyLike } from '../src/viewer/diag.js';
 import {
   journalNotice,
   recoveredNotice,
@@ -145,5 +146,35 @@ describe('확장 문자열 표', () => {
     for (const s of [c.title, ...c.lines, ...c.links.map((l) => l.label)]) {
       expect(s).not.toMatch(HANGUL);
     }
+  });
+});
+
+describe('진단 표시 켜기(사용자 요청 2026-10-23)', () => {
+  const key = (extra: Partial<ShortcutKeyLike> = {}): ShortcutKeyLike => ({
+    code: 'KeyD',
+    ctrlKey: true,
+    altKey: true,
+    shiftKey: true,
+    metaKey: false,
+    ...extra,
+  });
+
+  it('주소에 diag 매개변수가 있으면 켠다', () => {
+    expect(diagRequested('?diag')).toBe(true);
+    expect(diagRequested('?file=http%3A%2F%2Fx%2Fa.pdf&diag')).toBe(true);
+    expect(diagRequested('?e2e&diag=1')).toBe(true);
+    expect(diagRequested('')).toBe(false);
+    expect(diagRequested('?e2e')).toBe(false);
+    expect(diagRequested('?file=diag.pdf')).toBe(false);
+  });
+
+  it('단축키는 Ctrl+Alt+Shift+D(물리 키), 조합 중·다른 조합은 아니다', () => {
+    expect(isDiagShortcut(key())).toBe(true);
+    expect(isDiagShortcut(key({ shiftKey: false }))).toBe(false);
+    expect(isDiagShortcut(key({ altKey: false }))).toBe(false);
+    expect(isDiagShortcut(key({ ctrlKey: false }))).toBe(false);
+    expect(isDiagShortcut(key({ metaKey: true }))).toBe(false);
+    expect(isDiagShortcut(key({ code: 'KeyS' }))).toBe(false);
+    expect(isDiagShortcut(key({ isComposing: true }))).toBe(false);
   });
 });

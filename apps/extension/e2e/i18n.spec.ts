@@ -131,10 +131,11 @@ test('영어 로케일(en-US): 툴바·검색창·저장 메뉴·쪽 화살표�
     await expect(page.locator('#pe-arrow-prev')).toHaveAttribute('aria-label', 'Previous page');
     await expect(page.locator('#pe-arrow-next')).toHaveAttribute('aria-label', 'Next page');
 
-    // 저장 메뉴
+    // 저장 메뉴(진단 표시가 꺼져 있으면 두 항목)
     await page.click('#save-menu-button');
     await expect(page.locator('#save')).toHaveText(/^\s*Save\s*Ctrl\+S\s*$/);
     await expect(page.locator('#save-as')).toHaveText('Save as');
+    await expect(page.locator('#save-downloads')).toBeHidden();
     for (const s of await headerTexts(page)) expect(s, '저장 메뉴').not.toMatch(HANGUL);
     await page.keyboard.press('Escape');
 

@@ -23,6 +23,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { E2E_LOCALE } from './locale.js';
+import { showDiag } from './toolbar-helpers.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
@@ -246,7 +247,10 @@ test('좁은 배치는 실제 창 폭으로만 켜진다: 확대로는 켜지지
     await waitCompensated(frame, f);
     expectSameLayout(await headerSnapshot(frame), narrow200, `400px ${f * 100}%`);
   }
-  // 좁은 배치: 상태 줄은 자기 줄(툴바 안쪽 폭), 개발 전용 메뉴 항목은 숨김.
+  // 좁은 배치: 상태 줄은 자기 줄(툴바 안쪽 폭), 개발 전용 메뉴 항목은 숨김. 렌더 경과 상태는 개발 표시라 좁은 배치에서
+  // 줄을 차지하지 않는다(사용자 요청 2026-10-23). 상태 줄 폭은 진단 표시를 켜고 잰다.
+  await expect(page.locator('#status')).toBeHidden();
+  await showDiag(page);
   const status = (await page.locator('#status').boundingBox()) as Box;
   const toolbar = (await page.locator('#toolbar').boundingBox()) as Box;
   expect(status.width).toBeGreaterThan(toolbar.width * 0.9);
