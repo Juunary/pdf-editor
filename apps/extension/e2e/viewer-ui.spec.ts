@@ -837,7 +837,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     const layouts = [reconstructPage(PAGE_0), reconstructPage(PAGE_1)];
     await openHarness(page, baseConfig({ layouts }));
     await expect(page.locator('#pe-layout-canvas')).toHaveCount(0);
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     const canvas = page.locator('#pe-layout-canvas');
     await expect(canvas).toHaveAttribute('data-paragraphs', String(layouts[0]!.paragraphs.length));
     await expect(canvas).toHaveAttribute('data-order', String(layouts[0]!.readingOrder.length));
@@ -859,7 +859,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     expect(await copied(page)).toBe(FULL_TEXT);
     await page.locator('#pe-next').click();
     await expect(canvas).toHaveAttribute('data-paragraphs', String(layouts[1]!.paragraphs.length));
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     await expect(canvas).toHaveCount(0);
   });
 
@@ -867,9 +867,9 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     page,
   }) => {
     await openHarness(page, baseConfig({ failures: { layout: 'M2 미구현: core getPageLayout' } }));
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     await expect(page.locator('#pe-notice')).toContainText('레이아웃');
-    await expect(page.locator('#pe-layout-toggle')).toBeDisabled();
+    await expect(page.locator('#pe-overlay-toggle')).toBeDisabled();
     await expect(page.locator('#pe-layout-canvas')).toHaveCount(0);
     await page.keyboard.press('Control+A');
     expect(await copied(page)).toBe(FULL_TEXT);
@@ -1177,11 +1177,11 @@ test(`[통합] 레이아웃 오버레이: Worker getPageLayout 결과로 문단 
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     const canvas = page.locator('#pe-layout-canvas');
     await expect(canvas).toHaveAttribute('data-paragraphs', /^[1-9]\d*$/, { timeout: 20_000 });
     expect(Number(await canvas.getAttribute('data-order'))).toBeGreaterThan(0);
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     await expect(canvas).toHaveCount(0);
   });
 });

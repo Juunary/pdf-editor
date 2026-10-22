@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { featureDisabledReason, type FeatureName, type ViewerController } from '../controller.js';
+import {
+  featureDisabledReason,
+  overlayToggleState,
+  overlayToggleTitle,
+  type FeatureName,
+  type ViewerController,
+} from '../controller.js';
 import { useViewerState } from '../hooks.js';
 import { docHistoryShortcut } from '../edit-keys.js';
 import { EDIT_PAGES_NOTICE } from '../edit-labels.js';
@@ -71,7 +77,8 @@ export function Controls({ controller }: Props) {
   };
 
   const searchReason = featureDisabledReason(state, 'search');
-  const layoutReason = featureDisabledReason(state, 'layout');
+  const overlay = overlayToggleState(state, controller.edit !== null);
+  const pathSelect = controller.edit?.paths != null && !state.disabled.path;
   const disabledOwn = (Object.keys(FEATURE_LABELS) as FeatureName[]).filter(
     (f) => state.disabled[f] !== null,
   );
@@ -137,16 +144,17 @@ export function Controls({ controller }: Props) {
       >
         찾기
       </button>
+      {/* 레이아웃 오버레이 + 편집 가능 표시(사용자 요청 2026-10-22). 편집 중이면 바깥 클릭처럼 편집을 끝내고 켠다. */}
       <button
-        id="pe-layout-toggle"
+        id="pe-overlay-toggle"
         type="button"
         class="pe-btn"
-        title={layoutReason ?? '레이아웃 오버레이(문단·표·도형·읽기 순서)'}
-        aria-pressed={state.layoutEnabled}
-        disabled={layoutReason !== null}
-        onClick={() => controller.toggleLayout()}
+        title={overlayToggleTitle(overlay, pathSelect)}
+        aria-pressed={overlay.on}
+        disabled={overlay.layoutReason !== null && overlay.marksReason !== null}
+        onClick={() => controller.toggleOverlays()}
       >
-        레이아웃
+        레이아웃·편집 표시
       </button>
       {controller.edit && !state.disabled.edit && (
         <>
@@ -182,17 +190,6 @@ export function Controls({ controller }: Props) {
               편집 취소
             </button>
           )}
-          <button
-            id="pe-mark-toggle"
-            type="button"
-            class="pe-btn"
-            data-pe-keep=""
-            title="문단·셀·패스의 편집 가능 여부를 테두리로 표시합니다(켜면 클릭으로 패스를 선택)"
-            aria-pressed={state.edit.showEditable}
-            onClick={() => controller.edit?.setShowEditable(!state.edit.showEditable)}
-          >
-            편집 가능 표시
-          </button>
           <button
             id="pe-fb-toggle"
             type="button"

@@ -490,8 +490,13 @@
   transform: translateX(-50%);
   z-index: 30;
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 14px;
   align-items: center;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100vw - 24px);
   padding: 4px 12px;
   border-radius: 6px;
   background: rgb(43 47 51 / 92%);
@@ -509,6 +514,11 @@
 }
 .pe-legend-swatch[data-editable='0'] {
   border-top: 2px dashed #ef6c00;
+}
+.pe-legend-swatch[data-layout='1'] {
+  height: 8px;
+  border: 1px solid #1e88e5;
+  background: rgb(30 136 229 / 12%);
 }
 
 /* 벡터 패스 편집(M4) */

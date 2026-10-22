@@ -299,7 +299,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       page,
     }) => {
       await expect(page.locator('#pe-marks')).toHaveCount(0);
-      await page.click('#pe-mark-toggle');
+      await page.click('#pe-overlay-toggle');
       const marks = page.locator('#pe-marks');
       await expect(marks).toBeVisible();
       await expect(marks).toHaveAttribute('data-cells', '2');
@@ -315,8 +315,57 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-marks')).toHaveCount(0); // 편집 중에는 표시를 숨긴다
     });
 
+    test('레이아웃·편집 표시 한 버튼: 한 번 누르면 레이아웃과 편집 가능 표시가 함께 켜지고 다시 누르면 함께 꺼진다', async ({
+      page,
+    }) => {
+      await expect(page.locator('#pe-mark-toggle')).toHaveCount(0);
+      await expect(page.locator('#pe-layout-toggle')).toHaveCount(0);
+      const btn = page.locator('#pe-overlay-toggle');
+      await expect(btn).toHaveText('레이아웃·편집 표시');
+      await expect(btn).toHaveAttribute('aria-pressed', 'false');
+      await btn.click();
+      await expect(btn).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.locator('#pe-layout-canvas')).toBeVisible();
+      await expect(page.locator('#pe-marks')).toBeVisible();
+      expect(await btn.getAttribute('title')).toContain('클릭으로 패스를 선택');
+      await btn.click();
+      await expect(btn).toHaveAttribute('aria-pressed', 'false');
+      await expect(page.locator('#pe-layout-canvas')).toHaveCount(0);
+      await expect(page.locator('#pe-marks')).toHaveCount(0);
+      // 꺼지면 패스 클릭 선택도 꺼진다.
+      const g = await geo(page);
+      const p = at(g, 110, 250);
+      await page.mouse.click(p.x, p.y);
+      expect(await selection(page)).toEqual([]);
+    });
+
+    test('레이아웃을 쓸 수 없으면 편집 가능 표시만 켜고 제목에 사유를 적는다', async ({ page }) => {
+      const other = await page.context().newPage();
+      const pageErrors = await openEditHarness(other, config({ layout2: undefined }));
+      await other.waitForFunction(
+        () =>
+          (
+            window as unknown as {
+              __controller: { getState(): { edit: { editability: { status: string } } } };
+            }
+          ).__controller.getState().edit.editability.status === 'ready',
+      );
+      const btn = other.locator('#pe-overlay-toggle');
+      await btn.click();
+      await expect(other.locator('#pe-marks')).toBeVisible();
+      await expect(btn).toHaveAttribute('aria-pressed', 'true');
+      await expect(btn).toBeEnabled();
+      await expect(btn).toHaveAttribute('title', /레이아웃을 쓸 수 없어 편집 가능 표시만 켭니다/);
+      await expect(other.locator('#pe-layout-canvas')).toHaveCount(0);
+      await btn.click();
+      await expect(btn).toHaveAttribute('aria-pressed', 'false');
+      await expect(other.locator('#pe-marks')).toHaveCount(0);
+      expect(pageErrors).toEqual([]);
+      await other.close();
+    });
+
     test('마우스를 올리면 종류·사유 툴팁(제한 패스는 사유)', async ({ page }) => {
-      await page.click('#pe-mark-toggle');
+      await page.click('#pe-overlay-toggle');
       const g = await geo(page);
       const lim = at(g, 320, 310);
       await page.mouse.move(lim.x, lim.y);
@@ -352,7 +401,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       const p = at(g, 110, 250);
       await page.mouse.click(p.x, p.y);
       expect(await selection(page)).toEqual([]);
-      await page.click('#pe-mark-toggle');
+      await page.click('#pe-overlay-toggle');
       await page.mouse.click(p.x, p.y);
       expect(await selection(page)).toEqual([10]);
     });
@@ -572,7 +621,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
 
   test.describe('표 격자(병합 셀 기준)', () => {
     test('격자는 병합 범위를 한 칸으로 그린다', async ({ page }) => {
-      await page.click('#pe-layout-toggle');
+      await page.click('#pe-overlay-toggle');
       const canvas = page.locator('#pe-layout-canvas');
       await expect(canvas).toBeVisible();
       // 병합 셀 3개 + 덮이지 않은 빈 칸 4개 = 7 (행·열 전체 선이면 병합 안을 가로지른다)

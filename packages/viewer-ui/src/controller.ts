@@ -133,6 +133,48 @@ export function featureDisabledReason(state: ViewerState, feature: FeatureName):
   return null;
 }
 
+/**
+ * "레이아웃·편집 표시" 버튼(사용자 요청 2026-10-22): 레이아웃 오버레이와 편집 가능 표시(켜면 클릭으로 패스 선택)를
+ * 한 버튼으로 함께 켜고 끈다. 한쪽만 쓸 수 있으면 그쪽만 켠다.
+ */
+export interface OverlayToggleState {
+  /** 쓸 수 있는 쪽 중 하나라도 켜져 있으면 true(버튼 눌림). */
+  on: boolean;
+  /** 레이아웃 오버레이를 쓸 수 없는 사유(쓸 수 있으면 null). */
+  layoutReason: string | null;
+  /** 편집 가능 표시를 쓸 수 없는 사유(쓸 수 있으면 null). */
+  marksReason: string | null;
+}
+
+/** 편집 RPC 가 없는 호스트(읽기 전용 하니스·벤치)의 편집 가능 표시 사유. */
+export const NO_EDIT_HOST_REASON = '편집 기능 없음';
+
+export function overlayToggleState(state: ViewerState, hasEdit: boolean): OverlayToggleState {
+  const layoutReason = featureDisabledReason(state, 'layout');
+  const marksReason = hasEdit ? state.disabled.edit : NO_EDIT_HOST_REASON;
+  return {
+    on:
+      (layoutReason === null && state.layoutEnabled) ||
+      (marksReason === null && state.edit.showEditable),
+    layoutReason,
+    marksReason,
+  };
+}
+
+/** 합친 버튼의 제목(툴팁). 쓸 수 없는 쪽은 사유를 적는다. */
+export function overlayToggleTitle(s: OverlayToggleState, pathSelect: boolean): string {
+  const lines = ['레이아웃(문단·표·도형·읽기 순서)과 편집 가능 테두리를 함께 표시합니다'];
+  if (s.marksReason === null && pathSelect) lines.push('켜 두면 클릭으로 패스를 선택합니다');
+  if (s.layoutReason !== null && s.marksReason !== null) {
+    lines.push(`레이아웃: ${s.layoutReason}`, `편집 가능 표시: ${s.marksReason}`);
+  } else if (s.layoutReason !== null) {
+    lines.push(`레이아웃을 쓸 수 없어 편집 가능 표시만 켭니다: ${s.layoutReason}`);
+  } else if (s.marksReason !== null) {
+    lines.push(`편집 가능 표시를 쓸 수 없어 레이아웃만 켭니다: ${s.marksReason}`);
+  }
+  return lines.join('\n');
+}
+
 export class ViewerController {
   private state: ViewerState;
   private readonly listeners = new Set<StateListener>();
@@ -550,6 +592,23 @@ export class ViewerController {
   }
 
   // ── 레이아웃 오버레이 ────────────────────────────────────────────────
+
+  /**
+   * 레이아웃 오버레이와 편집 가능 표시를 함께 켜거나 끈다(툴바 "레이아웃·편집 표시"). 쓸 수 없는 쪽은 건드리지 않는다.
+   * 편집 가능 표시를 켜면 클릭으로 패스를 선택한다(`PathLayer`).
+   */
+  setOverlays(on: boolean): void {
+    const s = overlayToggleState(this.state, this.edit !== null);
+    if (s.layoutReason === null && this.state.layoutEnabled !== on) this.toggleLayout();
+    if (s.marksReason === null && this.state.edit.showEditable !== on) {
+      this.edit?.setShowEditable(on);
+    }
+  }
+
+  /** 합친 버튼 누름: 켜져 있으면 둘 다 끄고, 꺼져 있으면 쓸 수 있는 쪽을 모두 켠다. */
+  toggleOverlays(): void {
+    this.setOverlays(!overlayToggleState(this.state, this.edit !== null).on);
+  }
 
   toggleLayout(): void {
     if (featureDisabledReason(this.state, 'layout')) return;

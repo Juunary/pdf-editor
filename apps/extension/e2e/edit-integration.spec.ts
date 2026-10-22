@@ -447,7 +447,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     expect(a.box.y + a.box.height).toBeGreaterThan(y2);
     // 레이아웃 오버레이: 상자 수(문단 수)가 편집 전과 같다(블록이 상자 여럿으로 갈라지지 않음).
     await page.mouse.move(1, 1);
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     const canvas = page.locator('#pe-layout-canvas');
     await expect(canvas).toBeVisible();
     await expect(canvas).toHaveAttribute('data-paragraphs', String(before.length));
