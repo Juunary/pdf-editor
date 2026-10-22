@@ -134,6 +134,34 @@ test('열기·렌더·저장: 최상위 MIME handler, 진단 UI 는 숨김, down
   await expect(frame.locator('#save-menu')).toBeHidden();
 });
 
+test('머리 영역 확대 보정: 권한 추가 없이(permissions = downloads) 탭 배율을 읽고 따라간다', async () => {
+  const frame = await openSample();
+  await expect(frame.locator('#status')).toHaveAttribute('data-state', 'rendered', {
+    timeout: 30_000,
+  });
+  // chrome.tabs.getZoom 이 권한 없이 동작해야 'tabs' 가 된다(실패하면 dpr 추정 'dpr').
+  await expect(frame.locator('html')).toHaveAttribute('data-zoom-mode', 'tabs');
+  const tabId = await frame.evaluate(async () => (await chrome.mimeHandler.getStreamInfo()).tabId);
+  const sw = context.serviceWorkers()[0]!;
+  const header = () =>
+    frame.evaluate(() => {
+      const r = document.getElementById('toolbar')!.getBoundingClientRect();
+      return {
+        physHeight: Math.round(r.height * devicePixelRatio),
+        dpr: devicePixelRatio,
+        zoom: document.documentElement.dataset.zoom,
+      };
+    });
+  const before = await header();
+  try {
+    await sw.evaluate((id) => chrome.tabs.setZoom(id, 2), tabId);
+    await expect.poll(header).toMatchObject({ dpr: 2, zoom: '2' });
+    expect(Math.abs((await header()).physHeight - before.physHeight)).toBeLessThanOrEqual(1);
+  } finally {
+    await sw.evaluate((id) => chrome.tabs.setZoom(id, 0), tabId);
+  }
+});
+
 test('정보 대화상자: 버전·라이선스·버전 태그 소스 링크·고지', async () => {
   const frame = await openSample();
   await expect(frame.locator('#status')).toHaveAttribute('data-state', 'rendered', {
