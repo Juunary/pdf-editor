@@ -20,7 +20,10 @@ interface Props {
   controller: ViewerController;
 }
 
-/** 페이지 이동 · 찾기 · 디버그 토글. 툴바에 마운트한다. */
+/**
+ * 페이지 이동 · 찾기 · 레이아웃 · 편집 버튼. 툴바에 마운트한다.
+ * 원본 연결 디버그 오버레이는 툴바에 두지 않는다(사용자 요청 2026-10-22). 시험·진단은 `controller.toggleDebug()` 로 켠다.
+ */
 export function Controls({ controller }: Props) {
   const state = useViewerState(controller);
   const [draft, setDraft] = useState<string | null>(null);
@@ -68,7 +71,6 @@ export function Controls({ controller }: Props) {
   };
 
   const searchReason = featureDisabledReason(state, 'search');
-  const debugReason = featureDisabledReason(state, 'debug');
   const layoutReason = featureDisabledReason(state, 'layout');
   const disabledOwn = (Object.keys(FEATURE_LABELS) as FeatureName[]).filter(
     (f) => state.disabled[f] !== null,
@@ -134,17 +136,6 @@ export function Controls({ controller }: Props) {
         onClick={() => (state.find.open ? controller.closeFind() : controller.openFind())}
       >
         찾기
-      </button>
-      <button
-        id="pe-debug-toggle"
-        type="button"
-        class="pe-btn"
-        title={debugReason ?? '원본 연결 디버그 오버레이'}
-        aria-pressed={state.debugEnabled}
-        disabled={debugReason !== null}
-        onClick={() => controller.toggleDebug()}
-      >
-        연결 디버그
       </button>
       <button
         id="pe-layout-toggle"
