@@ -14,6 +14,14 @@ import type { CommitResult, JournalAdvice, SaveHeapEstimate } from '@pdf-editor/
 import { aboutContent } from './about.js';
 import { alertDialog, confirmDialog, openDialog } from './dialog.js';
 import {
+  HeaderZoom,
+  chromeTabZoom,
+  compensatesZoom,
+  viewerTabId,
+  watchDevicePixelRatio,
+  type HeaderZoomState,
+} from './header-zoom.js';
+import {
   fileAccessNotice,
   HISTORY_AFTER_SAVE_NOTICE,
   journalNotice,
@@ -58,19 +66,66 @@ const noticeBar = byId<HTMLDivElement>('notice-bar');
 const pageContainerEl = byId<HTMLElement>('page-container');
 const dialogEl = byId<HTMLDialogElement>('app-dialog');
 
-/** 검색창(position: fixed)이 툴바·알림 줄 바로 아래에 오도록, 둘의 실제 높이로 CSS 변수를 갱신한다. */
 const toolbarEl = byId<HTMLElement>('toolbar');
+/** 머리 영역 확대 보정 배율 f(header-zoom.ts). 머리 영역(툴바·알림 줄)의 CSS zoom 은 1/f. */
+let headerFactor = 1;
+
+/**
+ * 검색창(position: fixed)이 툴바·알림 줄 바로 아래에 오도록, 둘의 실제 높이로 CSS 변수를 갱신한다.
+ * 검색창은 툴바 안(CSS zoom 1/f)에 그려지므로 top 은 머리 영역 px(화면 px × f)로 준다.
+ */
 function syncFindTop(): void {
   const bottom = Math.max(
     toolbarEl.getBoundingClientRect().bottom,
     noticeBar.hidden ? 0 : noticeBar.getBoundingClientRect().bottom,
   );
-  document.documentElement.style.setProperty('--pe-find-top', `${Math.ceil(bottom) + 4}px`);
+  document.documentElement.style.setProperty(
+    '--pe-find-top',
+    `${Math.ceil(bottom * headerFactor) + 4}px`,
+  );
 }
 const toolbarObserver = new ResizeObserver(syncFindTop);
 toolbarObserver.observe(toolbarEl);
 toolbarObserver.observe(noticeBar);
-syncFindTop();
+
+/** 머리 영역 확대 보정 결과를 반영한다. `data-zoom`·`data-zoom-mode` 는 시험·진단용. */
+function applyHeaderZoom(state: HeaderZoomState): void {
+  headerFactor = state.factor;
+  const root = document.documentElement;
+  root.style.setProperty('--pe-header-zoom', String(1 / state.factor));
+  root.toggleAttribute('data-narrow', state.narrow);
+  root.dataset.zoom = String(Math.round(state.factor * 1e4) / 1e4);
+  root.dataset.zoomMode = state.mode;
+  syncFindTop();
+}
+
+/**
+ * 브라우저 확대·축소에도 머리 영역 크기를 100% 때와 같게 둔다(사용자 요청 2026-10-22). 문맥을 알기 전에는 보정 없이
+ * 좁은 배치만 판정한다(이전 미디어 쿼리와 같다). resize 와 dpr 변화는 같은 프레임 안에서 바로 반영한다.
+ */
+const headerZoom = new HeaderZoom({
+  cssWidth: () => window.innerWidth,
+  devicePixelRatio: () => window.devicePixelRatio || 1,
+  apply: applyHeaderZoom,
+  log: (event, data) => diag.add(event, data),
+});
+window.addEventListener('resize', () => headerZoom.onViewportChange());
+watchDevicePixelRatio(window, () => headerZoom.onViewportChange());
+
+/** 문맥을 안 뒤: 탭 최상위 뷰어만 탭 배율로 보정하고, 임베디드 문맥은 바깥 페이지 확대를 따른다. */
+async function attachHeaderZoom(
+  kind: ViewerContextKind,
+  streamInfo: chrome.mimeHandler.StreamInfo | null,
+): Promise<void> {
+  if (!compensatesZoom(kind, window.top === window)) return headerZoom.attach(null, false);
+  const tabs = typeof chrome === 'object' ? chrome.tabs : undefined;
+  const tabId = await viewerTabId(
+    streamInfo,
+    typeof tabs?.getCurrent === 'function' ? () => tabs.getCurrent() : null,
+  );
+  diag.add('header-zoom-tab', { kind, tabId });
+  await headerZoom.attach(tabId === null ? null : chromeTabZoom(tabId), true);
+}
 
 /** 알림 줄(열기 시 보고·안내·복구). text 가 null 이면 그 id 의 알림을 지운다. */
 function setNotice(id: string, text: string | null): void {
@@ -613,6 +668,12 @@ async function main(): Promise<void> {
     mimeHandler: 'mimeHandler' in chrome ? chrome.mimeHandler : undefined,
     fetch: (input, init) => fetch(input, init),
     now: () => performance.now(),
+    // 머리 영역 확대 보정은 문서 수신을 기다리지 않는다.
+    onContext: (kind, streamInfo) => {
+      attachHeaderZoom(kind, streamInfo).catch((e: unknown) =>
+        diag.add('header-zoom-error', String(e)),
+      );
+    },
   });
   contextKind = source.kind;
   // 문맥 이름은 화면에 보이지 않고 시험·진단용으로 body 에 남긴다.

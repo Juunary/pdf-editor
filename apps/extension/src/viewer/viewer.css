@@ -2,6 +2,8 @@
   color-scheme: light dark;
   font-family: system-ui, 'Malgun Gothic', sans-serif;
   font-size: 13px;
+  /* 머리 영역 확대 보정(header-zoom.ts): 브라우저 확대 배율 f 의 역수. 머리 영역은 화면상 100% 때 크기로 보인다. */
+  --pe-header-zoom: 1;
 }
 /* 창 전체를 세로 flex 로 쓴다: 툴바·알림 줄은 창 폭 그대로 맨 위에 고정되고, 문서 영역(#page-container)만
    가로·세로로 스크롤한다. 브라우저 확대·축소와 좁은 창에서도 툴바가 밀려나지 않는다. */
@@ -15,6 +17,11 @@ body {
   margin: 0;
   overflow: hidden;
   background: #525659;
+}
+/* 머리 영역(툴바·알림 줄, 툴바 안의 검색창·저장 메뉴 포함)은 브라우저 확대를 역보정한다. 문서 영역은 그대로 확대된다. */
+#toolbar,
+#notice-bar {
+  zoom: var(--pe-header-zoom);
 }
 #toolbar {
   flex: none;
@@ -209,23 +216,22 @@ html[data-build='store'] #diag {
   font-size: 11px;
 }
 
-/* 좁은 창(분할 화면 포함, 약 600px 이하): 글자·여백을 줄이고 개발 전용 메뉴 항목을 숨기며 상태 줄은 자기 줄을 쓴다. */
-@media (max-width: 600px) {
-  #toolbar {
-    padding: 4px 6px;
-    font-size: 12px;
-  }
-  #toolbar button,
-  #toolbar .pe-btn {
-    padding: 2px 5px;
-    font-size: 12px;
-  }
-  #toolbar .dev-only,
-  #toolbar #save-menu .dev-only[role='menuitem'] {
-    display: none;
-  }
-  #status {
-    flex-basis: 100%;
-    order: 10;
-  }
+/* 좁은 창(분할 화면 포함, 100% 환산 폭 600px 이하): 글자·여백을 줄이고 개발 전용 메뉴 항목을 숨기며 상태 줄은 자기 줄을
+   쓴다. 브라우저 확대로는 켜지지 않도록 미디어 쿼리 대신 header-zoom.ts 가 innerWidth × f 로 판정해 data-narrow 를 켠다. */
+html[data-narrow] #toolbar {
+  padding: 4px 6px;
+  font-size: 12px;
+}
+html[data-narrow] #toolbar button,
+html[data-narrow] #toolbar .pe-btn {
+  padding: 2px 5px;
+  font-size: 12px;
+}
+html[data-narrow] #toolbar .dev-only,
+html[data-narrow] #toolbar #save-menu .dev-only[role='menuitem'] {
+  display: none;
+}
+html[data-narrow] #status {
+  flex-basis: 100%;
+  order: 10;
 }
