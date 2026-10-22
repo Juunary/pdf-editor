@@ -42,7 +42,7 @@ PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한
 
 ## 벡터 패스(도형·선) 편집
 
-1. 패스를 Alt+클릭으로 선택합니다. "편집 가능 표시"를 켜 두었다면 단순 클릭으로도 선택됩니다. Shift+클릭은 다중 선택(추가·제외)입니다. 겹쳐 있으면 가장 작은 패스가 선택됩니다.
+1. 패스를 Alt+클릭으로 선택합니다. "레이아웃·편집 표시"를 켜 두었다면 단순 클릭으로도 선택됩니다. Shift+클릭은 다중 선택(추가·제외)입니다. 겹쳐 있으면 가장 작은 패스가 선택됩니다.
 2. 선택 상자를 끌어 이동하고, 8개 핸들로 크기를 바꿉니다(Shift 를 누르면 비율 고정).
 3. "점 편집"을 켜면 꼭짓점·제어점을 하나씩 끌 수 있습니다(패스 하나만, 점 추가·삭제와 선분 종류 변경은 없음).
 4. 속성 패널에서 채움 색·선 색·선 두께를 바꿉니다. 색 선택기는 닫을 때 한 번 반영됩니다.
@@ -61,9 +61,14 @@ PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한
 - 문단·셀·패스 편집 하나가 되돌리기 단위 하나입니다. 편집기 안에서는 글자 단위 이력이 따로 있습니다.
 - 저장 직후 첫 되돌리기나 오류 복구 뒤에는 다시 실행·되돌리기 이력이 사라질 수 있습니다([limits.md](limits.md)).
 
-## 편집 가능 표시
+## 레이아웃·편집 표시
 
-도구 막대의 "편집 가능 표시"를 켜면 쪽 위에 문단·셀·패스 테두리가 그려집니다.
+도구 막대의 "레이아웃·편집 표시"를 켜면 쪽 위에 두 가지가 함께 그려집니다. 다시 누르면 둘 다 꺼집니다.
+
+- 편집 가능 테두리: 문단·셀·패스마다 편집할 수 있는지(아래 표)
+- 레이아웃: 문단·표·도형·읽기 순서(색 = 역할, 번호 = 읽기 순서). 함께 켜질 때 레이아웃은 얇은 테두리로 그려집니다.
+
+레이아웃을 쓸 수 없는 쪽에서는 편집 가능 테두리만 켜지고, 버튼 툴팁에 사유가 나옵니다.
 
 | 표시 | 뜻 |
 | --- | --- |
@@ -74,7 +79,8 @@ PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한
 
 ## 저장
 
-- Ctrl+S 로 저장합니다. 처음 저장할 때 저장 위치를 직접 고르며(파일 선택 창), 이후 같은 문서에서는 같은 파일에 다시 저장합니다.
+- 도구 막대의 프린터 아이콘을 누르면 저장 메뉴가 열립니다: "저장"(Ctrl+S), "다른 이름으로 저장". 키보드로는 아이콘에서 Enter·↓ 로 열고 ↑↓·Enter 로 고르며 Esc 로 닫습니다.
+- Ctrl+S 로 바로 저장합니다. 처음 저장할 때 저장 위치를 직접 고르며(파일 선택 창), 이후 같은 문서에서는 같은 파일에 다시 저장합니다.
 - 파일 선택 창을 쓸 수 없는 환경에서는 다운로드로 저장됩니다.
 - 열린 편집이 있으면 먼저 확정한 뒤 저장합니다.
 - 저장 전에 경고가 있으면 확인 창이 나옵니다: 메모리를 많이 쓸 것으로 예상, 태그 구조 연결 끊김, PDF/A 적합성 훼손 가능성 등.
@@ -87,14 +93,14 @@ PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한
 | 항목 | 내용 |
 | --- | --- |
 | Redact(가림) 주석 | 문서에 적용되지 않은 Redact 주석이 있으면 열 때 개수와 쪽이 안내됩니다. 이 뷰어는 적용하지 않으며 저장 뒤에도 표시로 남습니다 |
-| 레이아웃 오버레이 | 문단·표·도형·읽기 순서를 보여 주는 보조 화면(도구 막대) |
+| 레이아웃 오버레이 | 문단·표·도형·읽기 순서를 보여 주는 보조 화면(도구 막대 "레이아웃·편집 표시") |
 | 진단 | 개발 빌드에서 가로채기 방식 등 진단 정보를 볼 수 있습니다 |
 
 ## English summary
 
 - Open any PDF in Chrome; pages are shown one at a time. Select and copy text, search with Ctrl+F.
 - Double-click a paragraph or table cell to edit it (IME input supported); Esc or clicking outside commits. Text reflows inside the edit area and the area grows downward up to a limit; glyphs missing from the original font use a bundled Noto Sans KR subset.
-- Select vector paths with Alt+click (or plain click when "editable marks" is on), then move, resize, edit points, change fill/stroke color and width, or delete.
+- Select vector paths with Alt+click (or plain click when "Layout & editable marks" is on), then move, resize, edit points, change fill/stroke color and width, or delete.
 - Undo with Ctrl+Z, redo with Ctrl+Shift+Z / Ctrl+Y. Undo/redo history can be lost after a save or after crash recovery.
-- "Editable marks" draws green (editable) and orange dashed (restricted, with reason) outlines.
-- Ctrl+S saves; the first save asks for a target file, later saves reuse it. Edited documents are always fully rewritten.
+- The "Layout & editable marks" button turns on both the editable outlines (green = editable, orange dashed = restricted, with reason) and the layout overlay (paragraphs, tables, figures, reading order).
+- The printer icon opens the save menu (Save, Save as). Ctrl+S saves directly; the first save asks for a target file, later saves reuse it. Edited documents are always fully rewritten.
