@@ -428,41 +428,66 @@
 }
 
 /* ── 쪽 좌우 화살표 ──────────────────────────────────────────── */
-/* 쪽 컨테이너(flex)의 양쪽 칸. 칸 자체는 포인터를 받지 않고 버튼만 받는다. 뷰어는 쪽 맞춤 너비에서 두 칸을 뺀다. */
+/* 쪽 컨테이너(flex)의 양쪽 칸(너비 48 + 간격 3·3 = 54). 뷰어는 쪽 맞춤 너비에서 PAGE_ARROW_GUTTER(56) 두 몫을 빼므로
+   쪽 비트맵 폭 올림(최대 1 px)에도 가로로 넘치지 않는다. 칸 자체는 포인터를 받지 않고 버튼만 받는다. 쪽이 최소 폭(320 px)
+   때문에 문서 영역보다 넓어 가로로 넘치면(좁은 창) 칸이 문서 영역 안쪽 여백 가장자리에 붙어(sticky) 쪽 가장자리 위에 겹친다.
+   넘치지 않으면 sticky 는 아무 효과가 없다. */
 .pe-arrow-slot {
   flex: none;
   align-self: stretch;
-  width: 32px;
-  margin: 0 4px;
+  width: 48px;
+  margin: 0 3px;
   pointer-events: none;
+  position: sticky;
+  z-index: 6;
 }
+.pe-arrow-slot-prev {
+  left: 0;
+}
+.pe-arrow-slot-next {
+  right: 0;
+}
+/* 버튼 48×96(터치 영역), 아이콘 30 px 셰브런. 기본은 진한 반투명 판(88%)에 흰 아이콘이라 회색 배경·쪽 위 모두에서 또렷하다.
+   hover 는 밝은 판·테두리, focus-visible 은 파란 외곽선, 비활성(첫·마지막 쪽)은 옅은 판·흐린 아이콘·그림자 없음. */
 .pe-arrow {
   position: sticky;
   /* 스크롤 상자(문서 영역) 높이의 가운데. 창 높이가 아니라 상자 기준이다. */
-  top: calc(50% - 22px);
-  width: 32px;
-  height: 44px;
+  top: calc(50% - 48px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 48px;
+  height: 96px;
   padding: 0;
-  border: 1px solid #6a6f74;
-  border-radius: 4px;
-  background: #4a4f54;
-  color: #eee;
-  font: inherit;
-  font-size: 22px;
-  line-height: 1;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 8px;
+  background: rgb(32 33 36 / 88%);
+  color: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 45%);
   cursor: pointer;
   pointer-events: auto;
 }
+.pe-arrow svg {
+  display: block;
+}
 .pe-arrow:hover:not(:disabled) {
-  background: #5a6066;
+  border-color: rgb(255 255 255 / 60%);
+  background: rgb(72 76 80 / 96%);
+}
+.pe-arrow:active:not(:disabled) {
+  background: rgb(95 99 104 / 100%);
 }
 .pe-arrow:disabled {
-  opacity: 0.35;
+  border-color: rgb(255 255 255 / 10%);
+  background: rgb(32 33 36 / 40%);
+  color: rgb(255 255 255 / 30%);
+  box-shadow: none;
   cursor: default;
 }
 .pe-arrow:focus-visible {
-  outline: 2px solid #8ab4f8;
-  outline-offset: 1px;
+  outline: 3px solid #8ab4f8;
+  outline-offset: 2px;
 }
 
 /* 편집 가능 표시(M4 D6) */

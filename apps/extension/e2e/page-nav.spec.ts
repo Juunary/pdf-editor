@@ -87,6 +87,32 @@ test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
     await expect(prev).toBeEnabled();
   });
 
+  test('화살표는 48×96 이상이고 기본·hover·비활성 모양이 구분된다(사용자 요청 2026-10-23)', async ({
+    page,
+  }) => {
+    const prev = page.locator('#pe-arrow-prev');
+    const next = page.locator('#pe-arrow-next');
+    for (const el of [prev, next]) {
+      const box = (await el.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(48);
+      expect(box.height).toBeGreaterThanOrEqual(96);
+      await expect(el.locator('svg')).toHaveCount(1);
+    }
+    const look = (sel: string) =>
+      page.evaluate((s) => {
+        const cs = getComputedStyle(document.querySelector(s)!);
+        return `${cs.backgroundColor} ${cs.color} ${cs.borderColor}`;
+      }, sel);
+    await page.mouse.move(1, 1);
+    const enabled = await look('#pe-arrow-next');
+    const disabled = await look('#pe-arrow-prev'); // 첫 쪽
+    expect(disabled).not.toBe(enabled);
+    // 기본 판은 88% 불투명(이전: 배경과 거의 같은 #4a4f54).
+    expect(enabled).toContain('rgba(32, 33, 36, 0.88)');
+    await next.hover();
+    expect(await look('#pe-arrow-next')).not.toBe(enabled);
+  });
+
   test('좌우 방향키는 쪽을 넘기지 않는다(캐럿 이동과 충돌 방지)', async ({ page }) => {
     await page.locator('#pe-page').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('ArrowRight');
@@ -250,6 +276,41 @@ async function navigateAndCheck(frame: Frame): Promise<void> {
   await expect(frame.locator('#pe-page-input')).toHaveValue('1');
   await expect(prev).toBeDisabled();
 }
+
+test('[통합] 좁은 창(400 px): 쪽이 넘치면 화살표가 문서 영역 가장자리에 붙어 화면 안에 보인다', async () => {
+  await withExtension(async (env) => {
+    const page = await env.context.newPage();
+    await page.setViewportSize({ width: 400, height: 700 });
+    await page.goto(`chrome-extension://${env.extensionId}/viewer.html?file=${env.base}/multi.pdf`);
+    await waitRendered(page.mainFrame());
+    const edges = () =>
+      page.evaluate(() => {
+        const c = document.getElementById('page-container')!;
+        const r = (id: string) => document.getElementById(id)!.getBoundingClientRect();
+        return {
+          overflow: c.scrollWidth > c.clientWidth,
+          left: c.getBoundingClientRect().left,
+          right: c.getBoundingClientRect().left + c.clientWidth,
+          prev: r('pe-arrow-prev'),
+          next: r('pe-arrow-next'),
+        };
+      });
+    const e = await edges();
+    expect(e.overflow, '최소 쪽 폭 때문에 가로로 넘친다(전제)').toBe(true);
+    expect(e.prev.left).toBeGreaterThanOrEqual(e.left - 0.5);
+    expect(e.next.right, '다음 화살표가 보이는 오른쪽 끝 안').toBeLessThanOrEqual(e.right + 0.5);
+    // 오른쪽 끝까지 스크롤해도 이전 화살표가 왼쪽 가장자리에 남는다.
+    await page.evaluate(() => {
+      const c = document.getElementById('page-container')!;
+      c.scrollLeft = c.scrollWidth;
+    });
+    const end = await edges();
+    expect(end.prev.left).toBeGreaterThanOrEqual(end.left - 0.5);
+    // sticky 는 문서 영역 안쪽 여백(16 px) 가장자리에 붙는다.
+    expect(end.prev.right).toBeLessThanOrEqual(end.left + 16 + 48 + 0.5);
+    await navigateAndCheck(page.mainFrame());
+  });
+});
 
 test('[통합] 일반 뷰어: 3쪽 PDF 를 화살표로 앞뒤 이동한다', async () => {
   await withExtension(async (env) => {
