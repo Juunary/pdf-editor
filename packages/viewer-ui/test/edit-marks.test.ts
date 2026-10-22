@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PageEditability, PathEditability } from '@pdf-editor/shared-types';
-import { buildMarks, isSmallPath, markAt, markTip } from '../src/edit-marks.js';
+import { buildMarks, isSmallPath, markAt, markFrame, markTip } from '../src/edit-marks.js';
 
 const path = (
   seq: number,
@@ -80,5 +80,16 @@ describe('편집 가능 표시 계산', () => {
     expect(markAt(marks, [500, 500])).toBeNull();
     expect(markTip(marks[1]!)).toMatch(/^표 셀 · 제한: /);
     expect(markTip(marks[0]!)).toBe('문단 · 편집 가능');
+  });
+
+  it('레이아웃과 함께 그릴 때: 문단은 바깥, 셀은 안쪽으로 떼고 패스·작은 셀은 그대로', () => {
+    const { marks } = buildMarks(page([path(7, [10, 2, 30, 2.5])]));
+    const [para, cell, line] = marks;
+    expect(markFrame(para!, 2)).toEqual([-2, -2, 102, 22]);
+    expect(markFrame(cell!, 2)).toEqual([2, 32, 48, 48]);
+    expect(markFrame(line!, 2)).toEqual([10, 2, 30, 2.5]);
+    expect(markFrame(para!, 0)).toEqual(para!.bbox);
+    // 안쪽으로 줄이면 뒤집히는 작은 셀은 원래 상자
+    expect(markFrame({ ...cell!, bbox: [0, 0, 3, 30] }, 2)).toEqual([0, 0, 3, 30]);
   });
 });

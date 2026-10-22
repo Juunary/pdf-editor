@@ -73,6 +73,19 @@ export function markAt(marks: readonly Mark[], p: Point, tol = 0): Mark | null {
   return best;
 }
 
+/**
+ * 레이아웃 오버레이와 함께 그릴 때의 테두리 위치(사용자 요청 2026-10-22, "레이아웃·편집 표시" 한 버튼).
+ * 레이아웃 상자와 같은 자리에 겹치지 않게 문단은 gap 만큼 바깥, 표 셀은 gap 만큼 안쪽(이웃 셀 테두리와 겹치지 않게)에
+ * 그린다. 셀이 너무 작아 안쪽으로 줄일 수 없으면 원래 상자, 패스는 그대로(가는 선이라 겹쳐도 읽힌다). 단위 pt.
+ */
+export function markFrame(m: Mark, gap: number): Rect {
+  const [x0, y0, x1, y1] = m.bbox;
+  if (gap <= 0 || m.kind === 'path') return m.bbox;
+  if (m.kind === 'paragraph') return [x0 - gap, y0 - gap, x1 + gap, y1 + gap];
+  if (x1 - x0 <= 2 * gap || y1 - y0 <= 2 * gap) return m.bbox;
+  return [x0 + gap, y0 + gap, x1 - gap, y1 - gap];
+}
+
 const KIND_LABEL: Record<MarkKind, string> = { paragraph: '문단', cell: '표 셀', path: '패스' };
 
 /** 툴팁 문구: "표 셀 · 편집 가능" 또는 "패스 · 제한: 사유…". */

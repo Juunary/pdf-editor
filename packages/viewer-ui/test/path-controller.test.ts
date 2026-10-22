@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PageInfo, PageModel, RenderRequest, RenderedPage } from '@pdf-editor/shared-types';
-import { ViewerController } from '../src/controller.js';
+import { ViewerController, overlayToggleState, overlayToggleTitle } from '../src/controller.js';
 import { WORKER_RECOVERED_ERROR_NAME } from '../src/failure.js';
 import { PATH_DEBOUNCE_MS, emptyPathEdit } from '../src/path-controller.js';
 import type { ViewerHost } from '../src/viewer-host.js';
@@ -448,6 +448,57 @@ describe('편집 가능 표시', () => {
     expect(controller.getState().edit.showEditable).toBe(true);
     await controller.goToPage(1);
     expect(host.extractPage).toHaveBeenCalledWith({ pageIndex: 1, includePathSegments: true });
+  });
+});
+
+describe('레이아웃·편집 표시 버튼(사용자 요청 2026-10-22)', () => {
+  it('한 번 누르면 레이아웃과 편집 가능 표시를 함께 켜고(패스 모델 읽기), 다시 누르면 함께 끈다', async () => {
+    const { controller, host } = await started();
+    expect(overlayToggleState(controller.getState(), true).on).toBe(false);
+    controller.toggleOverlays();
+    const s = controller.getState();
+    expect(s.layoutEnabled).toBe(true);
+    expect(s.edit.showEditable).toBe(true);
+    expect(overlayToggleState(s, true)).toEqual({
+      on: true,
+      layoutReason: null,
+      marksReason: null,
+    });
+    await vi.waitFor(() => expect(host.getPageLayout).toHaveBeenCalledWith(0));
+    expect(host.extractPage).toHaveBeenCalledWith({ pageIndex: 0, includePathSegments: true });
+    controller.toggleOverlays();
+    expect(controller.getState().layoutEnabled).toBe(false);
+    expect(controller.getState().edit.showEditable).toBe(false);
+  });
+
+  it('한쪽만 켜져 있어도 눌림으로 보고, 누르면 둘 다 끈다', async () => {
+    const { controller } = await started();
+    controller.edit!.setShowEditable(true);
+    expect(overlayToggleState(controller.getState(), true).on).toBe(true);
+    controller.toggleOverlays();
+    expect(controller.getState().edit.showEditable).toBe(false);
+    expect(controller.getState().layoutEnabled).toBe(false);
+  });
+
+  it('레이아웃이 미구현이면 편집 가능 표시만 켜고 끄며, 제목에 사유를 적는다', async () => {
+    const { controller, host } = await started();
+    host.getPageLayout.mockImplementation(async () => {
+      throw new Error('M2 미구현: core getPageLayout');
+    });
+    controller.toggleOverlays();
+    await vi.waitFor(() => expect(controller.getState().disabled.layout).not.toBeNull());
+    const s = overlayToggleState(controller.getState(), true);
+    expect(s.on).toBe(true);
+    expect(s.marksReason).toBeNull();
+    expect(overlayToggleTitle(s, true)).toContain(
+      '레이아웃을 쓸 수 없어 편집 가능 표시만 켭니다: M2 미구현',
+    );
+    expect(overlayToggleTitle(s, true)).toContain('클릭으로 패스를 선택');
+    controller.toggleOverlays();
+    expect(controller.getState().edit.showEditable).toBe(false);
+    controller.toggleOverlays();
+    expect(controller.getState().edit.showEditable).toBe(true);
+    expect(controller.getState().layoutEnabled).toBe(false);
   });
 });
 

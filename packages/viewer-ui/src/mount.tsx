@@ -6,7 +6,7 @@ import { PageArrow } from './components/PageArrow.js';
 import { PageSurface } from './components/PageSurface.js';
 
 export interface MountTargets {
-  /** 툴바 안 컨트롤(페이지 이동·찾기·디버그 토글)과 검색창. */
+  /** 툴바 안 컨트롤(페이지 이동·찾기·레이아웃·편집 버튼)과 검색창. */
   controls: HTMLElement;
   /** 페이지 표면(캔버스와 오버레이). */
   pages: HTMLElement;

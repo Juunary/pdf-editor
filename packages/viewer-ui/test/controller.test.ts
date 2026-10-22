@@ -11,8 +11,11 @@ import type {
   PageLayout as DocumentPageLayout,
 } from '@pdf-editor/shared-types';
 import {
+  NO_EDIT_HOST_REASON,
   ViewerController,
   featureDisabledReason,
+  overlayToggleState,
+  overlayToggleTitle,
   type ViewerControllerOptions,
 } from '../src/controller.js';
 import type { ViewerHost } from '../src/viewer-host.js';
@@ -470,6 +473,47 @@ describe('ViewerController · 레이아웃 오버레이', () => {
     expect(s.disabled.layout).not.toBeNull();
     expect(s.text.status).toBe('ready');
     c.toggleLayout();
+    expect(c.getState().layoutEnabled).toBe(false);
+  });
+});
+
+describe('ViewerController · 레이아웃·편집 표시 버튼(사용자 요청 2026-10-22)', () => {
+  it('편집 RPC 가 없는 호스트는 레이아웃만 켜고 끄며 제목에 편집 표시 사유를 적는다', async () => {
+    const host = fakeHost();
+    const c = make(host);
+    await c.start();
+    expect(c.edit).toBeNull();
+    c.toggleOverlays();
+    expect(c.getState().layoutEnabled).toBe(true);
+    await flush();
+    expect(host.getPageLayout).toHaveBeenCalledWith(0);
+    const s = overlayToggleState(c.getState(), false);
+    expect(s).toEqual({ on: true, layoutReason: null, marksReason: NO_EDIT_HOST_REASON });
+    expect(overlayToggleTitle(s, false)).toContain(
+      `편집 가능 표시를 쓸 수 없어 레이아웃만 켭니다: ${NO_EDIT_HOST_REASON}`,
+    );
+    c.toggleOverlays();
+    expect(c.getState().layoutEnabled).toBe(false);
+    expect(overlayToggleState(c.getState(), false).on).toBe(false);
+  });
+
+  it('둘 다 쓸 수 없으면 켜지 않고 제목에 두 사유를 적는다', async () => {
+    const host = fakeHost({
+      getPageLayout: vi.fn(async () => {
+        throw new Error('M2 미구현: core getPageLayout');
+      }),
+    });
+    const c = make(host);
+    await c.start();
+    c.toggleOverlays();
+    await flush();
+    const s = overlayToggleState(c.getState(), false);
+    expect(s.on).toBe(false);
+    expect(s.layoutReason).toContain('미구현');
+    const title = overlayToggleTitle(s, false);
+    expect(title).toContain('레이아웃: M2 미구현');
+    expect(title).toContain(`편집 가능 표시: ${NO_EDIT_HOST_REASON}`);
+    c.toggleOverlays();
     expect(c.getState().layoutEnabled).toBe(false);
   });
 });

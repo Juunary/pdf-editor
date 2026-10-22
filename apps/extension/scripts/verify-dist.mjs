@@ -8,7 +8,7 @@
 //
 // `--release [out/release 디렉터리]`: Web Store 패키지(스테이징·zip) 검사(docs/m5-contract.md D6·D7).
 // 위 공통 검사를 스테이징에 적용하고, 스토어 매니페스트(Chrome 151+, DNR·호스트 권한·WAR 없음), 개발 파일 부재
-// (`diag/`·`*.map`·`sourceMappingURL`·벤치 페이지 `bench.html`·벤치 청크), 크기 상한, 버전 일치, 아이콘·LICENSE·THIRD_PARTY_NOTICES.txt·저작권 고지,
+// (`diag/`·`*.map`·`sourceMappingURL`·벤치 페이지 `bench.html`·벤치 청크·downloads 저장 메뉴), 크기 상한, 버전 일치, 아이콘·LICENSE·THIRD_PARTY_NOTICES.txt·저작권 고지,
 // OFL 예약 이름, zip 과 스테이징의 일치를 확인한다.
 import { createHash } from 'node:crypto';
 import { unzipSync } from 'fflate';
@@ -190,6 +190,16 @@ if (releaseMode) {
     if (/bench\.html|id="open-bench"/.test(readFileSync(f, 'utf8'))) {
       errors.push(`벤치 페이지 참조: ${rel(f)}`);
     }
+  }
+  // 저장 메뉴의 downloads 저장(M0 진단)은 개발 빌드 전용이다(사용자 요청 2026-10-22): 요소·처리 분기·스타일 모두 없어야 한다.
+  for (const f of files.filter((f) => /\.(js|html|css)$/.test(f))) {
+    if (/save-downloads/.test(readFileSync(f, 'utf8'))) {
+      errors.push(`downloads 저장 메뉴 포함: ${rel(f)}`);
+    }
+  }
+  const viewerHtmlPath = join(dist, 'viewer.html');
+  if (existsSync(viewerHtmlPath) && !/id="save-menu"/.test(readFileSync(viewerHtmlPath, 'utf8'))) {
+    errors.push('viewer.html 에 저장 메뉴(#save-menu) 없음');
   }
   // 벤치 전용 Worker RPC(WASM 사용 중 힙 측정, @pdf-editor/core/bench)도 스토어 빌드에 없어야 한다(D1 사용자 결정 2026-10-21).
   for (const f of files.filter((f) => f.endsWith('.js'))) {

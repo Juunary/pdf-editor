@@ -14,6 +14,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chooseSave } from './toolbar-helpers.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
@@ -111,7 +112,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     // 저장(downloads 경로) 후 재열기
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.click('#save-downloads'),
+      chooseSave(page, 'save-downloads'),
     ]);
     const saved = await download.path();
     expect(readFileSync(saved).byteLength).toBeGreaterThan(0);
@@ -319,7 +320,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await editOnce('저장전');
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.click('#save-downloads'),
+      chooseSave(page, 'save-downloads'),
     ]);
     await download.path();
     await expect(page.locator('#status')).toHaveAttribute('data-state', 'saved');
@@ -447,7 +448,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     expect(a.box.y + a.box.height).toBeGreaterThan(y2);
     // 레이아웃 오버레이: 상자 수(문단 수)가 편집 전과 같다(블록이 상자 여럿으로 갈라지지 않음).
     await page.mouse.move(1, 1);
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     const canvas = page.locator('#pe-layout-canvas');
     await expect(canvas).toBeVisible();
     await expect(canvas).toHaveAttribute('data-paragraphs', String(before.length));

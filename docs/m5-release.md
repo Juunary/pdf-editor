@@ -181,10 +181,89 @@ pnpm --filter @pdf-editor/extension package
 | 가운데 정렬 | `justify-content: safe center`(창보다 넓으면 왼쪽부터 시작해 잘리지 않음) |
 | 쪽 화살표 | `.pe-arrow` 의 `top: calc(50vh - 22px)` → `calc(50% - 22px)`(스크롤 상자 높이 기준). `style.css` |
 | 사용 가능 폭 | `main.ts` `getEnvironment.availableWidth` 를 `documentElement.clientWidth` 에서 `#page-container.clientWidth` 로 변경(스크롤바 제외, 이전과 같은 값) |
-| 유동 배치 | `#toolbar` 는 `flex-wrap`, 컨트롤 묶음(쪽 이동·되돌리기·다시 실행·검색 등)이 앞, 저장 버튼이 그다음. 상태 줄은 말줄임. 600px 이하: 글자·패딩 축소, `다른 이름으로 저장` → `새 이름`, `downloads 저장` 숨김, 상태 줄은 자기 줄 |
+| 유동 배치 | `#toolbar` 는 `flex-wrap`, 컨트롤 묶음(쪽 이동·되돌리기·다시 실행·검색 등)이 앞, 저장 버튼이 그다음. 상태 줄은 말줄임. 600px 이하: 글자·패딩 축소, `다른 이름으로 저장` → `새 이름`, `downloads 저장` 숨김, 상태 줄은 자기 줄. 2026-10-22 변경(10.1): 판정은 100% 환산 폭(`html[data-narrow]`), 저장 버튼 셋은 저장 메뉴 하나(`새 이름` 줄임 글자 삭제), 좁은 폭에서는 메뉴의 `downloads 저장` 숨김 |
 | 진단 패널(dev) | `<details id="diag">` 의 `open` 제거(기본 접힘). 열려 있으면 문서 영역을 줄여 `path-integration` e2e 의 클릭 좌표가 패널에 가려졌다. 진단 로그 텍스트는 접혀 있어도 읽힘 |
 | 알림·대화상자·검색창 | 대화상자 `max-width: min(460px, 100vw − 24px)`·`max-height: 100dvh − 24px`·스크롤, 검색창 `max-width: 100vw − 24px`·줄바꿈·입력창 `min(220px, 40vw)`, 알림 줄은 줄바꿈 |
 
 - window 스크롤 의존 조사: `scrollTo`·`scrollY`·`scrollTop` 등을 쓰는 코드가 뷰어·viewer-ui 소스에 없습니다. 위치 계산(`EditEntry`·`DebugLayer`·`EditableMarks`·`TextLayer`·`EditorLayer`·`PathLayer`)은 `getBoundingClientRect()`(뷰포트 기준)라 스크롤 상자가 바뀌어도 그대로 맞고, 찾기 결과 스크롤(`HighlightLayer` 의 `scrollIntoView`)은 가장 가까운 스크롤 조상(`#page-container`)을 따라갑니다. `PathLayer.tsx` 는 수정하지 않았고 보고할 문제도 없었습니다. `position: fixed` 요소(검색창, 디버그 HUD, 편집 안내, 표시 범례)는 뷰포트 기준이라 그대로입니다.
-- 시험: `e2e/toolbar-layout.spec.ts` 11건. 뷰포트 400·800·1280 px, 확대는 CDP `Emulation.setDeviceMetricsOverride`(CSS 뷰포트 1/배율, dpr 배율 — Ctrl +/− 와 같은 효과) 1·1.5·2, 문서 영역에 3000 px 요소를 더해 가로·세로로 끝까지 스크롤한 뒤 `#toolbar` 의 `top=0`·`left=0`·`width=창 폭`, 저장·다른 이름·정보 버튼과 툴바 모든 요소가 화면 안, 창 자체는 스크롤되지 않음, 왼쪽이 잘리지 않음을 확인합니다. 400 px 에서 개발 버튼 숨김, 넓은 창에서 쪽 가운데 정렬, 알림 줄·검색창·정보 대화상자가 화면 안(검색창은 알림 줄 아래), `#context-badge` 없음·`body[data-context]` 있음.
-- 한계: 실제 Ctrl +/− 와 Ctrl+휠 조작(브라우저 UI)은 자동화하지 못해 CDP 뷰포트·dpr 에뮬레이션으로 대신했습니다. 사용자 확인 항목으로 남깁니다.
+- 시험(2026-10-21): `e2e/toolbar-layout.spec.ts` 11건. 뷰포트 400·800·1280 px, 확대는 CDP `Emulation.setDeviceMetricsOverride`(CSS 뷰포트 1/배율, dpr 배율 — Ctrl +/− 와 같은 효과) 1·1.5·2, 문서 영역에 3000 px 요소를 더해 가로·세로로 끝까지 스크롤한 뒤 `#toolbar` 의 `top=0`·`left=0`·`width=창 폭`, 저장·다른 이름·정보 버튼과 툴바 모든 요소가 화면 안, 창 자체는 스크롤되지 않음, 왼쪽이 잘리지 않음을 확인합니다. 400 px 에서 개발 버튼 숨김, 넓은 창에서 쪽 가운데 정렬, 알림 줄·검색창·정보 대화상자가 화면 안(검색창은 알림 줄 아래), `#context-badge` 없음·`body[data-context]` 있음. 2026-10-22 에 실제 탭 배율 시험으로 바꿨습니다(10.1.6).
+- 한계(2026-10-21): 실제 Ctrl +/− 와 Ctrl+휠 조작(브라우저 UI)은 자동화하지 못해 CDP 뷰포트·dpr 에뮬레이션으로 대신했습니다. 2026-10-22 부터는 `chrome.tabs.setZoom` 으로 실제 탭 배율(브라우저 확대와 같은 경로)을 겁니다. 브라우저 UI 조작 자체는 여전히 사용자 확인 항목입니다(10.1.7).
+
+### 10.1 툴바 수정 2 (사용자 요청 2026-10-22)
+
+브랜치 `m5-toolbar`(기준 main 3377d4f, worktree `/mnt/nas4/kjune/pdf-editor-m5ui`). 3절 스모크 항목의 "downloads 저장 버튼이 DOM 에 있으나 보이지 않음"과 6절 마지막 줄의 `downloads 저장` 버튼 설명은 이 절이 대체합니다(스토어 빌드에는 그 항목이 없습니다).
+
+#### 10.1.1 브라우저 확대·축소에도 머리 영역 크기 고정
+
+| 항목 | 내용 |
+| --- | --- |
+| 배율 f | `chrome.tabs.getZoom(tabId)` 와 `chrome.tabs.onZoomChange`(그 탭만). tabId 는 MIME handler 면 `StreamInfo.tabId`, 확장 페이지 탭이면 `chrome.tabs.getCurrent()`. 구현 `apps/extension/src/viewer/header-zoom.ts` |
+| 역보정 | 머리 영역(`#toolbar`·`#notice-bar`, 툴바 안의 검색창·저장 메뉴 포함)에 CSS `zoom: var(--pe-header-zoom)` = 1/f. 문서 영역·대화상자·쪽 위 안내(편집 안내·범례·화살표)·진단 패널은 바꾸지 않음 |
+| 보조 감지 | `resize`·`matchMedia('(resolution: …dppx)')` 에서 dpr 이 바뀌면 같은 비율의 확대 변화로 보고 그 프레임 안에서 바로 추정한 뒤 탭 배율 조회로 확인(다른 배율 모니터로 옮긴 경우 바로잡음). onZoomChange 가 프레임 배율 변화보다 먼저 오면(MIME handler 최상위 실측: 이벤트 때 dpr 1, 0.3 ms 뒤 resize 에서 1.5) 프레임 dpr 이 바뀔 때 적용. 탭 배율을 못 구하면 dpr 변화만으로 추정(시작 시 100% 가정) |
+| 좁은 배치 | `@media (max-width: 600px)` 를 없애고 100% 환산 폭 `innerWidth × f ≤ 600` 이면 `html[data-narrow]`. 확대로는 켜지지 않고 창을 줄이거나 나누면 켜짐. 내용(글자·여백 축소, 상태 줄 자기 줄·말줄임, 개발 전용 메뉴 항목 숨김, 여러 줄 접힘)은 이전과 같음 |
+| 검색창 | 툴바 안(zoom 1/f)에 그려지므로 `--pe-find-top` 을 머리 영역 px(화면 px × f)로 계산(`main.ts` `syncFindTop`). zoom 아래에서 `vw` 도 zoom 배가 되어 검색창의 `vw` 길이를 `--pe-header-zoom` 으로 나눔(`packages/viewer-ui/src/style.css`) |
+| 문서 영역 | 바꾸지 않음(쪽 맞춤, 최대 1.5배). 1280 px 창 실측 쪽 물리 폭: 50% 447 px, 100% 893 px, 200% 1,056 px. 툴바 물리 크기는 셋 모두 1280×37 px |
+| 시작 순서 | 문맥을 정한 직후, PDF 바이트를 받기 전에 보정을 붙임(`resolveViewerSource` 의 `onContext`). 그 전(모듈 실행부터 getZoom 응답까지)은 보정 없음 |
+| 진단 | `html[data-zoom]`·`html[data-zoom-mode]`(off·tabs·dpr), 진단 로그 `header-zoom`·`header-zoom-tab`·`header-zoom-change`·`header-zoom-error` |
+
+#### 10.1.2 문맥별 동작
+
+| 문맥 | 보정 | 근거 |
+| --- | --- | --- |
+| 확장 페이지 탭 최상위(`viewer.html?file=`, 파일 선택) | 함 | 실측(헤드리스 Chromium 156): 탭 배율 2 → 프레임 dpr 2, innerWidth 1/2 |
+| MIME handler 최상위 | 함 | 실측: PDF URL 페이지의 하위 프레임이지만 탭 배율을 그대로 받음. getCurrent()도 탭 id 를 주나 StreamInfo.tabId 를 씀 |
+| 임베디드(embed·iframe·object), DNR 폴백으로 웹 페이지 안 프레임에 뜬 확장 페이지 | 안 함(바깥 페이지 확대를 따름, 좁은 배치는 이전처럼 CSS 폭) | (1) 임베디드 뷰어는 웹 페이지의 일부이고 바깥 상자(embed 크기)가 페이지 확대로 같이 바뀜. 보정하면 50% 에서 상자는 절반인데 툴바는 그대로라 상자 대부분을 툴바가 차지하고, 200% 에서는 반대가 됨. (2) 헤드리스 실측에서 임베디드 뷰어 프레임에 탭 배율이 반영되는 시점이 프레임마다 달랐음(화면 밖 프레임은 1 s 안에 반영되지 않은 경우가 있었고 resize 도 미뤄짐). 탭 배율로 보정하면 프레임 배율과 어긋나는 구간이 생길 수 있음 |
+
+#### 10.1.3 권한
+
+- `chrome.tabs.getZoom`·`onZoomChange`·`getCurrent` 는 권한 없이 동작합니다(`tabs` 권한은 Tab 의 url·title 등에만 필요). 매니페스트는 바꾸지 않았습니다. 스토어 빌드 `permissions` 는 `["downloads"]` 그대로이며 `verify-dist --release` 와 `release-smoke.spec.ts`(매니페스트 단언, 스토어 빌드에서 `data-zoom-mode = tabs` 와 탭 배율 2 보정)가 확인합니다.
+
+#### 10.1.4 레이아웃·편집 표시 한 버튼, 연결 디버그 버튼 제거
+
+| 항목 | 내용 |
+| --- | --- |
+| 버튼 | `#pe-overlay-toggle` "레이아웃·편집 표시". `#pe-layout-toggle`(레이아웃)·`#pe-mark-toggle`(편집 가능 표시) 삭제. 한 번 누르면 둘 다 켜지고 다시 누르면 둘 다 꺼짐. 하나라도 켜져 있으면 눌림 상태 |
+| 패스 선택 | 편집 가능 표시가 켜지면 클릭으로 패스 선택(기존 `showEditable` 연동) → 합친 버튼에 묶임 |
+| 한쪽만 가능 | 레이아웃 비활성(`featureDisabledReason`)이면 편집 가능 표시만, 편집 비활성·편집 RPC 없는 호스트면 레이아웃만 켬. 제목(툴팁)에 "레이아웃을 쓸 수 없어 편집 가능 표시만 켭니다: 사유" 형식으로 적음. 둘 다 불가면 버튼 비활성·두 사유 |
+| 컨트롤러 | `setOverlays(on)`·`toggleOverlays()`·`overlayToggleState()`·`overlayToggleTitle()` 추가. `toggleLayout`·`edit.setShowEditable` 유지 |
+| 편집 중 | 바깥 클릭처럼 편집을 끝내고 켬(이전 `#pe-mark-toggle` 의 `data-pe-keep` 은 두지 않음) |
+| 함께 그릴 때 | 확인 결과 두 표시가 같은 상자에 겹쳐 레이아웃의 역할 색 테두리가 편집 가능 테두리에 가려졌음 → 레이아웃은 얇은 테두리(문단 1.5→0.75 px, 셀 안 문단 0.75→0.5, 표 2→1, 격자 0.75→0.5, 도형 2→1, 채움·번호 그대로), 편집 가능 테두리는 문단은 2.5 px 바깥·표 셀은 2.5 px 안쪽(이웃 셀과 겹치지 않게)에 그림, 패스는 그대로. 범례에 "레이아웃(색 = 역할, 번호 = 읽기 순서)" 추가. 한쪽만 켜면 이전 모양 |
+| 연결 디버그 | `#pe-debug-toggle` 삭제. `toggleDebug()`·디버그 오버레이는 유지. e2e 는 하니스 `window.__controller.toggleDebug()`, 확장은 `?e2e` 의 `window.__pe.controller.toggleDebug()` 로 켬. 시험 이음매로 켰다가 미구현으로 꺼지면 "비활성: 연결 디버그" 알림은 그대로 |
+
+#### 10.1.5 저장 메뉴
+
+| 항목 | 내용 |
+| --- | --- |
+| 버튼 | `#save-menu-button` 프린터 아이콘(인라인 SVG, 외부 요청 없음), `aria-label`·`title` "저장", `aria-haspopup="menu"`·`aria-expanded`. 문서를 그리기 전에는 비활성(이전 저장 버튼과 같은 조건) |
+| 메뉴 | `#save-menu`(role=menu): 저장(`#save`, Ctrl+S 표시) / 다른 이름으로 저장(`#save-as`) / downloads 저장(`#save-downloads`, 개발 빌드만). 항목 id 는 이전 버튼 id |
+| 키보드 | 버튼: Enter·Space·↓ 는 열고 첫 항목, ↑ 는 열고 마지막 항목. 메뉴: ↑↓(순환)·Home·End 이동, Enter·Space 실행, Esc 는 닫고 버튼으로, Tab 은 닫음 |
+| 닫기 | 바깥 누름, 창 초점 잃음, 항목 선택(닫은 뒤 저장) |
+| 화면 안 배치 | 열 때·창 크기가 바뀔 때 좌우로 넘치면 가로 위치를 옮기고, 아래로 넘치면 최대 높이·스크롤. 머리 영역 확대 보정을 같이 받음 |
+| Ctrl+S | 메뉴 없이 바로 저장(열린 메뉴는 닫음). Ctrl+Shift+S 는 그대로 다른 이름으로 저장 |
+| 저장 흐름 | `runSave`·저장 전 판정·확인 창("그래도 저장 시도" 포함)·상태 줄 그대로 |
+| 스토어 빌드 | `vite.config.ts` 가 스토어 빌드 viewer.html 에서 `#save-downloads` 를 빼고, `main.ts` 의 처리 분기(`__BUILD_KIND__ !== 'store'`)는 스토어 번들에서 사라짐. `html[data-build='store'] #save-downloads` CSS 삭제. `verify-dist --release` 가 스테이징 html·js·css 에 `save-downloads` 가 없고 viewer.html 에 `#save-menu` 가 있는지 검사 |
+| 좁은 폭 | 개발 전용 `downloads 저장` 항목 숨김(이전 좁은 폭의 개발 전용 버튼 숨김과 같음) |
+| 벤치·스크립트 | `bench.html`·`bench.ts`·`bench-run.ts`·`e2e/bench-*.ts`·`tools/` 는 저장 버튼·툴바 토글을 쓰지 않음(grep). 벤치 하네스 수정 없음. `bench.html` 은 `viewer.css` 를 쓰므로 미디어 쿼리 삭제로 벤치 툴바에는 좁은 배치가 적용되지 않음(벤치 화면은 진단 페이지) |
+
+#### 10.1.6 시험
+
+| 시험 | 내용 |
+| --- | --- |
+| `apps/extension/test/header-zoom.test.ts` | 보정 문맥, 100% 환산 폭, 시작·탭 배율·이벤트 먼저/프레임 먼저·모니터 배율 변경 바로잡기·늦은 조회 응답 버리기·배경 탭·창 폭만 변경·탭 배율 실패 시 dpr 추정, tabId 출처 |
+| `apps/extension/test/source.test.ts` | `onContext` 가 문맥 판정 직후·바이트 수신 전에 불림 |
+| `packages/viewer-ui/test/controller.test.ts`·`path-controller.test.ts`·`edit-marks.test.ts` | 합친 토글(함께 켜고 끄기, 한쪽만 켜진 상태, 레이아웃 미구현·편집 RPC 없음·둘 다 불가, 제목), 함께 그릴 때 테두리 위치 |
+| `e2e/toolbar-layout.spec.ts` | 실제 탭 배율(`chrome.tabs.setZoom`, 서비스 워커에서) 0.5·1.5·2: 툴바·알림 줄·검색창과 머리 영역 컨트롤의 물리 상자(getBoundingClientRect × devicePixelRatio)가 100% 와 1 px(검색창 1.5 px) 안에서 같음, 문서는 확대·축소(200% > 100% > 50%), 좁은 배치는 창 폭으로만(1000 px 200% 꺼짐, 400 px 100%·50%·200% 켜짐·같은 배치), MIME handler 최상위 보정, 임베디드 세 문맥 보정 없음, 기존 툴바 고정·스크롤·화면 안 시험(확대는 실제 탭 배율로 교체) |
+| `e2e/save-menu.spec.ts` | 비활성·아이콘·이름, 마우스(열기·바깥 클릭 닫기·항목 선택 뒤 닫힘·저장), 키보드(Enter·↑↓ 순환·Home·End·Esc·Tab·Enter 실행), Ctrl+S 바로 저장, 320·400·1280 px 와 버튼을 오른쪽 끝에 둔 경우 화면 안 |
+| `e2e/path-ui.spec.ts` | 합친 버튼으로 두 표시 함께 켜고 끄기·패스 클릭 선택 해제, 레이아웃 미구현 시 편집 가능 표시만·제목 사유 |
+| `e2e/release-smoke.spec.ts` | 스토어 빌드: `#save-downloads` 없음, 메뉴 두 항목, 저장(FSA 없음 → downloads), 확대 보정(권한 추가 없음) |
+| 기존 e2e | 저장 버튼 클릭은 `e2e/toolbar-helpers.ts` `chooseSave()`(메뉴를 연 뒤 항목), 레이아웃·편집 가능 표시는 `#pe-overlay-toggle`, 연결 디버그는 컨트롤러 호출로 수정 |
+
+#### 10.1.7 남은 확인
+
+| # | 내용 | 담당 |
+| --- | --- | --- |
+| 1 | Windows Chrome 실제 Ctrl +/−·Ctrl+휠·메뉴 확대(50·100·200%)에서 툴바·알림 줄·검색창·저장 메뉴 크기 고정, 문서 확대·축소, 창을 줄이거나 나눌 때 좁은 배치. 디스플레이 배율 125·150% 환경 포함 | 사용자 |
+| 2 | 배율이 다른 모니터로 창을 옮길 때 툴바가 탭 배율 조회 응답 전까지 잠깐 다른 크기로 보이는지 | 사용자 |
+| 3 | 확대된 상태로 뷰어를 열면 getZoom 응답 전(수 ms) 첫 화면은 보정 전 크기일 수 있음 | 관찰 |
+| 4 | 임베디드 문맥 보정 안 함(10.1.2) 결정 확인 | 사용자 |
+| 5 | 눌린 버튼에 마우스를 올리면 기존 `.pe-btn:hover` 색이 눌림 색을 덮음(이번 범위 밖) | 후속 |

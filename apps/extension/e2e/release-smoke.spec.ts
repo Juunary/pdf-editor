@@ -1,6 +1,7 @@
 /**
  * 릴리스 스테이징 스모크(계약 D6·D7): `pnpm package` 가 만든 out/release/staging 을 압축해제 확장으로 로드해
- * http 로 제공한 PDF 의 열기·렌더·저장과 스토어 빌드의 성질(DNR·호스트 권한·WAR 없음, 진단 UI 숨김, 정보 대화상자)을 확인한다.
+ * http 로 제공한 PDF 의 열기·렌더·저장과 스토어 빌드의 성질(DNR·호스트 권한·WAR 없음, 진단 UI 숨김, downloads 저장 메뉴 없음,
+ * 정보 대화상자)을 확인한다.
  */
 import { chromium, expect, test, type BrowserContext, type Frame } from '@playwright/test';
 import { spawnSync } from 'node:child_process';
@@ -66,8 +67,9 @@ test.afterAll(async () => {
   if (userDataDir) rmSync(userDataDir, { recursive: true, force: true });
 });
 
-async function openSample(): Promise<Frame> {
+async function openSample(init?: () => void): Promise<Frame> {
   const page = await context.newPage();
+  if (init) await page.addInitScript(init);
   await page.goto(`${base}/sample.pdf`);
   const prefix = `chrome-extension://${extensionId}/viewer.html`;
   await expect.poll(() => page.frames().filter((f) => f.url().startsWith(prefix)).length).toBe(1);
@@ -91,8 +93,11 @@ test('스테이징 확장: 스토어 매니페스트, DNR 서비스 워커 경�
   expect(info.hasMimeHandler).toBe(true);
 });
 
-test('열기·렌더·저장: 최상위 MIME handler, 진단 UI 는 숨김', async () => {
-  const frame = await openSample();
+test('열기·렌더·저장: 최상위 MIME handler, 진단 UI 는 숨김, downloads 저장 메뉴 없음', async () => {
+  // FSA 를 쓸 수 없는 문맥처럼 피커를 없앤다(헤드리스는 피커를 바로 취소한다): 저장 → chrome.downloads 폴백.
+  const frame = await openSample(() => {
+    Object.defineProperty(window, 'showSaveFilePicker', { value: undefined, configurable: true });
+  });
   await expect(frame.locator('#status')).toHaveAttribute('data-state', 'rendered', {
     timeout: 30_000,
   });
@@ -112,16 +117,49 @@ test('열기·렌더·저장: 최상위 MIME handler, 진단 UI 는 숨김', asy
   await expect(frame.locator('#bench-full-save')).toBeHidden();
   // 벤치 측정 페이지는 개발 빌드 전용(D6): 링크가 없다.
   expect(await frame.locator('#open-bench').count()).toBe(0);
-  await expect(frame.locator('#save-downloads')).toBeHidden();
   expect(await frame.locator('#diag').count()).toBe(1);
 
-  // 저장: chrome.downloads 경로(숨김 버튼은 프로그램으로 누른다). 편집 없는 문서라 원본과 같은 크기.
-  const page = frame.page();
-  const [download] = await Promise.all([
-    page.waitForEvent('download'),
-    frame.evaluate(() => document.getElementById('save-downloads')!.click()),
+  // 저장 메뉴(사용자 요청 2026-10-22): 스토어 빌드에는 downloads 저장(M0 진단) 항목이 없다.
+  expect(await frame.locator('#save-downloads').count()).toBe(0);
+  await frame.click('#save-menu-button');
+  await expect(frame.locator('#save-menu [role="menuitem"]')).toHaveText([
+    /^\s*저장\s*Ctrl\+S\s*$/,
+    '다른 이름으로 저장',
   ]);
+
+  // 저장: FSA 피커가 없으므로 chrome.downloads 로 저장한다. 편집 없는 문서라 원본과 같은 크기.
+  const page = frame.page();
+  const [download] = await Promise.all([page.waitForEvent('download'), frame.click('#save')]);
   expect(statSync(await download.path()).size).toBe(statSync(SAMPLE).size);
+  await expect(frame.locator('#save-menu')).toBeHidden();
+});
+
+test('머리 영역 확대 보정: 권한 추가 없이(permissions = downloads) 탭 배율을 읽고 따라간다', async () => {
+  const frame = await openSample();
+  await expect(frame.locator('#status')).toHaveAttribute('data-state', 'rendered', {
+    timeout: 30_000,
+  });
+  // chrome.tabs.getZoom 이 권한 없이 동작해야 'tabs' 가 된다(실패하면 dpr 추정 'dpr').
+  await expect(frame.locator('html')).toHaveAttribute('data-zoom-mode', 'tabs');
+  const tabId = await frame.evaluate(async () => (await chrome.mimeHandler.getStreamInfo()).tabId);
+  const sw = context.serviceWorkers()[0]!;
+  const header = () =>
+    frame.evaluate(() => {
+      const r = document.getElementById('toolbar')!.getBoundingClientRect();
+      return {
+        physHeight: Math.round(r.height * devicePixelRatio),
+        dpr: devicePixelRatio,
+        zoom: document.documentElement.dataset.zoom,
+      };
+    });
+  const before = await header();
+  try {
+    await sw.evaluate((id) => chrome.tabs.setZoom(id, 2), tabId);
+    await expect.poll(header).toMatchObject({ dpr: 2, zoom: '2' });
+    expect(Math.abs((await header()).physHeight - before.physHeight)).toBeLessThanOrEqual(1);
+  } finally {
+    await sw.evaluate((id) => chrome.tabs.setZoom(id, 0), tabId);
+  }
 });
 
 test('정보 대화상자: 버전·라이선스·버전 태그 소스 링크·고지', async () => {

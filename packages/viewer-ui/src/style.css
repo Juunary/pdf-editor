@@ -45,6 +45,8 @@
 }
 
 /* ── 검색창 ─────────────────────────────────────────────────── */
+/* 호스트가 툴바에 CSS zoom 을 주면(확장 뷰어의 머리 영역 확대 보정) 같은 값을 --pe-header-zoom 으로 둔다. zoom 아래에서는
+   vw 도 zoom 배가 되므로 vw 길이는 그 값으로 나눠 화면 폭 기준을 지킨다. */
 .pe-find {
   position: fixed;
   top: var(--pe-find-top, 44px);
@@ -54,7 +56,7 @@
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  max-width: calc(100vw - 24px);
+  max-width: calc(100vw / var(--pe-header-zoom, 1) - 24px);
   box-sizing: border-box;
   padding: 6px 8px;
   border-radius: 6px;
@@ -63,7 +65,7 @@
   box-shadow: 0 2px 8px rgb(0 0 0 / 50%);
 }
 .pe-find-input {
-  width: min(220px, 40vw);
+  width: min(220px, 40vw / var(--pe-header-zoom, 1));
   padding: 3px 6px;
   font: inherit;
 }
@@ -490,8 +492,13 @@
   transform: translateX(-50%);
   z-index: 30;
   display: flex;
-  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 14px;
   align-items: center;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100vw - 24px);
   padding: 4px 12px;
   border-radius: 6px;
   background: rgb(43 47 51 / 92%);
@@ -509,6 +516,11 @@
 }
 .pe-legend-swatch[data-editable='0'] {
   border-top: 2px dashed #ef6c00;
+}
+.pe-legend-swatch[data-layout='1'] {
+  height: 8px;
+  border: 1px solid #1e88e5;
+  background: rgb(30 136 229 / 12%);
 }
 
 /* 벡터 패스 편집(M4) */
