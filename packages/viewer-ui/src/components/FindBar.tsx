@@ -10,6 +10,7 @@ interface Props {
 /** Ctrl+F 검색창. Enter 다음, Shift+Enter 이전, Esc 닫기. */
 export function FindBar({ controller, find }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const t = controller.strings;
 
   // 열릴 때와 Ctrl+F 를 다시 누를 때마다 입력란에 포커스하고 전체 선택한다.
   useEffect(() => {
@@ -25,8 +26,8 @@ export function FindBar({ controller, find }: Props) {
         ref={inputRef}
         class="pe-find-input"
         type="text"
-        placeholder="문서에서 찾기"
-        aria-label="문서에서 찾기"
+        placeholder={t.findPlaceholder}
+        aria-label={t.findPlaceholder}
         value={find.query}
         onInput={(e) => controller.setFindQuery(e.currentTarget.value)}
         onKeyDown={(e) => {
@@ -42,14 +43,14 @@ export function FindBar({ controller, find }: Props) {
         }}
       />
       <span id="pe-find-count" class="pe-find-count" aria-live="polite" data-status={find.status}>
-        {findLabel(find)}
+        {findLabel(find, t)}
       </span>
       <button
         id="pe-find-prev"
         type="button"
         class="pe-btn"
-        title="이전 결과 (Shift+Enter)"
-        aria-label="이전 결과"
+        title={t.findPrevTitle}
+        aria-label={t.findPrev}
         disabled={!hasHits}
         onClick={() => controller.stepFind(-1)}
       >
@@ -59,17 +60,18 @@ export function FindBar({ controller, find }: Props) {
         id="pe-find-next"
         type="button"
         class="pe-btn"
-        title="다음 결과 (Enter)"
-        aria-label="다음 결과"
+        title={t.findNextTitle}
+        aria-label={t.findNext}
         disabled={!hasHits}
         onClick={() => controller.stepFind(1)}
       >
         ↓
       </button>
-      <label class="pe-find-case" title="대소문자 구분">
+      <label class="pe-find-case" title={t.matchCase}>
         <input
           id="pe-find-case"
           type="checkbox"
+          aria-label={t.matchCase}
           checked={find.caseSensitive}
           onChange={(e) => controller.setCaseSensitive(e.currentTarget.checked)}
         />
@@ -79,8 +81,8 @@ export function FindBar({ controller, find }: Props) {
         id="pe-find-close"
         type="button"
         class="pe-btn"
-        title="닫기 (Esc)"
-        aria-label="검색창 닫기"
+        title={t.findCloseTitle}
+        aria-label={t.findClose}
         onClick={() => controller.closeFind()}
       >
         ✕

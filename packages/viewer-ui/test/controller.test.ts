@@ -18,6 +18,7 @@ import {
   overlayToggleTitle,
   type ViewerControllerOptions,
 } from '../src/controller.js';
+import { VIEWER_STRINGS } from '../src/strings.js';
 import type { ViewerHost } from '../src/viewer-host.js';
 import { makeLinkage, makePageModel, makeSourceMap, makeTextOp, rectQuad } from './fixtures.js';
 
@@ -326,6 +327,29 @@ describe('ViewerController · M1 미구현 기능 비활성화', () => {
     }
   });
 
+  it('영어 문자열 표: 검색 미구현 문구가 영어다(사용자 요청 2026-10-23)', async () => {
+    vi.useFakeTimers();
+    try {
+      const host = fakeHost({
+        searchText: vi.fn(async () => {
+          throw new Error('M1 미구현: core searchText');
+        }),
+      });
+      const c = make(host, { strings: VIEWER_STRINGS.en });
+      expect(c.strings).toBe(VIEWER_STRINGS.en);
+      expect(make(fakeHost()).strings).toBe(VIEWER_STRINGS.ko);
+      await c.start();
+      c.openFind();
+      c.setFindQuery('a');
+      await vi.advanceTimersByTimeAsync(250);
+      expect(c.getState().find.message).toBe(
+        'Search is not available (M1 미구현: core searchText)',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('linkPage 미구현: 디버그만 끈다', async () => {
     const host = fakeHost({
       linkPage: vi.fn(async () => {
@@ -495,6 +519,13 @@ describe('ViewerController · 레이아웃·편집 표시 버튼(사용자 요�
     c.toggleOverlays();
     expect(c.getState().layoutEnabled).toBe(false);
     expect(overlayToggleState(c.getState(), false).on).toBe(false);
+    // 영어 문자열 표(사용자 요청 2026-10-23)
+    const en = VIEWER_STRINGS.en;
+    const sEn = overlayToggleState(c.getState(), false, en);
+    expect(sEn.marksReason).toBe(en.noEditHost);
+    expect(overlayToggleTitle(sEn, false, en)).toBe(
+      `${en.overlayIntro}\n${en.overlayLayoutOnly(en.noEditHost)}`,
+    );
   });
 
   it('둘 다 쓸 수 없으면 켜지 않고 제목에 두 사유를 적는다', async () => {

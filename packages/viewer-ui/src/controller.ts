@@ -20,6 +20,7 @@ import { classifyFailure } from './failure.js';
 import { fitWidthScale, pageLayout, renderScale, type PageLayout } from './layout.js';
 import { clampPage, parsePageInput, stepPage } from './page-nav.js';
 import { buildReadingOrder, type ReadingOrder } from './reading-order.js';
+import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 import { RenderCache, type RenderCacheLimits } from './render-cache.js';
 import {
   applySearchResult,
@@ -117,6 +118,8 @@ export interface ViewerControllerOptions {
   prefetch?: boolean;
   /** 유휴 시점에 `fn` 을 실행한다. 기본: `requestIdleCallback`(없으면 `setTimeout`). 테스트에서 주입한다. */
   scheduleIdle?(fn: () => void): void;
+  /** UI 문자열 표(`strings.ts`). 기본은 한국어. 확장은 브라우저 UI 언어로 고른다. */
+  strings?: ViewerStrings;
 }
 
 export type StateListener = (state: ViewerState) => void;
@@ -146,12 +149,16 @@ export interface OverlayToggleState {
   marksReason: string | null;
 }
 
-/** 편집 RPC 가 없는 호스트(읽기 전용 하니스·벤치)의 편집 가능 표시 사유. */
-export const NO_EDIT_HOST_REASON = '편집 기능 없음';
+/** 편집 RPC 가 없는 호스트(읽기 전용 하니스·벤치)의 편집 가능 표시 사유(한국어). */
+export const NO_EDIT_HOST_REASON = VIEWER_STRINGS.ko.noEditHost;
 
-export function overlayToggleState(state: ViewerState, hasEdit: boolean): OverlayToggleState {
+export function overlayToggleState(
+  state: ViewerState,
+  hasEdit: boolean,
+  t: ViewerStrings = VIEWER_STRINGS.ko,
+): OverlayToggleState {
   const layoutReason = featureDisabledReason(state, 'layout');
-  const marksReason = hasEdit ? state.disabled.edit : NO_EDIT_HOST_REASON;
+  const marksReason = hasEdit ? state.disabled.edit : t.noEditHost;
   return {
     on:
       (layoutReason === null && state.layoutEnabled) ||
@@ -162,15 +169,19 @@ export function overlayToggleState(state: ViewerState, hasEdit: boolean): Overla
 }
 
 /** 합친 버튼의 제목(툴팁). 쓸 수 없는 쪽은 사유를 적는다. */
-export function overlayToggleTitle(s: OverlayToggleState, pathSelect: boolean): string {
-  const lines = ['레이아웃(문단·표·도형·읽기 순서)과 편집 가능 테두리를 함께 표시합니다'];
-  if (s.marksReason === null && pathSelect) lines.push('켜 두면 클릭으로 패스를 선택합니다');
+export function overlayToggleTitle(
+  s: OverlayToggleState,
+  pathSelect: boolean,
+  t: ViewerStrings = VIEWER_STRINGS.ko,
+): string {
+  const lines = [t.overlayIntro];
+  if (s.marksReason === null && pathSelect) lines.push(t.overlayPathSelect);
   if (s.layoutReason !== null && s.marksReason !== null) {
-    lines.push(`레이아웃: ${s.layoutReason}`, `편집 가능 표시: ${s.marksReason}`);
+    lines.push(t.overlayLayoutReason(s.layoutReason), t.overlayMarksReason(s.marksReason));
   } else if (s.layoutReason !== null) {
-    lines.push(`레이아웃을 쓸 수 없어 편집 가능 표시만 켭니다: ${s.layoutReason}`);
+    lines.push(t.overlayMarksOnly(s.layoutReason));
   } else if (s.marksReason !== null) {
-    lines.push(`편집 가능 표시를 쓸 수 없어 레이아웃만 켭니다: ${s.marksReason}`);
+    lines.push(t.overlayLayoutOnly(s.marksReason));
   }
   return lines.join('\n');
 }
@@ -194,11 +205,14 @@ export class ViewerController {
   /** 쪽 렌더 LRU(8쪽·64 MiB 중 작은 쪽). 문서가 바뀐 쪽은 `invalidatePages` 가 버린다. */
   readonly renderCache: RenderCache;
   private prefetchRunning = false;
+  /** UI 문자열 표(옵션 `strings`, 기본 한국어). */
+  readonly strings: ViewerStrings;
 
   constructor(private readonly options: ViewerControllerOptions) {
     this.host = options.host;
     this.renderCache = new RenderCache(options.renderCacheLimits);
     this.editLog = options.editLog ?? new EditLog();
+    this.strings = options.strings ?? VIEWER_STRINGS.ko;
     const pageIndex = clampPage(options.initialPage ?? 0, options.pageCount);
     this.state = {
       pageCount: options.pageCount,
@@ -221,6 +235,7 @@ export class ViewerController {
       this.edit = new EditController({
         rpc: host,
         log: this.editLog,
+        strings: this.strings,
         now: options.now ?? (() => performance.now()),
         getState: () => this.state.edit,
         patch: (partial) => this.patch({ edit: { ...this.state.edit, ...partial } }),
@@ -767,14 +782,14 @@ export class ViewerController {
         this.patchFind({
           ...clearResults(this.state.find),
           status: 'unavailable',
-          message: `검색을 사용할 수 없습니다 (${failure.message})`,
+          message: this.strings.findUnavailableWith(failure.message),
         });
       } else {
         this.host.log('search-error', { query, error: failure.message });
         this.patchFind({
           ...clearResults(this.state.find),
           status: 'error',
-          message: `검색 실패: ${failure.message}`,
+          message: this.strings.findFailedWith(failure.message),
         });
       }
     }

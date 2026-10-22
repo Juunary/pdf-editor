@@ -19,6 +19,7 @@ import { limitLabel } from './edit-labels.js';
 import type { EditContext, EditLoadable } from './edit-controller.js';
 import { classifyFailure } from './failure.js';
 import { buildCandidates, pickPath, STROKE_HIT_PX, type PathCandidate } from './path-geometry.js';
+import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 import {
   isNoopPathEdit,
   PathGesture,
@@ -89,6 +90,10 @@ export class PathController {
   private settled: Promise<void> | null = null;
 
   constructor(private readonly ctx: PathContext) {}
+
+  private get t(): ViewerStrings {
+    return this.ctx.strings ?? VIEWER_STRINGS.ko;
+  }
 
   get active(): boolean {
     return this.gesture !== null;
@@ -218,7 +223,7 @@ export class PathController {
       });
       return plan;
     } catch (e) {
-      this.handleFailure(e, '패스를 판정하지 못했습니다');
+      this.handleFailure(e, this.t.pathPlanFailed);
       return null;
     }
   }
@@ -275,7 +280,7 @@ export class PathController {
       if (this.gesture !== g) return;
       this.gesture = null;
       this.ctx.patchPath({ gesture: null });
-      this.handleFailure(e, '패스 편집을 시작하지 못했습니다');
+      this.handleFailure(e, this.t.pathStartFailed);
       // 같은 paintSeq 가 다른 패스를 가리킨다: 낡은 선택으로 다시 편집하지 않게 푼다.
       if (e instanceof PathTargetChangedError) this.clear();
     });
@@ -299,7 +304,7 @@ export class PathController {
     this.ctx.patchPath({ gesture: null });
     if (out.kind === 'failed') {
       this.ctx.repaintPage();
-      this.handleFailure(new Error(out.error), '패스 편집을 반영하지 못했습니다');
+      this.handleFailure(new Error(out.error), this.t.pathApplyFailed);
       if (out.targetChanged) this.clear();
       return false;
     }
@@ -444,8 +449,8 @@ export class PathController {
     this.ctx.patch({
       notice:
         failure.kind === 'recovered'
-          ? '문서를 복구했습니다. 패스를 다시 선택하세요.'
-          : `${prefix}: ${failure.message}`,
+          ? this.t.pathRecoveredReselect
+          : this.t.failureWith(prefix, failure.message),
     });
     if (failure.kind === 'recovered') this.clear();
   }

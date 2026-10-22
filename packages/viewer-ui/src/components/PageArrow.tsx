@@ -13,16 +13,18 @@ interface Props {
  */
 export function PageArrow({ controller, dir }: Props) {
   const state = useViewerState(controller);
+  const t = controller.strings;
   const off = navDisabled(state.pageIndex, state.pageCount);
   const prev = dir < 0;
+  const label = prev ? t.prevPage : t.nextPage;
   return (
     <div class="pe-arrow-slot">
       <button
         id={prev ? 'pe-arrow-prev' : 'pe-arrow-next'}
         type="button"
         class="pe-arrow"
-        title={prev ? '이전 페이지' : '다음 페이지'}
-        aria-label={prev ? '이전 페이지' : '다음 페이지'}
+        title={label}
+        aria-label={label}
         disabled={prev ? off.prev : off.next}
         onClick={() => void (prev ? controller.prevPage() : controller.nextPage())}
       >

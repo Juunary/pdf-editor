@@ -8,19 +8,9 @@ import {
 } from '../controller.js';
 import { useViewerState } from '../hooks.js';
 import { docHistoryShortcut } from '../edit-keys.js';
-import { EDIT_PAGES_NOTICE } from '../edit-labels.js';
 import { canStep } from '../page-nav.js';
 import { isFindShortcut, isTypingTarget } from '../shortcuts.js';
 import { FindBar } from './FindBar.js';
-
-const FEATURE_LABELS: Record<FeatureName, string> = {
-  text: '텍스트 선택',
-  search: '검색',
-  debug: '연결 디버그',
-  layout: '레이아웃',
-  edit: '문단 편집',
-  path: '벡터 편집',
-};
 
 interface Props {
   controller: ViewerController;
@@ -32,6 +22,7 @@ interface Props {
  */
 export function Controls({ controller }: Props) {
   const state = useViewerState(controller);
+  const t = controller.strings;
   const [draft, setDraft] = useState<string | null>(null);
   /** Esc 로 취소할 때 뒤따르는 blur 가 입력을 확정하지 않게 한다. */
   const cancelled = useRef(false);
@@ -77,20 +68,20 @@ export function Controls({ controller }: Props) {
   };
 
   const searchReason = featureDisabledReason(state, 'search');
-  const overlay = overlayToggleState(state, controller.edit !== null);
+  const overlay = overlayToggleState(state, controller.edit !== null, t);
   const pathSelect = controller.edit?.paths != null && !state.disabled.path;
-  const disabledOwn = (Object.keys(FEATURE_LABELS) as FeatureName[]).filter(
+  const disabledOwn = (Object.keys(t.featureLabels) as FeatureName[]).filter(
     (f) => state.disabled[f] !== null,
   );
 
   return (
-    <div id="pe-controls" class="pe-controls" role="toolbar" aria-label="페이지 이동">
+    <div id="pe-controls" class="pe-controls" role="toolbar" aria-label={t.controlsLabel}>
       <button
         id="pe-prev"
         type="button"
         class="pe-btn"
-        title="이전 페이지"
-        aria-label="이전 페이지"
+        title={t.prevPage}
+        aria-label={t.prevPage}
         disabled={!canStep(state.pageIndex, -1, state.pageCount)}
         onClick={() => void controller.prevPage()}
       >
@@ -102,7 +93,7 @@ export function Controls({ controller }: Props) {
         type="text"
         inputMode="numeric"
         size={4}
-        aria-label="페이지 번호"
+        aria-label={t.pageNumber}
         value={shown}
         onFocus={(e) => e.currentTarget.select()}
         onInput={(e) => setDraft(e.currentTarget.value)}
@@ -120,14 +111,14 @@ export function Controls({ controller }: Props) {
         }}
       />
       <span id="pe-page-count" class="pe-page-count">
-        / {state.pageCount}
+        {t.pageCount(state.pageCount)}
       </span>
       <button
         id="pe-next"
         type="button"
         class="pe-btn"
-        title="다음 페이지"
-        aria-label="다음 페이지"
+        title={t.nextPage}
+        aria-label={t.nextPage}
         disabled={!canStep(state.pageIndex, 1, state.pageCount)}
         onClick={() => void controller.nextPage()}
       >
@@ -137,24 +128,24 @@ export function Controls({ controller }: Props) {
         id="pe-find-toggle"
         type="button"
         class="pe-btn"
-        title={searchReason ?? '문서에서 찾기 (Ctrl+F)'}
+        title={searchReason ?? t.findTitle}
         aria-pressed={state.find.open}
         disabled={searchReason !== null}
         onClick={() => (state.find.open ? controller.closeFind() : controller.openFind())}
       >
-        찾기
+        {t.find}
       </button>
       {/* 레이아웃 오버레이 + 편집 가능 표시(사용자 요청 2026-10-22). 편집 중이면 바깥 클릭처럼 편집을 끝내고 켠다. */}
       <button
         id="pe-overlay-toggle"
         type="button"
         class="pe-btn"
-        title={overlayToggleTitle(overlay, pathSelect)}
+        title={overlayToggleTitle(overlay, pathSelect, t)}
         aria-pressed={overlay.on}
         disabled={overlay.layoutReason !== null && overlay.marksReason !== null}
         onClick={() => controller.toggleOverlays()}
       >
-        레이아웃·편집 표시
+        {t.overlay}
       </button>
       {controller.edit && !state.disabled.edit && (
         <>
@@ -162,21 +153,21 @@ export function Controls({ controller }: Props) {
             id="pe-doc-undo"
             type="button"
             class="pe-btn"
-            title="편집 되돌리기 (Ctrl+Z). 작업 모듈이 복구되면 되돌리기 기록이 사라집니다"
+            title={t.undoTitle}
             disabled={session !== null || state.edit.busy || state.edit.history?.canUndo !== true}
             onClick={() => void controller.edit?.undo()}
           >
-            되돌리기
+            {t.undo}
           </button>
           <button
             id="pe-doc-redo"
             type="button"
             class="pe-btn"
-            title="다시 실행 (Ctrl+Shift+Z, Ctrl+Y). 새 편집을 시작하거나 복구되면 다시 실행 기록이 사라집니다"
+            title={t.redoTitle}
             disabled={session !== null || state.edit.busy || state.edit.history?.canRedo !== true}
             onClick={() => void controller.edit?.redo()}
           >
-            다시 실행
+            {t.redo}
           </button>
           {session && (
             <button
@@ -184,10 +175,10 @@ export function Controls({ controller }: Props) {
               type="button"
               class="pe-btn"
               data-pe-keep=""
-              title="이 문단의 편집을 버리고 원래대로 되돌립니다"
+              title={t.editCancelTitle}
               onClick={() => void controller.edit?.cancelActive()}
             >
-              편집 취소
+              {t.editCancel}
             </button>
           )}
           <button
@@ -195,24 +186,20 @@ export function Controls({ controller }: Props) {
             type="button"
             class="pe-btn"
             data-pe-keep=""
-            title="원본 글꼴에 없어 폴백 글꼴로 쓴 글자에 점선 밑줄 표시"
+            title={t.fallbackTitle}
             aria-pressed={state.edit.fallbackUnderline}
             onClick={() => controller.edit?.setFallbackUnderline(!state.edit.fallbackUnderline)}
           >
-            폴백 표시
+            {t.fallback}
           </button>
-          <label
-            class="pe-edit-opt"
-            data-pe-keep=""
-            title={`태그된 PDF 쪽의 문단은 편집하지 않습니다. ${EDIT_PAGES_NOTICE}`}
-          >
+          <label class="pe-edit-opt" data-pe-keep="" title={t.blockTaggedTitle}>
             <input
               id="pe-block-tagged"
               type="checkbox"
               checked={state.edit.blockTagged}
               onChange={(e) => controller.edit?.setBlockTagged(e.currentTarget.checked)}
             />{' '}
-            태그 PDF 편집 막기
+            {t.blockTagged}
           </label>
         </>
       )}
@@ -221,7 +208,7 @@ export function Controls({ controller }: Props) {
           id="pe-edit-notice"
           class="pe-notice pe-edit-notice"
           role="status"
-          title="클릭하면 닫습니다"
+          title={t.dismissTitle}
           onClick={() => controller.edit?.dismissNotice()}
         >
           {state.edit.notice} ✕
@@ -231,9 +218,9 @@ export function Controls({ controller }: Props) {
         <span
           id="pe-notice"
           class="pe-notice"
-          title={disabledOwn.map((f) => `${FEATURE_LABELS[f]}: ${state.disabled[f]}`).join('\n')}
+          title={disabledOwn.map((f) => `${t.featureLabels[f]}: ${state.disabled[f]}`).join('\n')}
         >
-          비활성: {disabledOwn.map((f) => FEATURE_LABELS[f]).join(', ')}
+          {t.disabledList(disabledOwn.map((f) => t.featureLabels[f]).join(', '))}
         </span>
       )}
       {state.find.open && <FindBar controller={controller} find={state.find} />}

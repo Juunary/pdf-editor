@@ -4,6 +4,7 @@ import { ViewerController } from '../src/controller.js';
 import { EditLog } from '../src/edit-log.js';
 import { REDO_DISCARDED_NOTICE } from '../src/edit-labels.js';
 import { WORKER_RECOVERED_ERROR_NAME } from '../src/failure.js';
+import { VIEWER_STRINGS, type ViewerStrings } from '../src/strings.js';
 import type { ViewerHost } from '../src/viewer-host.js';
 import { FakeEditHost, type FakeParagraph } from './fake-edit-host.js';
 import { makePageModel } from './fixtures.js';
@@ -31,7 +32,9 @@ const rendered = (req: RenderRequest): RenderedPage => ({
   clip: null,
 });
 
-function setup(options: { withEdit?: boolean; paragraphs?: FakeParagraph[] } = {}) {
+function setup(
+  options: { withEdit?: boolean; paragraphs?: FakeParagraph[]; strings?: ViewerStrings } = {},
+) {
   const edit = new FakeEditHost({ paragraphs: options.paragraphs ?? PARAGRAPHS });
   const base = {
     getPageInfo: vi.fn(async (i: number) => pageInfo(i)),
@@ -72,6 +75,7 @@ function setup(options: { withEdit?: boolean; paragraphs?: FakeParagraph[] } = {
     getEnvironment: () => ({ devicePixelRatio: 1, availableWidth: 632 }),
     cssScaleFor: () => 1,
     editLog,
+    ...(options.strings ? { strings: options.strings } : {}),
   });
   return { controller, host, edit, editLog };
 }
@@ -351,6 +355,12 @@ describe('Worker 복구(D6)', () => {
     await controller.handleWorkerRecovered();
     expect(controller.getState().edit.notice).toContain('되돌리기 이력');
     await vi.waitFor(() => expect(host.renderPage.mock.calls.length).toBe(renders + 1));
+  });
+
+  it('영어 문자열 표를 주면 툴바 알림도 영어다(사용자 요청 2026-10-23)', async () => {
+    const { controller } = await started({ strings: VIEWER_STRINGS.en });
+    await controller.handleWorkerRecovered();
+    expect(controller.getState().edit.notice).toBe(VIEWER_STRINGS.en.recoveredHistoryLost);
   });
 });
 
