@@ -14,6 +14,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chooseSave } from './toolbar-helpers.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
@@ -111,7 +112,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     // 저장(downloads 경로) 후 재열기
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.click('#save-downloads'),
+      chooseSave(page, 'save-downloads'),
     ]);
     const saved = await download.path();
     expect(readFileSync(saved).byteLength).toBeGreaterThan(0);
@@ -319,7 +320,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await editOnce('저장전');
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.click('#save-downloads'),
+      chooseSave(page, 'save-downloads'),
     ]);
     await download.path();
     await expect(page.locator('#status')).toHaveAttribute('data-state', 'saved');

@@ -14,7 +14,8 @@ const kind: BuildKind = process.env.PDF_EDITOR_BUILD === 'store' ? 'store' : 'de
 /**
  * 매니페스트를 빌드 종류별로 만든다. 버전은 package.json 한 곳에서 온다.
  * 같은 단계에서 `<html data-build>` 를 넣어 스토어 빌드에서만 진단 UI 를 CSS 로 숨길 수 있게 한다.
- * 스토어 빌드는 벤치 페이지를 만들지 않으므로(D6) 그 링크(`#open-bench`)도 뺀다.
+ * 스토어 빌드는 벤치 페이지를 만들지 않으므로(D6) 그 링크(`#open-bench`)도 빼고, 저장 메뉴의 downloads 저장(M0 진단,
+ * 사용자 요청 2026-10-22)도 뺀다.
  */
 function extensionBuild(): Plugin {
   return {
@@ -22,7 +23,9 @@ function extensionBuild(): Plugin {
     transformIndexHtml: (html) => {
       const tagged = html.replace('<html ', `<html data-build="${kind}" `);
       return kind === 'store'
-        ? tagged.replace(/\s*<a id="open-bench"[^>]*>[\s\S]*?<\/a>/, '')
+        ? tagged
+            .replace(/\s*<a id="open-bench"[^>]*>[\s\S]*?<\/a>/, '')
+            .replace(/\s*<button\s+id="save-downloads"[\s\S]*?<\/button>/, '')
         : tagged;
     },
     generateBundle() {

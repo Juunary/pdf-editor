@@ -24,6 +24,7 @@ import {
   supportedSizeNotice,
 } from './notices.js';
 import { ResilientPdf, type WorkerHandle } from './recovery.js';
+import { setupSaveMenu } from './save-menu.js';
 import { SaveTarget, type SaveOutcome, type WritableFileHandle } from './save-target.js';
 import { decideSave } from './save-plan.js';
 import { resolveViewerSource, type ViewerContextKind, type ViewerSource } from './source.js';
@@ -38,11 +39,8 @@ const statusEl = byId<HTMLSpanElement>('status');
 const openLabel = byId<HTMLLabelElement>('open-label');
 const openInput = byId<HTMLInputElement>('open-file');
 const diagLogEl = byId<HTMLPreElement>('diag-log');
-const saveButtons = {
-  saveAs: byId<HTMLButtonElement>('save-as'),
-  save: byId<HTMLButtonElement>('save'),
-  downloads: byId<HTMLButtonElement>('save-downloads'),
-};
+/** 저장 메뉴 버튼(프린터 아이콘). 문서를 그리기 전에는 비활성(이전 저장 버튼들과 같은 조건). */
+const saveMenuButton = byId<HTMLButtonElement>('save-menu-button');
 
 const diag = new DiagLog((log) => {
   diagLogEl.textContent = log.toJSON();
@@ -413,19 +411,32 @@ async function benchFullSave(): Promise<void> {
   );
 }
 
+/**
+ * 저장 메뉴(사용자 요청 2026-10-22): 저장 / 다른 이름으로 저장 / (개발 빌드만) downloads 저장.
+ * downloads 저장(M0 진단)은 스토어 빌드의 viewer.html 에서 빠지고(vite.config.ts), 아래 분기도 스토어 번들에서 사라진다.
+ */
+const saveMenu = setupSaveMenu({
+  button: saveMenuButton,
+  menu: byId<HTMLElement>('save-menu'),
+  onChoose: (id) => {
+    if (id === 'save') void runSave('save');
+    else if (id === 'save-as') void runSave('save-as');
+    else if (__BUILD_KIND__ !== 'store' && id === 'save-downloads') void runSave('downloads');
+  },
+});
+
 function enableSave(): void {
-  for (const b of Object.values(saveButtons)) b.disabled = false;
+  saveMenuButton.disabled = false;
   const bench = byId<HTMLButtonElement>('bench-full-save');
   bench.disabled = false;
   bench.addEventListener('click', () => {
     void benchFullSave().catch((e: unknown) => diag.add('bench-error', String(e)));
   });
-  saveButtons.saveAs.addEventListener('click', () => void runSave('save-as'));
-  saveButtons.save.addEventListener('click', () => void runSave('save'));
-  saveButtons.downloads.addEventListener('click', () => void runSave('downloads'));
+  // Ctrl+S 는 메뉴 없이 바로 저장한다(Ctrl+Shift+S 는 다른 이름으로 저장).
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
+      saveMenu.close();
       void runSave(e.shiftKey ? 'save-as' : 'ctrl+s');
     }
   });

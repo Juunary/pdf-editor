@@ -89,8 +89,8 @@ async function assertToolbarPinned(page: Page, tag: string) {
   expect(tb.y, `${tag}: 툴바 top`).toBeCloseTo(0, 0);
   expect(tb.x, `${tag}: 툴바 left`).toBeCloseTo(0, 0);
   expect(tb.width, `${tag}: 툴바 폭 = 창 폭`).toBeCloseTo(w, 0);
-  // 저장·정보 버튼과 툴바의 모든 보이는 직계 자식이 화면 안에 있다.
-  for (const sel of ['#save', '#save-as', '#about']) {
+  // 저장 메뉴·정보 버튼과 툴바의 모든 보이는 직계 자식이 화면 안에 있다.
+  for (const sel of ['#save-menu-button', '#about']) {
     const box = (await page.locator(sel).boundingBox()) as Box;
     expect(box.x, `${tag}: ${sel} left`).toBeGreaterThanOrEqual(-0.5);
     expect(box.x + box.width, `${tag}: ${sel} right`).toBeLessThanOrEqual(w + 0.5);
@@ -161,18 +161,26 @@ for (const cfg of CONFIGS) {
   });
 }
 
-test('좁은 폭(400): 개발 전용 버튼·긴 글자 숨김, 상태 줄은 자기 줄, 쪽 이동·저장·되돌리기가 화면 안', async () => {
+test('좁은 폭(400): 개발 전용 메뉴 항목 숨김, 상태 줄은 자기 줄, 쪽 이동·저장·되돌리기가 화면 안', async () => {
   const page = await openViewer();
   await setViewport(page, 400, 700, 1);
   await page.waitForTimeout(300);
-  await expect(page.locator('#save-downloads')).toBeHidden();
-  await expect(page.locator('#save-as .long')).toBeHidden();
   const { w } = await viewportSize(page);
-  for (const sel of ['#pe-page-input', '#pe-doc-undo', '#pe-doc-redo', '#save']) {
+  for (const sel of ['#pe-page-input', '#pe-doc-undo', '#pe-doc-redo', '#save-menu-button']) {
     const box = await page.locator(sel).boundingBox();
     expect(box, sel).not.toBeNull();
     expect(box!.x + box!.width, `${sel} right`).toBeLessThanOrEqual(w + 0.5);
   }
+  // 저장 메뉴는 화면 안에 열리고, 개발 전용 downloads 저장은 숨긴다.
+  await page.click('#save-menu-button');
+  await expect(page.locator('#save')).toBeVisible();
+  await expect(page.locator('#save-as')).toBeVisible();
+  await expect(page.locator('#save-downloads')).toBeHidden();
+  const menu = (await page.locator('#save-menu').boundingBox()) as Box;
+  expect(menu.x).toBeGreaterThanOrEqual(-0.5);
+  expect(menu.x + menu.width).toBeLessThanOrEqual(w + 0.5);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#save-menu')).toBeHidden();
   // 툴바 높이는 여러 줄로 늘어나도 문서 영역이 남는다.
   const c = (await page.locator('#page-container').boundingBox()) as Box;
   expect(c.height).toBeGreaterThan(200);
