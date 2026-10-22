@@ -13,7 +13,7 @@
 
 | 구성 | 위치 | 내용 |
 | --- | --- | --- |
-| 측정 페이지 | `apps/extension/bench.html`, `src/viewer/bench*.ts` | 확장 안 진단 페이지. 문서를 골라 지표를 돌리고 결과 JSON 을 내보낸다. `viewer.html` 진단 영역의 "M5 벤치마크 페이지" 링크로도 연다 |
+| 측정 페이지 | `apps/extension/bench.html`, `src/viewer/bench*.ts` | 확장 안 진단 페이지. 문서를 골라 지표를 돌리고 결과 JSON 을 내보낸다. `viewer.html` 진단 영역의 "M5 벤치마크 페이지" 링크로도 연다(진단 영역은 기본 숨김, 1.3 의 2) |
 | 지표 이벤트 | `src/viewer/bench-marks.ts` | D1 표의 `m5:*` 이름 그대로 `performance.mark` 를 남긴다. 편집 반응 표식은 `packages/viewer-ui/src/edit-session.ts` 가 남긴다 |
 | 통계·목표 | `src/viewer/bench-stats.ts` | p50·p95(nearest-rank)·목표 판정·직전 대비 +20% 회귀 표시 |
 | 서버 실행 | `apps/extension/e2e/bench-*.spec.ts`, `bench-harness.ts` | Playwright 번들 Chromium 에 같은 페이지를 로드해 실행. 렌더러 VmRSS 를 읽는다 |
@@ -39,7 +39,7 @@
 pnpm·Node 설치가 필요 없다. 준비물은 압축해제한 `dist` 폴더와 측정할 PDF 파일뿐이다.
 
 1. Chrome 정식 최신에서 `chrome://extensions` → 개발자 모드 켬 → "압축해제된 확장 프로그램을 로드합니다" → `dist` 폴더 선택.
-2. 확장 ID 를 확인해 주소창에 `chrome-extension://<확장 ID>/bench.html` 을 연다(`viewer.html` 하단 "M5 벤치마크 페이지" 링크도 같다).
+2. 확장 ID 를 확인해 주소창에 `chrome-extension://<확장 ID>/bench.html` 을 연다. `viewer.html` 하단 진단 영역("M0 진단": "진단 결과 복사"·"M5 벤치마크 페이지" 링크)은 2026-10-23 부터 기본으로 숨겨져 있다. 보려면 주소에 `?diag` 를 붙여 열거나(`chrome-extension://<확장 ID>/viewer.html?diag`), PDF 를 MIME handler 로 열어 주소를 바꿀 수 없으면 뷰어를 한 번 누른 뒤 Ctrl+Alt+Shift+D 를 누른다(다시 누르면 숨김). 진단 기록은 숨겨져 있는 동안에도 쌓이므로 켠 뒤 "진단 결과 복사" 를 누르면 처음부터의 기록이 복사된다(docs/m5-release.md 10.2.3).
 3. 측정 조건을 맞춘다: 다른 탭·창을 닫고, 전원 연결, 절전 끔, 다른 확장 끔(가능하면). 측정 중에는 PC 를 건드리지 않는다.
 4. "문서 선택" 에서 `fixtures/bench/manifest.json` 의 문서를 고른다(여러 개 가능). 100 MB 이상 문서는 열기·쪽 넘김·저장만 체크한다.
 5. 지표를 모두 체크하고 "실행". 상태 줄에 진행이 표시된다. 서버에서 문서 하나에 약 40초가 걸린다(문서 크기·PC 에 따라 다름).

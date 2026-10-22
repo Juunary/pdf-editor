@@ -267,3 +267,109 @@ pnpm --filter @pdf-editor/extension package
 | 3 | 확대된 상태로 뷰어를 열면 getZoom 응답 전(수 ms) 첫 화면은 보정 전 크기일 수 있음 | 관찰 |
 | 4 | 임베디드 문맥 보정 안 함(10.1.2) 결정 확인 | 사용자 |
 | 5 | 눌린 버튼에 마우스를 올리면 기존 `.pe-btn:hover` 색이 눌림 색을 덮음(이번 범위 밖) | 후속 |
+
+### 10.2 머리 영역 언어·개발 표시 숨김·쪽 화살표 (사용자 요청 2026-10-23)
+
+브랜치 `m5-windows`(기준 6637829, worktree `/mnt/nas4/kjune/pdf-editor-m5win`). 이 절의 진단 패널 동작은 10절 "진단 패널(dev)" 행과 6절 마지막 줄을 보완합니다(스토어 빌드 동작은 그대로).
+
+#### 10.2.1 언어 방식
+
+| 항목 | 내용 |
+| --- | --- |
+| 선택 | (b) 코드 안 문자열 표(ko·en) + 언어 감지. `_locales`·`default_locale` 은 추가하지 않음 |
+| 언어 판정 | `chrome.i18n.getUILanguage()`(브라우저 UI 언어, 권한 불필요). 없거나 빈 값이면 `navigator.language`. 주 언어 하위 태그(`-`·`_` 앞, 대소문자 무시)가 `ko` 이면 한국어, 그 밖(태그 없음 포함)은 영어. 예: `ko`·`ko-KR`·`ko_KR` → ko, `en-US`·`ja`·`zh-CN`·`kok` → en. 구현 `packages/viewer-ui/src/strings.ts` `resolveUiLang`, 확장 `apps/extension/src/viewer/strings.ts` `detectLang` |
+| viewer-ui | `VIEWER_STRINGS.{ko,en}`(`ViewerStrings`)를 `ViewerControllerOptions.strings` 로 주입. 없으면 한국어. 컴포넌트는 `controller.strings` 를 읽고, `EditController`·`PathController` 는 `EditContext.strings`(선택)로 받음. `findLabel`·`overlayToggleState`·`overlayToggleTitle` 은 표를 마지막 인수(기본 한국어)로 받음. viewer-ui 는 확장 API 를 쓰지 않음(하니스·Node 시험 그대로) |
+| 확장 | `APP_STRINGS.{ko,en}`(`AppStrings`, 같은 언어의 viewer-ui 표 포함). `main.ts` 가 시작할 때 언어를 정해 `html[lang]` 을 바꾸고, `viewer.html` 의 고정 문자열은 `data-i18n`(글자)·`data-i18n-title`·`data-i18n-aria-label` 키로 바꿈(`applyDomStrings`). 알림·저장 판정·정보 문구 함수(`notices.ts`·`save-plan.ts`·`about.ts`)는 표를 마지막 인수(기본 한국어)로 받음 |
+| core 문구 | 저장 힙 판정 문구(`heap.message`, pdf-ops 한국어)는 한국어 화면에서만 그대로 쓰고, 영어 화면은 같은 수치(예상 피크·한계)로 영어 문구를 만듦 |
+| 매니페스트 | 바꾸지 않음. 권한·`default_locale` 추가 없음. 스토어 빌드 `permissions` 는 `["downloads"]`, `verify-dist --release` 통과 |
+
+(b)를 고른 근거:
+
+1. viewer-ui 는 확장 API 없이 시험돼야 하므로 문자열을 객체로 주입받아야 합니다. (a)도 결국 `getMessage` 결과로 같은 객체를 만들어야 해 키 목록이 두 군데(messages.json·객체)에 생깁니다.
+2. 문구 대부분이 수치를 넣는 함수(쪽 수·n/N·MiB·파일 이름)입니다. TypeScript 인터페이스로 두 언어의 키·인수를 컴파일 때 맞추고, messages.json 자리표시자(`$1`)·키 이름 제약(`[A-Za-z0-9_@]`)을 피합니다.
+3. 순수 함수(알림·저장 판정·정보 대화상자)를 Node 단위 시험에서 `chrome.i18n` 흉내 없이 두 언어로 시험합니다.
+4. "ko 계열은 한국어, 그 밖은 영어" 규칙을 코드 한 곳(`resolveUiLang`)에 두고 단위 시험합니다. (a)는 Chrome 의 로케일 대체 규칙과 `default_locale` 에 기대며, `default_locale` 을 `en` 으로 두면 스토어 등록 기본 언어도 바뀝니다(사용자 결정 사항).
+5. 매니페스트를 바꾸지 않아 스토어 매니페스트 검사·`name` 검사(`PDF Editor`)에 영향이 없습니다.
+
+스토어 등록 이름·설명 현지화(`_locales` + `__MSG_name__`)는 이 방식과 따로 나중에 더할 수 있습니다(10.2.6).
+
+#### 10.2.2 번역 범위
+
+| 영역 | 내용 | 위치 |
+| --- | --- | --- |
+| 툴바 | 쪽 이동(이전·다음·쪽 번호 입력 이름·"/ N"), 찾기, 레이아웃·편집 표시(이름·제목·사유 문구), 되돌리기·다시 실행·편집 취소·폴백 표시·태그 PDF 편집 막기(이름·제목), 비활성 알림("비활성: …", 기능 이름), 컨트롤 묶음 이름 | `Controls.tsx` |
+| 툴바 편집 알림 | `#pe-edit-notice`: 복구 알림, "…하지 못했습니다: 오류"의 앞부분, redo 소실 안내 | `edit-controller.ts`·`path-controller.ts` |
+| 검색창 | 입력란 placeholder·이름, 결과 수("결과 없음"·"검색 중"·사용 불가·실패), 이전·다음 결과, 대소문자 구분, 닫기 | `FindBar.tsx`·`search-nav.ts`·`controller.ts` |
+| 쪽 화살표 | 이름·제목 | `PageArrow.tsx` |
+| 저장 메뉴 | 버튼 이름·제목, 저장·다른 이름으로 저장·downloads 저장(제목 포함) | `viewer.html` |
+| 정보 버튼·PDF 열기 | 글자·제목 | `viewer.html` |
+| 상태 줄 | 여는 중·열기 실패·복구 중·Worker 오류·저장 중·저장됨(파일 이름 / 다운로드)·저장 취소·저장 실패·저장 중단·저장 전 판정 실패·편집 미완료·렌더 경과·벤치 측정 | `main.ts` |
+| 알림 줄 | Redact 보고, file:// 접근 안내, 지원 크기(열 때·저장 전 판정), 저널 상한, 저장 뒤 되돌리기 안내, 복구 진행·완료, 닫기 버튼 제목 | `notices.ts`·`main.ts` |
+| 대화상자 | 저장할 수 없음·저장 전 확인(힙 경고·커진 힙 재시도·태그 구조·PDF/A·편집 쪽 기록·저널 권고, 버튼)·저장 실패 재시도, 정보 대화상자 전체 | `save-plan.ts`·`about.ts`·`main.ts` |
+
+남은 한국어 전용 문자열:
+
+| 영역 | 예 | 위치 |
+| --- | --- | --- |
+| 쪽 위 편집 UI | 편집기 안내·버튼·경고 목록, 편집 불가 팝오버("이 문단은 편집할 수 없습니다"), 패스 선택 패널(점 편집·삭제·색·두께), 편집 가능 표시 범례·테두리 툴팁, 태그 PDF 안내, 편집 쪽 기록 안내, 편집기 안 복구 안내 | `EditorLayer.tsx`·`EditEntry.tsx`·`PathLayer.tsx`·`EditableMarks.tsx`·`edit-marks.ts`·`edit-session.ts` |
+| 편집 제한 사유 | `LIMIT_LABELS` 30종, 태그 편집 막기 사유 | `edit-labels.ts` |
+| 오류 상세 | Worker·core·복구 계층·저장 대상이 만드는 오류 문장(상태 줄·알림의 콜론 뒤에 붙음), core 저장 경고(`SavePlan.warnings`), "미구현" 표지 | `recovery.ts`·`save-target.ts`·`source.ts`·core·pdf-ops |
+| 개발 표시 | 진단 패널("M0 진단"·"진단 결과 복사"·"전체 저장 측정"·"M5 벤치마크 페이지"), 연결 디버그 오버레이·HUD, 벤치 페이지 | `viewer.html`·`DebugLayer.tsx`·`debug-info.ts`·`bench.html` |
+| 매니페스트 | `description`, `action.default_title`("PDF Editor 뷰어 열기") | `manifest.json` |
+
+#### 10.2.3 개발 표시 숨김
+
+진단 패널을 다시 보는 방법(개발 빌드만): 주소에 `?diag` 를 붙여 엽니다(`viewer.html?diag`, `viewer.html?file=<URL>&diag`). MIME handler 로 연 PDF 처럼 주소를 바꿀 수 없으면 뷰어를 누른 뒤 **Ctrl+Alt+Shift+D** 를 누릅니다(다시 누르면 숨김, 물리 키 기준이라 한글 입력 상태와 무관). 켜면 `html[data-diag]` 이 붙고 진단 기록 `diag-visible` 이 남습니다. 스토어 빌드에는 이 코드가 없고 진단 패널은 늘 숨깁니다(D6).
+
+| 항목 | 처리 | 근거 |
+| --- | --- | --- |
+| 진단 패널 `#diag`("M0 진단": 진단 로그·진단 결과 복사·전체 저장 측정·M5 벤치마크 페이지 링크) | 숨김(`?diag`·단축키로 보임). DOM·`#diag-log` 내용은 유지, `diag.add` 수집 그대로 | 개발·진단용. e2e 는 숨겨진 `#diag-log` 의 textContent 를 읽음 |
+| 저장 메뉴 downloads 저장(`#save-downloads`, 개발 빌드만) | 숨김(같은 방법으로 보임). 숨기면 메뉴 키보드 이동은 두 항목만 돎 | M0 진단 경로 강제 |
+| 상태 줄 렌더 경과("N 페이지 · 1페이지 렌더 완료")·대기("대기")·전체 저장 측정 결과 | 숨김(`#status[data-dev]`). 넓은 배치에서는 자리만 남아 정보 버튼이 오른쪽 끝에 있고, 좁은 배치에서는 줄을 차지하지 않음. `data-state` 는 그대로 | 렌더 경과는 개발 표시, 쪽 수는 툴바 "/ N" 에 있음 |
+| 저장됨 상태의 채널 이름 | "저장됨: chrome.downloads" → "저장됨: 다운로드"(영어 "Saved: Downloads"). 실패·취소는 "cancelled: …" 대신 "저장을 취소했습니다"·"저장 실패: 오류" | 내부 API 이름 노출 제거 |
+| 여는 중·저장 중·저장됨·저장 실패·저장 중단·복구 진행·Worker 오류·열기 실패, "PDF 파일을 선택하세요" | 남김 | 사용자에게 필요한 상태 |
+| 알림 줄 전체(크기 안내·복구·Redact·file:// 접근·저널·저장 뒤 안내) | 남김 | 같음 |
+| 툴바 "비활성: 기능" 알림(`#pe-notice`) | 남김 | 기능을 쓸 수 없는 이유. "연결 디버그" 는 시험 이음매로 켤 때만 나옴 |
+| 연결 디버그 오버레이·HUD | 이미 툴바 버튼 없음(10.1.4). 변경 없음 | 시험 이음매(`toggleDebug()`)로만 켬 |
+| `html[data-zoom]`·`data-zoom-mode`·`body[data-context]`·`#status[data-state]` | 그대로(화면에 보이지 않는 속성) | 시험·진단용 |
+
+#### 10.2.4 쪽 화살표
+
+| 항목 | 이전 | 이후 |
+| --- | --- | --- |
+| 버튼 크기 | 32×44 px | 48×96 px(가로 1.5배, 세로 약 2.2배, 터치 영역 48×96) |
+| 아이콘 | 글자 `‹`·`›` 22 px | 인라인 SVG 셰브런 30 px, 선 굵기 2.75 |
+| 기본 판 | `#4a4f54` 불투명(문서 배경 `#525659` 와 대비 약 1.1:1), 글자 `#eee`(대비 약 7:1) | `rgb(32 33 36 / 88%)`(배경 위 합성 대비 약 2.0:1), 흰 아이콘(대비 약 15:1), 테두리 흰색 30%, 그림자 |
+| hover | 배경 `#5a6066` | 판 `rgb(72 76 80 / 96%)`, 테두리 흰색 60%. 누름(active) `#5f6368` |
+| focus-visible | 2 px `#8ab4f8`, 간격 1 px | 3 px `#8ab4f8`, 간격 2 px |
+| 비활성(첫·마지막 쪽) | 전체 불투명도 0.35 | 판 40%, 아이콘 흰색 30%, 테두리 10%, 그림자 없음 |
+| 칸·쪽 맞춤 | 칸 32 + 간격 4·4, `PAGE_ARROW_GUTTER` 40 | 칸 48 + 간격 3·3 = 54, `PAGE_ARROW_GUTTER` 56(쪽 비트맵 폭 올림 1 px 여유 2 px 포함) |
+| 좁은 창 | 쪽 최소 폭(320 px) 때문에 가로로 넘치면 화살표가 쪽과 함께 스크롤되어 화면 밖으로 나감 | 칸이 `position: sticky`(왼쪽 `left: 0`, 오른쪽 `right: 0`)라 넘칠 때만 문서 영역 안쪽 여백(16 px) 가장자리에 붙어 쪽 가장자리 위에 겹침. 넘치지 않으면 쪽 바깥 여백에 있음 |
+
+- 1280 px 창 실측(영어, 612 pt 쪽): 쪽 918 px(최대 배율 1.5 라 이전과 같음), 화살표는 쪽 왼쪽·오른쪽 3 px 바깥, 가로 넘침 없음. 400 px 창: 쪽 320 px(최소 폭)로 문서 영역이 60 px 넘치고, 다음 화살표가 오른쪽 가장자리에서 쪽 위에 겹침.
+- 쪽 위에 겹치는 범위: 넘치지 않는 창(약 464 px 이상)에서는 0. 좁은 창에서는 버튼 48×96 만 겹치고 칸의 나머지는 포인터를 받지 않음.
+- 클릭·키보드(단축키 없음, Tab 초점)·편집 중 이동 시 커밋 동작은 그대로.
+
+#### 10.2.5 시험
+
+| 시험 | 내용 |
+| --- | --- |
+| `packages/viewer-ui/test/strings.test.ts` | 언어 판정(ko·ko-KR·KO_kr → ko, en-US·ja·zh-CN·kok·없음 → en, 비어 있지 않은 첫 태그), 두 표의 키(중첩 포함) 일치, 영어 표에 한글·빈 문자열 없음, `findLabel` 표 적용 |
+| `packages/viewer-ui/test/controller.test.ts`·`edit-controller.test.ts` | 기본 표 한국어·옵션 표 영어, 검색 미구현 문구 영어, 레이아웃·편집 표시 제목 영어, 복구 알림 영어 |
+| `apps/extension/test/strings.test.ts` | `detectLang`(UI 언어 우선·navigator 대체), 두 표 키 일치·영어 한글 없음, 알림 줄·저장 전 판정(core 한국어 문구 대신 수치 문구)·정보 대화상자 영어, `?diag`·Ctrl+Alt+Shift+D 판정 |
+| `e2e/i18n.spec.ts` | en-US: 툴바·검색창·저장 메뉴·쪽 화살표 영어, 머리 영역 글자·title·aria-label·placeholder 에 한글 없음, 알림 줄(크기·Redact)·저장 확인 대화상자·상태 줄("Save cancelled"·"Saved: Downloads")·정보 대화상자 영어. ja-JP → 영어, ko-KR → 한국어 |
+| `e2e/diag-display.spec.ts` | 기본 숨김(진단 패널·버튼·링크·downloads 저장·렌더 경과), 진단 기록 수집 유지, 문서 영역이 창 아래까지, `?diag` 로 보임, Ctrl+Alt+Shift+D 켜고 끄기 |
+| `e2e/save-menu.spec.ts` | 진단 표시 꺼짐: 두 항목·↑↓ 두 항목 순환. 세 항목 시험은 `?diag` 로 |
+| `e2e/page-nav.spec.ts` | 화살표 48×96 이상·SVG, 기본·hover·비활성 모양 구분, 기본 판 88%. 400 px 창에서 쪽이 넘치면 두 화살표가 보이는 가장자리 안에 있고 끝까지 스크롤해도 이전 화살표가 남음, 이동 동작 |
+| `e2e/toolbar-layout.spec.ts` | Playwright 프로젝트 `en` 으로 영어 툴바에서 한 번 더 실행(좁은 배치·실제 탭 배율 0.5·1.5·2 보정·화면 안). 좁은 배치 상태 줄 폭은 진단 표시를 켜고 잼 |
+| 기존 e2e | 로케일을 `ko-KR` 로 고정(`e2e/locale.ts`, `playwright.config.ts` 프로젝트 `ko`). Linux Chromium 은 `--lang` 을 무시하고 Playwright `locale` 은 `getUILanguage()` 에도 반영됨(실측). downloads 저장을 누르는 시험은 `chooseSave()` 가 단축키 처리로 진단 표시를 켠 뒤 누름 |
+
+#### 10.2.6 남은 확인
+
+| # | 내용 | 담당 |
+| --- | --- | --- |
+| 1 | 영어 문구 검토(특히 "Show fallback", "Block tagged PDF edits", 알림·대화상자 문장) | 사용자 |
+| 2 | 스토어 등록 이름·설명 현지화(`_locales/{ko,en}` + `default_locale`) 여부와 기본 언어. 넣으면 `verify-dist --release` 의 `name` 검사를 `__MSG_…__` 에 맞게 바꿔야 함 | 사용자 |
+| 3 | 쪽 위 편집 UI·편집 제한 사유 영어화(10.2.2 남은 표) | 후속 |
+| 4 | Windows Chrome 영어 UI(설정 → 언어 → Chrome 표시 언어)에서 헤더 영어, 한국어 UI 에서 한국어 확인 | 사용자 |
+| 5 | 좁은 창에서 쪽 위에 겹치는 화살표가 텍스트 선택·편집에 방해되는지 | 사용자 |

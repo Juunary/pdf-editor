@@ -2,6 +2,8 @@
 
 PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한 번에 한 쪽씩 보입니다(연속 스크롤 보기는 없습니다). 모든 처리는 브라우저 안에서 이루어지고 PDF 는 외부로 전송되지 않습니다.
 
+도구 막대·검색창·저장 메뉴·상태 줄·알림 줄과 정보·저장 확인 창은 Chrome 표시 언어를 따릅니다. 한국어면 한국어, 그 밖의 언어면 영어로 나옵니다(Chrome 설정 → 언어에서 바꾼 뒤 Chrome 을 다시 시작). 쪽 위 편집 화면(편집기·편집 불가 사유·패스 패널)은 한국어만 있습니다.
+
 ## 열기와 쪽 이동
 
 | 동작 | 방법 |
@@ -94,10 +96,11 @@ PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한
 | --- | --- |
 | Redact(가림) 주석 | 문서에 적용되지 않은 Redact 주석이 있으면 열 때 개수와 쪽이 안내됩니다. 이 뷰어는 적용하지 않으며 저장 뒤에도 표시로 남습니다 |
 | 레이아웃 오버레이 | 문단·표·도형·읽기 순서를 보여 주는 보조 화면(도구 막대 "레이아웃·편집 표시") |
-| 진단 | 개발 빌드에서 가로채기 방식 등 진단 정보를 볼 수 있습니다 |
+| 진단 | 개발 빌드에서만, 기본으로 숨겨져 있습니다. 주소에 `?diag` 를 붙이거나 Ctrl+Alt+Shift+D 로 가로채기 방식 등 진단 정보를 봅니다 |
 
 ## English summary
 
+- The toolbar, find bar, save menu, status line, notices, and the About and save-confirmation dialogs follow Chrome's display language: Korean for Korean, English for any other language. The on-page editing UI (editor, restriction reasons, path panel) is Korean only.
 - Open any PDF in Chrome; pages are shown one at a time. Select and copy text, search with Ctrl+F.
 - Double-click a paragraph or table cell to edit it (IME input supported); Esc or clicking outside commits. Text reflows inside the edit area and the area grows downward up to a limit; glyphs missing from the original font use a bundled Noto Sans KR subset.
 - Select vector paths with Alt+click (or plain click when "Layout & editable marks" is on), then move, resize, edit points, change fill/stroke color and width, or delete.
