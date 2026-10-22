@@ -58,7 +58,7 @@ BENCH_RUN=1 BENCH_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus BENCH_TI
   pnpm --filter @pdf-editor/extension exec playwright test e2e/bench-run.spec.ts
 ```
 
-환경 변수: `BENCH_TIER`(core·judge-stress·synthetic·large-real), `BENCH_DOCS`, `BENCH_IDS`(벤치 세트 밖 코퍼스 문서 id, Windows 실행과 같은 문서를 잴 때), `BENCH_SCENARIOS`, `BENCH_OPTIONS`(측정 옵션 JSON, 예 메모리 구간 진단 `{"mem":{"pages":50,"edits":20,"saves":2,"settleMs":30000,"probePhases":true}}`), `BENCH_LABEL`, `BENCH_BASELINE`(직전 기록, 기본 `fixtures/bench/baseline-server.json`; +20% 초과 지표를 `regressions` 에 표시).
+환경 변수: `BENCH_TIER`(core·judge-stress·synthetic·large-real), `BENCH_DOCS`, `BENCH_VIEWPORT`·`BENCH_DPR`(헤드리스 뷰포트·dpr 에뮬레이션, 예 Windows 기준 PC `1440x731`·`2`, 기본 `1280x1000`·`1`), `BENCH_IDS`(벤치 세트 밖 코퍼스 문서 id, Windows 실행과 같은 문서를 잴 때), `BENCH_SCENARIOS`, `BENCH_OPTIONS`(측정 옵션 JSON, 예 메모리 구간 진단 `{"mem":{"pages":50,"edits":20,"saves":2,"settleMs":30000,"probePhases":true}}`), `BENCH_LABEL`, `BENCH_BASELINE`(직전 기록, 기본 `fixtures/bench/baseline-server.json`; +20% 초과 지표를 `regressions` 에 표시).
 
 결과 JSON 의 진단 필드(2026-10-22 추가, 판정값의 정의는 같다):
 
@@ -71,6 +71,7 @@ BENCH_RUN=1 BENCH_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus BENCH_TI
 | `mem.phases[].wasmUsedBytes` | `probePhases` 일 때 구간마다 캐시를 비운 뒤 사용 중 힙(기준점·끝은 늘 잰다) |
 | `mem.phases[].detail` | 서버 자동화만: 렌더러 VmRSS, 페이지·Worker JS 힙(CDP `Runtime.getHeapUsage` 사용·할당), Worker WASM 선형 메모리 |
 | `skipped` | 해당 없음 시나리오와 사유(예: 앞 30쪽에 편집 가능한 패스 없음). 오류(`errors`)와 구분 |
+| `edit.renderScale`·`edit.updates` | 편집 반응 측정 때의 렌더 배율(CSS 배율 × dpr)과 초안 갱신 RPC 마다 왕복 시간·Worker 안 갱신 시간(`DraftUpdate.updateMs`)·영역 픽셀 수(반응 표본과 1:1 아님) |
 
 - 서버 강제 GC(`end-after-gc`)는 이전에 페이지에서만 돌았다(Playwright CDP 세션이 하위 Worker 세션으로 보내지 못함). 2026-10-22 부터 Worker 에도 보낸다(`Target.sendMessageToTarget`). 이전 기록의 "강제 GC 뒤" 값은 페이지 GC 만 반영한다.
 

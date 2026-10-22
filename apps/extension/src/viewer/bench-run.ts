@@ -11,6 +11,7 @@ import {
   flattenPath,
   mountViewer,
   pickPath,
+  renderScale,
   PAGE_ARROW_GUTTER,
   STROKE_HIT_PX,
   type PagePaintedEvent,
@@ -128,7 +129,16 @@ export interface DocResult {
     reusePages: number[];
     breakdown: JudgeBreakdown[];
   };
-  edit?: Measured & { page: number; paragraphId: number };
+  /**
+   * 편집 반응. `updates` 는 그 동안의 초안 갱신 RPC 마다 왕복 시간(`rpcMs`)과 Worker 안 갱신 시간(`workerMs` = 리플로우·쓰기·
+   * 영역 렌더, `DraftUpdate.updateMs`)·영역 크기(px)다. 반응 표본과 1:1 이 아니다(입력이 몰리면 마지막 입력만 보낸다).
+   */
+  edit?: Measured & {
+    page: number;
+    paragraphId: number;
+    renderScale: number | null;
+    updates: { rpcMs: number; workerMs: number; regionPx: number }[];
+  };
   path?: Measured & { page: number; paintSeq: number; serverUpdateMs: number[] };
   save?: { clean: Measured; edited: Measured | null; saveMs: number[]; wasmHeapBytes: number[] };
   mem?: MemResult;
@@ -280,6 +290,8 @@ interface Opened {
   firstPaint: Promise<PagePaintedEvent>;
   workerOpenMs: number;
   painted: PaintWaiters;
+  /** 뷰어가 보낸 초안 갱신 RPC 기록(편집 반응 구성용). */
+  draftUpdates: { rpcMs: number; workerMs: number; regionPx: number }[];
   dispose(): void;
 }
 
@@ -456,12 +468,28 @@ export class BenchRunner {
     const t0 = mark(M5_EVENTS.open.start);
     const info = await pdf.open(transferBytes(bytes));
     const workerOpenMs = performance.now() - t0;
+    const draftUpdates: Opened['draftUpdates'] = [];
+    const call = (key: string, args: unknown[]) =>
+      (pdf as unknown as Record<string, (...a: unknown[]) => unknown>)[key]!(...args);
     const host = new Proxy({} as ViewerHost, {
       get: (_t, key: string) =>
         key === 'log'
           ? () => undefined
-          : (...args: unknown[]) =>
-              (pdf as unknown as Record<string, (...a: unknown[]) => unknown>)[key]!(...args),
+          : key === 'updateParagraphDraft'
+            ? async (...args: unknown[]) => {
+                const t = performance.now();
+                const u = (await call(key, args)) as {
+                  updateMs: number;
+                  region: { width: number; height: number };
+                };
+                draftUpdates.push({
+                  rpcMs: performance.now() - t,
+                  workerMs: u.updateMs,
+                  regionPx: u.region.width * u.region.height,
+                });
+                return u;
+              }
+            : (...args: unknown[]) => call(key, args),
     });
     const controller = new ViewerController({
       host,
@@ -493,6 +521,7 @@ export class BenchRunner {
       firstPaint,
       workerOpenMs,
       painted,
+      draftUpdates,
       dispose: () => {
         controller.dispose();
         unmount();
@@ -747,6 +776,7 @@ export class BenchRunner {
     const edit = o.controller.edit;
     if (!edit) throw new Error('편집 호스트 없음');
     const before = performance.getEntriesByName('pe-edit-latency', 'measure').length;
+    const updatesFrom = o.draftUpdates.length;
     await edit.begin(target.page, target.paragraphId, null);
     const session = edit.currentSession();
     if (!session) throw new Error('편집 세션이 열리지 않음');
@@ -761,11 +791,15 @@ export class BenchRunner {
       .getEntriesByName('pe-edit-latency', 'measure')
       .slice(before)
       .map((e) => e.duration);
+    const layout = o.controller.getState().view?.layout;
+    const scale = layout ? renderScale(layout.cssScale, layout.devicePixelRatio) : null;
     await edit.cancelActive();
     result.edit = {
       ...measured(samples, 'edit', o.pageCount),
       page: target.page,
       paragraphId: target.paragraphId,
+      renderScale: scale,
+      updates: o.draftUpdates.slice(updatesFrom),
     };
   }
 

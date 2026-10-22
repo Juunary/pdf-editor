@@ -36,12 +36,19 @@ export interface BenchBrowser {
   close(): Promise<void>;
 }
 
+/**
+ * 측정 브라우저. 기본 뷰포트 1280×1000·dpr 1. Windows 기준 PC 조건을 흉내 낼 때는 환경 변수 `BENCH_VIEWPORT`(예 `1440x731`)·
+ * `BENCH_DPR`(예 `2`)로 바꾼다(헤드리스 에뮬레이션, 판정은 Windows 값).
+ */
 export async function launchBenchBrowser(): Promise<BenchBrowser> {
   const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-editor-e2e-bench-'));
+  const [vw, vh] = (process.env.BENCH_VIEWPORT ?? '1280x1000').split('x').map(Number);
+  const dpr = Number(process.env.BENCH_DPR ?? '1');
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
-    viewport: { width: 1280, height: 1000 },
+    viewport: { width: vw || 1280, height: vh || 1000 },
+    deviceScaleFactor: dpr > 0 ? dpr : 1,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
   const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
