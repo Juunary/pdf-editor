@@ -7,6 +7,10 @@
  * 뒤 렌더러 VmRSS. 단언: 이 두 판정값이 각각 ≤ 64 MiB·≤ 150 MiB. 대기 전 탭 증가에는 넉넉한 상한(250 MiB)만 둔다.
  *
  * 기본 문서: 합성 60쪽(fixtures/bench/synth.mjs, 시드 고정). 옵트인: BENCH_CORPUS_DIR 가 있으면 코퍼스 nist-sp800-53r5(492쪽)도 돈다.
+ *
+ * 큰 쪽 콘텐츠 회귀(Windows 확인 W2, docs/m5-followup.md 5.1): 편집이 풀린 채 다시 쓴 쪽 콘텐츠를 저널이 편집마다 보관하던 경로.
+ * 기본 e2e 는 합성 축소 사례(풀린 8 MiB 쪽의 문단 10건), 옵트인은 Windows 와 같은 코퍼스 kogl-mods-cpi-202609 시나리오다.
+ * 두 시험 모두 판정값(WASM `emptyStore` 뒤 사용 중 힙 증가) ≤ 64 MiB 를 단언한다(탭 메모리는 기록만).
  */
 
 /** 대기 전 탭 메모리 증가 상한(MiB). 수거 전 JS 쓰레기 때문에 흔들리므로 넉넉하게 둔다. */
@@ -25,23 +29,32 @@ import {
   type BenchDocFile,
 } from './bench-harness.js';
 import type { BenchResult } from '../src/viewer/bench.js';
+import type { BenchOptions } from '../src/viewer/bench-run.js';
+
+const MiB = 2 ** 20;
 
 test.setTimeout(10 * 60 * 1000);
 
-async function memoryRun(docs: BenchDocFile[]): Promise<BenchResult> {
+async function memoryRun(
+  docs: BenchDocFile[],
+  options: Partial<BenchOptions> = {},
+): Promise<BenchResult> {
   const { server, base } = await serveDocs(docs);
   const b = await launchBenchBrowser();
   try {
     const page = await openBenchPage(b);
     await exposeTabMemory(b, page);
     return (await page.evaluate(
-      (list) => window.__bench.run(list, { scenarios: ['mem'] }),
-      docs.map((d) => ({
-        id: d.id,
-        name: `${d.id}.pdf`,
-        url: `${base}/${d.id}.pdf`,
-        bytes: d.bytes,
-      })),
+      ([list, opts]) => window.__bench.run(list, { ...(opts as object), scenarios: ['mem'] }),
+      [
+        docs.map((d) => ({
+          id: d.id,
+          name: `${d.id}.pdf`,
+          url: `${base}/${d.id}.pdf`,
+          bytes: d.bytes,
+        })),
+        options,
+      ] as const,
     )) as unknown as BenchResult;
   } finally {
     await b.close();
@@ -112,6 +125,77 @@ test('메모리 왕복: 코퍼스 nist-sp800-53r5 492쪽(옵트인)', async () =
   console.log(JSON.stringify(mem));
   expect(result.docs[0]!.errors).toEqual([]);
   // 실제 문서의 탭 메모리는 값을 기록만 한다(docs/m5-perf.md 3.3).
+  expect(mem.wasmHeapDeltaMiB).not.toBeNull();
+  expect(mem.wasmHeapDeltaMiB!).toBeLessThanOrEqual(64);
+});
+
+test('큰 쪽 콘텐츠 회귀(합성, 풀린 8 MiB 쪽의 문단 10건 첫 편집): WASM 사용 중 힙 증가 ≤ 64 MiB', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-editor-bench-heavy-'));
+  try {
+    const path = join(dir, 'heavy-3.pdf');
+    execFileSync(
+      'node',
+      ['fixtures/bench/synth.mjs', '--kind', 'heavy', '--pages', '3', '--seed', '4', '--out', path],
+      { cwd: REPO, stdio: 'ignore' },
+    );
+    const result = await memoryRun(
+      [{ id: 'heavy-3', path, bytes: statSync(path).size, pages: 3 }],
+      {
+        mem: { pages: 3, edits: 10, saves: 2, settleMs: 0 },
+      },
+    );
+    const doc = result.docs[0]!;
+    expect(doc.errors).toEqual([]);
+    const mem = doc.mem!;
+    console.log(
+      JSON.stringify({
+        wasmHeapDeltaMiB: mem.wasmHeapDeltaMiB,
+        wasmLinearDeltaMiB: mem.wasmLinearDeltaMiB,
+        journalMiB: (mem.editLog.at(-1)?.journalBytes ?? 0) / MiB,
+        tabDeltaMiB: mem.tabDeltaMiB,
+      }),
+    );
+    // 시나리오가 의도한 경로를 탔는지: 큰 쪽(0쪽) 문단 10건을 모두 처음 고쳤다(블록 재편집 아님).
+    const committed = mem.editLog.filter((e) => e.committed);
+    expect(committed).toHaveLength(10);
+    expect(committed.every((e) => e.pageIndex === 0 && e.editedBlock === false)).toBe(true);
+    // 저널 보유 추정: 풀린 콘텐츠(8 MiB) × 10 이 아니라 압축 크기(약 1.7 MiB) 몫.
+    expect(committed.at(-1)!.journalBytes!).toBeLessThan(32 * MiB);
+    expect(mem.wasmHeapDeltaMiB).not.toBeNull();
+    expect(mem.wasmHeapDeltaMiB!).toBeLessThanOrEqual(64);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('메모리 왕복: 코퍼스 kogl-mods-cpi-202609(옵트인, Windows W2 와 같은 시나리오)', async () => {
+  test.skip(!process.env.BENCH_CORPUS_DIR, 'BENCH_CORPUS_DIR 없음');
+  test.setTimeout(20 * 60 * 1000);
+  const list = JSON.parse(
+    execFileSync(
+      'node',
+      [
+        'fixtures/bench/prepare.mjs',
+        '--tier',
+        'judge-stress',
+        '--corpus-dir',
+        process.env.BENCH_CORPUS_DIR!,
+      ],
+      { cwd: REPO, maxBuffer: 1 << 24 },
+    ).toString(),
+  ) as BenchDocFile[];
+  const result = await memoryRun(list.filter((d) => d.id === 'kogl-mods-cpi-202609'));
+  const mem = result.docs[0]!.mem!;
+  console.log(
+    JSON.stringify({
+      wasmHeapDeltaMiB: mem.wasmHeapDeltaMiB,
+      wasmLinearDeltaMiB: mem.wasmLinearDeltaMiB,
+      journalMiB: (mem.editLog.at(-1)?.journalBytes ?? 0) / MiB,
+      tabDeltaMiB: mem.tabDeltaMiB,
+    }),
+  );
+  expect(result.docs[0]!.errors).toEqual([]);
+  expect(mem.edits).toBe(20);
   expect(mem.wasmHeapDeltaMiB).not.toBeNull();
   expect(mem.wasmHeapDeltaMiB!).toBeLessThanOrEqual(64);
 });

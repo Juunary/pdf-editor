@@ -12,3 +12,4 @@ export * from './paragraph-edit.js';
 export { releaseBorrowedShade } from './mupdf-util.js';
 export { pdfaDeclared } from './edit-meta.js';
 export * from './path-edit.js';
+export * from './stream-compact.js';
