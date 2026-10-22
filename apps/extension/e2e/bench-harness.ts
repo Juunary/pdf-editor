@@ -17,6 +17,7 @@ import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { E2E_LOCALE } from './locale.js';
 
 export const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 export const REPO = fileURLToPath(new URL('../../..', import.meta.url));
@@ -47,6 +48,7 @@ export async function launchBenchBrowser(): Promise<BenchBrowser> {
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     viewport: { width: vw || 1280, height: vh || 1000 },
     deviceScaleFactor: dpr > 0 ? dpr : 1,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],

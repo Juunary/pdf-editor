@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { editModel, openEditHarness, startEditHarness, stopEditHarness } from './edit-harness.js';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
@@ -211,6 +212,7 @@ async function withExtension<T>(
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
   try {

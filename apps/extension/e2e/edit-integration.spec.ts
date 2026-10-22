@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chooseSave } from './toolbar-helpers.js';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
@@ -39,6 +40,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     context = await chromium.launchPersistentContext(userDataDir, {
       channel: 'chromium',
       headless: true,
+      locale: E2E_LOCALE,
       acceptDownloads: true,
       args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
     });

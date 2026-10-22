@@ -23,7 +23,6 @@ import {
 } from './header-zoom.js';
 import {
   fileAccessNotice,
-  HISTORY_AFTER_SAVE_NOTICE,
   journalNotice,
   recoveredNotice,
   recoveryProgressNotice,
@@ -36,12 +35,19 @@ import { setupSaveMenu } from './save-menu.js';
 import { SaveTarget, type SaveOutcome, type WritableFileHandle } from './save-target.js';
 import { decideSave } from './save-plan.js';
 import { resolveViewerSource, type ViewerContextKind, type ViewerSource } from './source.js';
+import { APP_STRINGS, applyDomStrings, detectLang, readLanguageSources } from './strings.js';
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`#${id} 없음`);
   return el as T;
 }
+
+/** 화면 언어(사용자 요청 2026-10-23): 브라우저 UI 언어가 ko 계열이면 한국어, 그 밖은 영어. */
+const lang = detectLang(readLanguageSources());
+const t = APP_STRINGS[lang];
+document.documentElement.lang = lang;
+applyDomStrings(document, t);
 
 const statusEl = byId<HTMLSpanElement>('status');
 const openLabel = byId<HTMLLabelElement>('open-label');
@@ -139,7 +145,8 @@ function setNotice(id: string, text: string | null): void {
     const close = document.createElement('button');
     close.type = 'button';
     close.textContent = '✕';
-    close.title = '닫기';
+    close.title = t.close;
+    close.setAttribute('aria-label', t.close);
     close.addEventListener('click', () => setNotice(id, null));
     row.append(span, close);
     noticeBar.append(row);
@@ -161,7 +168,7 @@ function spawnWorker(): WorkerHandle {
     };
     worker.addEventListener('error', (e) => {
       diag.add('worker-error', e.message || 'Worker 스크립트 로드 실패');
-      setStatus('error', `Worker 오류: ${e.message}`);
+      setStatus('error', t.statusWorkerError(e.message));
       fail(e.message || 'Worker 오류');
     });
     worker.addEventListener('messageerror', () => {
@@ -174,17 +181,20 @@ function spawnWorker(): WorkerHandle {
 }
 
 byId<HTMLButtonElement>('about').addEventListener('click', () => {
-  const about = aboutContent({
-    version: __APP_VERSION__,
-    sourceUrl: __SOURCE_URL__,
-    // 고지 파일은 스토어 빌드 패키지에만 들어간다(scripts/release/package.mjs).
-    noticesUrl:
-      __BUILD_KIND__ === 'store' ? chrome.runtime.getURL('THIRD_PARTY_NOTICES.txt') : null,
-    heap: lastHeap,
-  });
+  const about = aboutContent(
+    {
+      version: __APP_VERSION__,
+      sourceUrl: __SOURCE_URL__,
+      // 고지 파일은 스토어 빌드 패키지에만 들어간다(scripts/release/package.mjs).
+      noticesUrl:
+        __BUILD_KIND__ === 'store' ? chrome.runtime.getURL('THIRD_PARTY_NOTICES.txt') : null,
+      heap: lastHeap,
+    },
+    t,
+  );
   void openDialog(dialogEl, {
     ...about,
-    buttons: [{ id: 'ok', label: '닫기', primary: true }],
+    buttons: [{ id: 'ok', label: t.close, primary: true }],
   });
 });
 
@@ -204,11 +214,11 @@ const pdf = new ResilientPdf({
   log: (event, data) => diag.add(event, data),
   onProgress: (done, total) => {
     // 계약 D4(사용자 결정 2026-10-21): 복구 중 진행 n/N.
-    setNotice('recovered', recoveryProgressNotice(done, total));
-    setStatus('opening', `문서 복구 중: 편집 ${done}/${total}`);
+    setNotice('recovered', recoveryProgressNotice(done, total, t));
+    setStatus('opening', t.statusRecovering(done, total));
   },
   onRecovered: async (info) => {
-    setNotice('recovered', recoveredNotice(info.replayedEdits, info.fromSavedBaseline));
+    setNotice('recovered', recoveredNotice(info.replayedEdits, info.fromSavedBaseline, t));
     await controllerRef?.handleWorkerRecovered();
   },
 });
@@ -304,7 +314,7 @@ type SaveTrigger = 'save-as' | 'save' | 'ctrl+s' | 'downloads';
 async function prepareSave(): Promise<boolean> {
   const edit = controllerRef?.edit;
   if (edit && !(await edit.commitActive())) {
-    setStatus('error', '편집을 마치지 못해 저장하지 않았습니다');
+    setStatus('error', t.statusEditNotFinished);
     return false;
   }
   let plan;
@@ -312,11 +322,11 @@ async function prepareSave(): Promise<boolean> {
     plan = await pdf.planSave({ changes: [] });
   } catch (e) {
     diag.add('save-plan-error', String(e));
-    setStatus('error', `저장 전 판정 실패: ${String(e)}`);
+    setStatus('error', t.statusPlanFailed(String(e)));
     return false;
   }
   const journal = await queryJournalAdvice();
-  const decision = decideSave(plan, journal);
+  const decision = decideSave(plan, journal, t);
   lastHeap = plan.heap;
   lastPlanHadEdits = plan.edits !== null;
   updateSizeNotice(plan.heap);
@@ -331,20 +341,20 @@ async function prepareSave(): Promise<boolean> {
     warnings: decision.warnings,
   });
   if (decision.block) {
-    await alertDialog(dialogEl, '저장할 수 없습니다', [decision.block]);
-    setStatus('error', `저장 중단: ${decision.block}`);
+    await alertDialog(dialogEl, t.cannotSaveTitle, [decision.block], t.dialogOk);
+    setStatus('error', t.statusSaveBlocked(decision.block));
     return false;
   }
   if (decision.warnings.length > 0) {
     const ok = await confirmDialog(
       dialogEl,
-      '저장 전 확인',
+      t.confirmSaveTitle,
       [...decision.warnings, ...decision.infos],
-      decision.confirmLabel ?? '저장',
-      '취소',
+      decision.confirmLabel ?? t.save,
+      t.dialogCancel,
     );
     if (!ok) {
-      setStatus('idle', '저장을 취소했습니다');
+      setStatus('idle', t.statusSaveCancelled);
       return false;
     }
   }
@@ -355,7 +365,7 @@ async function prepareSave(): Promise<boolean> {
  * 크기 알림 칸 하나(I3): 저장 전 판정이 warn·over-limit 이면 그 문구로 바꾸고, ok 면 열 때 바이트 기준 안내를 그대로 둔다.
  */
 function updateSizeNotice(heap: SaveHeapEstimate): void {
-  const text = sizeLimitNotice(heap);
+  const text = sizeLimitNotice(heap, t);
   if (text) setNotice('size', text);
 }
 
@@ -374,7 +384,7 @@ async function reportJournal(): Promise<void> {
   const advice = await queryJournalAdvice();
   if (!advice) return;
   diag.add('journal-advice', advice);
-  setNotice('journal', journalNotice(advice));
+  setNotice('journal', journalNotice(advice, t));
 }
 
 /** 커밋 RPC 결과를 그대로 돌려주고, 저널 판정은 기다리지 않고 뒤에서 한다. */
@@ -391,7 +401,7 @@ function isRecoveredSave(error: unknown): boolean {
 
 async function runSave(trigger: SaveTrigger): Promise<void> {
   if (!(await prepareSave())) return;
-  setStatus('saving', '저장 중');
+  setStatus('saving', t.statusSaving);
   let outcome: SaveOutcome;
   try {
     outcome =
@@ -403,7 +413,7 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
   } catch (e) {
     diag.add('save-error', { trigger, context: contextKind, error: String(e) });
     if (isRecoveredSave(e)) return askSaveAgain(trigger);
-    setStatus('error', `저장 실패: ${String(e)}`);
+    setStatus('error', t.statusSaveFailed(String(e)));
     return;
   }
   if (outcome.status === 'failed' && isRecoveredSave(outcome.error)) {
@@ -416,39 +426,40 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
     isTopLevel: window.top === window,
     ...outcome,
   });
-  const where = outcome.channel === 'fsa' ? `파일 ${outcome.fileName}` : 'chrome.downloads';
+  const where = outcome.channel === 'fsa' ? t.savedToFile(outcome.fileName) : t.savedToDownloads;
   // 계약 D4: 사용자 저장이 성공하면 그 바이트가 복구 기준점이다.
   if (outcome.status === 'saved') pdf.confirmSaved();
   else pdf.discardPendingSave();
   setStatus(
-    outcome.status === 'saved' ? 'saved' : outcome.status,
-    `${outcome.status === 'saved' ? '저장됨' : outcome.status}: ${where}${outcome.reusedHandle ? ' (같은 대상 재저장)' : ''}`,
+    outcome.status,
+    outcome.status === 'saved'
+      ? t.statusSaved(where, outcome.reusedHandle)
+      : outcome.status === 'cancelled'
+        ? t.statusSaveCancelled
+        : t.statusSaveFailed(outcome.error ?? where),
   );
   if (outcome.status === 'saved' && lastPlanHadEdits && !historyNoticeShown) {
     historyNoticeShown = true;
-    setNotice('history', HISTORY_AFTER_SAVE_NOTICE);
+    setNotice('history', t.historyAfterSave);
   }
 }
 
 /** 저장 중 Worker 가 죽어 복구한 뒤(계약 5.8, A3-3): 다시 저장할지 묻는다. */
 async function askSaveAgain(trigger: SaveTrigger): Promise<void> {
-  setStatus('error', '저장 중 작업 모듈이 중단되어 문서를 복구했습니다');
+  setStatus('error', t.statusRecoveredDuringSave);
   const again = await confirmDialog(
     dialogEl,
-    '저장하지 못했습니다',
-    [
-      '저장하는 동안 작업 모듈이 중단되어 문서를 복구했습니다. 편집 내용은 복구되었지만 복구 전 되돌리기 이력은 사라졌습니다.',
-      '다시 저장할까요?',
-    ],
-    '다시 저장',
-    '나중에',
+    t.saveFailedTitle,
+    t.saveFailedLines,
+    t.saveAgain,
+    t.later,
   );
   if (again) await runSave(trigger);
 }
 
 /** M0 진단: 브라우저 Worker 에서 전체 저장 시간·WASM 힙 측정(파일은 저장하지 않음). */
 async function benchFullSave(): Promise<void> {
-  setStatus('saving', '전체 저장 측정 중');
+  setStatus('saving', t.statusBenchSaving);
   const r = await pdf.save({ changes: ['content-stream'] });
   pdf.discardPendingSave(); // 측정 저장은 복구 기준점이 아니다
   const result = {
@@ -460,10 +471,7 @@ async function benchFullSave(): Promise<void> {
     context: contextKind,
   };
   diag.add('bench-full-save', result);
-  setStatus(
-    'rendered',
-    `전체 저장 ${r.saveMs.toFixed(0)} ms, WASM 힙 ${((r.wasmHeapBytes ?? 0) / 2 ** 20).toFixed(1)} MiB`,
-  );
+  setStatus('rendered', t.statusBenchResult(r.saveMs, (r.wasmHeapBytes ?? 0) / 2 ** 20));
 }
 
 /**
@@ -516,11 +524,11 @@ function onPagePainted(e: PagePaintedEvent): void {
     saveEnabled = true;
     enableSave();
   }
-  setStatus('rendered', `${e.pageCount} 페이지 · ${e.pageIndex + 1}페이지 렌더 완료`);
+  setStatus('rendered', t.statusRendered(e.pageCount, e.pageIndex + 1));
 }
 
 async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
-  setStatus('opening', `여는 중: ${label}`);
+  setStatus('opening', t.statusOpening(label));
   // 이전에 연 문서의 뷰어를 먼저 정리한다. Worker 세션은 open 에서 이전 문서를 닫으므로, 그 사이 이전 뷰어가
   // 렌더·추출을 요청하면 새 문서(또는 닫힌 문서)에 대한 호출이 된다.
   if (unmountViewer) {
@@ -542,7 +550,7 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   const info = await pdf.open(bytes);
   diag.add('open', info);
   // 크기 알림(I3, 사용자 결정 2026-10-21): 열 때 바이트 기준 안내를 한 번 띄우고, 저장 전 판정은 같은 칸을 바꾼다.
-  setNotice('size', supportedSizeNotice(info.byteLength));
+  setNotice('size', supportedSizeNotice(info.byteLength, undefined, t));
   documentName = label;
   document.title = `${label} - PDF Editor`;
 
@@ -579,6 +587,7 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
     }),
     onPagePainted,
     editLog,
+    strings: t.viewer,
   });
   controllerRef = controller;
   unmountViewer = mountViewer(
@@ -613,7 +622,7 @@ async function reportRedactAnnots(): Promise<void> {
     return;
   }
   diag.add('redact-report', report);
-  setNotice('redact', redactNotice(report));
+  setNotice('redact', redactNotice(report, t));
 }
 
 /** DNR 폴백 경로에서 file:// 접근이 꺼져 있으면 안내한다(A5-3). */
@@ -624,12 +633,15 @@ async function reportFileAccess(displayUrl: string | null, mode: string): Promis
   } catch {
     allowed = null;
   }
-  const notice = fileAccessNotice({
-    mode: mode === 'mime-handler' || mode === 'dnr-fallback' ? mode : 'unsupported',
-    fileAccessAllowed: allowed,
-    displayUrl,
-    extensionId: chrome.runtime.id,
-  });
+  const notice = fileAccessNotice(
+    {
+      mode: mode === 'mime-handler' || mode === 'dnr-fallback' ? mode : 'unsupported',
+      fileAccessAllowed: allowed,
+      displayUrl,
+      extensionId: chrome.runtime.id,
+    },
+    t,
+  );
   diag.add('file-access', { mode, allowed, displayUrl, notice: notice !== null });
   setNotice('file-access', notice);
 }
@@ -704,13 +716,13 @@ async function main(): Promise<void> {
         await chrome.mimeHandler.abortAndFallbackToNativeHandler();
         return;
       }
-      setStatus('error', `열기 실패: ${String(e)}`);
+      setStatus('error', t.statusOpenFailed(String(e)));
     }
     return;
   }
 
   openLabel.hidden = false;
-  setStatus('idle', 'PDF 파일을 선택하세요');
+  setStatus('idle', t.statusChoosePdf);
   openInput.addEventListener('change', () => {
     const file = openInput.files?.[0];
     if (!file) return;
@@ -719,7 +731,7 @@ async function main(): Promise<void> {
       .then((bytes) => openBytes(bytes, file.name))
       .catch((e: unknown) => {
         diag.add('open-error', String(e));
-        setStatus('error', `열기 실패: ${String(e)}`);
+        setStatus('error', t.statusOpenFailed(String(e)));
       });
   });
 }

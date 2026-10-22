@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chooseSave } from './toolbar-helpers.js';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
@@ -96,6 +97,7 @@ test('확장 로드: 서비스 워커, MIME handler 세 문맥 렌더, 저장 �
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     acceptDownloads: true,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });

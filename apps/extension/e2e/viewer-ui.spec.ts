@@ -34,6 +34,7 @@ import {
   makeSourceMap,
   makeTextOp,
 } from '../../../packages/viewer-ui/test/fixtures.js';
+import { E2E_LOCALE } from './locale.js';
 
 // ── 공통 ──────────────────────────────────────────────────────────────
 
@@ -912,6 +913,7 @@ async function withExtension<T>(fn: (env: ExtensionEnv) => Promise<T>): Promise<
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
   try {

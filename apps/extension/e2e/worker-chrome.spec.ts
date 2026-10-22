@@ -10,6 +10,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
@@ -22,6 +23,7 @@ test('전용 Worker: chrome.* 사용 불가, 확장 자산(폴백 폰트) fetch 
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
   try {

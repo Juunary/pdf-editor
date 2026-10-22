@@ -22,6 +22,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
@@ -53,6 +54,8 @@ test.beforeAll(async () => {
   context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    // 프로젝트 로케일(playwright.config.ts: ko 기본, en 은 같은 시험을 영어 툴바로).
+    locale: test.info().project.use.locale ?? E2E_LOCALE,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
   sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));

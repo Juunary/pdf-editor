@@ -10,6 +10,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { E2E_LOCALE } from './locale.js';
 
 const EXT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const STAGING = join(EXT_ROOT, 'out', 'release', 'staging');
@@ -54,6 +55,7 @@ test.beforeAll(async () => {
   context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     acceptDownloads: true,
     args: [`--disable-extensions-except=${STAGING}`, `--load-extension=${STAGING}`],
   });
