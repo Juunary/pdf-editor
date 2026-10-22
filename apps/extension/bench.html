@@ -34,8 +34,17 @@
         <button id="bench-run" type="button" disabled>실행</button>
         <button id="bench-continue" type="button" hidden>입력했음, 계속</button>
         <p id="bench-manual" hidden>
-          작업 관리자(Shift+Esc) "메모리 사용 공간"에서 이 확장의 뷰어 프레임 행 값을 읽어 넣습니다.
-          <label>MiB <input id="bench-manual-mib" type="number" min="0" step="0.1" /></label>
+          <strong id="bench-manual-label"></strong>: 작업 관리자(Shift+Esc) "메모리 사용 공간"에서
+          이 확장의 뷰어 프레임 행 값을 보이는 그대로 넣습니다(예: 272,940K → 272940, 단위 K).
+          <label>값 <input id="bench-manual-value" type="text" inputmode="decimal" /></label>
+          <label
+            >단위
+            <select id="bench-manual-unit">
+              <option value="K" selected>K(작업 관리자 표시, 1 K = 1024 byte)</option>
+              <option value="MiB">MiB</option>
+            </select>
+          </label>
+          <span id="bench-manual-warning" role="alert"></span>
         </p>
       </fieldset>
       <fieldset>

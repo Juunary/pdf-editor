@@ -5,6 +5,7 @@
  * 수동: 문서 선택 → 지표 선택 → 실행. 메모리 시나리오는 기준점·종료 시점에 멈추므로 작업 관리자(Shift+Esc)의
  * "메모리 사용 공간"에서 이 확장 뷰어 프레임 행 값을 읽어 넣고 계속한다. 끝나면 결과 JSON 을 내보낸다.
  */
+import { benchDocOfFile, parseTabInput, tabInputWarnings, type TabUnit } from './bench-input.js';
 import { M5_EVENTS } from './bench-marks.js';
 import { TARGETS_MS, type Summary } from './bench-stats.js';
 import {
@@ -16,6 +17,7 @@ import {
   type BenchOptions,
   type DocResult,
   type Scenario,
+  type TabReading,
 } from './bench-run.js';
 
 export const RESULT_SCHEMA = 'm5-bench/2';
@@ -80,7 +82,10 @@ const runBtn = byId<HTMLButtonElement>('bench-run');
 const exportBtn = byId<HTMLButtonElement>('bench-export');
 const continueBtn = byId<HTMLButtonElement>('bench-continue');
 const manualEl = byId<HTMLParagraphElement>('bench-manual');
-const manualInput = byId<HTMLInputElement>('bench-manual-mib');
+const manualInput = byId<HTMLInputElement>('bench-manual-value');
+const manualUnit = byId<HTMLSelectElement>('bench-manual-unit');
+const manualWarn = byId<HTMLSpanElement>('bench-manual-warning');
+const manualLabel = byId<HTMLSpanElement>('bench-manual-label');
 const filesInput = byId<HTMLInputElement>('bench-files');
 const fileList = byId<HTMLSpanElement>('bench-file-list');
 
@@ -91,6 +96,59 @@ function setStatus(state: string, text: string): void {
 
 /** 서버 자동화가 `page.exposeFunction('benchTabMemory', ...)` 로 렌더러 VmRSS(MiB)를 돌려준다. */
 type AutoMemory = (label: string, docId: string) => Promise<number | null>;
+/** 서버 자동화가 `page.exposeFunction('benchTabDetail', ...)` 로 탭 메모리 구성(MiB)을 돌려준다. */
+type AutoDetail = (label: string, docId: string) => Promise<Record<string, number | null> | null>;
+
+/** 브라우저가 알려 준 RAM(MiB). 모르면 null. */
+function ramMiB(): number | null {
+  const gib = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return typeof gib === 'number' && gib > 0 ? gib * 1024 : null;
+}
+
+/** 수동 입력 1회: 작업 관리자 값을 받아 MiB 로 바꾼다. 경고가 있으면 같은 값으로 한 번 더 눌러야 넘어간다. */
+async function readManualTab(
+  docId: string,
+  name: string,
+  previous: readonly number[],
+): Promise<TabReading> {
+  setStatus('waiting', `${docId}: 탭 메모리(${name}) 입력 대기`);
+  manualLabel.textContent = name;
+  manualEl.hidden = false;
+  continueBtn.hidden = false;
+  manualInput.value = '';
+  manualWarn.textContent = '';
+  manualInput.focus();
+  let confirmed: string | null = null;
+  try {
+    for (;;) {
+      await new Promise<void>((resolve) =>
+        continueBtn.addEventListener('click', () => resolve(), { once: true }),
+      );
+      const parsed = parseTabInput(manualInput.value, manualUnit.value as TabUnit);
+      if (parsed.mib === null) {
+        manualWarn.textContent =
+          '숫자를 읽지 못했습니다. 작업 관리자 값(예: 272,940K)을 넣어 주세요.';
+        confirmed = null;
+        continue;
+      }
+      const warnings = tabInputWarnings(parsed.mib, previous, ramMiB());
+      const key = `${parsed.raw}|${parsed.unit}`;
+      if (warnings.length > 0 && confirmed !== key) {
+        // 같은 값으로 한 번 더 누르면 경고를 기록하고 넘어간다.
+        confirmed = key;
+        manualWarn.textContent = `${parsed.mib.toFixed(1)} MiB: ${warnings.join(' / ')}. 맞으면 그대로 다시 "입력했음, 계속".`;
+        continue;
+      }
+      return { mib: parsed.mib, raw: parsed.raw, unit: parsed.unit, warnings };
+    }
+  } finally {
+    manualEl.hidden = true;
+    continueBtn.hidden = true;
+  }
+}
+
+/** 수동 입력값(MiB)을 문서별로 모아 다음 입력의 경고 기준으로 쓴다. */
+const manualHistory = new Map<string, number[]>();
 
 function makeHooks(auto: AutoMemory | null): BenchHooks {
   return {
@@ -99,20 +157,16 @@ function makeHooks(auto: AutoMemory | null): BenchHooks {
       if (auto) return auto(label, docId);
       const name =
         label === 'baseline' ? '기준점' : label === 'end' ? '종료 직후' : '종료 30초 뒤(판정값)';
-      setStatus('waiting', `${docId}: 탭 메모리(${name}) 입력 대기`);
-      manualEl.hidden = false;
-      continueBtn.hidden = false;
-      manualInput.value = '';
-      manualInput.focus();
-      await new Promise<void>((resolve) =>
-        continueBtn.addEventListener('click', () => resolve(), { once: true }),
-      );
-      manualEl.hidden = true;
-      continueBtn.hidden = true;
-      const v = manualInput.valueAsNumber;
-      return Number.isFinite(v) ? v : null;
+      const previous = label === 'baseline' ? [] : (manualHistory.get(docId) ?? []);
+      const reading = await readManualTab(docId, name, previous);
+      if (reading.mib !== null) manualHistory.set(docId, [...previous, reading.mib]);
+      return reading;
     },
     samplePhase: auto ? (label, docId) => auto(`phase:${label}`, docId) : undefined,
+    sampleDetail:
+      auto && window.benchTabDetail
+        ? (label, docId) => window.benchTabDetail!(label, docId)
+        : undefined,
     targets: { controls: byId('viewer-controls'), pages: byId('page-container') },
     // 뷰어(main.ts)와 같이 스크롤 상자(#page-container) 폭을 쓴다(창 스크롤바가 아니라 문서 영역 스크롤바를 뺀 폭).
     availableWidth: () => Math.min(byId('page-container').clientWidth, 1100),
@@ -151,7 +205,7 @@ function render(result: BenchResult): string {
       f(d.nav?.all.summary),
       f(d.judge?.first.summary),
       f(d.edit?.summary),
-      f(d.path?.summary),
+      d.skipped?.path ? '해당 없음' : f(d.path?.summary),
       f(d.save?.clean.summary),
       d.mem?.wasmHeapDeltaMiB?.toFixed(1) ?? '-',
       d.mem?.tabDeltaMiB?.toFixed(1) ?? '-',
@@ -179,15 +233,22 @@ runBtn.addEventListener('click', () => {
   const scenarios = [...document.querySelectorAll<HTMLInputElement>('[data-scenario]')]
     .filter((c) => c.checked)
     .map((c) => c.dataset.scenario as Scenario);
+  // 벤치 세트 문서면 서버 실행과 같은 지정 쪽(예: kogl-mods-cpi-202609 최대 패스 쪽)을 쪽 판정·분해에 넣는다.
   const docs: BenchDoc[] = selected.map((f) => ({
-    id: f.name.replace(/\.pdf$/i, ''),
+    ...benchDocOfFile(f.name),
     name: f.name,
     bytes: f.size,
     load: () => f.arrayBuffer(),
   }));
   runBtn.disabled = true;
   exportBtn.disabled = true;
-  runBench(docs, { ...DEFAULT_OPTIONS, scenarios }, null)
+  // 시험용: `bench.html?settle=<ms>` 는 메모리 종료 뒤 대기를 바꾼다(수동 입력 흐름 e2e). 실제 측정은 기본 30 s.
+  const settle = Number(new URLSearchParams(location.search).get('settle') ?? NaN);
+  const mem =
+    Number.isFinite(settle) && settle >= 0
+      ? { ...DEFAULT_OPTIONS.mem, settleMs: settle }
+      : DEFAULT_OPTIONS.mem;
+  runBench(docs, { ...DEFAULT_OPTIONS, scenarios, mem }, null)
     .then((r) => {
       lastResult = r;
       summaryEl.textContent = render(r);
@@ -229,6 +290,7 @@ declare global {
   interface Window {
     __bench: BenchApi;
     benchTabMemory?: AutoMemory;
+    benchTabDetail?: AutoDetail;
   }
 }
 

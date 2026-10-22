@@ -28,7 +28,7 @@
 | 쪽 넘김 | `m5:nav:request` → `m5:nav:page-shown` | 순차 20회(쪽마다 300 ms 쉼: 미리 렌더 작동)와 고정 시드 임의 이동 10회. 목표는 둘을 합친 p95 |
 | 쪽 판정 | `m5:judge:page-enter` → `m5:judge:editability-ready` | 새 세션에서 쪽 6곳 첫 진입(캐시 비어 있음)과, 다른 쪽에 갔다 돌아온 재진입(`judgeReuse`). 쪽이 보인 시점부터 편집 가능 판정 완료까지 |
 | 편집 반응 | `m5:edit:input` → `m5:edit:preview-composited` | 첫 편집 가능 문단에서 30자 입력(60 ms 간격). 뷰어 자체 표식 |
-| 패스 끌기 | `m5:path:pointermove` → `m5:path:frame-painted` | 가장 큰 편집 가능 패스를 골라 `PathGesture.update` 40단계, 단계마다 두 번째 `requestAnimationFrame`. M4 `path-latency` 와 같은 정의. 서버 미리보기 왕복은 `serverUpdateMs` 로 따로 기록 |
+| 패스 끌기 | `m5:path:pointermove` → `m5:path:frame-painted` | 가장 큰 편집 가능 패스를 골라 `PathGesture.update` 40단계, 단계마다 두 번째 `requestAnimationFrame`. M4 `path-latency` 와 같은 정의. 서버 미리보기 왕복은 `serverUpdateMs` 로 따로 기록. 고르기는 그 패스 가운데를 누르고, 가운데가 그 패스를 고르지 않으면(원·호 같은 선 패스, 더 작은 패스가 위에 겹침) 윤곽 꼭짓점을 누른다(2026-10-22, arxiv-2609.10511 "패스 선택·판정 실패" 원인). 앞 30쪽에 편집 가능한 패스가 없으면 `skipped.path`(해당 없음) |
 | 전체 저장 | `m5:save:start` → `m5:save:bytes-ready` | `planSave` + `save({changes: []})`. 편집 전(clean)과 편집 1회 뒤(edited) 각 3회 |
 | 메모리 | `m5:mem:baseline` → `m5:mem:end` | 첫 저장 직후를 기준점으로 50쪽 넘김 왕복(98회 이동) → 편집 20회 → 저장 2회. 끝 측정 시점(사용자 결정 2026-10-21): WASM 은 MuPDF 캐시를 비운(`emptyStore`) 뒤 사용 중 힙(벤치 전용 RPC `benchProbeHeap`, 기준점도 같은 정의), 탭은 끝 30 s 대기 뒤 값(서버 VmRSS 또는 수동 입력). 이전 정의 값(선형 메모리 `wasmHeapBytes` 증가, 대기 전 탭 증가)도 결과에 남긴다 |
 
@@ -43,7 +43,7 @@ pnpm·Node 설치가 필요 없다. 준비물은 압축해제한 `dist` 폴더�
 3. 측정 조건을 맞춘다: 다른 탭·창을 닫고, 전원 연결, 절전 끔, 다른 확장 끔(가능하면). 측정 중에는 PC 를 건드리지 않는다.
 4. "문서 선택" 에서 `fixtures/bench/manifest.json` 의 문서를 고른다(여러 개 가능). 100 MB 이상 문서는 열기·쪽 넘김·저장만 체크한다.
 5. 지표를 모두 체크하고 "실행". 상태 줄에 진행이 표시된다. 서버에서 문서 하나에 약 40초가 걸린다(문서 크기·PC 에 따라 다름).
-6. 메모리 시나리오는 세 번 멈춘다(기준점·종료 직후·종료 30초 뒤). 종료 직후 값을 넣으면 페이지가 30초를 센 뒤 다시 멈춘다(그동안 PC 를 건드리지 않는다). 멈추면 `Shift+Esc` 로 Chrome 작업 관리자를 열어 이 확장의 뷰어 프레임 행(`확장 프로그램: PDF Editor` 또는 `하위 프레임: chrome-extension://…`)의 "메모리 사용 공간"을 MiB 로 읽어 입력칸에 넣고 "입력했음, 계속" 을 누른다. GB 표시는 ×1024. 판정은 30초 뒤 값이다.
+6. 메모리 시나리오는 세 번 멈춘다(기준점·종료 직후·종료 30초 뒤). 종료 직후 값을 넣으면 페이지가 30초를 센 뒤 다시 멈춘다(그동안 PC 를 건드리지 않는다). 멈추면 `Shift+Esc` 로 Chrome 작업 관리자를 열어 이 확장의 뷰어 프레임 행(`확장 프로그램: PDF Editor` 또는 `하위 프레임: chrome-extension://…`)의 "메모리 사용 공간"을 **새로 읽어** 보이는 그대로 입력칸에 넣고(예: `272,940K` → `272940`, 단위 K 기본) "입력했음, 계속" 을 누른다. 단위는 K(작업 관리자 표시, 1 K = 1024 byte)와 MiB 중 고르고, 값에 `K`·`MB`·`GB` 를 붙여 넣어도 된다. 페이지가 MiB 로 바꿔 판정한다. 직전 값과 같은 값, 세 값이 모두 같은 값, RAM 보다 큰 값, 직전 값의 5배 이상·1/5 이하, 10 MiB 미만이면 경고가 뜬다: 값을 고치거나, 맞으면 같은 값으로 한 번 더 누른다. 결과 JSON `mem.tabInputs` 에 원문·단위·MiB 값·경고가 남는다. 판정은 30초 뒤 값이다.
 7. 끝나면 "결과 JSON 내보내기" 로 받은 파일(`m5-bench-<시각>.json`)을 회신한다. 요약 표(p95)가 화면에도 나온다.
 8. PC 사양(CPU·RAM·Windows·Chrome 버전)은 JSON `env` 에 자동으로 들어가지만, 작업 관리자 행 이름과 이상 현상(멈춤·탭 크래시)은 따로 알려 준다.
 
@@ -58,7 +58,21 @@ BENCH_RUN=1 BENCH_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus BENCH_TI
   pnpm --filter @pdf-editor/extension exec playwright test e2e/bench-run.spec.ts
 ```
 
-환경 변수: `BENCH_TIER`(core·judge-stress·synthetic·large-real), `BENCH_DOCS`, `BENCH_SCENARIOS`, `BENCH_LABEL`, `BENCH_BASELINE`(직전 기록, 기본 `fixtures/bench/baseline-server.json`; +20% 초과 지표를 `regressions` 에 표시).
+환경 변수: `BENCH_TIER`(core·judge-stress·synthetic·large-real), `BENCH_DOCS`, `BENCH_IDS`(벤치 세트 밖 코퍼스 문서 id, Windows 실행과 같은 문서를 잴 때), `BENCH_SCENARIOS`, `BENCH_OPTIONS`(측정 옵션 JSON, 예 메모리 구간 진단 `{"mem":{"pages":50,"edits":20,"saves":2,"settleMs":30000,"probePhases":true}}`), `BENCH_LABEL`, `BENCH_BASELINE`(직전 기록, 기본 `fixtures/bench/baseline-server.json`; +20% 초과 지표를 `regressions` 에 표시).
+
+결과 JSON 의 진단 필드(2026-10-22 추가, 판정값의 정의는 같다):
+
+| 필드 | 내용 |
+| --- | --- |
+| `judge.pages`·`judge.reusePages` | 첫 진입·재진입 표본의 쪽(0부터, 표본 순서). 수동 실행도 벤치 세트 문서면 지정 쪽(`kogl-mods-cpi-202609` 4쪽)을 넣는다 |
+| `mem.firstSave` | 첫 저장 직전 선형 메모리(`heapBeforeBytes`, planSave), 직후 선형 메모리(`heapAfterBytes` = 저장 피크 상한 = `firstSavePeakHeapBytes` = `baseline.wasmHeapBytes`), D5 예상 피크, `grewHeap`(저장이 선형 메모리를 늘림), `withinPrediction` |
+| `mem.editLog` | 편집마다 쪽·문단 id·편집 블록 재편집 여부·대상 글자 수·커밋 여부·커밋 뒤 저널 보유 추정(`journalAdvice`)·시간 |
+| `mem.tabInputs` | 탭 메모리 읽기(수동: 원문·단위·MiB·경고, 서버: VmRSS) |
+| `mem.phases[].wasmUsedBytes` | `probePhases` 일 때 구간마다 캐시를 비운 뒤 사용 중 힙(기준점·끝은 늘 잰다) |
+| `mem.phases[].detail` | 서버 자동화만: 렌더러 VmRSS, 페이지·Worker JS 힙(CDP `Runtime.getHeapUsage` 사용·할당), Worker WASM 선형 메모리 |
+| `skipped` | 해당 없음 시나리오와 사유(예: 앞 30쪽에 편집 가능한 패스 없음). 오류(`errors`)와 구분 |
+
+- 서버 강제 GC(`end-after-gc`)는 이전에 페이지에서만 돌았다(Playwright CDP 세션이 하위 Worker 세션으로 보내지 못함). 2026-10-22 부터 Worker 에도 보낸다(`Target.sendMessageToTarget`). 이전 기록의 "강제 GC 뒤" 값은 페이지 GC 만 반영한다.
 
 ```bash
 # 쪽 판정 구성 분해(Worker 밖, 새 세션 반복)

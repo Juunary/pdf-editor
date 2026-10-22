@@ -27,6 +27,16 @@ interface Result {
       tabDeltaBeforeWaitMiB: number | null;
       settleMs: number;
       saves: number;
+      firstSavePeakHeapBytes: number | null;
+      firstSave: {
+        heapBeforeBytes: number | null;
+        heapAfterBytes: number | null;
+        predictedPeakBytes: number | null;
+        withinPrediction: boolean | null;
+      };
+      editLog: { pageIndex: number; committed: boolean; journalBytes: number | null }[];
+      tabInputs: { label: string; mib: number | null }[];
+      phases: { name: string; detail?: Record<string, number | null> | null }[];
     };
   }[];
   p95: Record<string, number>;
@@ -69,6 +79,20 @@ test('bench.html: m0-sample.pdf 로 열기·판정·저장·메모리 지표가 
   expect(doc.mem?.tabDeltaMiB).not.toBeNull();
   expect(doc.mem?.tabDeltaBeforeWaitMiB).not.toBeNull();
   expect(doc.mem?.settleMs).toBe(0);
+  // 첫 저장: 저장 전·뒤 선형 메모리와 D5 예상 피크(저장 뒤 값 = 기준점 값).
+  const firstSave = doc.mem!.firstSave;
+  expect(firstSave.heapBeforeBytes).not.toBeNull();
+  expect(firstSave.predictedPeakBytes).toBeGreaterThan(0);
+  expect(firstSave.heapAfterBytes).toBe(doc.mem!.firstSavePeakHeapBytes);
+  expect(firstSave.withinPrediction).toBe(true);
+  // 편집 기록·탭 입력 기록·탭 메모리 구성(서버 자동화: Worker JS 힙·WASM 선형 메모리).
+  expect(doc.mem!.editLog.filter((e) => e.committed)).toHaveLength(1);
+  expect(doc.mem!.editLog[0]!.journalBytes).toBeGreaterThan(0);
+  expect(doc.mem!.tabInputs.map((t) => t.label)).toEqual(['baseline', 'end', 'end-settled']);
+  const detail = doc.mem!.phases.find((p) => p.name === 'end')?.detail;
+  expect(detail?.workers).toBe(1);
+  expect(detail?.workerJsUsedMiB).toBeGreaterThan(0);
+  expect(detail?.wasmLinearMiB).toBeGreaterThan(0);
   expect(Object.keys(result.p95)).toContain('m0-sample.open');
 
   // 지표 이벤트가 performance 타임라인에 남는다.
