@@ -84,8 +84,27 @@ test('스테이징 확장: 스토어 매니페스트, DNR 서비스 워커 경�
     manifest: chrome.runtime.getManifest(),
     hasDnr: 'declarativeNetRequest' in chrome,
     hasMimeHandler: typeof chrome.mimeHandler === 'object',
+    name: chrome.i18n.getMessage('appName'),
+    description: chrome.i18n.getMessage('appDescription'),
+    actionTitle: chrome.i18n.getMessage('actionTitle'),
   }));
+  // 이름·설명은 _locales 메시지(사용자 결정 2026-10-26). getManifest() 는 푼 값을 준다. 메시지 언어는 Linux Chromium 이
+  // 환경 변수 LANGUAGE 로 정하므로(Playwright locale 은 반영되지 않음, 실측) 여기서는 두 언어 중 하나인지만 본다. 언어별
+  // 표시는 i18n.spec.ts 가 LANGUAGE 를 바꿔 확인한다.
+  const locales = (['en', 'ko'] as const).map(
+    (lang) =>
+      JSON.parse(readFileSync(join(STAGING, '_locales', lang, 'messages.json'), 'utf8')) as Record<
+        string,
+        { message: string }
+      >,
+  );
   expect(info.manifest.name).toBe('PDF Editor');
+  expect(info.manifest.default_locale).toBe('en');
+  expect(info.name).toBe('PDF Editor');
+  expect(locales.map((m) => m.appDescription!.message)).toContain(info.description);
+  expect(locales.map((m) => m.actionTitle!.message)).toContain(info.actionTitle);
+  expect(info.manifest.description).toBe(info.description);
+  expect(info.manifest.action?.default_title).toBe(info.actionTitle);
   expect(info.manifest.version).toBe(VERSION);
   expect(info.manifest.minimum_chrome_version).toBe('151');
   expect(info.manifest.permissions).toEqual(['downloads']);

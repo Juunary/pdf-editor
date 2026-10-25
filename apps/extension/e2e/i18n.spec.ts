@@ -18,12 +18,21 @@ interface Env {
   extensionId: string;
 }
 
-async function withLocale(locale: string, fn: (env: Env) => Promise<void>): Promise<void> {
+/**
+ * language 를 주면 Chromium 의 앱 언어(환경 변수 LANGUAGE)도 바꾼다. 확장 메시지(`_locales`, chrome.i18n.getMessage·매니페스트
+ * 이름·설명)는 이 언어를 따르고 Playwright `locale` 은 반영되지 않는다(실측, Linux Chromium).
+ */
+async function withLocale(
+  locale: string,
+  fn: (env: Env) => Promise<void>,
+  language?: string,
+): Promise<void> {
   const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-editor-e2e-i18n-'));
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
     locale,
+    ...(language ? { env: { ...process.env, LANGUAGE: language } } : {}),
     acceptDownloads: true,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
@@ -231,4 +240,44 @@ test('그 밖의 언어(ja-JP)는 영어, 한국어 로케일(ko-KR)은 한국�
     await expect(page.locator('#save-as')).toHaveText('다른 이름으로 저장');
     await page.close();
   });
+});
+
+test('확장 이름·설명·툴바 제목(_locales, 사용자 결정 2026-10-26): ko 는 한국어, en·ja 는 영어(기본 en)', async () => {
+  const cases = [
+    { locale: 'ko-KR', language: 'ko', ko: true },
+    { locale: 'en-US', language: 'en_US', ko: false },
+    { locale: 'ja-JP', language: 'ja', ko: false },
+  ];
+  for (const c of cases) {
+    await withLocale(
+      c.locale,
+      async (env) => {
+        const sw = env.context.serviceWorkers()[0]!;
+        const m = await sw.evaluate(() => {
+          const manifest = chrome.runtime.getManifest();
+          return {
+            name: manifest.name,
+            description: manifest.description ?? '',
+            title: manifest.action?.default_title ?? '',
+            uiLanguage: chrome.i18n.getUILanguage(),
+          };
+        });
+        // 개발 빌드(dist)는 이름에 " (dev)" 가 붙는다(스토어 빌드는 release-smoke.spec.ts).
+        expect(m.name, c.language).toBe('PDF Editor (dev)');
+        if (c.ko) {
+          expect(m.description).toBe(
+            'Chrome 에서 PDF 를 열어 글자 선택·검색, 문단·표 셀·도형 편집, 저장까지 기기 안에서 처리합니다.',
+          );
+          expect(m.title).toBe('PDF Editor 뷰어 열기');
+        } else {
+          expect(m.description).toBe(
+            'Open PDFs in Chrome to select, search, edit paragraphs, table cells and shapes, and save. All local.',
+          );
+          expect(m.title).toBe('Open PDF Editor viewer');
+        }
+        expect([...m.description].length).toBeLessThanOrEqual(132);
+      },
+      c.language,
+    );
+  }
 });
