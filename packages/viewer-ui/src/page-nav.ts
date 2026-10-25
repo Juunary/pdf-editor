@@ -38,3 +38,32 @@ export function navDisabled(current: number, pageCount: number): { prev: boolean
  * 비트맵 폭 올림(최대 1 px)으로 가로 넘침이 생기지 않게 2 px 여유를 더한다. 뷰어는 가용 너비에서 양쪽 몫을 뺀다.
  */
 export const PAGE_ARROW_GUTTER = 56;
+
+/** 쪽 최소 CSS 폭(`fitWidthScale` 의 minWidth 기본값과 같다). */
+export const MIN_PAGE_CSS_WIDTH = 320;
+/** 문서 영역 좌우 여백 합(`fitWidthScale` 의 margin 기본값 = 문서 영역 안쪽 여백 16·16). */
+export const PAGE_AREA_MARGIN = 32;
+
+/**
+ * 화살표 자리. side: 쪽 좌우 바깥 칸. below: 쪽 아래 줄(쪽과 겹치지 않는다). 좁은 창에서 좌우 칸을 두면 쪽이 최소 폭
+ * 때문에 문서 영역을 넘쳐 칸이 쪽 위에 겹치므로(docs/m5-release.md 10.2.4), 그 폭에서는 칸을 빼고 쪽 아래로 옮긴다.
+ */
+export type PageArrowPlacement = 'side' | 'below';
+
+export interface PageArrowLayout {
+  placement: PageArrowPlacement;
+  /** 쪽 맞춤에 쓸 가용 폭(`ViewerEnvironment.availableWidth`). side 면 좌우 칸 몫을 뺀다. */
+  availableWidth: number;
+}
+
+/**
+ * 문서 영역 폭(스크롤 상자의 clientWidth, 안쪽 여백 포함·스크롤바 제외)으로 화살표 자리와 쪽 맞춤 폭을 정한다.
+ * 좌우 칸 두 몫과 여백을 빼고도 쪽 최소 폭이 남으면(폭 ≥ 320 + 2×56 + 32 = 464) side, 아니면 below(칸 몫을 빼지 않아
+ * 쪽이 그만큼 넓어진다). 표시(마운트가 `data-pe-arrows` 로 붙임)와 쪽 맞춤(호스트의 getEnvironment)이 같은 함수를 쓴다.
+ */
+export function pageArrowLayout(containerWidth: number): PageArrowLayout {
+  const side = containerWidth - 2 * PAGE_ARROW_GUTTER - PAGE_AREA_MARGIN >= MIN_PAGE_CSS_WIDTH;
+  return side
+    ? { placement: 'side', availableWidth: containerWidth - 2 * PAGE_ARROW_GUTTER }
+    : { placement: 'below', availableWidth: containerWidth };
+}

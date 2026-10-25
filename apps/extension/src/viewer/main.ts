@@ -3,8 +3,8 @@ import {
   EditLog,
   ViewerController,
   classifyFailure,
-  PAGE_ARROW_GUTTER,
   mountViewer,
+  pageArrowLayout,
   type PagePaintedEvent,
 } from '@pdf-editor/viewer-ui';
 import '@pdf-editor/viewer-ui/style.css';
@@ -603,8 +603,9 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
     pageCount: info.pageCount,
     getEnvironment: () => ({
       devicePixelRatio: window.devicePixelRatio || 1,
-      // 쪽 좌우 화살표 칸을 뺀 너비에 맞춘다(화살표가 쪽을 가리지 않게).
-      availableWidth: pageContainerEl.clientWidth - 2 * PAGE_ARROW_GUTTER,
+      // 쪽 좌우 화살표 칸을 뺀 너비에 맞춘다(화살표가 쪽을 가리지 않게). 좁은 창은 화살표가 쪽 아래 줄로 가고 칸 몫을
+      // 빼지 않는다(viewer-ui `pageArrowLayout`, 마운트의 data-pe-arrows 와 같은 판정).
+      availableWidth: pageArrowLayout(pageContainerEl.clientWidth).availableWidth,
     }),
     onPagePainted,
     editLog,

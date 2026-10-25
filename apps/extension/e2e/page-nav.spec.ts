@@ -277,38 +277,71 @@ async function navigateAndCheck(frame: Frame): Promise<void> {
   await expect(prev).toBeDisabled();
 }
 
-test('[통합] 좁은 창(400 px): 쪽이 넘치면 화살표가 문서 영역 가장자리에 붙어 화면 안에 보인다', async () => {
+/** 화살표 두 상자와 쪽 캔버스 상자(문서 좌표, 스크롤과 무관하게 비교). */
+async function arrowGeometry(page: Page) {
+  return page.evaluate(() => {
+    const c = document.getElementById('page-container')!;
+    const box = (id: string) => {
+      const r = document.getElementById(id)!.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    };
+    return {
+      placement: c.dataset.peArrows ?? null,
+      clientWidth: c.clientWidth,
+      overflow: c.scrollWidth > c.clientWidth,
+      canvas: box('page-canvas'),
+      prev: box('pe-arrow-prev'),
+      next: box('pe-arrow-next'),
+    };
+  });
+}
+
+type Box = { left: number; top: number; right: number; bottom: number };
+const overlaps = (a: Box, b: Box) =>
+  a.left < b.right - 0.5 &&
+  b.left < a.right - 0.5 &&
+  a.top < b.bottom - 0.5 &&
+  b.top < a.bottom - 0.5;
+
+test('[통합] 창 폭 320·400·464·800 px: 화살표가 쪽 캔버스와 겹치지 않는다(좁으면 쪽 아래 줄)', async () => {
   await withExtension(async (env) => {
     const page = await env.context.newPage();
-    await page.setViewportSize({ width: 400, height: 700 });
-    await page.goto(`chrome-extension://${env.extensionId}/viewer.html?file=${env.base}/multi.pdf`);
-    await waitRendered(page.mainFrame());
-    const edges = () =>
-      page.evaluate(() => {
+    for (const width of [320, 400, 464, 800]) {
+      await page.setViewportSize({ width, height: 700 });
+      await page.goto(
+        `chrome-extension://${env.extensionId}/viewer.html?file=${env.base}/multi.pdf`,
+      );
+      await waitRendered(page.mainFrame());
+      const g = await arrowGeometry(page);
+      const tag = `${width} px (문서 영역 ${g.clientWidth} px, ${g.placement})`;
+      expect(overlaps(g.prev, g.canvas), `${tag}: 이전 화살표 × 쪽`).toBe(false);
+      expect(overlaps(g.next, g.canvas), `${tag}: 다음 화살표 × 쪽`).toBe(false);
+      // 판정 기준(page-nav.ts pageArrowLayout): 문서 영역 464 px 이상이면 좌우 칸.
+      expect(g.placement, tag).toBe(g.clientWidth >= 464 ? 'side' : 'below');
+      if (g.placement === 'side') {
+        expect(g.prev.right, tag).toBeLessThanOrEqual(g.canvas.left + 0.5);
+        expect(g.next.left, tag).toBeGreaterThanOrEqual(g.canvas.right - 0.5);
+        expect(g.overflow, `${tag}: 가로 넘침 없음`).toBe(false);
+      } else {
+        // 쪽 아래 줄, 이전이 왼쪽. 칸 몫을 빼지 않아 쪽 폭 = 문서 영역 − 여백(최소 320).
+        expect(g.prev.top, tag).toBeGreaterThanOrEqual(g.canvas.bottom - 0.5);
+        expect(g.next.top, tag).toBeGreaterThanOrEqual(g.canvas.bottom - 0.5);
+        expect(g.prev.right, tag).toBeLessThanOrEqual(g.next.left + 0.5);
+        const pageWidth = g.canvas.right - g.canvas.left;
+        expect(Math.abs(pageWidth - Math.max(320, g.clientWidth - 32)), tag).toBeLessThan(1.5);
+        expect(g.overflow, `${tag}: 최소 폭 때문에만 넘침`).toBe(g.clientWidth - 32 < 320);
+      }
+      // 끝까지 스크롤해도(가로·세로) 겹치지 않는다.
+      await page.evaluate(() => {
         const c = document.getElementById('page-container')!;
-        const r = (id: string) => document.getElementById(id)!.getBoundingClientRect();
-        return {
-          overflow: c.scrollWidth > c.clientWidth,
-          left: c.getBoundingClientRect().left,
-          right: c.getBoundingClientRect().left + c.clientWidth,
-          prev: r('pe-arrow-prev'),
-          next: r('pe-arrow-next'),
-        };
+        c.scrollLeft = c.scrollWidth;
+        c.scrollTop = c.scrollHeight;
       });
-    const e = await edges();
-    expect(e.overflow, '최소 쪽 폭 때문에 가로로 넘친다(전제)').toBe(true);
-    expect(e.prev.left).toBeGreaterThanOrEqual(e.left - 0.5);
-    expect(e.next.right, '다음 화살표가 보이는 오른쪽 끝 안').toBeLessThanOrEqual(e.right + 0.5);
-    // 오른쪽 끝까지 스크롤해도 이전 화살표가 왼쪽 가장자리에 남는다.
-    await page.evaluate(() => {
-      const c = document.getElementById('page-container')!;
-      c.scrollLeft = c.scrollWidth;
-    });
-    const end = await edges();
-    expect(end.prev.left).toBeGreaterThanOrEqual(end.left - 0.5);
-    // sticky 는 문서 영역 안쪽 여백(16 px) 가장자리에 붙는다.
-    expect(end.prev.right).toBeLessThanOrEqual(end.left + 16 + 48 + 0.5);
-    await navigateAndCheck(page.mainFrame());
+      const end = await arrowGeometry(page);
+      expect(overlaps(end.prev, end.canvas), `${tag}: 스크롤 뒤 이전`).toBe(false);
+      expect(overlaps(end.next, end.canvas), `${tag}: 스크롤 뒤 다음`).toBe(false);
+      if (width === 400) await navigateAndCheck(page.mainFrame());
+    }
   });
 });
 

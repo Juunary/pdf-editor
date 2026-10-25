@@ -429,9 +429,10 @@
 
 /* ── 쪽 좌우 화살표 ──────────────────────────────────────────── */
 /* 쪽 컨테이너(flex)의 양쪽 칸(너비 48 + 간격 3·3 = 54). 뷰어는 쪽 맞춤 너비에서 PAGE_ARROW_GUTTER(56) 두 몫을 빼므로
-   쪽 비트맵 폭 올림(최대 1 px)에도 가로로 넘치지 않는다. 칸 자체는 포인터를 받지 않고 버튼만 받는다. 쪽이 최소 폭(320 px)
-   때문에 문서 영역보다 넓어 가로로 넘치면(좁은 창) 칸이 문서 영역 안쪽 여백 가장자리에 붙어(sticky) 쪽 가장자리 위에 겹친다.
-   넘치지 않으면 sticky 는 아무 효과가 없다. */
+   쪽 비트맵 폭 올림(최대 1 px)에도 가로로 넘치지 않는다. 칸 자체는 포인터를 받지 않고 버튼만 받는다.
+   좁은 창(문서 영역 폭 < 464 px, page-nav.ts `pageArrowLayout`)은 마운트가 컨테이너에 data-pe-arrows="below" 를 붙이고
+   칸을 쪽 아래 줄로 옮긴다(사용자 결정 2026-10-26: 어떤 폭에서도 화살표가 쪽을 가리지 않게). 그 폭에서는 좌우 칸 몫을 빼지
+   않으므로 쪽이 넓어진다. 쪽이 최소 폭(320 px) 때문에 가로로 넘쳐도 화살표 줄은 쪽 아래라 겹치지 않는다. */
 .pe-arrow-slot {
   flex: none;
   align-self: stretch;
@@ -446,6 +447,28 @@
 }
 .pe-arrow-slot-next {
   right: 0;
+}
+/* 쪽 아래 줄: ::before(폭 100%)로 줄을 바꾸고 칸 둘을 다음 줄 가운데에 둔다(쪽 order 0 → 줄바꿈 1 → 칸 2). */
+[data-pe-arrows='below'] {
+  flex-wrap: wrap;
+  align-content: flex-start;
+  /* 쪽·줄바꿈·칸 사이 두 번 → 쪽 아래 12 px */
+  row-gap: 6px;
+}
+[data-pe-arrows='below']::before {
+  content: '';
+  order: 1;
+  flex: 0 0 100%;
+  height: 0;
+}
+[data-pe-arrows='below'] > .pe-arrow-slot {
+  order: 2;
+  position: static;
+  align-self: flex-start;
+  margin: 0 6px;
+}
+[data-pe-arrows='below'] .pe-arrow {
+  position: static;
 }
 /* 버튼 48×96(터치 영역), 아이콘 30 px 셰브런. 기본은 진한 반투명 판(88%)에 흰 아이콘이라 회색 배경·쪽 위 모두에서 또렷하다.
    hover 는 밝은 판·테두리, focus-visible 은 파란 외곽선, 비활성(첫·마지막 쪽)은 옅은 판·흐린 아이콘·그림자 없음. */
