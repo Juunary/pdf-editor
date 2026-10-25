@@ -5,12 +5,14 @@
  * 언어 판정: `chrome.i18n.getUILanguage()`(브라우저 UI 언어, 권한 불필요), 없으면 `navigator.language`. 주 언어가 ko 이면
  * 한국어, 그 밖은 영어(viewer-ui `resolveUiLang`). 방식 선택 근거는 docs/m5-release.md 10.2.
  */
+import type { SaveWarningCode } from '@pdf-editor/shared-types';
 import {
   resolveUiLang,
   VIEWER_STRINGS,
   type UiLang,
   type ViewerStrings,
 } from '@pdf-editor/viewer-ui';
+import type { SaveErrorCode } from './save-target.js';
 
 export interface AppStrings {
   lang: UiLang;
@@ -45,6 +47,13 @@ export interface AppStrings {
   statusBenchResult(saveMs: number, heapMiB: number): string;
   savedToFile(name: string): string;
   savedToDownloads: string;
+  /**
+   * 상태 줄 오류 상세(콜론 뒤). 한국어는 이전처럼 `String(e)`, 영어는 viewer-ui `errorDetail`(오류 이름·알려진 형태·한글 없는
+   * 메시지, 그 밖은 일반 문장, 사용자 결정 2026-10-26).
+   */
+  errorText(error: unknown): string;
+  /** 저장 대상(save-target.ts)이 정한 실패 원인. */
+  saveErrors: Record<SaveErrorCode, string>;
   // 알림 줄
   redactNotice(total: number, pages: string): string;
   fileAccessNotice(extensionId: string): string;
@@ -78,6 +87,10 @@ export interface AppStrings {
   structureUnlinked(count: number): string;
   pdfaDeclared: string;
   editPagesRecorded(pages: string): string;
+  /** core 저장 경고 코드(`SavePlan.warningCodes`) → 문장. 한국어는 core 문장(`SavePlan.warnings`)을 그대로 쓴다. */
+  saveWarnings: Record<SaveWarningCode, string[]>;
+  /** 코드 없는 core 저장 경고(영어 화면). */
+  saveWarningUnknown: string;
   // 정보 대화상자(about.ts)
   aboutDialogTitle: string;
   aboutVersion(version: string): string;
@@ -120,6 +133,11 @@ const KO: AppStrings = {
   statusBenchResult: (ms, mib) => `전체 저장 ${ms.toFixed(0)} ms, WASM 힙 ${mib.toFixed(1)} MiB`,
   savedToFile: (name) => `파일 ${name}`,
   savedToDownloads: '다운로드',
+  errorText: (e) => String(e),
+  saveErrors: {
+    'write-permission-denied': '파일 쓰기 권한이 없습니다. 다른 이름으로 저장하세요.',
+    'no-downloads': '다운로드로 저장할 수 없습니다(chrome.downloads 없음).',
+  },
   redactNotice: (total, pages) =>
     `이 문서에는 적용되지 않은 Redact(가림) 주석 ${total}개가 있습니다(${pages}쪽). 이 뷰어는 적용하지 않으며, 저장 후에도 표시로 남습니다.`,
   fileAccessNotice: (id) =>
@@ -168,6 +186,13 @@ const KO: AppStrings = {
   pdfaDeclared: '이 문서는 PDF/A 로 선언되어 있어 편집하면 PDF/A 적합성이 깨질 수 있습니다.',
   editPagesRecorded: (pages) =>
     `저장하면 편집한 쪽 번호(${pages}쪽)가 파일 정보(PdfEditorEdits)에 기록됩니다.`,
+  saveWarnings: {
+    'edit-engine-failed': [
+      '편집 엔진 오류 상태에서 저장합니다. 저널 보호 없이 현재 문서를 그대로 내보냅니다.',
+      '마지막 편집이 빠졌거나 일부만 반영됐을 수 있고, 취소한 초안의 변경이 저장 파일에 들어갈 수 있습니다. 저장 뒤 파일을 확인하고 문서를 다시 여세요.',
+    ],
+  },
+  saveWarningUnknown: '저장 전에 확인할 경고가 있습니다.',
   aboutDialogTitle: 'PDF Editor 정보',
   aboutVersion: (v) => `버전 ${v}`,
   aboutLicense:
@@ -213,6 +238,11 @@ const EN: AppStrings = {
   statusBenchResult: (ms, mib) => `Full save ${ms.toFixed(0)} ms, WASM heap ${mib.toFixed(1)} MiB`,
   savedToFile: (name) => name,
   savedToDownloads: 'Downloads',
+  errorText: (e) => VIEWER_STRINGS.en.errorDetail(e),
+  saveErrors: {
+    'write-permission-denied': 'No permission to write the file. Use Save as.',
+    'no-downloads': 'Cannot save to Downloads (chrome.downloads is unavailable).',
+  },
   redactNotice: (total, pages) =>
     `This document has ${total} unapplied Redact annotation(s) (page ${pages}). This viewer does not apply them; they remain as marks after saving.`,
   fileAccessNotice: (id) =>
@@ -261,6 +291,13 @@ const EN: AppStrings = {
   pdfaDeclared: 'This document declares PDF/A conformance; editing may break PDF/A conformance.',
   editPagesRecorded: (pages) =>
     `Saving records the edited page numbers (${pages}) in the file info (PdfEditorEdits).`,
+  saveWarnings: {
+    'edit-engine-failed': [
+      'Saving while the edit engine is in an error state. The current document is written as is, without journal protection.',
+      'The last edit may be missing or only partly applied, and changes from a cancelled draft may be included. Check the saved file after saving and reopen the document.',
+    ],
+  },
+  saveWarningUnknown: 'There is a warning to review before saving.',
   aboutDialogTitle: 'About PDF Editor',
   aboutVersion: (v) => `Version ${v}`,
   aboutLicense:

@@ -342,7 +342,7 @@ async function prepareSave(): Promise<boolean> {
     plan = await pdf.planSave({ changes: [] });
   } catch (e) {
     diag.add('save-plan-error', String(e));
-    setStatus('error', t.statusPlanFailed(String(e)));
+    setStatus('error', t.statusPlanFailed(t.errorText(e)));
     return false;
   }
   const journal = await queryJournalAdvice();
@@ -433,7 +433,7 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
   } catch (e) {
     diag.add('save-error', { trigger, context: contextKind, error: String(e) });
     if (isRecoveredSave(e)) return askSaveAgain(trigger);
-    setStatus('error', t.statusSaveFailed(String(e)));
+    setStatus('error', t.statusSaveFailed(t.errorText(e)));
     return;
   }
   if (outcome.status === 'failed' && isRecoveredSave(outcome.error)) {
@@ -456,7 +456,13 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
       ? t.statusSaved(where, outcome.reusedHandle)
       : outcome.status === 'cancelled'
         ? t.statusSaveCancelled
-        : t.statusSaveFailed(outcome.error ?? where),
+        : t.statusSaveFailed(
+            outcome.errorCode
+              ? t.saveErrors[outcome.errorCode]
+              : outcome.error !== null
+                ? t.errorText(outcome.error)
+                : where,
+          ),
   );
   if (outcome.status === 'saved' && lastPlanHadEdits && !historyNoticeShown) {
     historyNoticeShown = true;
@@ -738,7 +744,7 @@ async function main(): Promise<void> {
         await chrome.mimeHandler.abortAndFallbackToNativeHandler();
         return;
       }
-      setStatus('error', t.statusOpenFailed(String(e)));
+      setStatus('error', t.statusOpenFailed(t.errorText(e)));
     }
     return;
   }
@@ -753,12 +759,12 @@ async function main(): Promise<void> {
       .then((bytes) => openBytes(bytes, file.name))
       .catch((e: unknown) => {
         diag.add('open-error', String(e));
-        setStatus('error', t.statusOpenFailed(String(e)));
+        setStatus('error', t.statusOpenFailed(t.errorText(e)));
       });
   });
 }
 
 main().catch((e: unknown) => {
   diag.add('fatal', String(e));
-  setStatus('error', String(e));
+  setStatus('error', t.errorText(e));
 });

@@ -96,5 +96,9 @@ describe('resolveViewerSource', () => {
       fetch: vi.fn(async () => new Response('x', { status: 404 })) as unknown as typeof fetch,
     });
     await expect(resolveViewerSource(e)).rejects.toThrow('HTTP 404');
+    await expect(resolveViewerSource(e)).rejects.toMatchObject({
+      name: 'PdfRequestError',
+      status: 404,
+    });
   });
 });

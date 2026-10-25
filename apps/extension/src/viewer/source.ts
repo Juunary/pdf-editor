@@ -27,9 +27,17 @@ export interface SourceEnv {
   onContext?(kind: ViewerContextKind, streamInfo: chrome.mimeHandler.StreamInfo | null): void;
 }
 
+/** PDF 요청 실패(HTTP 상태). 화면 문장은 이름·상태로 만든다(viewer-ui error-text.ts, 사용자 결정 2026-10-26). */
+export class PdfRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`PDF 요청 실패: HTTP ${status}`);
+    this.name = 'PdfRequestError';
+  }
+}
+
 async function readAll(env: SourceEnv, url: string, init?: RequestInit): Promise<ArrayBuffer> {
   const res = await env.fetch(url, init);
-  if (!res.ok && res.status !== 0) throw new Error(`PDF 요청 실패: HTTP ${res.status}`);
+  if (!res.ok && res.status !== 0) throw new PdfRequestError(res.status);
   return res.arrayBuffer();
 }
 

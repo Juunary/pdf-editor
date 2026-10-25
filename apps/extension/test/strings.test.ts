@@ -23,6 +23,7 @@ function texts(t: AppStrings): string[] {
     if (typeof v === 'string') out.push(v);
     else if (typeof v === 'function') out.push(String(v(...Array<number>(v.length).fill(1))));
     else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.values(v).forEach(walk);
   };
   for (const [k, v] of Object.entries(t)) if (k !== 'viewer') walk(v);
   return out;
@@ -68,6 +69,12 @@ describe('언어 판정(사용자 요청 2026-10-23)', () => {
 describe('확장 문자열 표', () => {
   it('한국어·영어 키가 같고 각자 같은 언어의 viewer-ui 표를 가리킨다', () => {
     expect(Object.keys(EN).sort()).toEqual(Object.keys(APP_STRINGS.ko).sort());
+    expect(Object.keys(EN.saveErrors).sort()).toEqual(
+      Object.keys(APP_STRINGS.ko.saveErrors).sort(),
+    );
+    expect(Object.keys(EN.saveWarnings).sort()).toEqual(
+      Object.keys(APP_STRINGS.ko.saveWarnings).sort(),
+    );
     expect(APP_STRINGS.ko.viewer.lang).toBe('ko');
     expect(EN.viewer.lang).toBe('en');
     expect(EN.saveFailedLines).toHaveLength(APP_STRINGS.ko.saveFailedLines.length);
@@ -125,6 +132,28 @@ describe('확장 문자열 표', () => {
     }
     // 한국어는 core 문구를 그대로 쓴다(이전과 같음).
     expect(decideSave(plan({ heap: heap('warn') })).warnings).toEqual([heap('warn').message]);
+  });
+
+  it('core 저장 경고: 한국어는 core 문장, 영어는 원인 코드로(코드가 없으면 일반 문장)', () => {
+    const core = ['편집 엔진 오류(x) 상태에서 저장합니다.', '마지막 편집이 빠졌을 수 있습니다.'];
+    const failed = plan({ warnings: core, warningCodes: ['edit-engine-failed'] });
+    expect(decideSave(failed).warnings).toEqual(core);
+    expect(decideSave(failed, null, EN).warnings).toEqual(EN.saveWarnings['edit-engine-failed']);
+    expect(decideSave(plan({ warnings: core }), null, EN).warnings).toEqual([
+      EN.saveWarningUnknown,
+    ]);
+    expect(decideSave(plan({ warnings: [] }), null, EN).warnings).toEqual([]);
+  });
+
+  it('상태 줄 오류 상세: 한국어는 String(e), 영어는 오류 이름·알려진 형태로', () => {
+    const e = new Error('PDF 요청 실패: HTTP 404');
+    e.name = 'PdfRequestError';
+    expect(APP_STRINGS.ko.errorText(e)).toBe('PdfRequestError: PDF 요청 실패: HTTP 404');
+    expect(EN.errorText(e)).toBe('PDF request failed: HTTP 404');
+    expect(EN.errorText('NotAllowedError: The request is not allowed')).toBe(
+      'NotAllowedError: The request is not allowed',
+    );
+    expect(EN.errorText(new Error('초안 상태 이상'))).toBe('An internal error occurred.');
   });
 
   it('정보 대화상자도 표를 따른다', () => {

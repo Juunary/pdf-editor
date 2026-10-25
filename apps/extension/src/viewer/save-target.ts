@@ -13,6 +13,9 @@ export type BytesSource = () => Promise<Uint8Array<ArrayBuffer>>;
 
 export type SaveChannel = 'fsa' | 'downloads';
 
+/** write-permission-denied: 재저장 쓰기 권한 거부(prompt·denied), no-downloads: chrome.downloads 를 쓸 수 없음. */
+export type SaveErrorCode = 'write-permission-denied' | 'no-downloads';
+
 export interface SaveOutcome {
   channel: SaveChannel;
   status: 'saved' | 'cancelled' | 'failed';
@@ -21,7 +24,10 @@ export interface SaveOutcome {
   reusedHandle: boolean;
   /** FSA 시도가 실패해 downloads 로 넘어간 경우 그 오류(`이름: 메시지`) */
   fsaError: string | null;
+  /** 실패 오류(`이름: 메시지`, 진단용). */
   error: string | null;
+  /** 이 모듈이 정한 실패의 원인 코드(화면 문장은 호출자가 만든다, 사용자 결정 2026-10-26). 그 밖의 실패는 null. */
+  errorCode: SaveErrorCode | null;
   downloadId: number | null;
   bytes: number;
   ms: number;
@@ -125,7 +131,12 @@ export class SaveTarget {
       let state = (await handle.queryPermission?.(mode)) ?? 'granted';
       if (state !== 'granted') state = (await handle.requestPermission?.(mode)) ?? 'denied';
       if (state !== 'granted') {
-        return this.#outcome(t0, { ...base, status: 'failed', error: `쓰기 권한 ${state}` });
+        return this.#outcome(t0, {
+          ...base,
+          status: 'failed',
+          error: `쓰기 권한 ${state}`,
+          errorCode: 'write-permission-denied',
+        });
       }
       const bytes = await source();
       await this.#write(handle, bytes);
@@ -155,7 +166,12 @@ export class SaveTarget {
     const base = { channel: 'downloads', fileName: name, fsaError } as const;
     const downloads = this.env.downloads;
     if (!downloads) {
-      return this.#outcome(t0, { ...base, status: 'failed', error: 'chrome.downloads 없음' });
+      return this.#outcome(t0, {
+        ...base,
+        status: 'failed',
+        error: 'chrome.downloads 없음',
+        errorCode: 'no-downloads',
+      });
     }
     let bytes = 0;
     let url: string | null = null;
@@ -186,6 +202,7 @@ export class SaveTarget {
       reusedHandle: false,
       fsaError: null,
       error: null,
+      errorCode: null,
       downloadId: null,
       bytes: 0,
       ...o,

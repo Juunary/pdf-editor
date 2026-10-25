@@ -4,7 +4,7 @@
  * 한국어 로케일은 한국어인지 확인한다. 로케일은 Playwright `locale`(Linux Chromium 은 `--lang` 을 무시한다, e2e/locale.ts).
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -280,4 +280,172 @@ test('확장 이름·설명·툴바 제목(_locales, 사용자 결정 2026-10-26
       c.language,
     );
   }
+});
+
+// ── 쪽 위 편집 UI·편집 제한 사유(사용자 결정 2026-10-26) ─────────────────────
+
+/**
+ * 1쪽 PDF: 글자 한 줄(편집 가능), 90° 돌린 글자(vertical-or-rotated), 채움 사각형(편집 가능 패스), 클립을 겸하는 칠하기
+ * (clip-path). 좌표는 PDF 공간(아래 원점).
+ */
+function editUiPdf(): Buffer {
+  const content =
+    'BT /F1 14 Tf 100 750 Td (Editable sample line) Tj ET\n' +
+    'BT /F1 16 Tf 0 1 -1 0 520 500 Tm (Rotated words here) Tj ET\n' +
+    '1 0 0 rg 100 600 200 100 re f\n' +
+    'q 0 0 1 rg 100 400 200 100 re W f Q\n';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let out = '%PDF-1.7\n';
+  const offsets: number[] = [];
+  objects.forEach((o, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const off of offsets) out += `${String(off).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
+/** 쪽 공간(pt, 위 원점) → 화면 좌표. */
+function pageAt(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
+  return page.evaluate(
+    ([px, py]) => {
+      const el = document.getElementById('pe-page')!;
+      const box = el.getBoundingClientRect();
+      const s = Number(el.dataset.cssScale);
+      return { x: box.left + px! * s, y: box.top + py! * s };
+    },
+    [x, y] as const,
+  );
+}
+
+async function openEditUiPdf(env: Env): Promise<Page> {
+  const dir = mkdtempSync(join(tmpdir(), 'pdf-editor-e2e-i18n-pdf-'));
+  const file = join(dir, 'edit-ui.pdf');
+  writeFileSync(file, editUiPdf());
+  const page = await env.context.newPage();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`chrome-extension://${env.extensionId}/viewer.html?e2e`);
+  await page.waitForFunction(() => '__pe' in window);
+  await page.setInputFiles('#open-file', file);
+  await expect(page.locator('#status')).toHaveAttribute('data-state', 'rendered', {
+    timeout: 30_000,
+  });
+  await page.waitForFunction(
+    () =>
+      (
+        window as unknown as {
+          __pe: { controller: { getState(): { edit: { editability: { status: string } } } } };
+        }
+      ).__pe.controller.getState().edit.editability.status === 'ready',
+  );
+  return page;
+}
+
+/** 요소 안의 보이는 글자와 title·aria-label. */
+function visibleTexts(page: Page, selector: string): Promise<string[]> {
+  return page.evaluate((sel) => {
+    const root = document.querySelector(sel);
+    if (!root) return [];
+    const out: string[] = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.textContent!.trim() !== '') out.push(n.textContent!.trim());
+    }
+    for (const el of [root, ...root.querySelectorAll<HTMLElement>('*')]) {
+      for (const a of ['title', 'aria-label']) {
+        const v = el.getAttribute(a);
+        if (v) out.push(v);
+      }
+    }
+    return out;
+  }, selector);
+}
+
+test('영어 로케일: 편집 불가 팝오버·제한 사유·패스 패널·편집 가능 표시 범례·툴팁이 영어다', async () => {
+  await withLocale('en-US', async (env) => {
+    const page = await openEditUiPdf(env);
+
+    // 편집 가능 표시 범례(레이아웃과 함께)
+    await page.click('#pe-overlay-toggle');
+    const legend = page.locator('#pe-marks-legend');
+    await expect(legend).toBeVisible();
+    await expect(legend).toContainText('Editable');
+    await expect(legend).toContainText('Restricted (dotted)');
+    await expect(legend).toContainText('Thick line = paragraph or table cell, thin line = path');
+    for (const s of await visibleTexts(page, '#pe-marks-legend')) expect(s).not.toMatch(HANGUL);
+
+    // 돌린 글자 위 툴팁: 종류·사유 영어
+    const rotated = await pageAt(page, 513, 220);
+    await page.mouse.move(rotated.x, rotated.y);
+    const tip = page.locator('#pe-mark-tip');
+    await expect(tip).toHaveText(/^Paragraph · Restricted: /);
+    await expect(tip).toContainText('Vertical or rotated text cannot be edited.');
+    await page.click('#pe-overlay-toggle'); // 끄고 편집 진입
+
+    // 편집 불가 팝오버(core 판정 vertical-or-rotated → 영어 사유)
+    await page.mouse.dblclick(rotated.x, rotated.y);
+    const pop = page.locator('#pe-edit-popover');
+    await expect(pop).toBeVisible();
+    await expect(pop.locator('strong')).toHaveText('This paragraph cannot be edited');
+    await expect(pop.locator('li')).toHaveText(['Vertical or rotated text cannot be edited.']);
+    await expect(pop.locator('#pe-edit-popover-close')).toHaveText('Close');
+    for (const s of await visibleTexts(page, '#pe-edit-popover')) expect(s).not.toMatch(HANGUL);
+    await page.keyboard.press('Escape');
+    await expect(pop).toHaveCount(0);
+
+    // 패스 패널: 편집 가능한 채움 사각형(Alt+클릭)
+    const altSelect = async (x: number, y: number, panelText: RegExp) => {
+      await expect(async () => {
+        const p = await pageAt(page, x, y);
+        await page.keyboard.down('Alt');
+        await page.mouse.click(p.x, p.y);
+        await page.keyboard.up('Alt');
+        await expect(page.locator('#pe-path-panel')).toContainText(panelText, { timeout: 1_000 });
+      }).toPass({ timeout: 15_000 });
+    };
+    await altSelect(200, 142, /Fill color/);
+    const panel = page.locator('#pe-path-panel');
+    await expect(panel.locator('strong')).toHaveText('1 path selected');
+    await expect(panel).toContainText('Stroke color');
+    await expect(panel).toContainText('Line width (pt)');
+    await expect(page.locator('#pe-path-points')).toHaveText('Edit points');
+    await expect(page.locator('#pe-path-delete')).toHaveText('Delete');
+    await expect(page.locator('#pe-path-delete')).toHaveAttribute(
+      'title',
+      'Delete the selected paths (Delete)',
+    );
+    await expect(page.locator('#pe-path-clear')).toHaveText('Clear selection');
+    for (const s of await visibleTexts(page, '#pe-path-panel')) expect(s).not.toMatch(HANGUL);
+
+    // 클립을 겸하는 칠하기: 제한 사유 영어(core 한국어 설명 대신 사유 코드 문구)
+    await page.click('#pe-path-clear');
+    await altSelect(200, 342, /clipping area/);
+    await expect(page.locator('#pe-path-note li')).toHaveText([
+      'A path that defines a clipping area cannot be edited.',
+    ]);
+    for (const s of await visibleTexts(page, '#pe-path-panel')) expect(s).not.toMatch(HANGUL);
+    await page.click('#pe-path-clear');
+
+    // 편집기 안 안내(편집 쪽 기록 안내·입력 이름)
+    const line = await pageAt(page, 150, 37);
+    await page.mouse.dblclick(line.x, line.y);
+    await expect(page.locator('#pe-edit-layer')).toBeVisible();
+    await expect(page.locator('#pe-edit-input')).toHaveAttribute('aria-label', 'Paragraph editor');
+    await expect(page.locator('#pe-edit-info')).toContainText(
+      'Saving records the edited page numbers in the file info (PdfEditorEdits).',
+    );
+    for (const s of await visibleTexts(page, '#pe-edit-layer')) expect(s).not.toMatch(HANGUL);
+    await page.click('#pe-edit-cancel');
+    await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
+    await page.close();
+  });
 });
