@@ -373,3 +373,102 @@ pnpm --filter @pdf-editor/extension package
 | 3 | 쪽 위 편집 UI·편집 제한 사유 영어화(10.2.2 남은 표) | 후속 |
 | 4 | Windows Chrome 영어 UI(설정 → 언어 → Chrome 표시 언어)에서 헤더 영어, 한국어 UI 에서 한국어 확인 | 사용자 |
 | 5 | 좁은 창에서 쪽 위에 겹치는 화살표가 텍스트 선택·편집에 방해되는지 | 사용자 |
+
+### 10.3 스토어 이름·설명, 쪽 위 편집 UI 언어, 좁은 창 쪽 화살표 (사용자 결정 2026-10-26)
+
+브랜치 `m5-windows`(기준 cdbc553, worktree `/mnt/nas4/kjune/pdf-editor-m5win`). 10.2.1 의 "`_locales`·`default_locale` 은 추가하지 않음"·"매니페스트 바꾸지 않음"과 10.2.2 의 남은 한국어 전용 표 중 쪽 위 편집 UI·편집 제한 사유·오류 상세·매니페스트 행, 10.2.4 의 좁은 창 행은 이 절이 대체합니다. 화면 문구 방식(코드 안 문자열 표 + `resolveUiLang`)은 그대로입니다.
+
+#### 10.3.1 스토어 등록 이름·설명 현지화
+
+| 항목 | 내용 |
+| --- | --- |
+| 매니페스트 | `default_locale: "en"`, `name: "__MSG_appName__"`, `description: "__MSG_appDescription__"`, `action.default_title: "__MSG_actionTitle__"`. 권한은 그대로(스토어 `permissions` = `["downloads"]`, D7) |
+| 메시지 | `apps/extension/_locales/{en,ko}/messages.json`. `appName` 두 언어 모두 "PDF Editor". `appDescription` 은 `docs/store/listing.md` 요약(132자 이하)과 같음: en 100자, ko 61자. `actionTitle` en "Open PDF Editor viewer", ko "PDF Editor 뷰어 열기" |
+| 개발 빌드 | 매니페스트는 같고, vite 플러그인이 내보내는 messages.json 의 `appName` 에 " (dev)" 를 붙임(`scripts/manifest.mjs` `buildLocaleMessages`). 이름이 메시지 참조가 아니면 이전처럼 매니페스트 이름에 붙임 |
+| 언어 선택 | Chrome 이 정함(UI 언어 → 없으면 `default_locale` en). ja 등 그 밖의 언어는 en. 화면 문구 규칙(ko 계열이면 한국어, 그 밖은 영어)과 결과가 같음 |
+| `verify-dist` | 개발·스토어 공통: `default_locale` en, 세 필드가 `__MSG_…__`, `_locales` 언어가 정확히 en·ko, 언어별 값 있음, 이름(스토어 "PDF Editor", 개발 "PDF Editor (dev)"), 설명 132자 이하. `--release`: zip 항목에 `_locales/en/messages.json`·`_locales/ko/messages.json` 포함(기존 zip = 스테이징 일치 검사와 별도) |
+| 등록 자료 | `docs/store/listing.md`: 현지화 반영 사실, 기본 언어 영어, 대시보드는 언어별로 상세 설명·스크린샷을 따로 입력한다는 주의 |
+
+- 실측(Playwright 번들 Chromium, Linux): 확장 메시지 언어는 환경 변수 `LANGUAGE` 를 따르고 Playwright `locale` 은 반영되지 않습니다(화면 문구의 `getUILanguage()` 는 `locale` 을 따름). `chrome.runtime.getManifest()` 는 메시지를 푼 값을 줍니다. `LANGUAGE=ko` → 이름 "PDF Editor (dev)"·한국어 설명, `en_US`·`ja` → 영어 설명.
+
+#### 10.3.2 쪽 위 편집 UI·편집 제한 사유·오류 상세
+
+| 영역 | 처리 | 위치 |
+| --- | --- | --- |
+| 편집 불가 팝오버 | 제목(문단·셀)·닫기·사유 목록·태그 편집 막기 사유 | `EditEntry.tsx`·`edit-controller.ts` |
+| 편집기 | 글리프 없음 표시 제목, 영역 초과 문구·되돌리기(제목), 반영 중 안내, 미리보기 갱신 실패, 경고 목록 이름·경고 문장, 태그 안내, 편집 쪽 기록 안내, 입력란 이름, 편집기 안 복구 안내 | `EditorLayer.tsx`·`edit-session.ts` |
+| 패스 패널 | "패스 N개 선택"·채움 색·선 색·선 두께·점 편집(제목 둘)·삭제(제목)·선택 해제·제한 사유·동작 오류 | `PathLayer.tsx`·`path-controller.ts` |
+| 편집 가능 표시 | 범례 다섯 줄, 툴팁(종류·편집 가능·제한: 사유) | `EditableMarks.tsx`·`edit-marks.ts` |
+| 편집 제한 사유 | `LIMIT_LABELS`(ko)·`LIMIT_LABELS_EN` 30종(문단 9·연산 14·패스 8, `singular-ctm` 공통). 표에 없는 코드는 "Cannot be edited (코드)" | `labels-data.ts`·`edit-labels.ts` |
+| 편집 경고 | `WARNING_TEXTS_KO`·`EN`: 종류 18 + tagged-structure-unlinked 의 경우 2(form-clone·path-removed) | 같음 |
+| 오류 상세 | 툴바 편집 알림·검색 실패·레이아웃·편집 표시 사유·쪽 렌더 실패·편집기 오류 줄·상태 줄(열기·저장 전 판정·저장 실패) | `error-text.ts`, 확장 `AppStrings.errorText` |
+| core 저장 경고 | `SavePlan.warningCodes`(edit-engine-failed) → 영어 문장 두 줄 | 확장 `save-plan.ts` |
+| 저장 실패 원인 | `SaveOutcome.errorCode`(write-permission-denied·no-downloads) → 문구(한국어도 이 문구로 바뀜) | 확장 `save-target.ts`·`main.ts` |
+
+core·Worker 문장의 처리:
+
+| 문장 | 처리 | 근거 |
+| --- | --- | --- |
+| 제한 사유 설명(`ParagraphLimit.detail`·`PathLimit.detail`) | 코드(`reason`·`code`)가 이미 함께 옴. 한국어 화면은 설명 그대로(이전 동작, 글꼴 리소스 이름·연산자 같은 진단 정보 포함), 영어 화면은 사유 코드 문구 | 설명은 진단용 변수 값을 담은 문장이라 같은 수준의 영어 문장을 만들려면 pdf-ops 20여 곳에 값 필드를 더해야 함. 사유 코드 문구로 사용자에게 필요한 뜻은 전달됨 |
+| 편집 경고(`EditWarning.message`) | `count`·`chars`·`variant` 필드를 더해(pdf-ops `font-assign.ts`·`edit-plan.ts`·`path-edit.ts`) 영어 문장을 표로 만듦. 한국어는 message 그대로 | 수치·글자를 코드로 넘김 |
+| 저장 경고(`SavePlan.warnings`) | `warningCodes` 추가. 실패 사유 문장(`#failure`)은 영어 문장에 넣지 않음 | 실패 사유는 내부 오류 문장 |
+| Worker·core 예외(core 약 85곳의 `throw new Error('…')`) | 영어 화면은 오류 이름(`StaleRevisionError`·`PathTargetChangedError`·`WorkerRecoveredError`·`RecoveryFailedError`) → 알려진 한국어 메시지 형태 18종(초안 손상·엔진 정지·편집 불가 문단/패스·저장 중 초안·HTTP 상태 등, 수치는 살림) → 한글 없는 메시지(MuPDF·브라우저)는 그대로 → 그 밖은 "An internal error occurred." 원 메시지는 진단 기록에 남음 | 예외를 모두 코드로 바꾸면 core·pdf-ops 전반과 RPC 계약을 고쳐야 함. 사용자가 볼 수 있는 상태 오류만 형태 표로 옮기고 나머지는 내부 오류로 봄 |
+| 확장 복구 계층·저장 대상·문서 요청 | `RecoveryFailedError`(이름), `PdfRequestError(status)`, `SaveOutcome.errorCode` 로 코드화. 한국어 메시지는 진단용으로 유지 | 확장 코드라 직접 코드화 |
+
+남은 한국어 전용 문자열(개발 표시 제외):
+
+| 문자열 | 위치 | 화면에 보이는 경우 |
+| --- | --- | --- |
+| core·pdf-ops 예외 메시지(형태 표에 없는 것) | core `edit-engine.ts` 등 | 영어 화면은 일반 문장으로 바뀜. 한국어 화면에서만 원문 |
+| 제한 사유 설명·경고 문장 원문(detail·message) | pdf-ops·core | 한국어 화면에서만 |
+| `WorkerRecoveredError` 메시지(복구 계층) | `recovery.ts` | 화면에 직접 나오지 않음(복구 알림은 표 문구) |
+| 편집기 내부 오류 `'편집 시작 runs 가 비어 있습니다'` | `edit-model.ts` | 영어 화면은 일반 문장 |
+| 기능 비활성 로그의 `feature` 값('문단 편집' 등) | `controller.ts`·`edit-controller.ts`·`path-controller.ts` | 진단 기록만 |
+| `failure.ts` 의 '미구현' 판별 | `failure.ts` | 판별용 비교 문자열(표시 아님) |
+
+#### 10.3.3 좁은 창 쪽 화살표
+
+| 항목 | 내용 |
+| --- | --- |
+| 판정 | `page-nav.ts` `pageArrowLayout(문서 영역 clientWidth)`: 좌우 칸 두 몫(56×2)과 여백 32 를 빼고 쪽 최소 폭 320 이 남으면(폭 ≥ 464) side, 아니면 below |
+| side | 이전과 같음(쪽 좌우 바깥 칸, 쪽 맞춤 폭에서 칸 몫을 뺌) |
+| below | 쪽 맞춤 폭에서 칸 몫을 빼지 않음(쪽이 그만큼 넓어짐). 두 화살표는 쪽 아래 줄 가운데(`style.css` `[data-pe-arrows='below']`, flex 줄바꿈 `::before`, 쪽과 12 px 간격). sticky 겹침 제거 |
+| 일치 | 마운트가 `ResizeObserver` 로 문서 영역에 `data-pe-arrows` 를 붙이고, 확장 `getEnvironment` 가 같은 함수로 `availableWidth` 를 정함. 렌더 배율(cssScale × dpr)·머리 영역 확대 보정은 바뀌지 않음(문서 영역 폭만 입력) |
+| 이동 | 툴바 ‹ › 그대로. below 에서는 쪽 아래로 스크롤해 화살표를 누름 |
+
+실측(헤드리스 Chromium, 612×792 pt 쪽, 스크롤바 없음, 2026-10-26):
+
+| 창 폭 | 문서 영역 | 배치 | 쪽 캔버스 폭 | 화살표 | 가로 넘침 |
+| --- | --- | --- | --- | --- | --- |
+| 320 px | 320 | below | 320(최소 폭) | 쪽 아래 12 px, 가운데 | 32 px(최소 폭 때문, 화살표는 겹치지 않음) |
+| 400 px | 400 | below | 368(이전 320) | 쪽 아래 12 px, 가운데 | 없음(이전 60 px) |
+| 464 px | 464 | side | 320 | 쪽 좌우 3 px 바깥 | 없음 |
+| 800 px | 800 | side | 656 | 쪽 좌우 3 px 바깥 | 없음 |
+| 1280 px | 1280 | side | 918(최대 배율 1.5) | 쪽 좌우 3 px 바깥 | 없음 |
+
+- 스크롤바가 있는 환경(Windows 기본 약 15–17 px)에서는 문서 영역이 그만큼 좁아 창 폭 약 480 px 미만부터 below 가 됩니다.
+
+#### 10.3.4 시험
+
+| 시험 | 내용 |
+| --- | --- |
+| `apps/extension/test/release.test.ts` | 기본 언어·메시지 참조, 두 언어 키 일치·값·설명 132자, 설명 = listing.md 요약, 스토어 이름 PDF Editor·개발 (dev) |
+| `e2e/release-smoke.spec.ts` | 스토어 스테이징: 이름 PDF Editor, 설명·툴바 제목이 두 언어 메시지 중 하나, `default_locale` en |
+| `e2e/i18n.spec.ts` | `LANGUAGE` ko·en_US·ja: 매니페스트 이름(dev)·설명·툴바 제목. en-US 실제 core 판정: 범례·툴팁(vertical-or-rotated)·편집 불가 팝오버·패스 패널·패스 제한 사유(clip-path)·편집기 안내가 영어, 한글 없음 |
+| `packages/viewer-ui/test/edit-labels.test.ts` | 사유 30종 두 표 키 = shared-types 사유 목록, 영어 한글 없음, limitItems(ko 설명·en 코드), 경고 문장·경우, 툴팁, 오류 상세 |
+| `packages/viewer-ui/test/strings.test.ts` | 새 키 포함 두 표 키 일치(중첩), 영어 한글 없음 |
+| `edit-controller.test.ts`·`path-controller.test.ts`·`controller.test.ts` | 영어 팝오버·패스 사유·검색 미구현 문구 |
+| `page-nav.test.ts` | `pageArrowLayout` 경계(464·463), side 일 때 칸 자리, below 400 px 쪽 368 px |
+| `e2e/page-nav.spec.ts` | 창 320·400·464·800 px: 화살표 상자와 쪽 캔버스 상자 겹침 없음(가로·세로 끝까지 스크롤 포함), 배치 판정, below 쪽 폭, 400 px 이동 |
+| 확장 단위 | 저장 경고 코드(ko core 문장·en 코드 문장·코드 없음), 상태 줄 오류 상세, 저장 실패 원인 코드, `PdfRequestError`·`RecoveryFailedError` |
+| pdf-ops·core | 경고 `count`·`chars`(message 와 일치), `warningCodes` |
+
+#### 10.3.5 남은 확인
+
+| # | 내용 | 담당 |
+| --- | --- | --- |
+| 1 | 영어 문구 검토(편집 제한 사유 30종, 편집 경고, 패스 패널·범례) | 사용자 |
+| 2 | 한국어 화면의 제한 사유를 core 설명(진단 정보 포함) 대신 사유 코드 문구로 바꿀지(지금은 이전 동작 유지) | 사용자 |
+| 3 | 저장 실패 원인 두 가지(쓰기 권한 거부·downloads 없음)의 한국어 문구가 "쓰기 권한 denied" 등에서 문장으로 바뀜 | 사용자 확인 |
+| 4 | Web Store 대시보드에서 언어별 등록 정보 입력, `chrome://extensions` 에서 한국어·영어 Chrome 의 이름·설명 표시 | 사용자 |
+| 5 | Windows Chrome 좁은 창(창 나누기)에서 화살표가 쪽 아래에 놓이고 텍스트 선택·편집을 가리지 않는지 | 사용자 |

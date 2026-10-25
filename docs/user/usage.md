@@ -2,14 +2,14 @@
 
 PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한 번에 한 쪽씩 보입니다(연속 스크롤 보기는 없습니다). 모든 처리는 브라우저 안에서 이루어지고 PDF 는 외부로 전송되지 않습니다.
 
-도구 막대·검색창·저장 메뉴·상태 줄·알림 줄과 정보·저장 확인 창은 Chrome 표시 언어를 따릅니다. 한국어면 한국어, 그 밖의 언어면 영어로 나옵니다(Chrome 설정 → 언어에서 바꾼 뒤 Chrome 을 다시 시작). 쪽 위 편집 화면(편집기·편집 불가 사유·패스 패널)은 한국어만 있습니다.
+도구 막대·검색창·저장 메뉴·상태 줄·알림 줄, 정보·저장 확인 창, 쪽 위 편집 화면(편집기·편집 불가 사유·패스 패널·편집 가능 표시 범례)은 Chrome 표시 언어를 따릅니다. 한국어면 한국어, 그 밖의 언어면 영어로 나옵니다(Chrome 설정 → 언어에서 바꾼 뒤 Chrome 을 다시 시작). 확장 이름·설명도 같은 언어로 보입니다. 한국어 화면의 편집 불가 사유·편집 경고는 판정이 준 자세한 문장을, 영어 화면은 사유별 요약 문장을 보여 줍니다.
 
 ## 열기와 쪽 이동
 
 | 동작 | 방법 |
 | --- | --- |
 | 열기 | PDF 링크 또는 로컬 PDF 를 Chrome 에서 엽니다. 확장 아이콘으로 뷰어를 열 수도 있습니다 |
-| 쪽 이동 | 도구 막대의 이전·다음 단추, 쪽 번호 입력란, 화면 양옆의 쪽 화살표 |
+| 쪽 이동 | 도구 막대의 이전·다음 단추, 쪽 번호 입력란, 쪽 양옆의 쪽 화살표(창이 좁으면 쪽 아래에 나란히 놓여 쪽을 가리지 않습니다) |
 
 ## 텍스트 선택·복사
 
@@ -100,7 +100,8 @@ PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한
 
 ## English summary
 
-- The toolbar, find bar, save menu, status line, notices, and the About and save-confirmation dialogs follow Chrome's display language: Korean for Korean, English for any other language. The on-page editing UI (editor, restriction reasons, path panel) is Korean only.
+- The toolbar, find bar, save menu, status line, notices, the About and save-confirmation dialogs, and the on-page editing UI (editor, restriction reasons, path panel, editable-marks legend) follow Chrome's display language: Korean for Korean, English for any other language. The extension name and description follow the same language.
+- Page arrows sit beside the page; in a narrow window they move below the page so they never cover it.
 - Open any PDF in Chrome; pages are shown one at a time. Select and copy text, search with Ctrl+F.
 - Double-click a paragraph or table cell to edit it (IME input supported); Esc or clicking outside commits. Text reflows inside the edit area and the area grows downward up to a limit; glyphs missing from the original font use a bundled Noto Sans KR subset.
 - Select vector paths with Alt+click (or plain click when "Layout & editable marks" is on), then move, resize, edit points, change fill/stroke color and width, or delete.
