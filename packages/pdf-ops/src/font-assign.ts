@@ -835,6 +835,8 @@ export class FontState {
       warnings.push({
         kind: 'font-fallback',
         message: `원본 폰트에 없는 글자 ${fallbackChars.size}종을 폴백 폰트로 씁니다: ${[...fallbackChars].slice(0, 20).join('')}`,
+        count: fallbackChars.size,
+        chars: [...fallbackChars].slice(0, 20).join(''),
         rects: [],
       });
     }
@@ -842,6 +844,8 @@ export class FontState {
       warnings.push({
         kind: 'glyph-missing',
         message: `원본·폴백 폰트 모두 글리프가 없어 쓰지 않는 글자: ${[...missingChars].slice(0, 20).join('')}`,
+        count: missingChars.size,
+        chars: [...missingChars].slice(0, 20).join(''),
         rects: [],
       });
     }

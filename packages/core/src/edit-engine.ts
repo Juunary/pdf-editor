@@ -38,6 +38,7 @@ import type {
   RenderedPage,
   ReflowSummary,
   SaveEditSummary,
+  SaveWarningCode,
   TextRun,
 } from '@pdf-editor/shared-types';
 import type {
@@ -1018,6 +1019,11 @@ export class EditEngine {
    * 저장 때 사용자에게 알릴 경고(R-M4). 엔진이 실패 상태면 저널로 감싸지 않고 저장하므로 마지막 편집이 문서에 반영됐는지
    * 확인해야 한다. 정상이면 빈 배열.
    */
+  /** `saveWarnings()` 의 원인 코드(다른 언어 화면용). */
+  saveWarningCodes(): SaveWarningCode[] {
+    return this.#failure ? ['edit-engine-failed'] : [];
+  }
+
   saveWarnings(): string[] {
     if (!this.#failure) return [];
     return [

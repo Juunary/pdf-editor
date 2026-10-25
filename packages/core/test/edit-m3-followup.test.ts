@@ -134,6 +134,7 @@ describe('R-M4 실패 상태에서의 저장', () => {
     await expect(s.getEditHistory()).rejects.toThrow('다시 열어야');
     const plan = s.planSave({ changes: [] });
     expect(plan.warnings).toHaveLength(2);
+    expect(plan.warningCodes).toEqual(['edit-engine-failed']); // 다른 언어 화면용 코드(2026-10-26)
     expect(plan.warnings[0]).toContain('재적용 실패');
     expect(plan.warnings[1]).toContain('일부만');
     expect(plan.warnings[1]).toContain('취소한 초안');
@@ -176,6 +177,7 @@ describe('R-M4 실패 상태에서의 저장', () => {
     const { s } = harness();
     await editParagraph(s, 1, 'fine');
     expect(s.planSave({ changes: [] }).warnings).toEqual([]);
+    expect(s.planSave({ changes: [] }).warningCodes).toEqual([]);
     expect(s.save({ changes: [] }).warnings).toEqual([]);
     s.close();
   });

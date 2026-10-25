@@ -85,7 +85,14 @@ export interface SavePlan {
    * 뷰어는 비어 있지 않으면 확인 창을 띄운 뒤 저장한다.
    */
   warnings?: string[];
+  /**
+   * `warnings` 의 원인 코드(2026-10-26). 한국어 화면은 `warnings` 문장을 그대로, 다른 언어 화면은 이 코드로 뷰어가 문장을
+   * 만든다. edit-engine-failed: 편집 엔진 실패 상태에서 저널 보호 없이 저장(R-M4).
+   */
+  warningCodes?: SaveWarningCode[];
 }
+
+export type SaveWarningCode = 'edit-engine-failed';
 
 export interface SaveResult {
   bytes: Uint8Array<ArrayBuffer>;
