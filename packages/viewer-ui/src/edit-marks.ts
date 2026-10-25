@@ -4,6 +4,7 @@
  */
 import type { PageEditability, Point, Rect } from '@pdf-editor/shared-types';
 import { limitLabel } from './edit-labels.js';
+import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 
 export const MAX_PATH_MARKS = 2000;
 const SMALL_SHORT = 1;
@@ -15,7 +16,7 @@ export interface Mark {
   kind: MarkKind;
   bbox: Rect;
   editable: boolean;
-  /** 제한 사유 문구(편집 가능이면 빈 목록). */
+  /** 제한 사유 문구(화면 언어, 편집 가능이면 빈 목록). */
   reasons: string[];
   /** 문단 id 또는 paintSeq. */
   id: number;
@@ -35,14 +36,19 @@ export function isSmallPath(bbox: Rect): boolean {
   return Math.min(w, h) < SMALL_SHORT && Math.max(w, h) < SMALL_LONG;
 }
 
-export function buildMarks(editability: PageEditability, maxPaths = MAX_PATH_MARKS): Marks {
+export function buildMarks(
+  editability: PageEditability,
+  maxPaths = MAX_PATH_MARKS,
+  t: ViewerStrings = VIEWER_STRINGS.ko,
+): Marks {
+  const labels = (reasons: readonly string[]) => reasons.map((r) => limitLabel(r, t));
   const marks: Mark[] = [];
   for (const p of editability.paragraphs) {
     marks.push({
       kind: p.cell ? 'cell' : 'paragraph',
       bbox: p.bbox,
       editable: p.editable,
-      reasons: p.editable ? [] : p.reasons.map(limitLabel),
+      reasons: p.editable ? [] : labels(p.reasons),
       id: p.paragraphId,
     });
   }
@@ -55,7 +61,7 @@ export function buildMarks(editability: PageEditability, maxPaths = MAX_PATH_MAR
       kind: 'path',
       bbox: p.bbox,
       editable: p.editable,
-      reasons: p.editable ? [] : p.reasons.map(limitLabel),
+      reasons: p.editable ? [] : labels(p.reasons),
       id: p.paintSeq,
     });
   }
@@ -86,12 +92,10 @@ export function markFrame(m: Mark, gap: number): Rect {
   return [x0 + gap, y0 + gap, x1 - gap, y1 - gap];
 }
 
-const KIND_LABEL: Record<MarkKind, string> = { paragraph: '문단', cell: '표 셀', path: '패스' };
-
-/** 툴팁 문구: "표 셀 · 편집 가능" 또는 "패스 · 제한: 사유…". */
-export function markTip(m: Mark): string {
-  const head = KIND_LABEL[m.kind];
+/** 툴팁 문구: "표 셀 · 편집 가능" 또는 "패스 · 제한: 사유…"(화면 언어). */
+export function markTip(m: Mark, t: ViewerStrings = VIEWER_STRINGS.ko): string {
+  const head = t.markKinds[m.kind];
   return m.editable
-    ? `${head} · 편집 가능`
-    : `${head} · 제한: ${m.reasons.length > 0 ? m.reasons.join(' / ') : '편집할 수 없습니다'}`;
+    ? t.markEditable(head)
+    : t.markLimited(head, m.reasons.length > 0 ? m.reasons.join(' / ') : t.markNoReason);
 }

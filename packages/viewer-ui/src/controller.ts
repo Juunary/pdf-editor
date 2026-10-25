@@ -177,11 +177,14 @@ export function overlayToggleTitle(
   const lines = [t.overlayIntro];
   if (s.marksReason === null && pathSelect) lines.push(t.overlayPathSelect);
   if (s.layoutReason !== null && s.marksReason !== null) {
-    lines.push(t.overlayLayoutReason(s.layoutReason), t.overlayMarksReason(s.marksReason));
+    lines.push(
+      t.overlayLayoutReason(t.errorDetail(s.layoutReason)),
+      t.overlayMarksReason(t.errorDetail(s.marksReason)),
+    );
   } else if (s.layoutReason !== null) {
-    lines.push(t.overlayMarksOnly(s.layoutReason));
+    lines.push(t.overlayMarksOnly(t.errorDetail(s.layoutReason)));
   } else if (s.marksReason !== null) {
-    lines.push(t.overlayLayoutOnly(s.marksReason));
+    lines.push(t.overlayLayoutOnly(t.errorDetail(s.marksReason)));
   }
   return lines.join('\n');
 }
@@ -782,14 +785,14 @@ export class ViewerController {
         this.patchFind({
           ...clearResults(this.state.find),
           status: 'unavailable',
-          message: this.strings.findUnavailableWith(failure.message),
+          message: this.strings.findUnavailableWith(this.strings.errorDetail(e)),
         });
       } else {
         this.host.log('search-error', { query, error: failure.message });
         this.patchFind({
           ...clearResults(this.state.find),
           status: 'error',
-          message: this.strings.findFailedWith(failure.message),
+          message: this.strings.findFailedWith(this.strings.errorDetail(e)),
         });
       }
     }

@@ -15,7 +15,7 @@ import type {
   Point,
   RGB,
 } from '@pdf-editor/shared-types';
-import { limitLabel } from './edit-labels.js';
+import { limitItems } from './edit-labels.js';
 import type { EditContext, EditLoadable } from './edit-controller.js';
 import { classifyFailure } from './failure.js';
 import { buildCandidates, pickPath, STROKE_HIT_PX, type PathCandidate } from './path-geometry.js';
@@ -218,7 +218,7 @@ export class PathController {
       }
       this.ctx.patchPath({
         selection: { ...now, plan },
-        note: plan.editable ? null : noteOf(plan),
+        note: plan.editable ? null : limitItems(plan.limits, this.t.pathNotEditable, this.t),
         pointMode: plan.editable ? this.ctx.getPath().pointMode : false,
       });
       return plan;
@@ -450,7 +450,7 @@ export class PathController {
       notice:
         failure.kind === 'recovered'
           ? this.t.pathRecoveredReselect
-          : this.t.failureWith(prefix, failure.message),
+          : this.t.failureWith(prefix, this.t.errorDetail(e)),
     });
     if (failure.kind === 'recovered') this.clear();
   }
@@ -466,11 +466,6 @@ export function emptyPathEdit(partial: Partial<PathEdit> = {}): PathEdit {
     delete: false,
     ...partial,
   };
-}
-
-function noteOf(plan: PathEditPlan): string[] {
-  const items = plan.limits.map((l) => (l.detail !== '' ? l.detail : limitLabel(l.reason)));
-  return items.length > 0 ? [...new Set(items)] : ['이 패스는 편집할 수 없습니다.'];
 }
 
 /** 8비트 반올림으로 같은 색인지(pdf-ops D3 와 같은 규칙). 현재 색을 모르면 다르다. */

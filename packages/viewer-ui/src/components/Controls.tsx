@@ -128,7 +128,7 @@ export function Controls({ controller }: Props) {
         id="pe-find-toggle"
         type="button"
         class="pe-btn"
-        title={searchReason ?? t.findTitle}
+        title={searchReason !== null ? t.errorDetail(searchReason) : t.findTitle}
         aria-pressed={state.find.open}
         disabled={searchReason !== null}
         onClick={() => (state.find.open ? controller.closeFind() : controller.openFind())}

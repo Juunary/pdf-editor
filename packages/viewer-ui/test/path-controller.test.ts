@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PageInfo, PageModel, RenderRequest, RenderedPage } from '@pdf-editor/shared-types';
+import { VIEWER_STRINGS, type ViewerStrings } from '../src/strings.js';
 import { ViewerController, overlayToggleState, overlayToggleTitle } from '../src/controller.js';
 import { WORKER_RECOVERED_ERROR_NAME } from '../src/failure.js';
 import { PATH_DEBOUNCE_MS, emptyPathEdit } from '../src/path-controller.js';
@@ -42,7 +43,7 @@ const rendered = (req: RenderRequest): RenderedPage => ({
   clip: null,
 });
 
-function setup(options: { withPath?: boolean } = {}) {
+function setup(options: { withPath?: boolean; strings?: ViewerStrings } = {}) {
   const fake = new FakeEditHost({ paragraphs: [], paths: PATHS });
   const base = {
     getPageInfo: vi.fn(async (i: number) => pageInfo(i)),
@@ -89,6 +90,7 @@ function setup(options: { withPath?: boolean } = {}) {
     pageCount: 3,
     getEnvironment: () => ({ devicePixelRatio: 1, availableWidth: 632 }),
     cssScaleFor: () => 1,
+    ...(options.strings ? { strings: options.strings } : {}),
   });
   return { controller, host, fake, pathApi };
 }
@@ -171,6 +173,14 @@ describe('선택', () => {
     expect(s.selection?.plan?.editable).toBe(false);
     expect(s.note?.[0]).toContain('clip-path');
     expect(p.beginGesture()).toBeNull();
+  });
+
+  it('영어 표를 주면 패스 사유는 core 설명 대신 사유 코드 문구(사용자 결정 2026-10-26)', async () => {
+    const { controller } = await started({ strings: VIEWER_STRINGS.en });
+    await paths(controller).selectAt(0, [310, 310], 1, false);
+    expect(controller.getState().edit.path.note).toEqual([
+      'A path that defines a clipping area cannot be edited.',
+    ]);
   });
 
   it('점 편집 모드는 편집 가능한 단일 선택에서만 켜진다', async () => {

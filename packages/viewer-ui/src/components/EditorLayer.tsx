@@ -12,7 +12,7 @@ import {
   resizeArea,
   type HandleName,
 } from '../edit-geometry.js';
-import { EDIT_PAGES_NOTICE, TAGGED_NOTICE } from '../edit-labels.js';
+import { warningText } from '../edit-labels.js';
 import { mapEditKey } from '../edit-keys.js';
 import type { EditSession, EditSessionView } from '../edit-session.js';
 import { cssToPage, pageToCss, type PageLayout } from '../layout.js';
@@ -63,6 +63,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
   const taRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const { shown, editor, plan } = session;
+  const t = controller.strings;
   const reflow = shown.reflow;
   const caret = caretBox(reflow, shown.text, shown.caret, shown.affinity);
   const sessionOf = (): EditSession | null => controller.edit?.currentSession() ?? null;
@@ -337,7 +338,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
         <div
           key={`m${i}`}
           class="pe-edit-missing"
-          title="원본·폴백 글꼴 모두 이 글자의 글리프가 없어 쓰지 않습니다"
+          title={t.glyphMissingTitle}
           data-offset={m.offset}
           style={cssRect([m.x - 1, m.top, m.x + 1, m.bottom], layout)}
         />
@@ -406,35 +407,33 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
           data-pe-keep=""
           style={{ left: `${areaBottomCss[0]}px`, top: `${areaBottomCss[1] + 6}px` }}
         >
-          <span class="pe-edit-overflow-msg">
-            영역을 넘었습니다(쪽·개체 경계까지 넓혀도 들어가지 않습니다)
-          </span>
+          <span class="pe-edit-overflow-msg">{t.overflowMessage}</span>
           <button
             type="button"
             id="pe-edit-revert"
             class="pe-btn"
-            title="이번 편집을 버리고 편집을 시작하기 전 상태로 되돌립니다"
+            title={t.revertTitle}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => void controller.edit?.cancelActive()}
           >
-            되돌리기
+            {t.revert}
           </button>
         </div>
       )}
       <div id="pe-edit-info" class="pe-edit-info" data-pe-keep="">
         {isTaggedPlan(plan) && (
           <div id="pe-edit-tagged-note" class="pe-edit-tagged">
-            {TAGGED_NOTICE}
+            {t.taggedNotice}
           </div>
         )}
         {session.committing && (
           <div id="pe-edit-busy" class="pe-edit-notice-line" role="status">
-            편집을 반영하는 중입니다. 끝날 때까지 입력은 받지 않습니다.
+            {t.committingNotice}
           </div>
         )}
         {session.error && (
           <div id="pe-edit-error" class="pe-edit-error" role="alert">
-            미리보기 갱신 실패: {session.error}
+            {t.previewFailed(t.errorDetail(session.error))}
           </div>
         )}
         {session.notice && (
@@ -443,21 +442,21 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
           </div>
         )}
         {warnings.length > 0 && (
-          <ul id="pe-edit-warnings" class="pe-edit-warnings" aria-label="편집 경고">
+          <ul id="pe-edit-warnings" class="pe-edit-warnings" aria-label={t.editWarningsLabel}>
             {warnings.map((w, i) => (
               <li key={i} data-kind={w.kind}>
-                {w.message}
+                {warningText(w, t)}
               </li>
             ))}
           </ul>
         )}
-        <div class="pe-edit-hint">{EDIT_PAGES_NOTICE}</div>
+        <div class="pe-edit-hint">{t.editPagesNotice}</div>
       </div>
       <textarea
         id="pe-edit-input"
         ref={taRef}
         class="pe-edit-input"
-        aria-label="문단 편집"
+        aria-label={t.editorLabel}
         autocomplete="off"
         autocapitalize="off"
         spellcheck={false}

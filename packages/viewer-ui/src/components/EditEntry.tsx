@@ -117,8 +117,8 @@ export function EditEntry({
         >
           <strong>
             {popover.kind === 'cell'
-              ? '이 셀은 편집할 수 없습니다'
-              : '이 문단은 편집할 수 없습니다'}
+              ? controller.strings.cellNotEditableTitle
+              : controller.strings.paragraphNotEditableTitle}
           </strong>
           <ul>
             {popover.items.map((item, i) => (
@@ -131,7 +131,7 @@ export function EditEntry({
             id="pe-edit-popover-close"
             onClick={() => controller.edit?.dismissPopover()}
           >
-            닫기
+            {controller.strings.popoverClose}
           </button>
         </div>
       )}

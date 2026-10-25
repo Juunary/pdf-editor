@@ -343,7 +343,7 @@ describe('ViewerController · M1 미구현 기능 비활성화', () => {
       c.setFindQuery('a');
       await vi.advanceTimersByTimeAsync(250);
       expect(c.getState().find.message).toBe(
-        'Search is not available (M1 미구현: core searchText)',
+        'Search is not available (not implemented in this build)',
       );
     } finally {
       vi.useRealTimers();

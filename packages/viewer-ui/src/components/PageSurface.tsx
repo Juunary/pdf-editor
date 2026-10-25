@@ -64,7 +64,7 @@ export function PageSurface({ controller }: Props) {
   if (!view) {
     return state.renderError ? (
       <div id="pe-render-error" class="pe-render-error" role="alert">
-        페이지를 그리지 못했습니다: {state.renderError}
+        {controller.strings.pageRenderFailed(controller.strings.errorDetail(state.renderError))}
       </div>
     ) : null;
   }
@@ -122,6 +122,7 @@ export function PageSurface({ controller }: Props) {
           layout={layout}
           pageRef={pageRef}
           withLayout={doc !== null}
+          strings={controller.strings}
         />
       )}
       {entry && (

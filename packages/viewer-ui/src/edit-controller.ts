@@ -13,7 +13,7 @@ import type {
   Rect,
 } from '@pdf-editor/shared-types';
 import { offsetAtPagePoint } from './edit-geometry.js';
-import { limitLabel, TAGGED_BLOCKED_LABEL } from './edit-labels.js';
+import { limitItems, limitLabel } from './edit-labels.js';
 import type { EditLog } from './edit-log.js';
 import type { InputBufferPort } from './input-buffer.js';
 import { EditSession, isWorkerRecovered, type EditSessionView } from './edit-session.js';
@@ -40,7 +40,7 @@ export interface EditPopover {
   pageIndex: number;
   paragraphId: number;
   bbox: Rect;
-  /** 사유 문구(한국어). */
+  /** 사유 문구(화면 언어). */
   items: string[];
 }
 
@@ -306,7 +306,7 @@ export class EditController {
             pageIndex,
             paragraphId,
             bbox: plan.target.bbox,
-            items: [TAGGED_BLOCKED_LABEL],
+            items: [this.t.taggedBlocked],
           },
         });
         return;
@@ -344,6 +344,7 @@ export class EditController {
           renderScale: () => this.ctx.currentView()?.renderScale ?? 1,
           log: (event, data) => this.ctx.logEvent(event, data),
           onChange: (v) => this.ctx.patch({ session: v }),
+          strings: this.t,
         },
         plan,
         begun,
@@ -382,15 +383,20 @@ export class EditController {
   }
 
   private showLimits(plan: ParagraphEditPlan): void {
-    const details = plan.limits.map((l) => l.detail).filter((d) => d !== '');
-    const items = details.length > 0 ? details : plan.limits.map((l) => limitLabel(l.reason));
+    // 한국어는 core 설명(detail)이 하나라도 있으면 설명만(이전 동작), 영어는 사유 코드 문구.
+    const withDetail = plan.limits.filter((l) => l.detail !== '');
+    const items = limitItems(
+      this.t.lang === 'ko' && withDetail.length > 0 ? withDetail : plan.limits,
+      this.t.paragraphNotEditable,
+      this.t,
+    );
     this.ctx.patch({
       popover: {
         kind: plan.target.cell || this.isCellParagraph(plan.paragraphId) ? 'cell' : 'paragraph',
         pageIndex: plan.pageIndex,
         paragraphId: plan.paragraphId,
         bbox: plan.target.bbox,
-        items: items.length > 0 ? [...new Set(items)] : ['이 문단은 편집할 수 없습니다.'],
+        items,
       },
     });
   }
@@ -402,7 +408,10 @@ export class EditController {
         pageIndex,
         paragraphId,
         bbox,
-        items: reasons.length > 0 ? reasons.map(limitLabel) : ['이 문단은 편집할 수 없습니다.'],
+        items:
+          reasons.length > 0
+            ? [...new Set(reasons.map((r) => limitLabel(r, this.t)))]
+            : [this.t.paragraphNotEditable],
       },
     });
   }
@@ -425,7 +434,7 @@ export class EditController {
       notice:
         failure.kind === 'recovered'
           ? this.t.editRecoveredRestart
-          : this.t.failureWith(prefix, failure.message),
+          : this.t.failureWith(prefix, this.t.errorDetail(e)),
     });
   }
 
@@ -460,7 +469,7 @@ export class EditController {
       }
       if (out.kind === 'kept') {
         // 마지막 입력을 초안에 반영하지 못해 커밋하지 않았다. 편집기를 열어 둔다(오류는 편집기 정보 줄에도 보인다).
-        this.ctx.patch({ notice: this.t.editNotApplied(out.error) });
+        this.ctx.patch({ notice: this.t.editNotApplied(this.t.errorDetail(out.error)) });
         return false;
       }
       this.endSession();

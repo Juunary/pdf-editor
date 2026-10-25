@@ -148,6 +148,19 @@ describe('진입', () => {
     expect(controller.getState().edit.popover).toBeNull();
   });
 
+  it('영어 표를 주면 팝오버 사유는 core 설명 대신 사유 코드 문구(사용자 결정 2026-10-26)', async () => {
+    const { controller } = await started({ strings: VIEWER_STRINGS.en });
+    await controller.edit!.begin(0, 2, [25, 50]);
+    expect(controller.getState().edit.popover?.items).toEqual([
+      'Text outside the body flow cannot be edited in this version.',
+    ]);
+    controller.edit!.showReasons(0, 2, [0, 0, 1, 1], []);
+    expect(controller.getState().edit.popover?.items).toEqual(['This paragraph cannot be edited.']);
+    controller.edit!.setBlockTagged(true);
+    await controller.edit!.begin(0, 3, null);
+    expect(controller.getState().edit.popover?.items[0]).toContain('Block tagged PDF edits');
+  });
+
   it('편집 가능 문단은 클릭한 글자 위치에서 캐럿을 시작한다', async () => {
     const { controller } = await started();
     await controller.edit!.begin(0, 1, [68, 27]); // 'o'(글자 4, x 60–70)의 오른쪽 절반
