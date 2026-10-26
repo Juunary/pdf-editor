@@ -9,7 +9,7 @@ PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한
 | 동작 | 방법 |
 | --- | --- |
 | 열기 | PDF 링크 또는 로컬 PDF 를 Chrome 에서 엽니다. 확장 아이콘으로 뷰어를 열 수도 있습니다 |
-| 쪽 이동 | 도구 막대의 이전·다음 단추, 쪽 번호 입력란, 쪽 양옆의 쪽 화살표(창이 좁으면 쪽 아래에 나란히 놓여 쪽을 가리지 않습니다) |
+| 쪽 이동 | 도구 막대의 이전·다음 단추, 쪽 번호 입력란, 쪽 양옆의 쪽 화살표(창이 좁아 양옆에 자리가 없으면 쪽 좌우 가장자리 위에 겹쳐 놓입니다) |
 
 ## 텍스트 선택·복사
 
@@ -101,7 +101,7 @@ PDF 를 Chrome 에서 열면 이 확장의 뷰어가 열립니다. 문서는 한
 ## English summary
 
 - The toolbar, find bar, save menu, status line, notices, the About and save-confirmation dialogs, and the on-page editing UI (editor, restriction reasons, path panel, editable-marks legend) follow Chrome's display language: Korean for Korean, English for any other language. The extension name and description follow the same language.
-- Page arrows sit beside the page; in a narrow window they move below the page so they never cover it.
+- Page arrows sit beside the page; in a window too narrow to fit them beside it, they overlap the left and right edges of the page.
 - Open any PDF in Chrome; pages are shown one at a time. Select and copy text, search with Ctrl+F.
 - Double-click a paragraph or table cell to edit it (IME input supported); Esc or clicking outside commits. Text reflows inside the edit area and the area grows downward up to a limit; glyphs missing from the original font use a bundled Noto Sans KR subset.
 - Select vector paths with Alt+click (or plain click when "Layout & editable marks" is on), then move, resize, edit points, change fill/stroke color and width, or delete.
