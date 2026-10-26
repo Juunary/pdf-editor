@@ -433,7 +433,10 @@
    좁은 창(문서 영역 폭 < 464 px, page-nav.ts `pageArrowLayout`)은 마운트가 컨테이너에 data-pe-arrows="overlay" 를 붙인다
    (사용자 결정 2026-10-26 변경: 자리가 없으면 겹친다). 그 폭에서는 좌우 칸 몫을 빼지 않아 쪽이 넓어지고, 칸은 폭 0 으로
    레이아웃 폭을 차지하지 않으며 버튼만 쪽 가장자리 위로 넘쳐 겹친다. 칸은 sticky(left·right 0)라 쪽이 최소 폭(320 px)
-   때문에 가로로 넘쳐도 문서 영역 보이는 범위의 좌우 끝에 붙는다. */
+   때문에 가로로 넘쳐도 문서 영역 보이는 범위의 좌우 끝에 붙는다.
+   세로: 칸 높이는 한 줄 flex 의 줄 높이(문서 영역 안쪽 높이)라 쪽보다 짧다. 칸도 세로 sticky(top 0)로 두어 쪽이 길어
+   아래로 스크롤해도 칸이 보이는 범위 위에 남고, 그 안에서 버튼 sticky 가 보이는 범위 세로 가운데를 잡는다. sticky 는
+   흐름 배치·스크롤 범위를 바꾸지 않는다. */
 .pe-arrow-slot {
   flex: none;
   align-self: stretch;
@@ -441,6 +444,7 @@
   margin: 0 3px;
   pointer-events: none;
   position: sticky;
+  top: 0;
   z-index: 6;
 }
 .pe-arrow-slot-prev {
