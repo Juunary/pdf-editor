@@ -58,15 +58,17 @@ describe('navDisabled', () => {
   });
 });
 
-describe('쪽 화살표 자리(사용자 결정 2026-10-26)', () => {
-  it('문서 영역 464 px 이상은 좌우 칸, 그 아래는 쪽 아래 줄', () => {
+describe('쪽 화살표 자리(사용자 결정 2026-10-26 변경: 자리가 없으면 쪽 위에 겹침)', () => {
+  it('문서 영역 464 px 이상은 좌우 칸, 그 아래는 쪽 위 겹침', () => {
     expect(pageArrowLayout(1280)).toEqual({
       placement: 'side',
       availableWidth: 1280 - 2 * PAGE_ARROW_GUTTER,
     });
     expect(pageArrowLayout(464).placement).toBe('side');
-    expect(pageArrowLayout(463)).toEqual({ placement: 'below', availableWidth: 463 });
-    expect(pageArrowLayout(320).placement).toBe('below');
+    expect(pageArrowLayout(464).availableWidth).toBe(464 - 2 * PAGE_ARROW_GUTTER);
+    expect(pageArrowLayout(463)).toEqual({ placement: 'overlay', availableWidth: 463 });
+    expect(pageArrowLayout(400)).toEqual({ placement: 'overlay', availableWidth: 400 });
+    expect(pageArrowLayout(320)).toEqual({ placement: 'overlay', availableWidth: 320 });
   });
 
   it('좌우 칸일 때 쪽은 최소 폭 이상이라 칸이 들어갈 자리가 남는다', () => {
@@ -77,7 +79,7 @@ describe('쪽 화살표 자리(사용자 결정 2026-10-26)', () => {
     }
   });
 
-  it('쪽 아래 줄일 때는 칸 몫을 빼지 않아 쪽이 넓어진다(400 px: 320 → 368)', () => {
+  it('쪽 위 겹침일 때는 칸 몫을 빼지 않아 쪽이 넓어진다(400 px: 320 → 368)', () => {
     const pageCss = (w: number) =>
       fitWidthScale({ availableWidth: pageArrowLayout(w).availableWidth, pageWidthPt: 612 }) * 612;
     expect(pageCss(400)).toBeCloseTo(368, 6);

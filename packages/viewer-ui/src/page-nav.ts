@@ -45,10 +45,11 @@ export const MIN_PAGE_CSS_WIDTH = 320;
 export const PAGE_AREA_MARGIN = 32;
 
 /**
- * 화살표 자리. side: 쪽 좌우 바깥 칸. below: 쪽 아래 줄(쪽과 겹치지 않는다). 좁은 창에서 좌우 칸을 두면 쪽이 최소 폭
- * 때문에 문서 영역을 넘쳐 칸이 쪽 위에 겹치므로(docs/m5-release.md 10.2.4), 그 폭에서는 칸을 빼고 쪽 아래로 옮긴다.
+ * 화살표 자리. side: 쪽 좌우 바깥 칸(쪽과 겹치지 않는다). overlay: 좌우 칸 자리가 없는 좁은 창에서 칸을 레이아웃에서
+ * 빼고(폭 0) 두 화살표를 문서 영역 좌우 가장자리 안쪽, 쪽 가장자리 위에 겹쳐 띄운다(사용자 결정 2026-10-26 변경:
+ * 겹칠 수밖에 없으면 겹친다, docs/m5-release.md 10.3).
  */
-export type PageArrowPlacement = 'side' | 'below';
+export type PageArrowPlacement = 'side' | 'overlay';
 
 export interface PageArrowLayout {
   placement: PageArrowPlacement;
@@ -58,12 +59,12 @@ export interface PageArrowLayout {
 
 /**
  * 문서 영역 폭(스크롤 상자의 clientWidth, 안쪽 여백 포함·스크롤바 제외)으로 화살표 자리와 쪽 맞춤 폭을 정한다.
- * 좌우 칸 두 몫과 여백을 빼고도 쪽 최소 폭이 남으면(폭 ≥ 320 + 2×56 + 32 = 464) side, 아니면 below(칸 몫을 빼지 않아
+ * 좌우 칸 두 몫과 여백을 빼고도 쪽 최소 폭이 남으면(폭 ≥ 320 + 2×56 + 32 = 464) side, 아니면 overlay(칸 몫을 빼지 않아
  * 쪽이 그만큼 넓어진다). 표시(마운트가 `data-pe-arrows` 로 붙임)와 쪽 맞춤(호스트의 getEnvironment)이 같은 함수를 쓴다.
  */
 export function pageArrowLayout(containerWidth: number): PageArrowLayout {
   const side = containerWidth - 2 * PAGE_ARROW_GUTTER - PAGE_AREA_MARGIN >= MIN_PAGE_CSS_WIDTH;
   return side
     ? { placement: 'side', availableWidth: containerWidth - 2 * PAGE_ARROW_GUTTER }
-    : { placement: 'below', availableWidth: containerWidth };
+    : { placement: 'overlay', availableWidth: containerWidth };
 }

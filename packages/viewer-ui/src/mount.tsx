@@ -32,7 +32,7 @@ export function mountViewer(targets: MountTargets, controller: ViewerController)
     targets.pages,
   );
 
-  // 쪽 화살표 자리(좌우 칸 또는 쪽 아래 줄)를 문서 영역 폭으로 정한다(style.css `[data-pe-arrows]`). 호스트의 쪽 맞춤
+  // 쪽 화살표 자리(좌우 칸 또는 쪽 위 겹침)를 문서 영역 폭으로 정한다(style.css `[data-pe-arrows]`). 호스트의 쪽 맞춤
   // 폭도 같은 함수(`pageArrowLayout`)로 정하므로 둘이 어긋나지 않는다.
   const pages = targets.pages;
   const syncArrows = () => {
