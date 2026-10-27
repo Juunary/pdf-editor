@@ -1,16 +1,16 @@
-// 결정적 zip(fflate): 항목을 경로순으로 넣고 시각을 고정해 같은 입력이면 같은 바이트가 나온다.
+// Deterministic zip (fflate): entries are added in path order with a fixed timestamp, so the same input gives the same bytes.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// fflate 는 apps/extension 의 개발 의존성이다(저장소 루트에는 설치되지 않는다).
+// fflate is a dev dependency of apps/extension (not installed at the repository root).
 const extRequire = createRequire(
   join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'apps', 'extension', 'package.json'),
 );
 const { zipSync } = extRequire('fflate');
 
-/** 지역 시각 2000-01-01 00:00:00(zip 은 지역 시각을 저장하므로 시간대와 무관하게 같은 값). */
+/** Local time 2000-01-01 00:00:00 (zip stores local time, so this gives the same value regardless of time zone). */
 export const ZIP_MTIME = new Date(2000, 0, 1, 0, 0, 0);
 
 export function walkFiles(dir) {
@@ -20,7 +20,7 @@ export function walkFiles(dir) {
   });
 }
 
-/** `dir` 아래 모든 파일을 zip 바이트로 만든다(경로는 `/` 구분, 정렬). */
+/** Builds zip bytes from all files under `dir` (paths use `/`, sorted). */
 export function zipDirectory(dir) {
   const entries = walkFiles(dir)
     .map((file) => relative(dir, file).split(sep).join('/'))

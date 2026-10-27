@@ -1,53 +1,53 @@
 /**
- * 읽기 순서와 선택 판정(순수 함수).
+ * Reading order and selection classification (pure functions).
  *
- * 읽기 순서는 `PageModel.lines` 배열 순서(MuPDF 기준 읽기 순서)이고, 줄 안은 `LineInfo.chars` 순서다.
- * 구조화 텍스트에 없는 글자(`line` = -1, 줄이 참조하지 않는 글자)는 뒤에 따로 모아 붙인다.
- * `LineInfo.spaceAfter`(Device 글리프가 없는 합성 공백, docs/m1-contract.md 4절)는 글자 사이에 공백을 넣는
- * 위치로만 쓴다. 공백은 글자가 아니므로 캐럿 위치·선택 구간에는 들어가지 않고, 양옆 글자가 모두 선택 구간에
- * 있을 때만 복사 텍스트에 들어간다.
- * 선택은 글자 사이 "캐럿 위치"(0 … items.length)로 다룬다. 선택 구간 = 캐럿 구간 [from, to).
+ * The reading order is the order of the `PageModel.lines` array (MuPDF reading order), and within a line it is the order of `LineInfo.chars`.
+ * Characters absent from the structured text (`line` = -1, characters no line references) are collected and appended at the end.
+ * `LineInfo.spaceAfter` (a synthetic space with no Device glyph, docs/m1-contract.md section 4) is used only as the
+ * position where a space is inserted between characters. A space is not a character, so it does not enter caret positions or selection ranges, and it enters the copied text
+ * only when the characters on both sides are in the selection range.
+ * Selection is handled as "caret positions" between characters (0 … items.length). Selection range = caret range [from, to).
  */
 import type { CharInfo, PageModel, Point } from '@pdf-editor/shared-types';
 import { quadFrame } from './layout.js';
 
 export interface ReadingItem {
-  /** PageModel.chars 인덱스. */
+  /** PageModel.chars index. */
   charIndex: number;
-  /** ReadingOrder.lines 인덱스. */
+  /** ReadingOrder.lines index. */
   line: number;
-  /** PageModel.blocks 인덱스. 줄에 속하지 않은 글자는 ORPHAN_BLOCK. */
+  /** PageModel.blocks index. For a character that belongs to no line, ORPHAN_BLOCK. */
   block: number;
   /**
-   * 이 글자와 같은 줄의 다음 글자 사이에 합성 공백이 있다. 줄의 마지막 글자 뒤 공백(바로 줄바꿈이 오므로
-   * 공백류를 접으면 같다)은 표시하지 않는다.
+   * There is a synthetic space between this character and the next character on the same line. A space after the last character of a line (a line break follows immediately, so
+   * it is the same once whitespace is collapsed) is not shown.
    */
   spaceAfter: boolean;
 }
 
 export interface ReadingLine {
-  /** ReadingOrder.items 구간 [start, end). */
+  /** ReadingOrder.items range [start, end). */
   start: number;
   end: number;
   block: number;
-  /** 구조화 텍스트에 없어 글리프 순서·위치로 묶은 줄. */
+  /** Lines grouped by glyph order and position because they are absent from the structured text. */
   orphan: boolean;
 }
 
 export interface ReadingOrder {
   items: ReadingItem[];
   lines: ReadingLine[];
-  /** 구조화 텍스트에 없는 글자 수. */
+  /** Number of characters absent from the structured text. */
   orphanChars: number;
 }
 
 export const ORPHAN_BLOCK = -1;
 
-/** 글리프 순서가 이어지는 글자를 기준선 위치로 줄로 묶는다. */
+/** Groups characters whose glyph order continues into lines by baseline position. */
 function sameOrphanLine(a: CharInfo, b: CharInfo): boolean {
   if (a.wmode !== b.wmode) return false;
   const tolerance = 0.5 * Math.max(a.size, b.size, 1);
-  // 가로 쓰기는 x 로 진행하고 y 가 줄 위치, 세로 쓰기는 반대.
+  // Horizontal writing advances along x with y as the line position; vertical writing is the opposite.
   const [alongA, acrossA] = a.wmode === 1 ? [a.origin[1], a.origin[0]] : [a.origin[0], a.origin[1]];
   const [alongB, acrossB] = a.wmode === 1 ? [b.origin[1], b.origin[0]] : [b.origin[0], b.origin[1]];
   if (Math.abs(acrossA - acrossB) > tolerance) return false;
@@ -85,7 +85,7 @@ export function buildReadingOrder(model: PageModel): ReadingOrder {
         return;
       }
       covered[charIndex] = 1;
-      // spaceAfter 의 k 는 원래 chars 배열 위치다(걸러진 글자가 있어도 위치가 밀리지 않는다).
+      // The k of spaceAfter is the position in the original chars array (positions do not shift even if some characters were filtered out).
       items.push({
         charIndex,
         line: lines.length,
@@ -94,7 +94,7 @@ export function buildReadingOrder(model: PageModel): ReadingOrder {
       });
     });
     if (items.length > start) {
-      // 줄 끝 공백은 표시하지 않는다.
+      // A space at the end of a line is not shown.
       items[items.length - 1]!.spaceAfter = false;
       lines.push({ start, end: items.length, block: line.block, orphan: false });
     }
@@ -114,13 +114,13 @@ export function buildReadingOrder(model: PageModel): ReadingOrder {
 }
 
 export interface AssembleOptions {
-  /** 같은 블록 안 줄 사이(기본 "\n"). */
+  /** Between lines in the same block (default "\n"). */
   lineSeparator?: string;
-  /** 블록 사이(기본 "\n\n", MuPDF 텍스트 출력과 같은 빈 줄). */
+  /** Between blocks (default "\n\n", the same blank line as MuPDF text output). */
   blockSeparator?: string;
 }
 
-/** 캐럿 구간 [from, to) 의 글자를 읽기 순서 텍스트로 조립한다. 범위는 자동으로 보정한다. */
+/** Assembles the characters of the caret range [from, to) into reading-order text. The range is corrected automatically. */
 export function assembleText(
   model: PageModel,
   order: ReadingOrder,
@@ -148,19 +148,19 @@ export function assembleText(
 }
 
 /**
- * 글자 quad 까지의 거리에서 줄 진행 방향 거리의 가중치. 줄 사이 방향 거리를 더 크게 쳐서, 텍스트 아래·옆을 끌 때
- * 긴 앞줄의 끝 글자보다 세로로 가까운 줄을 고르게 한다(0 이면 줄 높이 범위만 본다).
+ * Weight of the distance along the line direction in the distance to a character quad. The distance across lines is weighted more, so that when dragging below or beside text
+ * the line that is vertically closer is chosen over the last character of a long preceding line (0 looks only at the line-height range).
  */
 export const ALONG_LINE_WEIGHT = 0.25;
 
 export interface PointLocation {
-  /** 글자 quad 까지의 가중 거리(pt). 안쪽이면 0. */
+  /** Weighted distance to the character quad (pt). 0 if inside. */
   distance: number;
-  /** 읽기 진행 방향(가로 쓰기는 ul→ur, 세로 쓰기는 ul→ll)으로 본 위치 비율. 안쪽이면 0–1. */
+  /** Position ratio along the reading direction (ul→ur for horizontal writing, ul→ll for vertical). 0–1 if inside. */
   progress: number;
 }
 
-/** 점이 글자 quad 의 어디에 있는지. 폭·높이가 0 인 quad 도 안전하게 다룬다. */
+/** Where the point is relative to a character quad. Also handles quads with zero width or height safely. */
 export function locatePoint(char: CharInfo, p: Point): PointLocation {
   const f = quadFrame(char.quad);
   const dx = p[0] - f.ox;
@@ -171,7 +171,7 @@ export function locatePoint(char: CharInfo, p: Point): PointLocation {
   const dt = t < 0 ? -t : t > f.lv ? t - f.lv : 0;
   const vertical = char.wmode === 1;
   const progress = vertical ? (f.lv > 0 ? t / f.lv : 0) : f.lu > 0 ? s / f.lu : 0;
-  // 가로 쓰기는 u(ds)가 줄 진행 방향, 세로 쓰기는 v(dt)가 줄 진행 방향이다.
+  // For horizontal writing u (ds) is the line advance direction; for vertical writing v (dt) is.
   const distance = vertical
     ? Math.hypot(ds, ALONG_LINE_WEIGHT * dt)
     : Math.hypot(ALONG_LINE_WEIGHT * ds, dt);
@@ -179,18 +179,18 @@ export function locatePoint(char: CharInfo, p: Point): PointLocation {
 }
 
 export interface CaretHit {
-  /** 캐럿 위치(0 … items.length). 글자 k 의 앞이 k, 뒤가 k + 1. */
+  /** Caret position (0 … items.length). Before character k is k, after it is k + 1. */
   caret: number;
-  /** 가장 가까운 글자의 ReadingOrder.items 인덱스. */
+  /** ReadingOrder.items index of the nearest character. */
   item: number;
   distance: number;
 }
 
 /**
- * 점(페이지 공간)에서 가장 가까운 글자와 캐럿 위치. 글자 안이면 절반 앞쪽은 글자 앞, 뒤쪽은 글자 뒤.
- * 줄 끝 바깥·줄 사이·글자가 없는 곳에서도 가장 가까운 글자(가중 거리, `ALONG_LINE_WEIGHT`)로 정해지므로
- * 드래그가 튀지 않는다.
- * 거리가 같으면 읽기 순서가 앞선 글자.
+ * The nearest character and caret position for a point (page space). Inside a character, the front half is before the character and the back half is after it.
+ * Outside a line end, between lines, or where there are no characters, the nearest character (weighted distance, `ALONG_LINE_WEIGHT`) is still chosen, so
+ * dragging does not jump around.
+ * If distances are equal, the character earlier in reading order wins.
  */
 export function caretAt(model: PageModel, order: ReadingOrder, p: Point): CaretHit | null {
   let best = -1;
@@ -203,7 +203,7 @@ export function caretAt(model: PageModel, order: ReadingOrder, p: Point): CaretH
       best = k;
       bestDistance = loc.distance;
       bestProgress = loc.progress;
-      // 글자 안이면 이후 글자와 겹쳐도 읽기 순서가 앞선 글자를 유지한다.
+      // When inside a character, keep the character that is earlier in reading order even if later characters overlap it.
       if (bestDistance === 0) break;
     }
   }
@@ -211,7 +211,7 @@ export function caretAt(model: PageModel, order: ReadingOrder, p: Point): CaretH
   return { caret: best + (bestProgress > 0.5 ? 1 : 0), item: best, distance: bestDistance };
 }
 
-/** 점이 안에 들어 있는 글자의 ReadingOrder.items 인덱스. 없으면 -1. */
+/** ReadingOrder.items index of the character that contains the point. -1 if none. */
 export function itemAtPoint(model: PageModel, order: ReadingOrder, p: Point): number {
   for (let k = 0; k < order.items.length; k++) {
     const char = model.chars[order.items[k]!.charIndex]!;
@@ -225,7 +225,7 @@ function isBlank(text: string): boolean {
 }
 
 /**
- * 더블클릭: 같은 줄에서 공백/비공백이 이어지는 구간(캐럿 구간). 합성 공백(`spaceAfter`)은 단어 경계다.
+ * Double-click: the run of whitespace/non-whitespace on the same line (caret range). A synthetic space (`spaceAfter`) is a word boundary.
  */
 export function wordRange(model: PageModel, order: ReadingOrder, item: number): [number, number] {
   const target = order.items[item];
@@ -251,7 +251,7 @@ export function wordRange(model: PageModel, order: ReadingOrder, item: number): 
   return [from, to];
 }
 
-/** 트리플클릭: 줄 전체(캐럿 구간). */
+/** Triple-click: the whole line (caret range). */
 export function lineRange(order: ReadingOrder, item: number): [number, number] {
   const target = order.items[item];
   if (!target) return [0, 0];

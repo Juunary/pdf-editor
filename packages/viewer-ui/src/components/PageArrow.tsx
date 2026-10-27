@@ -8,10 +8,10 @@ interface Props {
 }
 
 /**
- * 페이지 좌우 가장자리의 이전·다음 쪽 화살표. 쪽 영역 바깥(여백 칸)에 놓아 텍스트 층·오버레이를 가리지 않으며,
- * 포인터는 버튼만 받는다. 좌우 칸 자리가 없는 좁은 창은 칸을 폭 0 으로 줄이고 버튼을 쪽 가장자리 위에 겹쳐 띄운다
- * (마운트의 `data-pe-arrows`, page-nav.ts `pageArrowLayout`).
- * 쪽 이동은 컨트롤러가 편집 초안을 먼저 커밋한다. 단축키는 두지 않는다(캐럿 이동과 충돌).
+ * Previous/next page arrows at the left and right edges of the page. Placed outside the page area (in the margin slots) so they do not cover the text layer or overlays,
+ * and only the buttons receive pointer events. In a narrow window with no room for side slots, the slots shrink to width 0 and the buttons float overlapping the page edges
+ * (mount's `data-pe-arrows`, `pageArrowLayout` in page-nav.ts).
+ * For page navigation, the controller commits the edit draft first. No shortcuts are defined (they would conflict with caret movement).
  */
 export function PageArrow({ controller, dir }: Props) {
   const state = useViewerState(controller);

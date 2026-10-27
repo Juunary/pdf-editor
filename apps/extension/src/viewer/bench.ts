@@ -1,9 +1,9 @@
 /**
- * M5 벤치마크 페이지(계약 4.1). 확장 안 진단 기능이라 압축해제 `dist` 의 `bench.html` 에서 수동으로 실행한다
- * (pnpm·Node 불필요). 서버 Playwright 도 같은 페이지의 `window.__bench` 로 돌린다.
+ * M5 benchmark page (contract 4.1). As an in-extension diagnostic feature, it is run manually from `bench.html` in the unpacked `dist`
+ * (no pnpm or Node needed). Server-side Playwright also drives the same page via `window.__bench`.
  *
- * 수동: 문서 선택 → 지표 선택 → 실행. 메모리 시나리오는 기준점·종료 시점에 멈추므로 작업 관리자(Shift+Esc)의
- * "메모리 사용 공간"에서 이 확장 뷰어 프레임 행 값을 읽어 넣고 계속한다. 끝나면 결과 JSON 을 내보낸다.
+ * Manual: select documents → select metrics → run. The memory scenario pauses at the checkpoint and end points, so read this extension's viewer frame row value from Task Manager (Shift+Esc)
+ * "메모리 사용 공간" (Memory footprint), enter it and continue. When finished, export the result JSON.
  */
 import { benchDocOfFile, parseTabInput, tabInputWarnings, type TabUnit } from './bench-input.js';
 import { M5_EVENTS } from './bench-marks.js';
@@ -32,7 +32,7 @@ export interface BenchResult {
   targetsMs: typeof TARGETS_MS;
   events: typeof M5_EVENTS;
   docs: DocResult[];
-  /** `<문서>.<지표>` → p95(ms). 직전 기록과 비교하는 키. */
+  /** `<document>.<metric>` → p95 (ms). Key for comparison with the previous record. */
   p95: Record<string, number>;
 }
 
@@ -94,18 +94,18 @@ function setStatus(state: string, text: string): void {
   statusEl.textContent = text;
 }
 
-/** 서버 자동화가 `page.exposeFunction('benchTabMemory', ...)` 로 렌더러 VmRSS(MiB)를 돌려준다. */
+/** Server automation returns the renderer VmRSS (MiB) via `page.exposeFunction('benchTabMemory', ...)`. */
 type AutoMemory = (label: string, docId: string) => Promise<number | null>;
-/** 서버 자동화가 `page.exposeFunction('benchTabDetail', ...)` 로 탭 메모리 구성(MiB)을 돌려준다. */
+/** Server automation returns the tab memory breakdown (MiB) via `page.exposeFunction('benchTabDetail', ...)`. */
 type AutoDetail = (label: string, docId: string) => Promise<Record<string, number | null> | null>;
 
-/** 브라우저가 알려 준 RAM(MiB). 모르면 null. */
+/** RAM (MiB) reported by the browser. null if unknown. */
 function ramMiB(): number | null {
   const gib = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   return typeof gib === 'number' && gib > 0 ? gib * 1024 : null;
 }
 
-/** 수동 입력 1회: 작업 관리자 값을 받아 MiB 로 바꾼다. 경고가 있으면 같은 값으로 한 번 더 눌러야 넘어간다. */
+/** One manual input: takes the Task Manager value and converts it to MiB. If there is a warning, the same value must be submitted once more to proceed. */
 async function readManualTab(
   docId: string,
   name: string,
@@ -134,7 +134,7 @@ async function readManualTab(
       const warnings = tabInputWarnings(parsed.mib, previous, ramMiB());
       const key = `${parsed.raw}|${parsed.unit}`;
       if (warnings.length > 0 && confirmed !== key) {
-        // 같은 값으로 한 번 더 누르면 경고를 기록하고 넘어간다.
+        // Pressing again with the same value records the warning and proceeds.
         confirmed = key;
         manualWarn.textContent = `${parsed.mib.toFixed(1)} MiB: ${warnings.join(' / ')}. 맞으면 그대로 다시 "입력했음, 계속".`;
         continue;
@@ -147,7 +147,7 @@ async function readManualTab(
   }
 }
 
-/** 수동 입력값(MiB)을 문서별로 모아 다음 입력의 경고 기준으로 쓴다. */
+/** Collects manual input values (MiB) per document and uses them as the baseline for warnings on the next input. */
 const manualHistory = new Map<string, number[]>();
 
 function makeHooks(auto: AutoMemory | null): BenchHooks {
@@ -168,7 +168,7 @@ function makeHooks(auto: AutoMemory | null): BenchHooks {
         ? (label, docId) => window.benchTabDetail!(label, docId)
         : undefined,
     targets: { controls: byId('viewer-controls'), pages: byId('page-container') },
-    // 뷰어(main.ts)와 같이 스크롤 상자(#page-container) 폭을 쓴다(창 스크롤바가 아니라 문서 영역 스크롤바를 뺀 폭).
+    // Use the scroll box (#page-container) width as the viewer (main.ts) does (the width excluding the document-area scrollbar, not the window scrollbar).
     availableWidth: () => Math.min(byId('page-container').clientWidth, 1100),
     spawnWorker,
   };
@@ -233,7 +233,7 @@ runBtn.addEventListener('click', () => {
   const scenarios = [...document.querySelectorAll<HTMLInputElement>('[data-scenario]')]
     .filter((c) => c.checked)
     .map((c) => c.dataset.scenario as Scenario);
-  // 벤치 세트 문서면 서버 실행과 같은 지정 쪽(예: kogl-mods-cpi-202609 최대 패스 쪽)을 쪽 판정·분해에 넣는다.
+  // For a bench-set document, pass the same designated pages as the server run (e.g. the largest-path page of kogl-mods-cpi-202609) to page classification and breakdown.
   const docs: BenchDoc[] = selected.map((f) => ({
     ...benchDocOfFile(f.name),
     name: f.name,
@@ -242,7 +242,7 @@ runBtn.addEventListener('click', () => {
   }));
   runBtn.disabled = true;
   exportBtn.disabled = true;
-  // 시험용: `bench.html?settle=<ms>` 는 메모리 종료 뒤 대기를 바꾼다(수동 입력 흐름 e2e). 실제 측정은 기본 30 s.
+  // For tests: `bench.html?settle=<ms>` changes the wait after memory end (manual input flow e2e). Actual measurement defaults to 30 s.
   const settle = Number(new URLSearchParams(location.search).get('settle') ?? NaN);
   const mem =
     Number.isFinite(settle) && settle >= 0
@@ -272,7 +272,7 @@ exportBtn.addEventListener('click', () => {
 setStatus('idle', 'PDF 파일을 선택하세요');
 
 export interface BenchApi {
-  /** 서버 자동화용. `url` 의 PDF 를 내려받아 실행한다(CORS 허용 서버). */
+  /** For server automation. Downloads the PDF at `url` and runs (server must allow CORS). */
   run(
     docs: readonly {
       id: string;

@@ -10,7 +10,7 @@ const enc = (s: string) => new TextEncoder().encode(s);
 const dec = (b: Uint8Array) => new TextDecoder().decode(b);
 
 describe('parseContentOps', () => {
-  it('연산자·피연산자·바이트 범위', () => {
+  it('operators, operands, byte ranges', () => {
     const src = 'q 1 0 0 1 56 300 cm /Fx1 Do Q';
     const ops = parseContentOps(enc(src));
     expect(ops.map((o) => o.op)).toEqual(['q', 'cm', 'Do', 'Q']);
@@ -22,7 +22,7 @@ describe('parseContentOps', () => {
     expect(src.slice(name.start, name.end)).toBe('/Fx1');
   });
 
-  it('문자열(중첩 괄호·이스케이프)·16진 문자열·배열·사전·주석·이름 #xx', () => {
+  it('strings (nested parentheses, escapes), hex strings, arrays, dictionaries, comments, names #xx', () => {
     const src =
       'BT (a (b) \\) c) Tj <0041> Tj [(x) -20 (y)] TJ ET % 주석 Do\n' +
       '/P <</MCID 3>> BDC /A#20B Do EMC .5 -1. 2 d0';
@@ -39,14 +39,14 @@ describe('parseContentOps', () => {
     expect(ops[8]!.operands.map((t) => t.value)).toEqual([0.5, -1, 2]);
   });
 
-  it('인라인 이미지 데이터는 하나의 BI 연산으로 건너뛴다', () => {
+  it('inline image data is skipped as a single BI operation', () => {
     const src = 'q BI /W 2 /H 1 /CS /G /BPC 8 ID \x00EI\xff EI Q /Im Do';
     const ops = parseContentOps(enc(src));
     expect(ops.map((o) => o.op)).toEqual(['q', 'BI', 'Q', 'Do']);
   });
 
-  it('필터 없는 인라인 이미지는 데이터 길이를 계산해 데이터 안의 EI 를 건너뛴다', () => {
-    // W 3 H 1 G 8bit = 3바이트 "EI " 가 데이터. MuPDF 와 같이 그 뒤의 EI 에서 끝난다.
+  it('an unfiltered inline image computes the data length and skips the EI inside the data', () => {
+    // W 3 H 1 G 8bit = 3 bytes "EI " is the data. As in MuPDF, it ends at the EI after that.
     const src = 'BI /W 3 /H 1 /CS /G /BPC 8 ID EI  EI Q';
     const ops = parseContentOps(enc(src));
     expect(ops.map((o) => o.op)).toEqual(['BI', 'Q']);
@@ -54,15 +54,15 @@ describe('parseContentOps', () => {
     expect(ops[0]!.inlineDict!.map((t) => t.value)).toEqual(['W', 3, 'H', 1, 'CS', 'G', 'BPC', 8]);
   });
 
-  it('parseContentOpsLenient: 오류 전 연산과 오류 위치', () => {
+  it('parseContentOpsLenient: operations before the error and the error position', () => {
     const r = parseContentOpsLenient(enc('q 1 0 0 1 0 0 cm (open Tj'));
     expect(r.ops.map((o) => o.op)).toEqual(['q', 'cm']);
     expect(r.error?.message).toMatch('닫히지 않은 문자열');
     expect(() => parseContentOps(enc('(open'))).toThrow();
   });
 
-  it('decodeStringToken: 이스케이프·줄바꿈·8진수·16진 홀수 자리와 원본 위치', () => {
-    // a \\ b \n c \<CRLF>(이어 쓰기) d \101 \7 x \q <CRLF> e <CR> f
+  it('decodeStringToken: escapes, line breaks, octal, odd hex digit count, and source position', () => {
+    // a \\ b \n c \<CRLF>(continuation) d \101 \7 x \q <CRLF> e <CR> f
     const lit = String.raw`(a\\b\nc` + '\\\r\n' + String.raw`d\101\7x\q` + '\r\ne\rf)';
     const src = `${lit} <4 1 4> Tj`;
     const bytes = enc(src);

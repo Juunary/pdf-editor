@@ -1,14 +1,14 @@
-// M3 core 계측(docs/m3-core.md 4절). 먼저 `pnpm --filter @pdf-editor/core build` 로 dist 를 만든다.
+// M3 core measurement (docs/m3-core.md section 4). First build dist with `pnpm --filter @pdf-editor/core build`.
 //
-//   node scripts/measure-m3.mjs region <PDF 폴더> [문서 수=12] [반복=7]   V8: 변경 영역 렌더 시간(쪽 전체 렌더 대비)
-//   node --expose-gc scripts/measure-m3.mjs journal-heap <ops> <쪽 콘텐츠 KB> [off|on]
-//                                                                       저널 보유 메모리(쪽 콘텐츠 스트림을 작업마다 교체)
-//   node --expose-gc scripts/measure-m3.mjs journal-stream <ops> <스트림 KB> [off|on]
-//                                                                       작업마다 스트림 하나(KB 크기)를 교체할 때의 힙 증가
-//   node --expose-gc scripts/measure-m3.mjs journal-oneop <쓰기 수> <스트림 KB>
-//                                                                       한 작업 안에서 같은 스트림을 반복해 쓸 때의 힙 증가
+//   node scripts/measure-m3.mjs region <PDF folder> [docs=12] [reps=7]   V8: changed-area render time (vs full-page render)
+//   node --expose-gc scripts/measure-m3.mjs journal-heap <ops> <page content KB> [off|on]
+//                                                                       journal retention memory (page content stream replaced per operation)
+//   node --expose-gc scripts/measure-m3.mjs journal-stream <ops> <stream KB> [off|on]
+//                                                                       heap growth when one stream (KB size) is replaced per operation
+//   node --expose-gc scripts/measure-m3.mjs journal-oneop <writes> <stream KB>
+//                                                                       heap growth when the same stream is written repeatedly within one operation
 //
-// 코퍼스 PDF 는 커밋하지 않는다(fixtures/corpus/manifest.json). 읽기 전용으로만 연다.
+// Corpus PDFs are not committed (fixtures/corpus/manifest.json). They are opened read-only.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PdfSession, wasmHeapBytes } from '../dist/index.js';
@@ -22,7 +22,7 @@ const percentile = (values, p) => {
 };
 const round = (n, d = 1) => +n.toFixed(d);
 
-/** 문단 하나·세 줄·반 쪽 크기의 영역(페이지 공간 pt). 쪽 가운데 위쪽 기준. */
+/** Areas the size of one paragraph, three lines and half a page (page space, pt). Anchored at the top center of the page. */
 const CLIPS = [
   { name: '문단 한 줄(300×14pt)', w: 300, h: 14 },
   { name: '문단 6줄(400×80pt)', w: 400, h: 80 },
@@ -62,7 +62,7 @@ function region(dir, docLimit = 12, repeat = 7) {
       page.destroy();
       for (const scale of SCALES) {
         const time = (fn) => {
-          fn(); // 첫 호출(글꼴·캐시 데우기)은 제외
+          fn(); // the first call (warming up fonts and caches) is excluded
           const ms = [];
           for (let i = 0; i < repeat; i++) {
             const t0 = performance.now();
@@ -105,7 +105,7 @@ function region(dir, docLimit = 12, repeat = 7) {
     }
     session.close();
   }
-  // 요약: 영역 종류·배율별 쪽 단위 p50 의 분포.
+  // Summary: distribution of per-page p50 by area kind and scale.
   const summary = {};
   for (const r of rows.filter((r) => r.p50 !== undefined)) {
     const key = `${r.clip} @${r.scale}`;
@@ -156,7 +156,7 @@ function region(dir, docLimit = 12, repeat = 7) {
   console.log('WASM 힙(MiB):', round((wasmHeapBytes() ?? 0) / 2 ** 20));
 }
 
-/** 저널이 작업마다 보유하는 메모리: 쪽 콘텐츠 스트림을 작업마다 교체하고 WASM 힙 증가를 잰다. */
+/** Memory the journal retains per operation: replaces the page content stream on each operation and measures WASM heap growth. */
 async function journalHeap(opsArg, pageKbArg, mode = 'on') {
   const ops = Number(opsArg);
   const pageKb = Number(pageKbArg);
@@ -227,7 +227,7 @@ async function journalHeap(opsArg, pageKbArg, mode = 'on') {
   );
 }
 
-/** 작업마다(또는 한 작업 안에서) 스트림 하나를 교체할 때의 WASM 힙 증가. */
+/** WASM heap growth when replacing one stream per operation (or within one operation). */
 async function journalStream(opsArg, kbArg, mode = 'on', oneOp = false) {
   const ops = Number(opsArg);
   const bytes = Number(kbArg) * 1024;

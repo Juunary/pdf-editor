@@ -1,9 +1,9 @@
 /**
- * 확장 뷰어 문자열 표(한국어·영어, 사용자 요청 2026-10-23): 머리 영역(저장 메뉴·정보 버튼·상태 줄·알림 줄)과 정보·저장 확인
- * 대화상자. 툴바 컨트롤·검색창·쪽 화살표 문자열은 viewer-ui `VIEWER_STRINGS` 에 있다.
+ * Extension viewer string table (Korean and English, user request 2026-10-23): the header area (save menu, About button, status line, notice row) and the About / save confirmation
+ * dialogs. Strings for toolbar controls, the search box and page arrows are in viewer-ui `VIEWER_STRINGS`.
  *
- * 언어 판정: `chrome.i18n.getUILanguage()`(브라우저 UI 언어, 권한 불필요), 없으면 `navigator.language`. 주 언어가 ko 이면
- * 한국어, 그 밖은 영어(viewer-ui `resolveUiLang`). 방식 선택 근거는 docs/m5-release.md 10.2.
+ * Language decision: `chrome.i18n.getUILanguage()` (browser UI language, no permission needed), otherwise `navigator.language`. If the primary language is ko,
+ * Korean; otherwise English (viewer-ui `resolveUiLang`). The rationale for this approach is in docs/m5-release.md 10.2.
  */
 import type { SaveWarningCode } from '@pdf-editor/shared-types';
 import {
@@ -16,9 +16,9 @@ import type { SaveErrorCode } from './save-target.js';
 
 export interface AppStrings {
   lang: UiLang;
-  /** viewer-ui 문자열 표(같은 언어). */
+  /** viewer-ui string table (same language). */
   viewer: ViewerStrings;
-  // 머리 영역
+  // Header area
   openPdf: string;
   save: string;
   saveAs: string;
@@ -27,7 +27,7 @@ export interface AppStrings {
   about: string;
   aboutTitle: string;
   close: string;
-  // 상태 줄
+  // Status line
   statusIdle: string;
   statusChoosePdf: string;
   statusOpening(label: string): string;
@@ -48,13 +48,13 @@ export interface AppStrings {
   savedToFile(name: string): string;
   savedToDownloads: string;
   /**
-   * 상태 줄 오류 상세(콜론 뒤). 한국어는 이전처럼 `String(e)`, 영어는 viewer-ui `errorDetail`(오류 이름·알려진 형태·한글 없는
-   * 메시지, 그 밖은 일반 문장, 사용자 결정 2026-10-26).
+   * Status line error detail (after the colon). Korean uses `String(e)` as before; English uses viewer-ui `errorDetail` (error name, known shape, message without
+   * Hangul, otherwise a generic sentence, user decision 2026-10-26).
    */
   errorText(error: unknown): string;
-  /** 저장 대상(save-target.ts)이 정한 실패 원인. */
+  /** Failure cause determined by the save target (save-target.ts). */
   saveErrors: Record<SaveErrorCode, string>;
-  // 알림 줄
+  // Notice row
   redactNotice(total: number, pages: string): string;
   fileAccessNotice(extensionId: string): string;
   sizeFigures(peak: string, limit: string): string;
@@ -66,7 +66,7 @@ export interface AppStrings {
   recoveryProgress(done: number, total: number): string;
   recoveryProgressNoTotal: string;
   recovered(replayed: number, fromSavedBaseline: boolean): string;
-  // 대화상자
+  // Dialogs
   dialogOk: string;
   dialogCancel: string;
   cannotSaveTitle: string;
@@ -75,23 +75,23 @@ export interface AppStrings {
   saveFailedLines: string[];
   saveAgain: string;
   later: string;
-  // 저장 전 판정(save-plan.ts)
+  // Pre-save check (save-plan.ts)
   journalReopenAdvice: string;
   blockedSaveOptions: string;
   grownHeapRetryNote: string;
   retrySaveLabel: string;
-  /** 힙 over-limit 문구. 한국어는 core 문구(`heap.message`)가 있으면 그것을 쓴다. */
+  /** Heap over-limit text. In Korean, uses the core text (`heap.message`) if present. */
   heapOverLimit(limit: string, peak: string): string;
   heapWarn(peak: string, limit: string): string;
   journalHeld(size: string): string;
   structureUnlinked(count: number): string;
   pdfaDeclared: string;
   editPagesRecorded(pages: string): string;
-  /** core 저장 경고 코드(`SavePlan.warningCodes`) → 문장. 한국어는 core 문장(`SavePlan.warnings`)을 그대로 쓴다. */
+  /** core save warning code (`SavePlan.warningCodes`) → sentence. In Korean, uses the core sentence (`SavePlan.warnings`) as is. */
   saveWarnings: Record<SaveWarningCode, string[]>;
-  /** 코드 없는 core 저장 경고(영어 화면). */
+  /** core save warning without a code (English UI). */
   saveWarningUnknown: string;
-  // 정보 대화상자(about.ts)
+  // About dialog (about.ts)
   aboutDialogTitle: string;
   aboutVersion(version: string): string;
   aboutLicense: string;
@@ -317,18 +317,18 @@ const EN: AppStrings = {
 export const APP_STRINGS: Readonly<Record<UiLang, AppStrings>> = { ko: KO, en: EN };
 
 export interface LanguageSources {
-  /** `chrome.i18n.getUILanguage()` 결과(없으면 null). */
+  /** Result of `chrome.i18n.getUILanguage()` (null if unavailable). */
   uiLanguage: string | null;
   /** `navigator.language`. */
   navigatorLanguage: string | null;
 }
 
-/** 브라우저 UI 언어를 먼저, 없으면 navigator.language 를 본다. */
+/** Looks at the browser UI language first, otherwise navigator.language. */
 export function detectLang(src: LanguageSources): UiLang {
   return resolveUiLang(src.uiLanguage, src.navigatorLanguage);
 }
 
-/** 이 페이지의 언어 출처를 읽는다(확장 API 가 없거나 실패하면 null). */
+/** Reads this page's language source (null if the extension API is missing or fails). */
 export function readLanguageSources(): LanguageSources {
   return {
     uiLanguage: chromeUiLanguage(),
@@ -344,7 +344,7 @@ function chromeUiLanguage(): string | null {
   }
 }
 
-/** 문자열 값인 키(viewer.html 의 `data-i18n*` 속성 값). */
+/** Keys whose value is a string (values of the `data-i18n*` attributes in viewer.html). */
 export type AppTextKey = {
   [K in keyof AppStrings]: AppStrings[K] extends string ? K : never;
 }[keyof AppStrings];
@@ -356,8 +356,8 @@ const DOM_TARGETS = [
 ] as const;
 
 /**
- * viewer.html 의 고정 문자열을 바꾼다: `data-i18n` 은 글자, `data-i18n-title`·`data-i18n-aria-label` 은 그 속성. 값은
- * `AppTextKey`. 모르는 키는 그대로 둔다(HTML 의 한국어 기본값).
+ * Replaces the fixed strings in viewer.html: `data-i18n` sets the text, `data-i18n-title` and `data-i18n-aria-label` set those attributes. Values are
+ * `AppTextKey`. Unknown keys are left as is (the Korean defaults in the HTML).
  */
 export function applyDomStrings(root: ParentNode, t: AppStrings): void {
   for (const [attr, target] of DOM_TARGETS) {

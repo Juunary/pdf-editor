@@ -1,8 +1,8 @@
 /**
- * 콘텐츠 스트림 토크나이저(PDF 32000-1 7.2, 8.9.7). M1 인터프리터(PLAN.md 3.4 SourceMap)의 기반.
- * 범위: 연산자 단위 분리와 바이트 범위, 피연산자 값(숫자·이름), 문자열 디코드(원본 바이트 위치 포함),
- * 인라인 이미지 건너뛰기(MuPDF 1.28 parse_inline_image 와 같은 EI 판정).
- * 그래픽 상태 추적은 호출자(xobject.ts, content-interp.ts)가 한다.
+ * Content stream tokenizer (PDF 32000-1 7.2, 8.9.7). Foundation of the M1 interpreter (PLAN.md 3.4 SourceMap).
+ * Scope: splitting by operator with byte ranges, operand values (numbers, names), string decoding (including original byte positions),
+ * and skipping inline images (same EI classification as MuPDF 1.28 parse_inline_image).
+ * Graphics state tracking is done by the callers (xobject.ts, content-interp.ts).
  */
 
 export type TokenKind =
@@ -18,21 +18,21 @@ export type TokenKind =
 
 export interface Token {
   kind: TokenKind;
-  /** 바이트 범위 [start, end) */
+  /** Byte range [start, end) */
   start: number;
   end: number;
-  /** number: 값, name: '/' 뒤 디코드한 이름, keyword: 연산자·true/false/null */
+  /** number: value, name: name decoded after '/', keyword: operator or true/false/null */
   value?: number | string;
 }
 
 export interface ContentOp {
-  /** 연산자 키워드. 인라인 이미지는 'BI'(ID … EI 까지 한 연산). */
+  /** Operator keyword. An inline image is 'BI' (one operation through ID … EI). */
   op: string;
   operands: Token[];
-  /** 첫 피연산자(없으면 연산자) 시작 ~ 연산자 끝 */
+  /** From the start of the first operand (or the operator if none) to the end of the operator */
   start: number;
   end: number;
-  /** BI 만: BI 와 ID 사이 사전 토큰(키·값 교대). */
+  /** BI only: dictionary tokens between BI and ID (alternating key and value). */
   inlineDict?: Token[];
 }
 
@@ -42,13 +42,13 @@ export interface ContentParseError {
 }
 
 export interface ContentParseResult {
-  /** 오류 전까지 분리한 연산. */
+  /** Operations split before the error. */
   ops: ContentOp[];
-  /** 첫 토큰 분리 오류. 그 뒤는 해석하지 않는다(L6). */
+  /** First token split error. Nothing after it is interpreted (L6). */
   error: ContentParseError | null;
 }
 
-/** 디코드한 문자열 바이트와 각 바이트의 원본 위치 [starts[i], ends[i]). */
+/** Decoded string bytes and the original position [starts[i], ends[i]) of each byte. */
 export interface DecodedString {
   data: Uint8Array;
   starts: Int32Array;
@@ -102,7 +102,7 @@ function ascii(bytes: Uint8Array, start: number, end: number): string {
   return s;
 }
 
-/** 다음 토큰. 끝이면 null. */
+/** Next token. null at the end. */
 function nextToken(bytes: Uint8Array, pos: number): Token | null {
   const n = bytes.length;
   let i = pos;
@@ -167,7 +167,7 @@ const INLINE_KEYS: Record<string, string> = {
   IM: 'ImageMask',
 };
 
-/** 인라인 이미지 사전 토큰 → 키(약어는 전체 이름으로) → 값 토큰들. */
+/** Inline image dictionary tokens → keys (abbreviations expanded to full names) → value tokens. */
 export function inlineImageEntries(dict: readonly Token[]): Map<string, Token[]> {
   const out = new Map<string, Token[]>();
   let key: string | null = null;
@@ -202,7 +202,7 @@ const COMPONENTS: Record<string, number> = {
   Indexed: 1,
 };
 
-/** 필터 없는 인라인 이미지의 데이터 길이. 알 수 없으면 null(휴리스틱 탐색). */
+/** Data length of an inline image without a filter. null if unknown (heuristic search). */
 function unfilteredLength(dict: readonly Token[]): number | null {
   const e = inlineImageEntries(dict);
   const filter = e.get('Filter');
@@ -229,11 +229,11 @@ function unfilteredLength(dict: readonly Token[]): number | null {
   return h * Math.ceil((w * ncomp * bpc) / 8);
 }
 
-/** 인라인 이미지 데이터 끝(EI 다음 위치). `idEnd` = ID 키워드 직후 위치. */
+/** End of inline image data (position after EI). `idEnd` = position right after the ID keyword. */
 function skipInlineImage(bytes: Uint8Array, idEnd: number, dict: readonly Token[]): number {
-  // MuPDF: ID 뒤 공백 1바이트(CRLF 는 2바이트), 데이터, 이후 "EI" + (끝|≤0x20|'<'|'/') 를 찾는다.
-  // 필터 없는 이미지는 데이터 길이를 계산해 그 뒤부터 찾는다. 필터가 있으면 데이터를 디코드하지 않으므로
-  // 데이터 안의 우연한 EI 를 줄이려고 앞에 공백이 있는 EI 만 인정한다(완전히 배제하지는 못한다).
+  // MuPDF: one whitespace byte after ID (two for CRLF), the data, then look for "EI" + (end | ≤0x20 | '<' | '/').
+  // For an image without a filter, the data length is computed and the search starts after it. With a filter the data is not decoded, so
+  // to reduce accidental EI inside the data, only an EI preceded by whitespace is accepted (this cannot be excluded completely).
   const n = bytes.length;
   let p = idEnd + (bytes[idEnd] === 0x0d && bytes[idEnd + 1] === 0x0a ? 2 : 1);
   const len = unfilteredLength(dict);
@@ -247,14 +247,14 @@ function skipInlineImage(bytes: Uint8Array, idEnd: number, dict: readonly Token[
   throw new Error(`인라인 이미지 EI 없음: ${idEnd}`);
 }
 
-/** 콘텐츠 스트림(디코드된 바이트)을 연산자 단위로 나눈다. 토큰 오류는 예외. */
+/** Splits a content stream (decoded bytes) by operator. A token error throws. */
 export function parseContentOps(bytes: Uint8Array): ContentOp[] {
   const r = parseContentOpsLenient(bytes);
   if (r.error) throw new Error(r.error.message);
   return r.ops;
 }
 
-/** parseContentOps 와 같되, 오류가 나면 그 전까지의 연산과 오류 위치를 돌려준다. */
+/** Same as parseContentOps, but on an error returns the operations before it and the error position. */
 export function parseContentOpsLenient(bytes: Uint8Array): ContentParseResult {
   const ops: ContentOp[] = [];
   let operands: Token[] = [];
@@ -279,7 +279,7 @@ export function parseContentOpsLenient(bytes: Uint8Array): ContentParseResult {
       }
       const start = operands[0]?.start ?? t.start;
       if (t.value === 'BI') {
-        // BI <키 값>* ID <데이터> EI
+        // BI <key value>* ID <data> EI
         const dict: Token[] = [];
         let id: Token | null;
         for (;;) {
@@ -303,10 +303,10 @@ export function parseContentOpsLenient(bytes: Uint8Array): ContentParseResult {
 }
 
 /**
- * 문자열 토큰(리터럴·16진)을 디코드한다(MuPDF 1.28 lex_string·lex_hex_string 규칙).
- * 리터럴: 이스케이프(\n \r \t \b \f \( \) \\ \ddd), \+줄바꿈은 무시, 그 밖의 \c 는 c,
- * 이스케이프하지 않은 CR·LF·CRLF 는 0x0a 1바이트. 16진: 공백 무시, 홀수 자리는 0 을 덧붙인다,
- * 16진 숫자가 아닌 문자도 숫자로 취급(MuPDF 경고 후 진행).
+ * Decodes a string token (literal or hex) (rules of MuPDF 1.28 lex_string and lex_hex_string).
+ * Literal: escapes (\n \r \t \b \f \( \) \\ \ddd), \+newline is ignored, any other \c is c,
+ * an unescaped CR, LF or CRLF is one 0x0a byte. Hex: whitespace ignored, an odd number of digits is padded with 0,
+ * non-hex characters are also treated as digits (MuPDF proceeds after a warning).
  */
 export function decodeStringToken(bytes: Uint8Array, tok: Token): DecodedString {
   const data: number[] = [];
@@ -401,7 +401,7 @@ export function concatBytes(parts: readonly Uint8Array[], separator?: number): U
   return out;
 }
 
-/** bytes 의 [start, end) 를 replacement(Latin-1, 연산자·이름 등 ASCII 용)로 바꾼 새 배열. */
+/** New array with [start, end) of bytes replaced by replacement (Latin-1, for ASCII such as operators and names). */
 export function spliceBytes(
   bytes: Uint8Array,
   start: number,

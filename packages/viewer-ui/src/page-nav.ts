@@ -1,4 +1,4 @@
-/** 페이지 이동 계산(순수 함수). 페이지 번호는 화면에서 1부터, 내부 인덱스는 0부터. */
+/** Page navigation calculation (pure functions). Page numbers are 1-based on screen and internal indices are 0-based. */
 
 export function clampPage(index: number, pageCount: number): number {
   if (pageCount <= 0) return 0;
@@ -6,14 +6,14 @@ export function clampPage(index: number, pageCount: number): number {
   return Math.min(pageCount - 1, Math.max(0, Math.trunc(index)));
 }
 
-/** 이전·다음 이동. 범위를 벗어나면 제자리. */
+/** Previous/next navigation. Stays in place when out of range. */
 export function stepPage(current: number, delta: number, pageCount: number): number {
   return clampPage(current + delta, pageCount);
 }
 
 /**
- * 입력창 문자열(1부터)을 페이지 인덱스로. 정수가 아니거나 1–pageCount 밖이면 null.
- * 공백은 허용하고, 부호·소수점·문자가 섞인 입력은 거부한다.
+ * Input box string (1-based) to a page index. null if not an integer or outside 1–pageCount.
+ * Whitespace is allowed; input mixed with signs, decimal points or letters is rejected.
  */
 export function parsePageInput(text: string, pageCount: number): number | null {
   const trimmed = text.trim();
@@ -28,39 +28,39 @@ export function canStep(current: number, delta: number, pageCount: number): bool
   return next >= 0 && next < pageCount;
 }
 
-/** 좌우 화살표·툴바 버튼의 비활성 상태. 첫 쪽은 이전, 마지막 쪽은 다음이 비활성이다. */
+/** Disabled state of the left/right arrows and toolbar buttons. On the first page previous is disabled; on the last page next is. */
 export function navDisabled(current: number, pageCount: number): { prev: boolean; next: boolean } {
   return { prev: !canStep(current, -1, pageCount), next: !canStep(current, 1, pageCount) };
 }
 
 /**
- * 좌우 화살표 한 줄의 가로 자리(CSS px). 칸은 버튼 너비 48 + 양옆 간격 3·3 = 54(style.css `.pe-arrow-slot`)이고, 쪽
- * 비트맵 폭 올림(최대 1 px)으로 가로 넘침이 생기지 않게 2 px 여유를 더한다. 뷰어는 가용 너비에서 양쪽 몫을 뺀다.
+ * Horizontal space of one row of left/right arrows (CSS px). A slot is button width 48 + gaps 3·3 on both sides = 54 (style.css `.pe-arrow-slot`), and 2 px of slack is added so that
+ * rounding the page bitmap width up (at most 1 px) does not cause horizontal overflow. The viewer subtracts both shares from the available width.
  */
 export const PAGE_ARROW_GUTTER = 56;
 
-/** 쪽 최소 CSS 폭(`fitWidthScale` 의 minWidth 기본값과 같다). */
+/** Minimum page CSS width (same as the default minWidth of `fitWidthScale`). */
 export const MIN_PAGE_CSS_WIDTH = 320;
-/** 문서 영역 좌우 여백 합(`fitWidthScale` 의 margin 기본값 = 문서 영역 안쪽 여백 16·16). */
+/** Sum of the document area's left/right margins (same as the default margin of `fitWidthScale` = inner margin 16·16 of the document area). */
 export const PAGE_AREA_MARGIN = 32;
 
 /**
- * 화살표 자리. side: 쪽 좌우 바깥 칸(쪽과 겹치지 않는다). overlay: 좌우 칸 자리가 없는 좁은 창에서 칸을 레이아웃에서
- * 빼고(폭 0) 두 화살표를 문서 영역 좌우 가장자리 안쪽, 쪽 가장자리 위에 겹쳐 띄운다(사용자 결정 2026-10-26 변경:
- * 겹칠 수밖에 없으면 겹친다, docs/m5-release.md 10.3).
+ * Arrow placement. side: slots outside the page on the left and right (they do not overlap the page). overlay: in a narrow window with no room for side slots, the slots are removed
+ * from the layout (width 0) and the two arrows float overlapping the page edges, inside the left and right edges of the document area (user decision 2026-10-26 change:
+ * overlap if overlap is unavoidable, docs/m5-release.md 10.3).
  */
 export type PageArrowPlacement = 'side' | 'overlay';
 
 export interface PageArrowLayout {
   placement: PageArrowPlacement;
-  /** 쪽 맞춤에 쓸 가용 폭(`ViewerEnvironment.availableWidth`). side 면 좌우 칸 몫을 뺀다. */
+  /** Available width used for fit-to-page (`ViewerEnvironment.availableWidth`). For side, the side slot shares are subtracted. */
   availableWidth: number;
 }
 
 /**
- * 문서 영역 폭(스크롤 상자의 clientWidth, 안쪽 여백 포함·스크롤바 제외)으로 화살표 자리와 쪽 맞춤 폭을 정한다.
- * 좌우 칸 두 몫과 여백을 빼고도 쪽 최소 폭이 남으면(폭 ≥ 320 + 2×56 + 32 = 464) side, 아니면 overlay(칸 몫을 빼지 않아
- * 쪽이 그만큼 넓어진다). 표시(마운트가 `data-pe-arrows` 로 붙임)와 쪽 맞춤(호스트의 getEnvironment)이 같은 함수를 쓴다.
+ * Decides the arrow placement and the fit-to-page width from the document-area width (clientWidth of the scroll box, including inner padding and excluding the scrollbar).
+ * If the minimum page width remains after subtracting two side-slot shares and the margin (width ≥ 320 + 2×56 + 32 = 464), side; otherwise overlay (the slot shares are not subtracted, so
+ * the page becomes that much wider). The indicator (set by mount as `data-pe-arrows`) and fit-to-page (the host's getEnvironment) use the same function.
  */
 export function pageArrowLayout(containerWidth: number): PageArrowLayout {
   const side = containerWidth - 2 * PAGE_ARROW_GUTTER - PAGE_AREA_MARGIN >= MIN_PAGE_CSS_WIDTH;

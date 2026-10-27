@@ -1,6 +1,6 @@
 /**
- * V6(계약 6.1): harfbuzzjs 1.6.2(kern 만)가 번들 Noto Sans KR 서브셋을 읽고, 글리프 전진량이 MuPDF addFont 의 /W 와 같으며
- * (1/1000 em 반올림 차이 허용), 출력 gid 가 ToUnicode 로 왕복하는지 확인한다. 결과는 docs/m3-reflow.md 3절.
+ * V6 (contract 6.1): checks that harfbuzzjs 1.6.2 (kern only) reads the bundled Noto Sans KR subset, that glyph advances equal the /W of MuPDF addFont
+ * (allowing 1/1000 em rounding differences), and that output gids round-trip through ToUnicode. Results are in docs/m3-reflow.md section 3.
  */
 import * as mupdf from 'mupdf';
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -11,7 +11,7 @@ import { format, notoBytes, notoFace, seg } from './helpers.js';
 
 const bytes = notoBytes();
 
-/** /W 배열 → cid → 폭. */
+/** /W array -> cid -> width. */
 function parseW(w: mupdf.PDFObject): Map<number, number> {
   const out = new Map<number, number>();
   for (let i = 0; i < w.length;) {
@@ -29,7 +29,7 @@ function parseW(w: mupdf.PDFObject): Map<number, number> {
   return out;
 }
 
-/** ToUnicode CMap(bfchar·bfrange) → cid → 문자열. */
+/** ToUnicode CMap (bfchar, bfrange) -> cid -> string. */
 function parseToUnicode(cmap: string): Map<number, string> {
   const out = new Map<number, string>();
   const hex = (h: string) => parseInt(h, 16);
@@ -68,7 +68,7 @@ let fontRef: mupdf.PDFObject;
 let widths: Map<number, number>;
 let toUnicode: Map<number, string>;
 let preimage: Map<number, number[]>;
-/** 다대일 cmap gid(ToUnicode 가 한 코드 포인트만 돌려줌). 계약 수정 2 이후 0개. */
+/** Many-to-one cmap gids (ToUnicode returns only one code point). 0 since contract amendment 2. */
 let conflicts: Map<number, number[]>;
 
 beforeAll(() => {
@@ -81,7 +81,7 @@ beforeAll(() => {
   conflicts = new Map([...preimage].filter(([, cps]) => cps.length > 1));
 });
 
-/** /W 를 pdfWidth 로 쓰는 폴백 폰트(쓰기 경로와 같은 조건). */
+/** Fallback font that uses /W as pdfWidth (same conditions as the write path). */
 const face = () => notoFace((gid) => widths.get(gid) ?? 1000);
 
 function layoutAll(text: string): WritableGlyph[] {
@@ -93,8 +93,8 @@ function layoutAll(text: string): WritableGlyph[] {
   }).lines.flat();
 }
 
-describe('V6 폴백 폰트 /W·ToUnicode', () => {
-  it('MuPDF addFont 는 Identity-H CIDFontType2(CIDToGIDMap 없음 = Identity)', () => {
+describe('V6 fallback font /W and ToUnicode', () => {
+  it('MuPDF addFont is Identity-H CIDFontType2 (no CIDToGIDMap = Identity)', () => {
     const desc = fontRef.get('DescendantFonts').get(0);
     expect(fontRef.get('Encoding').asName()).toBe('Identity-H');
     expect(desc.get('Subtype').asName()).toBe('CIDFontType2');
@@ -102,7 +102,7 @@ describe('V6 폴백 폰트 /W·ToUnicode', () => {
     expect(map.isNull() || map.asName() === 'Identity').toBe(true);
   });
 
-  it('모든 글리프의 /W = harfbuzz hmtx 전진량(1/1000 em 반올림 허용)', () => {
+  it('/W of every glyph = harfbuzz hmtx advance (1/1000 em rounding allowed)', () => {
     expect(widths.size).toBe(16_966);
     let maxDiff = 0;
     for (let gid = 0; gid < 16_966; gid++) {
@@ -111,28 +111,28 @@ describe('V6 폴백 폰트 /W·ToUnicode', () => {
       maxDiff = Math.max(maxDiff, Math.abs((w ?? 0) - hmtx(gid)));
     }
     expect(maxDiff).toBeLessThanOrEqual(1);
-    // 실측(2026-10-19): 차이 0.
+    // Measured (2026-10-19): difference 0.
     expect(maxDiff).toBe(0);
   });
 
-  it('cmap 은 일대일이고 모든 cmap gid 가 ToUnicode 로 정확히 왕복한다(계약 수정 2)', () => {
+  it('cmap is one-to-one and every cmap gid round-trips exactly through ToUnicode (contract amendment 2)', () => {
     expect(preimage.size).toBe(16_567);
     expect(conflicts.size).toBe(0);
     for (const [gid, cps] of preimage) {
       expect(toUnicode.get(gid)).toBe(String.fromCodePoint(cps[0] ?? 0));
     }
-    // 수정 2 이전 서브셋에서 깨졌던 문자(공백 → U+00A0, 하이픈 → U+2011, 호환 자모 → 반각, 통합 한자 → 호환 한자).
+    // Characters that broke in the subset before amendment 2 (space -> U+00A0, hyphen -> U+2011, compatibility jamo -> half-width, unified Han -> compatibility Han).
     for (const ch of [' ', '-', 'ㄱ', 'ㅎ', '不', '串', '\u3000', '–', '～']) {
       expect(toUnicode.get(gidOfCp(ch.codePointAt(0) ?? 0))).toBe(ch);
     }
-    // 뺀 코드 포인트는 cmap 에 없다(입력되면 glyph-missing, U+00A0 은 입력 정규화에서 공백).
+    // Excluded code points are not in the cmap (if input, glyph-missing; U+00A0 becomes a space in input normalization).
     for (const cp of [0x00a0, 0x00ad, 0x2011, 0x2003, 0x2012, 0x301c, 0xff40, 0xf967, 0xffa1]) {
       expect(gidOfCp(cp)).toBe(-1);
     }
   });
 
-  it('배치 출력: 모든 gid 가 ToUnicode 를 갖고 자기 클러스터로 정확히 왕복한다', () => {
-    // NFC 안정 cmap 문자 전부를 한 글자씩 강제 줄바꿈으로 나눠 배치한다(이웃 글자와 클러스터를 만들지 않게).
+  it('layout output: every gid has a ToUnicode and round-trips exactly to its own cluster', () => {
+    // Lay out every NFC-stable cmap character split one per forced line break (so they do not form clusters with neighboring characters).
     const chars = [...preimage.values()]
       .flat()
       .sort((a, b) => a - b)
@@ -149,13 +149,13 @@ describe('V6 폴백 폰트 /W·ToUnicode', () => {
       if (t !== cluster) mismatched.push(cluster);
     }
     expect(mismatched).toEqual([]);
-    // 쓰지 않은 문자는 기본 무시 문자뿐이다(폴백 폰트로 쓰지 않음).
+    // The only characters not written are default-ignorable characters (not written with the fallback font).
     const unwritten = chars.filter((ch) => !written.has(ch));
     expect(unwritten.every((ch) => isDefaultIgnorable(ch.codePointAt(0) ?? 0))).toBe(true);
     expect(glyphs.length).toBe(chars.length - unwritten.length);
   });
 
-  it('MuPDF 추출 왕복(표본 문장): 공백류를 뺀 추출 텍스트 = 입력', () => {
+  it('MuPDF extraction round-trip (sample sentence): extracted text excluding whitespace-like characters = input', () => {
     const text = '한글 PDF 편집기 漢字 不可 ㄱㄴ “quote” — dash € ™ office fi To-day 2026';
     const glyphs = layoutAll(text);
     const H = 200;
@@ -175,13 +175,13 @@ describe('V6 폴백 폰트 /W·ToUnicode', () => {
       .asText();
     const strip = (s: string) => s.replace(/\s+/g, '');
     expect(strip(out)).toBe(strip(text));
-    // 공백 글리프는 U+0020 으로 추출된다(수정 2 이전에는 U+00A0).
+    // The space glyph is extracted as U+0020 (U+00A0 before amendment 2).
     expect(out).toContain(' ');
     expect(out).not.toContain('\u00A0');
   });
 });
 
-/** cmap 코드 포인트 → gid. */
+/** cmap code point -> gid. */
 function gidOfCp(cp: number): number {
   for (const [gid, cps] of preimage) if (cps.includes(cp)) return gid;
   return -1;

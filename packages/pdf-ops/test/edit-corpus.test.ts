@@ -21,11 +21,11 @@ import {
 } from './helpers/engines.js';
 
 /**
- * 계약 8.2 코퍼스 편집 표본(S1 몫: 편집 가능 비율·사유 분포·판정 시간, 표본 편집 (i) 같은 텍스트로 교체).
- * 환경 변수가 없으면 건너뛴다. 결과 JSON 은 git 밖에 둔다.
- *   EDIT_CORPUS_DIR=<PDF 폴더> [EDIT_CORPUS_OUT=<json>] [EDIT_CORPUS_ENGINES=mupdf,pdfjs,poppler] [EDIT_CORPUS_FILES=a.pdf,b.pdf]
- * 쪽: 문서마다 1·4쪽(없으면 있는 쪽). 표본: 쪽마다 읽기 순서 앞에서부터 편집 가능하고 20자 이상인 흐름 문단 최대 3개.
- * 편집 (ii)·(iii) 와 리플로우 결과 측정은 reflow 구현 뒤 통합 단계에서 한다(이 측정의 배치는 테스트용 단순 배치).
+ * Contract 8.2 corpus edit sample (S1 share: editable ratio, reason distribution, classification time, sample edit (i) replace with the same text).
+ * Skipped when the environment variable is absent. The result JSON is kept outside git.
+ *   EDIT_CORPUS_DIR=<PDF folder> [EDIT_CORPUS_OUT=<json>] [EDIT_CORPUS_ENGINES=mupdf,pdfjs,poppler] [EDIT_CORPUS_FILES=a.pdf,b.pdf]
+ * Pages: pages 1 and 4 of each document (the existing pages if absent). Sample: up to 3 flow paragraphs per page, in reading order, that are editable and at least 20 characters long.
+ * Edits (ii), (iii) and reflow result measurement are done in the integration stage after the reflow implementation (the layout in this measurement is a simple layout for testing).
  */
 const dir = process.env.EDIT_CORPUS_DIR;
 const out = process.env.EDIT_CORPUS_OUT;
@@ -43,7 +43,7 @@ interface SampleResult {
   textEqual: Record<string, boolean>;
   textDiff?: Record<string, string>;
   pageContains: Record<string, boolean>;
-  /** 테스트용 단순 배치가 영역을 넘쳤다(넘친 줄은 블록 BBox 에서 잘린다). */
+  /** The simple test layout overflowed the region (overflowing lines are clipped at the block BBox). */
   overflow?: boolean;
   warnings: string[];
   fallbackChars?: string[];
@@ -59,7 +59,7 @@ interface PageResult {
   editable: number;
   editableFlow: number;
   reasons: Partial<Record<Reason, number>>;
-  /** 첫 사유(문단마다 하나) 분포. */
+  /** Distribution of the first reason (one per paragraph). */
   primary: Partial<Record<Reason, number>>;
   removeSkipCodes: Record<string, number>;
   pageMs: number;
@@ -108,7 +108,7 @@ async function samplePage(file: string, bytes: Uint8Array, pageIndex: number): P
     if (rs[0]) primary[rs[0]] = (primary[rs[0]] ?? 0) + 1;
     for (const l of plan.limits) if (l.code) codes[l.code] = (codes[l.code] ?? 0) + 1;
   }
-  // 표본: 읽기 순서 앞에서부터.
+  // Sample: from the front in reading order.
   const order = ctx.layout.readingOrder.filter((r) => r.kind === 'paragraph').map((r) => r.id);
   const picks = order
     .filter((id) => editableIds.includes(id))
@@ -155,7 +155,7 @@ async function samplePage(file: string, bytes: Uint8Array, pageIndex: number): P
           [p.bbox, r.result.summary.contentBox],
           [bounds[0], bounds[1]],
         );
-        // 계약 8.3: 편집 블록 상자 안 글자만 모아 공백류를 지우고 비교. glyph-missing 글자는 입력에서 뺀다.
+        // Contract 8.3: collect only the characters inside the edit block box, remove whitespace, and compare. glyph-missing characters are dropped from the input.
         const missing = new Set(
           r.result.summary.glyphs.filter((g) => g.font.kind === 'missing').map((g) => g.offset),
         );
@@ -165,7 +165,7 @@ async function samplePage(file: string, bytes: Uint8Array, pageIndex: number): P
         );
         res.textEqual[e] = got === expected;
         if (got !== expected) res.textDiff = { ...(res.textDiff ?? {}), [e]: got.slice(0, 200) };
-        // 보조 지표: 쪽 전체 텍스트에 연속으로 있는가.
+        // Auxiliary metric: does it appear contiguously in the whole page text?
         res.pageContains[e] = squash(await pageText(e, after, pageIndex)).includes(expected);
       }
     } catch (err) {
@@ -195,8 +195,8 @@ async function samplePage(file: string, bytes: Uint8Array, pageIndex: number): P
   };
 }
 
-describe.skipIf(!dir)('코퍼스 편집 가능 비율(계약 8.2)', () => {
-  it('문서마다 1·4쪽, 흐름 문단 편집 가능 비율·사유·판정 시간·표본 편집 (i)', async () => {
+describe.skipIf(!dir)('corpus editable ratio (contract 8.2)', () => {
+  it('pages 1 and 4 of each document: flow paragraph editable ratio, reasons, classification time, sample edit (i)', async () => {
     await loadModules();
     const files = readdirSync(dir!)
       .filter((f) => f.toLowerCase().endsWith('.pdf'))

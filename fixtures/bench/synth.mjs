@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// 벤치마크용 합성 PDF 생성기(M5 계약 D1·8절). 외부 의존성 없음. 같은 인자·시드면 같은 바이트가 나온다.
+// Synthetic PDF generator for benchmarks (M5 contract D1·section 8). No external dependencies. The same arguments and seed produce the same bytes.
 //
 //   node fixtures/bench/synth.mjs --kind image   --pages 900  --seed 1 --out out/bench/synthetic-image-900.pdf
 //   node fixtures/bench/synth.mjs --kind objects --pages 2000 --seed 2 --out out/bench/synthetic-objects-2000.pdf
 //
-// image  : 쪽마다 텍스트 1줄 + 비압축 잡음 이미지(약 787 KB, Flate stored 블록). 900쪽 = 저장 상한 시험용(약 675.7 MiB).
-// objects: 쪽마다 텍스트 4줄 + 작은 간접 객체 `--objs-per-page`(기본 260)개를 쪽의 /PEBench 배열로 참조. 2000쪽 → 객체 ≥ 500k.
-// heavy  : 첫 쪽은 한 줄 문단 12개 사이사이에 주석 줄(좌표·연산자 모양, 렌더·추출에 영향 없음)을 넣어 풀린 콘텐츠가
-//          `--content-bytes`(기본 8 MiB)인 쪽, 나머지 쪽은 텍스트 4줄. 콘텐츠는 Flate. 큰 쪽 문단을 처음 고칠 때마다 쪽 콘텐츠가
-//          저널에 남는 경로(docs/m5-followup.md 5.1)의 축소 사례다(코퍼스 kogl-mods-cpi-202609 9쪽은 풀린 8.9 MB).
+// image  : per page 1 text line + an uncompressed noise image (about 787 KB, Flate stored blocks). 900 pages = for the save-limit test (about 675.7 MiB).
+// objects: per page 4 text lines + `--objs-per-page` (default 260) small indirect objects referenced from the page's /PEBench array. 2000 pages → ≥ 500k objects.
+// heavy  : the first page has comment lines (coordinate·operator shapes, no effect on render·extraction) inserted between 12 one-line paragraphs so that the decoded content is
+//          `--content-bytes` (default 8 MiB); other pages have 4 text lines. Content is Flate. A scaled-down case of the path (docs/m5-followup.md 5.1) where the page content is
+//          kept in the journal each time a paragraph on a large page is first edited (corpus kogl-mods-cpi-202609 page 9 is 8.9 MB decoded).
 import { createHash } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -37,7 +37,7 @@ const objsPerPage = Number(args['objs-per-page']);
 const imageBytes = Number(args['image-bytes']);
 const contentBytes = Number(args['content-bytes']);
 
-/** xorshift32: 시드 고정 난수. */
+/** xorshift32: fixed-seed random numbers. */
 function rng(s) {
   let x = (s || 1) >>> 0;
   return () => {
@@ -73,7 +73,7 @@ function streamObj(num, dict, data) {
   put('\nendstream\nendobj\n');
 }
 
-// 번호: 1 Catalog, 2 Pages, 3 Font, 이후 쪽마다 [page, content, (image), extra...]
+// Numbering: 1 Catalog, 2 Pages, 3 Font, then per page [page, content, (image), extra...]
 const perPage = kind === 'image' ? 3 : kind === 'heavy' ? 2 : 2 + objsPerPage;
 const first = (i) => 4 + i * perPage;
 const total = 3 + pages * perPage;
@@ -116,7 +116,7 @@ for (let i = 0; i < pages; i++) {
     for (let k = 0; k < paras; k++) {
       parts.push(`BT /F1 11 Tf 72 ${740 - k * (i === 0 ? 56 : 16)} Td (${line(i, k)}) Tj ET`);
       if (i !== 0) continue;
-      // 주석 줄: 좌표 격자 값·연산자 모양(실제 콘텐츠처럼 압축된다). 문단 사이에 고르게 나눠 넣는다.
+      // Comment lines: coordinate grid values·operator shapes (compress like real content). Spread evenly between paragraphs.
       const lines = [];
       for (let size = 0; size < contentBytes / paras; ) {
         const l = `% ${(rand() % 48) * 12.5} ${(rand() % 64) * 12.5} m ${(rand() % 48) * 12.5} ${(rand() % 64) * 12.5} l S`;

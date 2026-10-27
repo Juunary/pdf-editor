@@ -1,7 +1,7 @@
 /**
- * 릴리스 스테이징 스모크(계약 D6·D7): `pnpm package` 가 만든 out/release/staging 을 압축해제 확장으로 로드해
- * http 로 제공한 PDF 의 열기·렌더·저장과 스토어 빌드의 성질(DNR·호스트 권한·WAR 없음, 진단 UI 숨김, downloads 저장 메뉴 없음,
- * 정보 대화상자)을 확인한다.
+ * Release staging smoke (contract D6·D7): loads out/release/staging made by `pnpm package` as an unpacked extension and checks
+ * open, render and save of a PDF served over http, plus properties of the store build (no DNR, host permissions or WAR; diagnostics UI hidden; no save-to-downloads menu item;
+ * about dialog).
  */
 import { chromium, expect, test, type BrowserContext, type Frame } from '@playwright/test';
 import { spawnSync } from 'node:child_process';
@@ -27,7 +27,7 @@ let extensionId: string;
 
 test.beforeAll(async () => {
   test.setTimeout(300_000);
-  // 패키지 생성(스토어 빌드 → 스테이징 → zip → verify-dist --release).
+  // Package creation (store build → staging → zip → verify-dist --release).
   const built = spawnSync('pnpm', ['run', 'package'], { cwd: EXT_ROOT, encoding: 'utf8' });
   expect(built.status, `${built.stdout}\n${built.stderr}`).toBe(0);
 
@@ -37,7 +37,7 @@ test.beforeAll(async () => {
     if (path === '/sample.pdf') {
       res.writeHead(200, { 'content-type': 'application/pdf' }).end(pdf);
     } else if (path === '/framer.html') {
-      // 웹 페이지가 확장 뷰어를 iframe 으로 띄우려는 시도(D7 위험): WAR 가 없으므로 막혀야 한다.
+      // A web page tries to show the extension viewer in an iframe (D7 risk): it must be blocked because there is no WAR.
       res
         .writeHead(200, { 'content-type': 'text/html' })
         .end(
@@ -78,7 +78,7 @@ async function openSample(init?: () => void): Promise<Frame> {
   return page.frames().find((f) => f.url().startsWith(prefix))!;
 }
 
-test('스테이징 확장: 스토어 매니페스트, DNR 서비스 워커 경로 없음', async () => {
+test('staging extension: store manifest, no DNR service worker path', async () => {
   const sw = context.serviceWorkers()[0]!;
   const info = await sw.evaluate(() => ({
     manifest: chrome.runtime.getManifest(),
@@ -88,9 +88,9 @@ test('스테이징 확장: 스토어 매니페스트, DNR 서비스 워커 경�
     description: chrome.i18n.getMessage('appDescription'),
     actionTitle: chrome.i18n.getMessage('actionTitle'),
   }));
-  // 이름·설명은 _locales 메시지(사용자 결정 2026-10-26). getManifest() 는 푼 값을 준다. 메시지 언어는 Linux Chromium 이
-  // 환경 변수 LANGUAGE 로 정하므로(Playwright locale 은 반영되지 않음, 실측) 여기서는 두 언어 중 하나인지만 본다. 언어별
-  // 표시는 i18n.spec.ts 가 LANGUAGE 를 바꿔 확인한다.
+  // The name and description are _locales messages (user decision 2026-10-26). getManifest() returns the resolved value. Linux Chromium picks the message language from the
+  // LANGUAGE environment variable (Playwright locale is not reflected, measured), so here only check that it is one of the two languages. The per-language
+  // display is checked by i18n.spec.ts by changing LANGUAGE.
   const locales = (['en', 'ko'] as const).map(
     (lang) =>
       JSON.parse(readFileSync(join(STAGING, '_locales', lang, 'messages.json'), 'utf8')) as Record<
@@ -114,8 +114,8 @@ test('스테이징 확장: 스토어 매니페스트, DNR 서비스 워커 경�
   expect(info.hasMimeHandler).toBe(true);
 });
 
-test('열기·렌더·저장: 최상위 MIME handler, 진단 UI 는 숨김, downloads 저장 메뉴 없음', async () => {
-  // FSA 를 쓸 수 없는 문맥처럼 피커를 없앤다(헤드리스는 피커를 바로 취소한다): 저장 → chrome.downloads 폴백.
+test('open, render, save: top-level MIME handler, diagnostics UI hidden, no save-to-downloads menu item', async () => {
+  // Remove the picker as in a context where FSA is unavailable (headless cancels the picker immediately): save → chrome.downloads fallback.
   const frame = await openSample(() => {
     Object.defineProperty(window, 'showSaveFilePicker', { value: undefined, configurable: true });
   });
@@ -132,15 +132,15 @@ test('열기·렌더·저장: 최상위 MIME handler, 진단 UI 는 숨김, down
   });
   expect(ink).toBeGreaterThan(5000);
 
-  // 진단 패널·진단 버튼은 DOM 에 있으나 보이지 않는다.
+  // The diagnostics panel and diagnostics button are in the DOM but not visible.
   await expect(frame.locator('html')).toHaveAttribute('data-build', 'store');
   await expect(frame.locator('#diag')).toBeHidden();
   await expect(frame.locator('#bench-full-save')).toBeHidden();
-  // 벤치 측정 페이지는 개발 빌드 전용(D6): 링크가 없다.
+  // The bench measurement page is development-build only (D6): there is no link.
   expect(await frame.locator('#open-bench').count()).toBe(0);
   expect(await frame.locator('#diag').count()).toBe(1);
 
-  // 저장 메뉴(사용자 요청 2026-10-22): 스토어 빌드에는 downloads 저장(M0 진단) 항목이 없다.
+  // Save menu (user request 2026-10-22): the store build has no save-to-downloads (M0 diagnostics) item.
   expect(await frame.locator('#save-downloads').count()).toBe(0);
   await frame.click('#save-menu-button');
   await expect(frame.locator('#save-menu [role="menuitem"]')).toHaveText([
@@ -148,19 +148,19 @@ test('열기·렌더·저장: 최상위 MIME handler, 진단 UI 는 숨김, down
     '다른 이름으로 저장',
   ]);
 
-  // 저장: FSA 피커가 없으므로 chrome.downloads 로 저장한다. 편집 없는 문서라 원본과 같은 크기.
+  // Save: there is no FSA picker, so it saves through chrome.downloads. The document has no edits, so the size equals the original.
   const page = frame.page();
   const [download] = await Promise.all([page.waitForEvent('download'), frame.click('#save')]);
   expect(statSync(await download.path()).size).toBe(statSync(SAMPLE).size);
   await expect(frame.locator('#save-menu')).toBeHidden();
 });
 
-test('머리 영역 확대 보정: 권한 추가 없이(permissions = downloads) 탭 배율을 읽고 따라간다', async () => {
+test('header area zoom correction: reads and follows the tab zoom without adding permissions (permissions = downloads)', async () => {
   const frame = await openSample();
   await expect(frame.locator('#status')).toHaveAttribute('data-state', 'rendered', {
     timeout: 30_000,
   });
-  // chrome.tabs.getZoom 이 권한 없이 동작해야 'tabs' 가 된다(실패하면 dpr 추정 'dpr').
+  // chrome.tabs.getZoom must work without permission to yield 'tabs' (if it fails, the dpr estimate 'dpr').
   await expect(frame.locator('html')).toHaveAttribute('data-zoom-mode', 'tabs');
   const tabId = await frame.evaluate(async () => (await chrome.mimeHandler.getStreamInfo()).tabId);
   const sw = context.serviceWorkers()[0]!;
@@ -183,7 +183,7 @@ test('머리 영역 확대 보정: 권한 추가 없이(permissions = downloads)
   }
 });
 
-test('정보 대화상자: 버전·라이선스·버전 태그 소스 링크·고지', async () => {
+test('about dialog: version, license, version-tag source link, notices', async () => {
   const frame = await openSample();
   await expect(frame.locator('#status')).toHaveAttribute('data-state', 'rendered', {
     timeout: 30_000,
@@ -210,14 +210,14 @@ test('정보 대화상자: 버전·라이선스·버전 태그 소스 링크·�
   expect(text).toContain('SIL OPEN FONT LICENSE');
 });
 
-test('웹 페이지는 확장 뷰어를 iframe 으로 띄울 수 없다(WAR 없음, D7)', async () => {
+test('a web page cannot show the extension viewer in an iframe (no WAR, D7)', async () => {
   const page = await context.newPage();
   await page.goto(`${base}/framer.html`);
   await page.waitForTimeout(1500);
   const loaded = page
     .frames()
     .filter((f) => f.url().startsWith(`chrome-extension://${extensionId}/viewer.html`));
-  // 막힌 프레임은 오류 페이지로 남는다.
+  // The blocked frame remains as an error page.
   expect(page.frames().some((f) => f.url().startsWith('chrome-error://'))).toBe(true);
   expect(loaded).toHaveLength(0);
 });

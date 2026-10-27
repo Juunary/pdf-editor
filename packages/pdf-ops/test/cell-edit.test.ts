@@ -1,6 +1,6 @@
 /**
- * M4 표 셀 편집(docs/m4-contract.md 4.1·D1·D5·V4): 셀 대상·시작 형식·영역 상한·판정 목록, 실제 리플로우 커밋 뒤
- * 위치 보존과 레이아웃 복원(fixedGroups 셀 문단).
+ * M4 table cell editing (docs/m4-contract.md 4.1, D1, D5, V4): cell target, start style, region limit, classification list; after a real reflow commit,
+ * position preservation and layout restoration (fixedGroups cell paragraphs).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type * as mupdf from 'mupdf';
@@ -35,13 +35,13 @@ const ctxOf = (doc: mupdf.PDFDocument) =>
 const gridDoc = (text?: Parameters<typeof gridTable>[1]) =>
   makeDoc([{ content: gridTable(ROWS, text), mediabox: [0, 0, 500, 300] }]);
 
-/** (행, 열) 셀의 첫 문단 id. */
+/** First paragraph id of the (row, column) cell. */
 function cellParagraph(ctx: ParagraphEditContext, row: number, col: number): number {
   const c = ctx.layout.tables[0]!.cells.find((x) => x.row === row && x.col === col)!;
   return c.paragraphs[0]!;
 }
 
-/** 실제 리플로우로 셀(문단) 편집을 커밋한다. text 가 없으면 시작 텍스트 그대로. */
+/** Commits a cell (paragraph) edit with a real reflow. Without text, the start text is used as is. */
 function commit(ctx: ParagraphEditContext, paragraphId: number, text?: string) {
   const fm = new FontManager(ctx.doc, fallbackFor(ctx.doc));
   const plan = planParagraphEdit(ctx, fm, paragraphId);
@@ -60,7 +60,7 @@ function commit(ctx: ParagraphEditContext, paragraphId: number, text?: string) {
   return { plan, result };
 }
 
-/** 셀 상자 안 보이는 글자의 원점(글자 순). */
+/** Origins of the visible characters inside the cell box (in character order). */
 function originsIn(ctx: ParagraphEditContext, box: readonly number[]) {
   return ctx.model.chars
     .filter((c) => c.text.trim() !== '')
@@ -74,7 +74,7 @@ function originsIn(ctx: ParagraphEditContext, box: readonly number[]) {
     .map((c) => ({ t: c.text, x: c.origin[0], y: c.origin[1] }));
 }
 
-/** 정렬 전략 표(머리 + 3행, 오른쪽 정렬 숫자 2열, 괘선 없음). */
+/** Alignment-strategy table (header + 3 rows, 2 right-aligned numeric columns, no rule lines). */
 function alignedDoc(cash = '1,234'): mupdf.PDFDocument {
   const right = (x: number, y: number, s: string) =>
     `BT /F1 10 Tf ${x - s.length * 5.56} ${300 - y} Td (${s}) Tj ET`;
@@ -93,8 +93,8 @@ function alignedDoc(cash = '1,234'): mupdf.PDFDocument {
   return makeDoc([{ content: parts.join(' '), mediabox: [0, 0, 500, 300] }]);
 }
 
-describe('셀 대상(4.1·D1)', () => {
-  it('셀 문단은 편집 가능(not-flow-paragraph 아님), target.cell·영역·상한', () => {
+describe('cell target (4.1, D1)', () => {
+  it('a cell paragraph is editable (not not-flow-paragraph), target.cell, region, limit', () => {
     const doc = gridDoc();
     const ctx = ctxOf(doc);
     expect(ctx.layout.tables.map((t) => t.strategy)).toEqual(['lines']);
@@ -105,12 +105,12 @@ describe('셀 대상(4.1·D1)', () => {
     expect(plan.runs.map((r) => r.text).join('')).toBe('R1C1');
     const cell = ctx.layout.tables[0]!.cells.find((c) => c.row === 1 && c.col === 1)!;
     const text = plan.target.bbox;
-    // 상한 = 셀 − 여백(변마다 min(간격, 2pt)).
+    // Limit = cell - margin (min(gap, 2pt) per side).
     expect(plan.areaLimit[0]).toBeCloseTo(cell.bbox[0] + 2, 6);
     expect(plan.areaLimit[2]).toBeCloseTo(cell.bbox[2] - 2, 6);
     expect(plan.areaLimit[1]).toBeCloseTo(cell.bbox[1] + Math.min(2, text[1] - cell.bbox[1]), 6);
     expect(plan.areaLimit[3]).toBeCloseTo(cell.bbox[3] - Math.min(2, cell.bbox[3] - text[3]), 6);
-    // 시작 영역: 왼쪽 정렬, 왼쪽 변은 원 글자, 오른쪽은 상한, 세로는 글자 상자.
+    // Start region: left-aligned, left edge at the original character, right edge at the limit, vertically the character box.
     expect(plan.format.align).toBe('left');
     expect(plan.format.area[0]).toBeCloseTo(text[0], 6);
     expect(plan.format.area[2]).toBeCloseTo(plan.areaLimit[2], 6);
@@ -118,11 +118,11 @@ describe('셀 대상(4.1·D1)', () => {
     expect(plan.format.firstLineIndent).toBe(0);
   });
 
-  it('판정 목록: 셀마다 한 항목(상자 = 셀 상자, cell 설정)', () => {
+  it('classification list: one entry per cell (box = cell box, cell set)', () => {
     const doc = gridDoc();
     const ctx = ctxOf(doc);
     const pe = planPageEditability(ctx, new FontManager(doc, fallbackFor(doc)));
-    // 패스 판정도 같은 목록에 든다(괘선 8개).
+    // Path classifications are in the same list (8 rule lines).
     expect(pe.paths.map((p) => p.editable)).toEqual(new Array(8).fill(true));
     const list = pe.paragraphs;
     const cells = list.filter((p) => p.cell !== null);
@@ -136,17 +136,17 @@ describe('셀 대상(4.1·D1)', () => {
     }
   });
 
-  it('셀 안 문단 여럿은 한 대상: 꽉 찬 줄 + 같은 줄 간격이면 공백, 아니면 \\n', () => {
+  it('several paragraphs in a cell form one target: a full line + equal line spacing gives a space, otherwise \\n', () => {
     const doc = gridDoc((r, c) => (r === 1 && c === 1 ? ['Alpha', 'Beta'] : `R${r}C${c}`));
     const ctx0 = ctxOf(doc);
-    // 셀 (1,1) 을 줄마다 문단 하나로 나눈 레이아웃(셀 안 문단 나누기가 불안정한 경우를 흉내 낸다).
+    // Layout with cell (1,1) split into one paragraph per line (imitates the unstable paragraph splitting inside a cell).
     const t = ctx0.layout.tables[0]!;
     const cell = t.cells.find((c) => c.row === 1 && c.col === 1)!;
     const chars = cell.paragraphs.flatMap((id) => ctx0.layout.paragraphs[id]!.chars);
     const line0 = ctx0.model.chars[chars[0]!]!.line;
     const alpha = chars.filter((ci) => ctx0.model.chars[ci]!.line === line0);
     const beta = chars.filter((ci) => ctx0.model.chars[ci]!.line !== line0);
-    // 레이아웃이 한 문단(두 줄)으로 묶어도 짧은 줄은 강제 줄바꿈으로 남긴다(줄 단위 판정).
+    // Even if the layout groups them into one paragraph (two lines), the short line stays as a forced line break (per-line classification).
     expect(cell.paragraphs).toHaveLength(1);
     expect(cellTarget(ctx0.model, ctx0.layout, cell.paragraphs[0]!)!.paragraph.text).toBe(
       'Alpha\nBeta',
@@ -173,7 +173,7 @@ describe('셀 대상(4.1·D1)', () => {
       };
       return { ctx: { ...ctx0, layout }, pa, pb };
     };
-    // 줄이 셀 안쪽 오른쪽에서 멀다 → "\n".
+    // The line is far from the inner right edge of the cell -> "\n".
     const v1 = variant(null, cell.bbox[2]);
     const t1 = cellTarget(v1.ctx.model, v1.ctx.layout, v1.pb.id)!;
     expect(t1.paragraph.text).toBe('Alpha\nBeta');
@@ -186,16 +186,16 @@ describe('셀 대상(4.1·D1)', () => {
     expect(p1.runs.map((r) => r.text).join('')).toBe('Alpha\nBeta');
     expect(p1.format.lineHeight).toBeCloseTo(12, 6);
     expect(p1.charIndexOfOffset[5]).toBe(-1);
-    // 첫 줄이 안쪽 오른쪽 1em 안까지 차고 줄 간격이 같다 → 공백.
+    // The first line fills up to within 1em of the inner right edge and the line spacing is equal -> space.
     const right = ctx0.model.lines[line0]!.bbox[2] + 4;
     const v2 = variant(12, right);
     expect(cellTarget(v2.ctx.model, v2.ctx.layout, v2.pa.id)!.paragraph.text).toBe('Alpha Beta');
-    // 줄 간격이 다르면(앞 문단 줄 간격 20) 차 있어도 "\n".
+    // If the line spacing differs (previous paragraph line spacing 20), "\n" even when the line is full.
     const v3 = variant(20, right);
     expect(cellTarget(v3.ctx.model, v3.ctx.layout, v3.pa.id)!.paragraph.text).toBe('Alpha\nBeta');
   });
 
-  it('정렬 전략 표: 오른쪽 정렬 숫자 열은 right, 셀 상자는 바깥 열을 넓힌다', () => {
+  it('alignment-strategy table: right-aligned numeric columns are right, cell boxes widen the outer columns', () => {
     const doc = alignedDoc();
     const ctx = ctxOf(doc);
     const t = ctx.layout.tables[0];
@@ -211,8 +211,8 @@ describe('셀 대상(4.1·D1)', () => {
   });
 });
 
-describe('셀 커밋(실제 리플로우)·V4', () => {
-  it('같은 텍스트 커밋: 글리프 원점 이동 ≤ 0.5pt, 셀 밖 렌더 불변(세 엔진)', async () => {
+describe('cell commit (real reflow), V4', () => {
+  it('same-text commit: glyph origin shift <= 0.5pt, render outside the cell unchanged (three engines)', async () => {
     const doc = gridDoc();
     const before = bytesOf(doc);
     const ctx = ctxOf(doc);
@@ -227,7 +227,7 @@ describe('셀 커밋(실제 리플로우)·V4', () => {
     await expectNoChangeOutside(before, bytesOf(doc), 0, [cell.bbox]);
   });
 
-  it('V4 괘선 표: 커밋 뒤 표 감지 유지, 그 셀 문단 = 블록 하나(table 설정), 다시 편집하면 같은 셀', () => {
+  it('V4 ruled table: table detection persists after commit, its cell paragraph = one block (table set), editing again hits the same cell', () => {
     const doc = gridDoc();
     const ctx = ctxOf(doc);
     const shape = (c: ParagraphEditContext) =>
@@ -251,7 +251,7 @@ describe('셀 커밋(실제 리플로우)·V4', () => {
     expect(list).toHaveLength(9);
   });
 
-  it('V4 정렬 전략 표: 숫자 셀 커밋 뒤 표 감지 유지, 그 셀 문단 = 블록 하나, 오른쪽 끝 유지', () => {
+  it('V4 alignment-strategy table: table detection persists after committing a numeric cell, its cell paragraph = one block, right edge preserved', () => {
     const doc = alignedDoc();
     const ctx = ctxOf(doc);
     const shape = (c: ParagraphEditContext) =>
@@ -271,13 +271,13 @@ describe('셀 커밋(실제 리플로우)·V4', () => {
     expect(Math.abs(p.bbox[2] - oldRight)).toBeLessThanOrEqual(0.5);
   });
 
-  it('R-L4: 시작 상태에 없는 sourceChar 도 판정 시점 해석으로 쓴다(바뀐 스트림을 다시 읽지 않음)', () => {
+  it('R-L4: a sourceChar missing from the start state is also used via classification-time resolution (the changed stream is not re-read)', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td 1 0 0 rg (Red ) Tj 0 0 1 rg (bluewords) Tj ET']);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
     const plan = planParagraphEdit(ctx, fm, ctx.layout.paragraphs[0]!.id);
     const prepared = prepareParagraphEdit(ctx, plan, newEditId());
-    // 파란 구간 가운데 글자(run 시작이 아님).
+    // A character in the middle of the blue span (not at the start of the run).
     const mid = ctx.layout.paragraphs[0]!.chars.find((c) => ctx.model.chars[c]!.text === 'w')!;
     expect(plan.runs.some((r) => r.style.sourceChar === mid)).toBe(false);
     const runs = [{ text: 'Xyz', style: { ...plan.runs[0]!.style, sourceChar: mid } }];
@@ -298,7 +298,7 @@ describe('셀 커밋(실제 리플로우)·V4', () => {
     ]);
   });
 
-  it('긴 글: 자동 확장은 셀 아래 경계(상한)에서 멈추고 초과 표시', () => {
+  it('long text: auto-expansion stops at the lower bound of the cell (limit) and flags overflow', () => {
     const doc = gridDoc();
     const ctx = ctxOf(doc);
     const { plan, result } = commit(

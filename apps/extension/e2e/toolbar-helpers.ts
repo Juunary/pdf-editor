@@ -1,13 +1,13 @@
 /**
- * e2e 공용 툴바 조작. 저장 버튼 셋(저장·다른 이름으로 저장·downloads 저장)은 프린터 아이콘 메뉴 하나로 바뀌었다
- * (사용자 요청 2026-10-22). 메뉴 항목은 이전 버튼 id(`#save`·`#save-as`·`#save-downloads`)를 그대로 쓴다.
- * downloads 저장은 개발 표시라 진단 표시(`html[data-diag]`)를 켜야 보인다(사용자 요청 2026-10-23).
+ * Shared e2e toolbar operations. The three save buttons (save, save as, save to downloads) were replaced by a single printer-icon menu
+ * (user request 2026-10-22). Menu items keep using the old button ids (`#save`·`#save-as`·`#save-downloads`).
+ * Saving to downloads is a dev-only control, so the diagnostics display (`html[data-diag]`) must be turned on to see it (user request 2026-10-23).
  */
 import type { Frame, Page } from '@playwright/test';
 
 export type SaveMenuItem = 'save' | 'save-as' | 'save-downloads';
 
-/** 진단 표시를 켠다: 뷰어의 단축키 처리(Ctrl+Alt+Shift+D)로 켠다. 이미 켜져 있으면 그대로 둔다. */
+/** Turns on the diagnostics display via the viewer's shortcut handling (Ctrl+Alt+Shift+D). If it is already on, leaves it as is. */
 export async function showDiag(target: Page | Frame): Promise<void> {
   await target.evaluate(() => {
     if (document.documentElement.hasAttribute('data-diag')) return;
@@ -18,7 +18,7 @@ export async function showDiag(target: Page | Frame): Promise<void> {
   });
 }
 
-/** 저장 메뉴(`#save-menu-button`)를 열고 항목을 누른다. 이미 열려 있으면 그대로 누른다. */
+/** Opens the save menu (`#save-menu-button`) and clicks an item. If it is already open, just clicks. */
 export async function chooseSave(target: Page | Frame, item: SaveMenuItem): Promise<void> {
   if (item === 'save-downloads') await showDiag(target);
   if (!(await target.locator('#save-menu').isVisible())) await target.click('#save-menu-button');

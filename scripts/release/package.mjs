@@ -1,11 +1,11 @@
-// Web Store 업로드 패키지 생성(docs/m5-contract.md D6). `pnpm --filter @pdf-editor/extension package`.
+// Build the Web Store upload package (docs/m5-contract.md D6). `pnpm --filter @pdf-editor/extension package`.
 //
-//   out/release/build/    vite 스토어 빌드(PDF_EDITOR_BUILD=store, 소스맵 hidden)
-//   out/release/staging/  build 에서 diag/·*.map 을 빼고 LICENSE·THIRD_PARTY_NOTICES.txt 를 더한 배포 내용
-//   out/release/maps/     소스맵(릴리스 자산으로 따로 보관, zip 에 넣지 않음)
+//   out/release/build/    vite store build (PDF_EDITOR_BUILD=store, source maps hidden)
+//   out/release/staging/  distribution contents: build without diag/·*.map, plus LICENSE·THIRD_PARTY_NOTICES.txt
+//   out/release/maps/     source maps (kept separately as release assets, not put in the zip)
 //   out/release/pdf-editor-<version>.zip, pdf-editor-<version>-sourcemaps.zip, sizes.json
 //
-// 의존 패키지(core·viewer-ui·shared-types)가 빌드돼 있어야 한다(turbo `build` 가 먼저 돈다).
+// Dependent packages (core·viewer-ui·shared-types) must be built (turbo `build` runs first).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -46,11 +46,11 @@ function run(cmd, args, env = {}) {
 
 const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 
-// 1) 스토어 빌드
+// 1) store build
 rmSync(releaseDir, { recursive: true, force: true });
 run('pnpm', ['exec', 'vite', 'build'], { PDF_EDITOR_BUILD: 'store' });
 
-// 2) 스테이징: diag/·*.map 제외
+// 2) staging: exclude diag/·*.map
 mkdirSync(stagingDir, { recursive: true });
 mkdirSync(mapsDir, { recursive: true });
 const mapFiles = [];
@@ -72,7 +72,7 @@ for (const map of mapFiles) {
   cpSync(map, dest);
 }
 
-// 3) 라이선스 파일: 저장소 LICENSE, 번들 그래프 기반 THIRD_PARTY_NOTICES.txt
+// 3) license files: repository LICENSE, THIRD_PARTY_NOTICES.txt based on the bundle graph
 cpSync(join(repoRoot, 'LICENSE'), join(stagingDir, 'LICENSE'));
 const packages = collectBundlePackages(mapFiles);
 writeFileSync(
@@ -80,15 +80,15 @@ writeFileSync(
   renderNotices({ version, sourceUrl: sourceUrl(version), packages }),
 );
 
-// 4) zip(결정적)
+// 4) zip (deterministic)
 writeFileSync(zipPath, zipDirectory(stagingDir));
 writeFileSync(mapsZipPath, zipDirectory(mapsDir));
 
-// 5) 크기 기록(원본·gzip·brotli)
+// 5) record sizes (raw·gzip·brotli)
 const sizes = measureAssets(stagingDir);
 writeFileSync(join(releaseDir, 'sizes.json'), `${JSON.stringify({ version, sizes }, null, 2)}\n`);
 
-// 6) 검증
+// 6) verification
 run('node', ['scripts/verify-dist.mjs', '--release']);
 
 const total = walkFiles(stagingDir).reduce((n, f) => n + statSync(f).size, 0);

@@ -1,4 +1,4 @@
-// 합성 PDF 생성 도구(테스트 전용). 폰트 F1 = Helvetica(단순 폰트), F2 = NotoSansKR 부분집합(CID, 한글).
+// Synthetic PDF generation tools (test only). Font F1 = Helvetica (simple font), F2 = NotoSansKR subset (CID, Hangul).
 import '../src/wasm-module.js';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,7 @@ const KOREAN_FONT_PATH = fileURLToPath(
 
 export const koreanFont = new mupdf.Font('NotoSansKR', readFileSync(KOREAN_FONT_PATH));
 
-/** F2(CID) 로 보여 줄 문자열을 `<gid…> Tj` 에 쓰는 16진 문자열로 만든다. */
+/** Builds the string to show with F2 (CID) as the hex string used in `<gid…> Tj`. */
 export function hexGlyphs(text: string, font = koreanFont): string {
   return `<${[...text].map((c) => font.encodeCharacter(c).toString(16).padStart(4, '0')).join('')}>`;
 }
@@ -19,7 +19,7 @@ export interface PageSpec {
   content: string;
   mediabox?: [number, number, number, number];
   rotate?: 0 | 90 | 180 | 270;
-  /** 리소스 사전에 항목을 더한다(ExtGState·ColorSpace·XObject 등). */
+  /** Adds an entry to the resource dictionary (ExtGState, ColorSpace, XObject, etc.). */
   resources?: (doc: mupdf.PDFDocument, resources: Record<string, unknown>) => void;
 }
 

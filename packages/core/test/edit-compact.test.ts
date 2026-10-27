@@ -1,10 +1,10 @@
 /**
- * 편집 커밋의 스트림 압축(M5 Windows 확인 W2, docs/m5-followup.md 5.1): 편집이 풀린 채 다시 쓴 큰 쪽 콘텐츠를 커밋 직전 Flate 로
- * 압축해, MuPDF 저널이 다음 편집마다 보관하는 이전 판이 풀린 크기가 아니라 압축 크기가 되게 한다.
- * 실제 어댑터로 압축 여부·저널 추정, 결과 동일성(쪽 텍스트·렌더 픽셀·저장 재열기·재적용), 되돌리기, 커밋 중 동시 호출,
- * WASM 사용 중 힙 증가를 본다. 큰 쪽은 주석 줄(렌더·추출에 영향 없음)로 콘텐츠를 키운 합성 문서다.
+ * Stream compression on edit commit (M5 Windows check W2, docs/m5-followup.md 5.1): compress the large page content that an edit rewrote in uncompressed form with Flate just before the commit,
+ * so that the previous version the MuPDF journal keeps at each following edit has the compressed size rather than the uncompressed size.
+ * With the real adapter, check whether compression happened, the journal estimate, result equivalence (page text, render pixels, reopen after save, reapply), undo, concurrent calls during a commit,
+ * and the growth of the in-use WASM heap. The large page is a synthetic document whose content is enlarged with comment lines (no effect on render or extraction).
  */
-// 첫 import 유지: mupdf 보다 먼저 WASM Module 설정을 등록해야 힙 측정(저널 추정의 계수 모델·probeWasmHeap)이 연결된다.
+// Keep this import first: the WASM Module settings must be registered before mupdf so that heap measurement (the coefficient model of the journal estimate, probeWasmHeap) is connected.
 import '../src/wasm-module.js';
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
@@ -17,7 +17,7 @@ import { buildDocument } from './pdf-fixtures.js';
 const MiB = 2 ** 20;
 const LINES = 8;
 
-/** 콘텐츠 스트림 주석처럼 보이는 결정적 줄(작은 좌표 집합이라 실제 콘텐츠처럼 압축이 잘 된다). */
+/** Deterministic lines that look like content stream comments (a small coordinate set, so they compress well like real content). */
 function filler(bytes: number, seed: number): string {
   let x = seed >>> 0;
   const next = () => {
@@ -34,7 +34,7 @@ function filler(bytes: number, seed: number): string {
   return out.join('\n');
 }
 
-/** 한 줄 문단 LINES 개 사이사이에 주석 채움(합계 약 `fillBytes`)과 선 패스 하나가 있는 쪽. 원본은 Flate 압축. */
+/** A page with LINES one-line paragraphs, comment filler between them (about `fillBytes` in total) and one line path. The original is Flate-compressed. */
 function heavyPdf(fillBytes: number): Uint8Array {
   const parts: string[] = ['q 1 w 72 80 m 540 80 l S Q'];
   for (let i = 0; i < LINES; i++) {
@@ -70,7 +70,7 @@ function input(plan: ParagraphEditPlan, value: string): DraftInput {
   };
 }
 
-/** `Paragraph n` 문단을 연다(커밋하지 않는다). */
+/** Opens the `Paragraph n` paragraph (does not commit). */
 async function begin(s: PdfSession, n: number) {
   const paragraph = s.getPageLayout(0).paragraphs.find((p) => p.text.startsWith(`Paragraph ${n} `));
   if (!paragraph) throw new Error(`문단 없음: ${n}`);
@@ -85,7 +85,7 @@ async function edit(s: PdfSession, n: number): Promise<EditOp> {
   return (await s.commitParagraphEdit(await begin(s, n))).op;
 }
 
-/** 쪽 /Contents 스트림(한 개)의 필터·저장 길이·풀린 길이. */
+/** Filter, stored length and decoded length of the page /Contents stream (a single one). */
 function contentsInfo(s: PdfSession): { filter: string | null; stored: number; plain: number } {
   const contents = s.document.findPage(0).get('Contents');
   const stream = contents.isArray() ? contents.get(0) : contents;
@@ -110,29 +110,29 @@ function reopen(bytes: Uint8Array): PdfSession {
   return session(bytes);
 }
 
-describe('편집 커밋의 스트림 압축(실제 어댑터)', { timeout: 120_000 }, () => {
-  it('커밋한 큰 쪽 콘텐츠는 FlateDecode 로 압축되고 저널 추정은 압축 크기다', async () => {
+describe('stream compression on edit commit (real adapter)', { timeout: 120_000 }, () => {
+  it('the committed large page content is compressed with FlateDecode and the journal estimate is the compressed size', async () => {
     const s = session(heavyPdf(400_000));
     await edit(s, 1);
     const info = contentsInfo(s);
     expect(info.filter).toBe('FlateDecode');
     expect(info.plain).toBeGreaterThan(400_000);
     expect(info.stored).toBeLessThan(info.plain / 3);
-    // 저널 추정 = 커밋이 바꾼 스트림 /Length 합(압축 콘텐츠 + 작은 편집 블록).
+    // Journal estimate = sum of the stream /Length values the commit changed (compressed content + small edit block).
     const journal = s.journalAdvice().journalBytes;
     expect(journal).toBeGreaterThanOrEqual(info.stored);
     expect(journal).toBeLessThan(info.stored + 20_000);
     s.close();
   });
 
-  it('결과 동일: 압축한 세션 = 풀린 채 재적용한 세션(쪽 텍스트·렌더 픽셀·저장 재열기)', async () => {
+  it('equivalent result: compressed session = session reapplied uncompressed (page text, render pixels, reopen after save)', async () => {
     const source = heavyPdf(300_000);
     const live = session(source);
     const ops = [await edit(live, 2), await edit(live, 5), await edit(live, 2)];
     expect(contentsInfo(live).filter).toBe('FlateDecode');
     const replayed = session(source);
     await replayed.replayEdits(structuredClone(ops));
-    // 재적용은 저널 밖이라 압축하지 않는다(풀린 채 둔다): 같은 내용이 다른 저장 형태로 있다.
+    // Reapply happens outside the journal, so it does not compress (left uncompressed): the same content exists in a different stored form.
     expect(contentsInfo(replayed).filter).toBeNull();
     expect(text(live)).toBe(text(replayed));
     expect(text(live)).toContain('Paragraph 5 edited text.');
@@ -146,7 +146,7 @@ describe('편집 커밋의 스트림 압축(실제 어댑터)', { timeout: 120_0
     for (const s of [live, replayed, savedLive, savedReplayed]) s.close();
   });
 
-  it('되돌리기·다시 실행: 압축한 판 사이를 오가며 저널 단계는 편집 수와 같다', async () => {
+  it('undo and redo: moves between compressed versions, and the journal steps equal the edit count', async () => {
     const s = session(heavyPdf(200_000));
     const original = text(s);
     await edit(s, 1);
@@ -170,7 +170,7 @@ describe('편집 커밋의 스트림 압축(실제 어댑터)', { timeout: 120_0
     s.close();
   });
 
-  it('패스 편집 커밋도 큰 쪽 콘텐츠를 압축한다', async () => {
+  it('a path edit commit also compresses the large page content', async () => {
     const s = session(heavyPdf(200_000));
     const e = await s.getPageEditability(0);
     const line = e.paths.find((p) => p.editable);
@@ -193,7 +193,7 @@ describe('편집 커밋의 스트림 압축(실제 어댑터)', { timeout: 120_0
     s.close();
   });
 
-  it('커밋하는 동안(압축 대기) 같은 초안의 갱신·커밋·취소를 거절한다', async () => {
+  it('while committing (waiting for compression), rejects update, commit and cancel of the same draft', async () => {
     const s = session(heavyPdf(300_000));
     const draftId = await begin(s, 4);
     const first = s.commitParagraphEdit(draftId);
@@ -204,17 +204,17 @@ describe('편집 커밋의 스트림 압축(실제 어댑터)', { timeout: 120_0
     s.close();
   });
 
-  it('WASM 사용 중 힙: 큰 쪽 문단을 처음 고칠 때마다 풀린 크기가 아니라 압축 크기만큼 는다', async () => {
+  it('in-use WASM heap: each first edit of a large-page paragraph grows by the compressed size, not the uncompressed size', async () => {
     const fill = 3 * MiB;
     const s = session(heavyPdf(fill));
-    // 첫 편집은 폴백 폰트 임베딩(약 8 MB)이 섞이므로 그 뒤를 기준으로 잰다.
+    // The first edit includes embedding the fallback font (about 8 MB), so measure from after it.
     await edit(s, 1);
     const base = probeWasmHeap({ emptyStore: true })!.usedBytes;
     for (const n of [2, 3, 4, 5, 6]) await edit(s, n);
     const grown = probeWasmHeap({ emptyStore: true })!.usedBytes - base;
     const { stored, plain } = contentsInfo(s);
     expect(plain).toBeGreaterThan(fill);
-    // 압축 전 동작이면 편집 5건 × 풀린 크기(약 15 MiB)가 남는다. 압축 크기 5건 + 여유 4 MiB 이하이고 풀린 크기 2건 미만.
+    // Without compression, 5 edits × uncompressed size (about 15 MiB) would remain. The bound is 5 compressed sizes + 4 MiB margin, and below 2 uncompressed sizes.
     expect(stored).toBeLessThan(plain / 3);
     expect(grown).toBeLessThan(5 * stored + 4 * MiB);
     expect(grown).toBeLessThan(2 * plain);
@@ -222,9 +222,9 @@ describe('편집 커밋의 스트림 압축(실제 어댑터)', { timeout: 120_0
   });
 });
 
-// 압축 경로가 MuPDF 렌더와 같은 바이트를 읽는지(원본 Flate 콘텐츠와 비교): 위 시험의 전제 확인.
-describe('합성 문서 전제', () => {
-  it('원본 콘텐츠는 Flate 이고 주석은 렌더에 영향이 없다', () => {
+// Checks that the compression path reads the same bytes as the MuPDF render (compared with the original Flate content): verifies the premise of the tests above.
+describe('synthetic document premise', () => {
+  it('the original content is Flate and the comments have no effect on the render', () => {
     const bytes = heavyPdf(100_000);
     const doc = mupdf.PDFDocument.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument;
     const contents = doc.findPage(0).get('Contents');

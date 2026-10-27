@@ -1,9 +1,9 @@
-// 복구 시간(계약 D4 사용자 결정 2026-10-21, docs/m5-followup.md): 한 쪽에서 서로 다른 문단을 차례로 N 번 고치되(다 쓰면 편집
-// 블록을 차례로 다시 고침) N − after 번째 편집 뒤에 저장한다. 그 뒤 두 가지 복구를 새 세션에서 잰다.
-//   original: 원본 열기 + 편집 N 건 재적용(기준점 없는 경우, 이전 방식)
-//   baseline: 저장 바이트 열기 + 저장 뒤 편집 after 건 재적용(저장 시점 기준점)
-// 재적용은 뷰어 복구 계층처럼 한 건씩(`replayEdits([op], { more })`) 보낸다. 두 결과의 쪽 텍스트가 원래 세션과 같은지도 본다.
-// 사용: node tools/bench/recovery-time.mjs <pdf> <쪽(0부터)> <N> <after>
+// Recovery time (contract D4 user decision 2026-10-21, docs/m5-followup.md): on one page, edit different paragraphs in turn N times (when they run out, re-edit the edit
+// blocks in turn) and save after the (N − after)th edit. Then measure two recoveries in a new session.
+//   original: open the original + reapply N edits (no checkpoint, the previous approach)
+//   baseline: open the saved bytes + reapply the after edits made since the save (checkpoint at save time)
+// Reapply sends edits one at a time (`replayEdits([op], { more })`) like the viewer recovery layer. Also checks that both results' page text matches the original session.
+// Usage: node tools/bench/recovery-time.mjs <pdf> <page (0-based)> <N> <after>
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PdfSession } from '../../packages/core/dist/index.js';
@@ -83,7 +83,7 @@ async function recover(label, source, list) {
   }
   if (list.length === 0) await s.replayEdits([]);
   const replayMs = performance.now() - r0;
-  // 복구 뒤 첫 화면: 그 쪽 렌더.
+  // First screen after recovery: render that page.
   const g = performance.now();
   s.renderPage({ pageIndex: page, scale: SCALE });
   const renderMs = performance.now() - g;

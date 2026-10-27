@@ -1,9 +1,9 @@
 /**
- * 모양 원천(RunStyle.sourceChar) 해석(계약 D4·5.5): 그 글자 연산의 폰트 리소스, 채움 색 연산(원래 색공간),
- * ExtGState 사전, 렌더 모드. 편집 블록 쓰기와 폰트 배정이 쓴다.
+ * Resolves the style source (RunStyle.sourceChar) (contract D4, 5.5): the font resource of that character's operation, the fill color operation (original color space),
+ * the ExtGState dictionaries, and the render mode. Used by edit block writing and font assignment.
  *
- * 초안 시작(prepareParagraphEdit) 때 판정 시점 SourceMap 으로 해석해 편집 id 별로 보관한다. 이후 쓰기는 문서가
- * 바뀐 뒤라도(같은 블록을 다시 쓰면 리소스 이름이 바뀐다) 보관한 해석을 쓴다.
+ * Resolved with the classification-time SourceMap when a draft starts (prepareParagraphEdit) and kept per edit id. Later writes use the kept resolution even after the document
+ * has changed (rewriting the same block changes the resource names).
  */
 import type * as mupdf from 'mupdf';
 import type { SourceOp } from '@pdf-editor/shared-types';
@@ -11,33 +11,33 @@ import { parseContentOpsLenient } from './content-stream.js';
 import { lookupResource, resourceChain, StreamCache } from './edit-common.js';
 import type { ParagraphEditContext } from './paragraph-edit.js';
 
-/** 채움 색 연산 1개. space 는 cs 의 색공간 이름과 리소스(장치 색공간이면 obj null). */
+/** One fill color operation. space is the cs color space name and resource (obj is null for a device color space). */
 export interface ColorOpSpec {
   op: 'cs' | 'sc' | 'scn' | 'g' | 'rg' | 'k';
   nums: number[];
   space: { name: string; obj: mupdf.PDFObject | null } | null;
-  /** scn 의 패턴 이름(패턴 채움, 편집 제한). */
+  /** scn pattern name (pattern fill, edit restricted). */
   pattern: string | null;
 }
 
 export interface ResolvedStyle {
   sourceChar: number;
-  /** 폰트 리소스 값(간접 참조면 그대로). */
+  /** Font resource value (kept as is if an indirect reference). */
   fontRef: mupdf.PDFObject;
   fontId: number;
-  /** 글자 크기(페이지 공간 pt = 블록 공간 pt). */
+  /** Font size (page-space pt = block-space pt). */
   size: number;
   renderMode: number;
   fill: ColorOpSpec[];
-  /** 효력 있는 ExtGState 사전(바깥 → 안). */
+  /** Effective ExtGState dictionaries (outer → inner). */
   gs: mupdf.PDFObject[];
-  /** 채움이 패턴(타일링·셰이딩)이다. */
+  /** The fill is a pattern (tiling or shading). */
   pattern: boolean;
 }
 
 const DEVICE_SPACES = new Set(['DeviceGray', 'DeviceRGB', 'DeviceCMYK', 'G', 'RGB', 'CMYK']);
 
-/** 색 연산 하나를 읽는다. */
+/** Reads one color operation. */
 export function readColorOp(
   doc: mupdf.PDFDocument,
   pageIndex: number,
@@ -66,7 +66,7 @@ export function readColorOp(
   return { op: kind, nums, space: null, pattern: null };
 }
 
-/** sourceChar 의 모양을 판정 시점 문서·SourceMap 에서 해석한다. 연산·폰트를 찾지 못하면 null. */
+/** Resolves the style of sourceChar from the classification-time document and SourceMap. Returns null if the operation or font is not found. */
 export function resolveStyle(
   ctx: ParagraphEditContext,
   sourceChar: number,
@@ -103,7 +103,7 @@ export function resolveStyle(
   };
 }
 
-/** gs 연산 id → ExtGState 사전(해석된 객체). */
+/** gs operation id → ExtGState dictionary (resolved object). */
 export function extGStateOf(
   ctx: ParagraphEditContext,
   opId: number,
@@ -122,7 +122,7 @@ export function extGStateOf(
   return obj && obj.resolve().isDictionary() ? obj.resolve() : null;
 }
 
-/** ExtGState 목록의 효력 있는 키 → 값(뒤가 이긴다). Type·Font 는 뺀다. */
+/** Effective keys → values of an ExtGState list (later wins). Type and Font are excluded. */
 export function effectiveGs(list: readonly mupdf.PDFObject[]): Map<string, mupdf.PDFObject> {
   const out = new Map<string, mupdf.PDFObject>();
   for (const d of list) {
@@ -134,7 +134,7 @@ export function effectiveGs(list: readonly mupdf.PDFObject[]): Map<string, mupdf
   return out;
 }
 
-/** 두 값이 같은 PDF 값인가(간접 참조는 번호, 그 밖은 직렬화 비교). */
+/** Whether two values are the same PDF value (indirect references by number, others by serialized comparison). */
 export function samePdfValue(
   a: mupdf.PDFObject | undefined,
   b: mupdf.PDFObject | undefined,

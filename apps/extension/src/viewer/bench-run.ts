@@ -1,8 +1,8 @@
 /**
- * M5 벤치마크 시나리오 실행기(계약 4.1·D1). 뷰어와 같은 구성(Worker + ViewerController + 마운트된 뷰어 UI)을 만들어
- * 지표 이벤트(`m5:*`)로 시간을 잰다. DOM 연결과 파일 입력은 `bench.ts` 가 맡는다.
+ * M5 benchmark scenario runner (contract 4.1, D1). Builds the same configuration as the viewer (Worker + ViewerController + mounted viewer UI) and
+ * measures time with metric events (`m5:*`). `bench.ts` handles the DOM wiring and file input.
  *
- * 시나리오는 문서마다 독립이며, 한 시나리오의 오류는 `errors` 에 남기고 다음으로 넘어간다.
+ * Scenarios are independent per document; an error in one scenario is recorded in `errors` and the run moves on to the next.
  */
 import { transferBytes, wrapPdfWorker, type PdfWorkerClient } from '@pdf-editor/core/client';
 import {
@@ -42,24 +42,24 @@ export const ALL_SCENARIOS: readonly Scenario[] = [
 
 export interface BenchOptions {
   scenarios: readonly Scenario[];
-  /** 열기·저장 반복 횟수. */
+  /** Number of open and save repetitions. */
   repeats: { open: number; save: number; breakdown: number };
-  /** 순차 쪽 넘김 횟수와 임의 이동 횟수. */
+  /** Number of sequential page turns and number of random jumps. */
   nav: { steps: number; jumps: number };
-  /** 쪽 판정을 잴 쪽 수(문서 전체에 고르게 배치). */
+  /** Number of pages to time for page classification (spread evenly across the document). */
   judgePages: number;
-  /** 편집 반응: 입력 글자 수. */
+  /** Edit response: number of characters typed. */
   editChars: number;
-  /** 패스 끌기 단계 수. */
+  /** Number of path drag steps. */
   pathSteps: number;
   /**
-   * 메모리 왕복: 넘김 쪽 수(왕복)·편집 횟수·저장 횟수·끝 탭 메모리 대기(ms, 사용자 결정 2026-10-21 = 30 s).
-   * `probePhases` 는 진단용: 넘김 뒤·편집 뒤에도 캐시를 비운 뒤 사용 중 힙을 잰다(판정값의 정의는 그대로).
+   * Memory round trip: number of pages turned (round trip), edit count, save count, end tab memory wait (ms, user decision 2026-10-21 = 30 s).
+   * `probePhases` is for diagnostics: also measures the in-use heap after clearing the cache after page turns and after edits (the definition of the judged value is unchanged).
    */
   mem: { pages: number; edits: number; saves: number; settleMs: number; probePhases?: boolean };
-  /** 렌더 캐시 상한 재정의(비교 실험용). 없으면 기본 8쪽·64 MiB. */
+  /** Override of the render cache limit (for comparison experiments). Defaults to 8 pages, 64 MiB if absent. */
   renderCache?: { maxPages: number; maxBytes: number };
-  /** 미리 렌더 끄기(비교 실험용). */
+  /** Turn off pre-rendering (for comparison experiments). */
   prefetch?: boolean;
 }
 
@@ -77,34 +77,34 @@ export interface BenchDoc {
   id: string;
   name: string;
   bytes: number;
-  /** 쪽 판정 시험에 꼭 넣을 쪽(0부터, 최대 패스 쪽 등). */
+  /** Pages that must be included in the page classification test (0-based, the page with the largest path, etc.). */
   judgePages?: number[];
   load(): Promise<ArrayBuffer>;
 }
 
 export interface BenchHooks {
-  /** 진행 문구. */
+  /** Progress text. */
   progress(text: string): void;
   /**
-   * 메모리 표본점에서 탭 메모리(MiB)를 받는다. 수동 실행은 사용자가 작업 관리자 값을 넣고(입력 원문·단위·경고를 함께
-   * 돌려준다), 서버 자동화는 렌더러 VmRSS 를 읽는다. 값이 없으면 null.
+   * Receives tab memory (MiB) at a memory sample point. In a manual run the user enters the Task Manager value (and the raw input, unit and warnings are
+   * returned together); server automation reads the renderer VmRSS. null if there is no value.
    */
   tabMemoryMiB(
     label: 'baseline' | 'end' | 'end-settled',
     docId: string,
   ): Promise<number | TabReading | null>;
-  /** 중간 지점의 탭 메모리 자동 표본(수동 실행에는 없다). */
+  /** Automatic tab memory sample at an intermediate point (absent in manual runs). */
   samplePhase?(label: string, docId: string): Promise<number | null>;
   /**
-   * 중간 지점의 탭 메모리 구성(서버 자동화만): 렌더러 VmRSS, 페이지·Worker JS 힙(CDP `Runtime.getHeapUsage`), WASM 선형 메모리
-   * 등 MiB 값. 수동 실행에는 없다.
+   * Tab memory breakdown at an intermediate point (server automation only): renderer VmRSS, page and Worker JS heaps (CDP `Runtime.getHeapUsage`), WASM linear memory,
+   * etc. as MiB values. Absent in manual runs.
    */
   sampleDetail?(label: string, docId: string): Promise<Record<string, number | null> | null>;
-  /** 뷰어를 올릴 DOM. */
+  /** DOM to mount the viewer on. */
   targets: { controls: HTMLElement; pages: HTMLElement };
-  /** 쪽 영역 폭(CSS px). */
+  /** Page area width (CSS px). */
   availableWidth(): number;
-  /** 작업 모듈을 만든다. */
+  /** Creates the work module. */
   spawnWorker(): Worker;
 }
 
@@ -121,7 +121,7 @@ export interface DocResult {
   pageCount: number | null;
   open?: Measured & { workerOpenMs: number[] };
   nav?: { seq: Measured; jump: Measured; all: Measured };
-  /** 쪽 판정. `pages`·`reusePages` 는 첫 진입·재진입 표본 순서대로 잰 쪽(0부터). */
+  /** Page classification. `pages` and `reusePages` are the pages timed in the order of the first-entry and re-entry samples (0-based). */
   judge?: {
     first: Measured;
     reuse: Measured;
@@ -130,8 +130,8 @@ export interface DocResult {
     breakdown: JudgeBreakdown[];
   };
   /**
-   * 편집 반응. `updates` 는 그 동안의 초안 갱신 RPC 마다 왕복 시간(`rpcMs`)과 Worker 안 갱신 시간(`workerMs` = 리플로우·쓰기·
-   * 영역 렌더, `DraftUpdate.updateMs`)·영역 크기(px)다. 반응 표본과 1:1 이 아니다(입력이 몰리면 마지막 입력만 보낸다).
+   * Edit response. For each draft update RPC during that time, `updates` holds the round-trip time (`rpcMs`), the in-Worker update time (`workerMs` = reflow, write and
+   * region render, `DraftUpdate.updateMs`) and the region size (px). It is not 1:1 with the response samples (when input piles up, only the last input is sent).
    */
   edit?: Measured & {
     page: number;
@@ -142,7 +142,7 @@ export interface DocResult {
   path?: Measured & { page: number; paintSeq: number; serverUpdateMs: number[] };
   save?: { clean: Measured; edited: Measured | null; saveMs: number[]; wasmHeapBytes: number[] };
   mem?: MemResult;
-  /** 해당 없음(측정 대상이 없는 시나리오)과 그 사유. 오류와 구분한다. */
+  /** Not applicable (scenario with nothing to measure) and its reason. Distinguished from errors. */
   skipped?: Partial<Record<Scenario, string>>;
   errors: string[];
 }
@@ -154,122 +154,122 @@ export interface JudgeBreakdown {
   sourceMapMs: number;
   linkMs: number;
   layoutMs: number;
-  /** 위 캐시가 모두 따뜻한 뒤의 getPageEditability. */
+  /** getPageEditability after all of the above caches are warm. */
   judgeWarmMs: number;
-  /** 다른 쪽에서 캐시 없이 부른 getPageEditability 전체. */
+  /** All getPageEditability calls on other pages without a cache. */
   judgeColdMs: number;
-  /** 코어가 보고한 판정 시간(`PageEditability.ms`, 따뜻한 호출). */
+  /** Classification time reported by core (`PageEditability.ms`, warm call). */
   coreReportedMs: number;
-  /** 값은 `reps` 번 반복(새 세션)의 중앙값. */
+  /** The value is the median of `reps` repetitions (new sessions). */
   reps: number;
 }
 
-/** 탭 메모리 한 번 읽기. 수동 실행은 입력 원문·단위·경고를 남긴다. */
+/** One read of tab memory. A manual run keeps the raw input, unit and warnings. */
 export interface TabReading {
   mib: number | null;
-  /** 수동 입력 원문(작업 관리자 값 그대로). */
+  /** Raw manual input (the Task Manager value as is). */
   raw?: string;
-  /** 입력 단위. `K` 는 Chrome 작업 관리자 표시(1 K = 1024 byte), 서버 자동화는 `VmRSS`. */
+  /** Input unit. `K` is the Chrome Task Manager display (1 K = 1024 byte); server automation uses `VmRSS`. */
   unit?: 'K' | 'MiB' | 'VmRSS';
-  /** 입력 경고(직전 값과 같음·세 값이 모두 같음·RAM 초과·직전 값의 5배 이상 등). 사용자가 확인하고 넘겼다. */
+  /** Input warnings (same as previous value, all three values the same, over RAM, 5x or more the previous value, etc.). The user confirmed and proceeded. */
   warnings?: string[];
 }
 
-/** 메모리 왕복의 편집 한 번(대상과 커밋 뒤 저널 보유 추정). */
+/** One edit in the memory round trip (the target and the journal retention estimate after commit). */
 export interface MemEdit {
   pageIndex: number;
-  /** 이 쪽 판정 목록(쪽마다 한 번 받은 목록)의 문단 id. 앞 편집 뒤 레이아웃이 바뀌어도 이 id 로 시작한다. */
+  /** Paragraph ids of this page classification list (the list received once per page). Starts with this id even if the layout changes after earlier edits. */
   paragraphId: number;
-  /** 시작한 편집의 대상이 이미 편집한 블록이었다(재편집). 편집을 시작하지 못했으면 null. */
+  /** The target of the started edit was an already-edited block (re-edit). null if the edit could not be started. */
   editedBlock: boolean | null;
-  /** 대상 글자 수. 시작하지 못했으면 null. */
+  /** Number of characters in the target. null if it could not be started. */
   glyphs: number | null;
   committed: boolean;
-  /** 커밋 뒤 저널 보유 추정(byte, `journalAdvice`). 물을 수 없으면 null. */
+  /** Journal retention estimate after commit (byte, `journalAdvice`). null if it cannot be queried. */
   journalBytes: number | null;
-  /** 시작~커밋 시간(ms). */
+  /** Start-to-commit time (ms). */
   ms: number;
 }
 
 /**
- * 첫 저장(기준점이 되는 저장)의 힙. 선형 메모리는 줄지 않아 저장 뒤 값은 저장 피크의 상한이다. 저장 전 값과 같으면 저장이
- * 이미 늘어난 선형 메모리 안에서 끝나 피크를 이 방식으로 볼 수 없다(`grewHeap: false`). 예측은 저장 직전 planSave(D5).
+ * Heap of the first save (the save that becomes the checkpoint). Linear memory does not shrink, so the post-save value is an upper bound of the save peak. If it equals the pre-save value, the save
+ * finished inside already-grown linear memory and the peak cannot be seen this way (`grewHeap: false`). The prediction is planSave just before saving (D5).
  */
 export interface FirstSaveHeap {
-  /** 저장 직전 선형 메모리(byte, planSave 의 사용 중 힙 = 첫 저장이면 현재 힙). */
+  /** Linear memory just before saving (byte, planSave's in-use heap = the current heap for the first save). */
   heapBeforeBytes: number | null;
-  /** 저장 직후 선형 메모리(byte). 저장 피크의 상한. */
+  /** Linear memory just after saving (byte). Upper bound of the save peak. */
   heapAfterBytes: number | null;
-  /** D5 예상 피크(byte). */
+  /** D5 estimated peak (byte). */
   predictedPeakBytes: number | null;
-  /** 저장이 선형 메모리를 늘렸다(피크가 저장 뒤 값에 드러남). */
+  /** The save grew linear memory (the peak shows in the post-save value). */
   grewHeap: boolean | null;
-  /** 저장 뒤 선형 메모리(피크 상한) ≤ 예상 피크. */
+  /** Post-save linear memory (peak upper bound) ≤ estimated peak. */
   withinPrediction: boolean | null;
 }
 
 /**
- * 메모리 왕복 결과(계약 1.1·D1). 끝 측정 시점(사용자 결정 2026-10-21): WASM 은 MuPDF 캐시를 비운(`emptyStore`) 뒤 사용 중 힙,
- * 탭은 30 s 대기 뒤 값으로 판정한다. 비우기 전(선형 메모리)·대기 전 값도 남긴다.
+ * Memory round-trip result (contract 1.1, D1). End measurement point (user decision 2026-10-21): WASM is the in-use heap after clearing the MuPDF cache (`emptyStore`),
+ * and tab memory is judged by the value after a 30 s wait. Values before clearing (linear memory) and before the wait are also kept.
  */
 export interface MemResult {
   baseline: {
-    /** 첫 저장 직후 선형 메모리(byte). */
+    /** Linear memory just after the first save (byte). */
     wasmHeapBytes: number | null;
-    /** 첫 저장 직후 `emptyStore` 뒤 사용 중 힙(byte, 벤치 RPC). */
+    /** In-use heap after `emptyStore` just after the first save (byte, bench RPC). */
     wasmUsedBytes: number | null;
     tabMiB: number | null;
   };
   end: {
-    /** 마지막 저장 뒤 선형 메모리(byte). */
+    /** Linear memory after the last save (byte). */
     wasmHeapBytes: number | null;
-    /** 끝 `emptyStore` 뒤 사용 중 힙(byte). */
+    /** In-use heap after the end `emptyStore` (byte). */
     wasmUsedBytes: number | null;
-    /** 끝 직후 탭 메모리(대기 전). */
+    /** Tab memory just after the end (before the wait). */
     tabMiB: number | null;
-    /** 끝 30 s 대기 뒤 탭 메모리(판정값). */
+    /** Tab memory after the 30 s wait at the end (judged value). */
     tabSettledMiB: number | null;
   };
-  /** 판정값: 사용 중 힙(`emptyStore` 뒤) 증가. */
+  /** Judged value: increase in in-use heap (after `emptyStore`). */
   wasmHeapDeltaMiB: number | null;
-  /** 비우기 전 값: 선형 메모리 증가(이전 정의). */
+  /** Value before clearing: increase in linear memory (former definition). */
   wasmLinearDeltaMiB: number | null;
-  /** 판정값: 30 s 대기 뒤 탭 메모리 증가. */
+  /** Judged value: increase in tab memory after the 30 s wait. */
   tabDeltaMiB: number | null;
-  /** 대기 전 값: 끝 직후 탭 메모리 증가(이전 정의). */
+  /** Value before the wait: increase in tab memory just after the end (former definition). */
   tabDeltaBeforeWaitMiB: number | null;
-  /** 종료 뒤 강제 GC(서버 CDP) 후 탭 메모리 − 기준점. 수거 가능한 쓰레기와 잔류분을 가른다. 수동 실행에는 없다. */
+  /** Tab memory after a forced GC at the end (server CDP) − checkpoint. Separates collectable garbage from retained memory. Absent in manual runs. */
   tabDeltaAfterGcMiB: number | null;
-  /** 끝 대기 시간(ms). */
+  /** End wait time (ms). */
   settleMs: number;
   navigations: number;
   edits: number;
   saves: number;
   pass: { wasmHeap: boolean | null; tab: boolean | null };
   /**
-   * 첫 저장 직후 선형 메모리(byte) = `firstSave.heapAfterBytes`. 기준점이 첫 저장 직후라 `baseline.wasmHeapBytes` 와 늘 같다
-   * (저장 전 값·예측은 `firstSave`).
+   * Linear memory just after the first save (byte) = `firstSave.heapAfterBytes`. The checkpoint is right after the first save, so it always equals `baseline.wasmHeapBytes`
+   * (pre-save value and prediction are in `firstSave`).
    */
   firstSavePeakHeapBytes: number | null;
   firstSave: FirstSaveHeap;
-  /** 편집 대상·커밋 뒤 저널 보유 추정. */
+  /** Edit target and journal retention estimate after commit. */
   editLog: MemEdit[];
-  /** 탭 메모리 읽기(기준점·종료 직후·30 s 뒤). 수동 실행은 입력 원문·단위·경고. */
+  /** Tab memory reads (checkpoint, right after end, after 30 s). In a manual run, the raw input, unit and warnings. */
   tabInputs: (TabReading & { label: string })[];
-  /** 구간별 증가 원인 분석용 표본(자동 실행에서만 탭 메모리가 있다). */
+  /** Samples for analyzing the cause of growth per phase (tab memory exists only in automated runs). */
   phases: {
     name: string;
     wasmHeapBytes: number | null;
-    /** `probePhases` 일 때 캐시를 비운 뒤 사용 중 힙(byte). 기준점·끝은 늘 잰다. */
+    /** With `probePhases`, the in-use heap after clearing the cache (byte). The checkpoint and end are always measured. */
     wasmUsedBytes?: number | null;
     tabMiB: number | null;
     jsHeapMiB: number | null;
-    /** 탭 메모리 구성(서버 자동화, `sampleDetail`). */
+    /** Tab memory breakdown (server automation, `sampleDetail`). */
     detail?: Record<string, number | null> | null;
   }[];
 }
 
-/** 벤치 전용 Worker RPC(dev 빌드, `@pdf-editor/core/bench`). 없으면(이전 빌드) null. */
+/** Bench-only Worker RPC (dev build, `@pdf-editor/core/bench`). null if absent (older build). */
 async function probeHeap(pdf: PdfWorkerClient, emptyStore: boolean): Promise<number | null> {
   const remote = pdf as unknown as {
     benchProbeHeap?: (o: { emptyStore: boolean }) => Promise<{ usedBytes: number } | null>;
@@ -290,7 +290,7 @@ interface Opened {
   firstPaint: Promise<PagePaintedEvent>;
   workerOpenMs: number;
   painted: PaintWaiters;
-  /** 뷰어가 보낸 초안 갱신 RPC 기록(편집 반응 구성용). */
+  /** Record of draft update RPCs sent by the viewer (for building the edit response breakdown). */
   draftUpdates: { rpcMs: number; workerMs: number; regionPx: number }[];
   dispose(): void;
 }
@@ -319,7 +319,7 @@ const doubleRaf = () =>
   );
 const MiB = 2 ** 20;
 
-/** 고정 시드 난수(임의 이동 순서를 실행마다 같게). */
+/** Fixed-seed random numbers (so the random jump order is the same on every run). */
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
@@ -348,7 +348,7 @@ function evenlySpaced(pageCount: number, count: number, skip: number): number[] 
   return [...new Set(out)];
 }
 
-/** 반복 실행의 쪽별 중앙값. */
+/** Per-page median across repeated runs. */
 function medianBreakdown(runs: readonly JudgeBreakdown[][]): JudgeBreakdown[] {
   const first = runs[0] ?? [];
   const keys = [
@@ -406,7 +406,7 @@ export class BenchRunner {
     }
 
     if (want('open')) await guard('open', () => this.scenarioOpen(bytes, result));
-    // 나머지 시나리오는 공용 세션 하나를 쓴다(메모리·breakdown 은 자기 세션).
+    // The remaining scenarios share one common session (memory and breakdown use their own sessions).
     const needShared = (['nav', 'edit', 'path', 'save'] as const).some(want);
     if (needShared) {
       let o: Opened | null = null;
@@ -424,7 +424,7 @@ export class BenchRunner {
       }
     }
     if (want('judge')) {
-      // 첫 진입 판정은 캐시가 비어 있어야 하므로 새 세션에서 잰다. 구성 분해도 새 세션이다.
+      // First-entry classification needs an empty cache, so it is timed in a new session. The breakdown is also a new session.
       await guard('judge', async () => {
         const o = await this.openDoc(bytes.slice(0));
         try {
@@ -453,12 +453,12 @@ export class BenchRunner {
     return result;
   }
 
-  // ── 문서 열기(뷰어와 같은 구성) ──────────────────────────────────────
+  // ── Open document (same configuration as the viewer) ──────────────────────────────────────
 
   private async openDoc(bytes: ArrayBuffer, marks: { onBytes?: () => void } = {}): Promise<Opened> {
     const worker = this.hooks.spawnWorker();
     const pdf = wrapPdfWorker(worker);
-    // 뷰어는 Worker 를 바이트 수신 전에 띄운다: 모듈·WASM 적재를 끝낸 뒤 시작점을 잡는다.
+    // The viewer starts the Worker before receiving bytes: set the start point after module and WASM loading finish.
     await pdf.close().catch(() => undefined);
     const painted = new PaintWaiters();
     let firstResolve!: (e: PagePaintedEvent) => void;
@@ -550,7 +550,7 @@ export class BenchRunner {
     result.open = { ...measured(samples, 'open', result.pageCount), workerOpenMs: workerOpen };
   }
 
-  // ── 쪽 넘김 ──────────────────────────────────────────────────────────
+  // ── Page turning ──────────────────────────────────────────────────────────
 
   private async navigate(
     o: Opened,
@@ -576,7 +576,7 @@ export class BenchRunner {
       const r = await this.navigate(o, next);
       seq.push(r.ms);
       await r.done;
-      // 읽는 시간: 유휴 때 다음 쪽 미리 렌더가 돈다.
+      // Reading time: during idle, pre-rendering of the next page runs.
       await sleep(300);
       p = next;
     }
@@ -598,9 +598,9 @@ export class BenchRunner {
     };
   }
 
-  // ── 쪽 판정 ──────────────────────────────────────────────────────────
+  // ── Page classification ──────────────────────────────────────────────────────────
 
-  /** 쪽 진입(`judge:page-enter`) → 편집 가능 판정 완료(`judge:editability-ready`). 쪽은 이미 보이는 상태에서 잰다. */
+  /** Page entry (`judge:page-enter`) → editability check done (`judge:editability-ready`). Timed with the page already visible. */
   private async judgeVisit(o: Opened, pageIndex: number): Promise<number | null> {
     let enter: number | null = null;
     let ready: number | null = null;
@@ -630,7 +630,7 @@ export class BenchRunner {
         }
       });
     });
-    // 같은 쪽을 다시 진입시킬 때는 쪽 캐시(추출·판정)를 비워 다시 읽게 한다.
+    // When re-entering the same page, clear the page cache (extraction and classification) so it is read again.
     if (o.controller.getState().pageIndex === pageIndex)
       await o.controller.invalidatePages([pageIndex]);
     else await o.controller.goToPage(pageIndex);
@@ -678,7 +678,7 @@ export class BenchRunner {
     };
   }
 
-  /** 분해할 쪽: 지정한 쪽 + 문서 앞쪽 8쪽 뒤로 고르게 2쪽. */
+  /** Pages to break down: the designated pages + 2 pages spread evenly after the first 8 pages of the document. */
   private breakdownPages(o: Opened, extra: readonly number[]): number[] {
     const total = o.pageCount;
     const even = evenlySpaced(total, 2, Math.min(8, Math.max(0, total - 1)));
@@ -698,7 +698,7 @@ export class BenchRunner {
     }
   }
 
-  /** 새 세션에서 쪽마다 `getPageEditability` 를 캐시 없이(그 쪽 처음) 부른 시간. 폰트 적재 같은 공통 초기화는 먼저 치운다. */
+  /** Time of calling `getPageEditability` per page in a new session without a cache (the first time for that page). Common initialization such as font loading is cleared first. */
   private async coldJudge(o: Opened, pages: readonly number[]): Promise<Map<number, number>> {
     await o.pdf.getPageEditability(0).catch(() => undefined);
     const out = new Map<number, number>();
@@ -711,11 +711,11 @@ export class BenchRunner {
   }
 
   /**
-   * 첫 진입 판정의 구성(RPC 왕복 시각): 추출·SourceMap·연결·레이아웃·판정을 캐시 없이 순서대로 잰다(새 세션).
-   * 값에는 결과를 메인 스레드로 돌려주는 구조화 복제가 들어 있다(SourceMap 등은 큼). Worker 안 순수 구성은
-   * `packages/core/bench/judge-breakdown.mjs` 가 잰다.
-   * 각 단계는 앞 단계 결과를 캐시로 재사용하므로 "그 단계가 새로 더한 시간"이다. `judgeColdMs` 는 별도 새 세션에서
-   * 같은 쪽의 판정만 처음 부른 전체 시간이다.
+   * Breakdown of first-entry classification (RPC round-trip times): extraction, SourceMap, linking, layout and classification are timed in order without a cache (new session).
+   * The values include the structured clone that returns the result to the main thread (SourceMap and others are large). The pure in-Worker breakdown is
+   * measured by `packages/core/bench/judge-breakdown.mjs`.
+   * Each step reuses the previous step's result as a cache, so it is "the time that step newly added". `judgeColdMs` is the total time of calling only the classification
+   * of the same page for the first time in a separate new session.
    */
   private async breakdown(
     o: Opened,
@@ -755,7 +755,7 @@ export class BenchRunner {
     return out;
   }
 
-  // ── 편집 반응·패스 끌기 ──────────────────────────────────────────────
+  // ── Edit response and path drag ──────────────────────────────────────────────
 
   private async findEditableParagraph(
     o: Opened,
@@ -804,8 +804,8 @@ export class BenchRunner {
   }
 
   /**
-   * 대상 패스를 고르는 점(쪽 공간). 가운데가 그 패스를 고르면 가운데, 아니면 윤곽 꼭짓점 중 그 패스가 골라지는 첫 점.
-   * 선 패스(원·호 등)는 가운데에 아무것도 없고, 큰 패스 가운데에는 더 작은 패스가 겹쳐 그것이 골라진다(`pickPath`).
+   * Point that selects the target path (page space). The center if it selects that path, otherwise the first outline vertex at which that path is selected.
+   * A line path (circle, arc, etc.) has nothing at the center, and at the center of a large path a smaller path overlaps and gets selected (`pickPath`).
    */
   private pathHitPoint(
     cands: readonly PathCandidate[],
@@ -878,7 +878,7 @@ export class BenchRunner {
       const t1 = await doubleRaf();
       mark(M5_EVENTS.path.end, t1);
       samples.push(t1 - t0);
-      // 서버 미리보기(정지 뒤 디바운스 → 영역 렌더)는 따로 잰다.
+      // The server preview (debounce after stopping → region render) is timed separately.
       if (i % 10 === 0) {
         const s0 = performance.now();
         await g.flush();
@@ -895,7 +895,7 @@ export class BenchRunner {
     };
   }
 
-  // ── 전체 저장 ────────────────────────────────────────────────────────
+  // ── Full save ────────────────────────────────────────────────────────
 
   private async saveOnce(
     pdf: PdfWorkerClient,
@@ -937,7 +937,7 @@ export class BenchRunner {
     return (await this.commitEditDetail(o, page, paragraphId)).committed;
   }
 
-  /** 문단 하나를 시작해 한 글자 넣고 커밋한다. 시작한 편집의 대상(재편집 여부·글자 수)을 함께 돌려준다. */
+  /** Starts one paragraph, types one character and commits. Also returns the target of the started edit (whether it is a re-edit, character count). */
   private async commitEditDetail(
     o: Opened,
     page: number,
@@ -959,14 +959,14 @@ export class BenchRunner {
     };
   }
 
-  // ── 메모리 왕복(1.1) ─────────────────────────────────────────────────
+  // ── Memory round trip (1.1) ─────────────────────────────────────────────────
 
   private async scenarioMem(doc: BenchDoc, bytes: ArrayBuffer, result: DocResult): Promise<void> {
     const o = await this.openDoc(bytes.slice(0));
     try {
       result.pageCount ??= o.pageCount;
       const { pages, edits, saves, settleMs, probePhases = false } = this.options.mem;
-      // 기준점 = 첫 저장 완료 직후. 뷰어처럼 저장 직전 planSave 를 불러 그때의 선형 메모리·예상 피크(D5)를 함께 남긴다.
+      // Checkpoint = right after the first save completes. As the viewer does, call planSave just before saving and keep the linear memory and estimated peak (D5) at that time.
       const firstPlan = await o.pdf.planSave({ changes: [] });
       const first = await o.pdf.save({ changes: [] });
       const baseHeap = first.wasmHeapBytes;
@@ -988,7 +988,7 @@ export class BenchRunner {
         return reading.mib;
       };
       const baseTab = await readTab('baseline');
-      // 끝 값과 같은 정의(캐시 비운 뒤 사용 중 힙)로 기준점도 잰다. 측정이 캐시를 비우므로 탭 값을 먼저 읽는다.
+      // Measure the checkpoint with the same definition as the end value (in-use heap after clearing the cache). Measurement clears the cache, so read the tab value first.
       const baseUsed = await probeHeap(o.pdf, true);
 
       const phases: MemResult['phases'] = [];
@@ -1010,8 +1010,8 @@ export class BenchRunner {
         });
       };
       await phase('baseline', baseHeap, baseUsed);
-      // 구간 끝의 선형 메모리는 저장 없이 RPC 로 받지 않는다: 구간별 선형 메모리는 저장 값만 두고, 사용 중 힙은 `probePhases`
-      // 일 때만 잰다(잴 때 캐시를 비우므로 기본 실행에서는 재지 않는다).
+      // Linear memory at the end of a phase is not fetched by RPC without saving: per-phase linear memory keeps only the save value, and in-use heap is measured only with `probePhases`
+      // (measuring clears the cache, so the default run does not measure it).
       const midProbe = async () => (probePhases ? probeHeap(o.pdf, true) : undefined);
 
       let navigations = 0;
@@ -1048,16 +1048,16 @@ export class BenchRunner {
       mark(M5_EVENTS.mem.end);
       const endTab = await readTab('end');
       await phase('end', endHeap);
-      // 탭 판정값: 30 s 대기 뒤(사용자 결정 2026-10-21). 대기 중에는 아무 작업도 하지 않는다.
+      // Tab judged value: after the 30 s wait (user decision 2026-10-21). No work is done during the wait.
       for (let left = settleMs; left > 0; left -= 1000) {
         this.hooks.progress(`${doc.id}: 메모리 종료 뒤 대기 ${Math.ceil(left / 1000)} s`);
         await new Promise((r) => setTimeout(r, Math.min(1000, left)));
       }
       const settledTab = await readTab('end-settled');
       await phase('end-settled', endHeap);
-      // WASM 판정값: 캐시를 비운 뒤 사용 중 힙.
+      // WASM judged value: in-use heap after clearing the cache.
       const endUsed = await probeHeap(o.pdf, true);
-      // 강제 GC 는 판정값을 잰 뒤에 한다(수거 가능한 쓰레기를 뺀 값을 따로 남기려고).
+      // Forced GC is done after measuring the judged values (to keep a separate value excluding collectable garbage).
       await phase('end-after-gc', endHeap, endUsed);
 
       const delta = (a: number | null, b: number | null, scale = 1) =>

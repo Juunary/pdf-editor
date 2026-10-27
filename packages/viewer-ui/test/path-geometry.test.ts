@@ -16,15 +16,15 @@ import {
 } from '../src/path-geometry.js';
 import { makeEditability, makePath } from './path-fixtures.js';
 
-describe('후보 묶기', () => {
-  it('판정 목록에 없는 PathInfo 는 뺀다', () => {
+describe('candidate grouping', () => {
+  it('drops PathInfo not in the classification list', () => {
     const a = makePath(1, [0, 0, 10, 10]);
     const clip = makePath(2, [0, 0, 5, 5], { op: 'clip' });
     const cands = buildCandidates([a, clip], [makeEditability(0, a)]);
     expect(cands.map((c) => c.paintSeq)).toEqual([1]);
   });
 
-  it('같은 paintSeq 의 채움·선 PathInfo 는 한 후보다', () => {
+  it('fill and stroke PathInfo with the same paintSeq form one candidate', () => {
     const fill = makePath(3, [0, 0, 10, 10]);
     const stroke = makePath(3, [0, 0, 10, 10], { op: 'stroke', lineWidth: 1, color: null });
     const cands = buildCandidates([fill, stroke], [makeEditability(0, fill)]);
@@ -33,15 +33,15 @@ describe('후보 묶기', () => {
   });
 });
 
-describe('맞음 판정', () => {
-  it('채움은 안쪽만 맞고 바깥은 허용 거리가 있어도 맞지 않는다', () => {
+describe('hit test', () => {
+  it('a fill hits only on the inside, and the outside does not hit even within the tolerance distance', () => {
     const f = makePath(1, [10, 10, 50, 50]);
     const [c] = buildCandidates([f], [makeEditability(0, f)]);
     expect(candidateHit(c!, [30, 30], 2)).toBe(true);
     expect(candidateHit(c!, [52, 30], 2)).toBe(false);
   });
 
-  it('선은 허용 거리 안(+선 두께 절반)에서 맞고 안쪽 빈 곳은 맞지 않는다', () => {
+  it('a stroke hits within the tolerance distance (+ half the line width), and an empty inside does not hit', () => {
     const s = makePath(1, [10, 10, 50, 50], { op: 'stroke', lineWidth: 2, color: null });
     const [c] = buildCandidates([s], [makeEditability(0, s)]);
     expect(candidateHit(c!, [10, 30], 0)).toBe(true);
@@ -49,7 +49,7 @@ describe('맞음 판정', () => {
     expect(candidateHit(c!, [30, 30], 3)).toBe(false);
   });
 
-  it('even-odd 구멍은 안쪽이 아니다', () => {
+  it('an even-odd hole is not inside', () => {
     const outer: PathSegment[] = [
       { type: 'M', p: [0, 0] },
       { type: 'L', p: [100, 0] },
@@ -65,10 +65,10 @@ describe('맞음 판정', () => {
     const p = makePath(1, [0, 0, 100, 100], { evenOdd: true, segments: outer });
     expect(insideFill(flattenPath(p), [50, 50], true)).toBe(false);
     expect(insideFill(flattenPath(p), [10, 10], true)).toBe(true);
-    expect(insideFill(flattenPath(p), [50, 50], false)).toBe(true); // 같은 방향이면 감김 2(0 아님)
+    expect(insideFill(flattenPath(p), [50, 50], false)).toBe(true); // same direction gives winding 2 (not 0)
   });
 
-  it('겹치면 가장 작은 패스를 고른다', () => {
+  it('when overlapping, picks the smallest path', () => {
     const big = makePath(1, [0, 0, 100, 100]);
     const small = makePath(2, [40, 40, 60, 60]);
     const cands = buildCandidates(
@@ -80,13 +80,13 @@ describe('맞음 판정', () => {
     expect(pickPath(cands, [200, 200], 1)).toBeNull();
   });
 
-  it('segments 가 없으면 상자로 근사한다', () => {
+  it('without segments, approximates with the box', () => {
     const f = makePath(1, [0, 0, 10, 10], { segments: null });
     const [c] = buildCandidates([f], [makeEditability(0, f)]);
     expect(candidateHit(c!, [5, 5], 0)).toBe(true);
   });
 
-  it('CTM 을 적용한 위치에서 맞는다', () => {
+  it('hits at the position with the CTM applied', () => {
     const f = makePath(1, [100, 100, 120, 120], {
       ctm: [2, 0, 0, 2, 100, 0],
       segments: [
@@ -103,8 +103,8 @@ describe('맞음 판정', () => {
   });
 });
 
-describe('상자 변환', () => {
-  it('모서리 핸들: 반대 모서리가 고정되고, Shift 면 비율이 유지된다', () => {
+describe('box transform', () => {
+  it('corner handle: the opposite corner is fixed, and Shift keeps the aspect ratio', () => {
     const box: [number, number, number, number] = [0, 0, 100, 50];
     expect(resizeBox(box, 'se', 20, 5, false)).toEqual([0, 0, 120, 55]);
     const kept = resizeBox(box, 'se', 100, 0, true);
@@ -117,12 +117,12 @@ describe('상자 변환', () => {
     expect((nw[2] - nw[0]) / (nw[3] - nw[1])).toBeCloseTo(2);
   });
 
-  it('변 핸들은 한 축만, 최소 크기를 넘어 뒤집히지 않는다', () => {
+  it('an edge handle affects only one axis and does not flip past the minimum size', () => {
     expect(resizeBox([0, 0, 100, 50], 'e', -500, 7, true)).toEqual([0, 0, 1, 50]);
     expect(resizeBox([0, 0, 100, 50], 'n', 9, 60, false)).toEqual([0, 49, 100, 50]);
   });
 
-  it('boxTransform 은 from 을 to 로 보낸다', () => {
+  it('boxTransform maps from to to', () => {
     const m = boxTransform([10, 10, 30, 20], [0, 0, 40, 40]);
     expect(transformRect(m, [10, 10, 30, 20])).toEqual([0, 0, 40, 40]);
     expect(isIdentity(boxTransform([1, 2, 3, 4], [1, 2, 3, 4]))).toBe(true);
@@ -130,8 +130,8 @@ describe('상자 변환', () => {
   });
 });
 
-describe('점 번호', () => {
-  it('M·L 은 1개, C 는 제어점 2개 + 끝점 1개이며 0 부터 센다', () => {
+describe('point numbering', () => {
+  it('M and L are 1 point, C is 2 control points + 1 end point, counted from 0', () => {
     const p = makePath(1, [0, 0, 30, 30], {
       op: 'stroke',
       lineWidth: 1,
@@ -158,22 +158,22 @@ describe('점 번호', () => {
   });
 });
 
-describe('붙은 제어점(리뷰 L3)', () => {
+describe('attached control points (review L3)', () => {
   const curve = (segments: PathSegment[]) =>
     pathPoints(
       makePath(1, [0, 0, 100, 100], { op: 'stroke', lineWidth: 1, color: null, segments }),
     );
 
-  it('y 끝점을 옮기면 겹친 둘째 제어점이 따라간다', () => {
+  it('moving the y end point makes the overlapping second control point follow', () => {
     const pts = curve([
       { type: 'M', p: [0, 0] },
       { type: 'C', p1: [10, 0], p2: [50, 50], p3: [50, 50] },
     ]);
     expect(companionPoints(pts, 3).map((c) => c.index)).toEqual([2]);
-    expect(companionPoints(pts, 2)).toEqual([]); // 제어점을 직접 끌 때는 단독
+    expect(companionPoints(pts, 2)).toEqual([]); // dragging a control point directly is solo
   });
 
-  it('v 의 앞 꼭짓점을 옮기면 겹친 첫 제어점이 따라간다', () => {
+  it('moving the leading vertex of v makes the overlapping first control point follow', () => {
     const pts = curve([
       { type: 'M', p: [0, 0] },
       { type: 'C', p1: [0, 0], p2: [30, 40], p3: [50, 50] },
@@ -181,7 +181,7 @@ describe('붙은 제어점(리뷰 L3)', () => {
     expect(companionPoints(pts, 0).map((c) => c.index)).toEqual([1]);
   });
 
-  it('겹치지 않은 일반 곡선은 단독', () => {
+  it('a general curve with no overlap is solo', () => {
     const pts = curve([
       { type: 'M', p: [0, 0] },
       { type: 'C', p1: [10, 0], p2: [40, 50], p3: [50, 50] },

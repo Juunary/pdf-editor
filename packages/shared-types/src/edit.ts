@@ -1,6 +1,6 @@
 /**
- * 문단 편집(M3, docs/m3-contract.md). 편집 계획·리플로우 요약·초안·로그·undo 의 공통 타입.
- * 기하는 페이지 공간(geometry.ts), 길이 pt. 텍스트 위치는 TextRun.text 를 이은 문자열의 UTF-16 위치다.
+ * Paragraph editing (M3, docs/m3-contract.md). Common types for edit plans, reflow summaries, drafts, logs and undo.
+ * Geometry is in page space (geometry.ts), lengths in pt. Text positions are UTF-16 offsets into the string formed by concatenating TextRun.text.
  */
 import type { Matrix, Point, RGB, Rect } from './geometry.js';
 import type { PaintColor } from './page-model.js';
@@ -9,26 +9,26 @@ import type { ChangeKind, SaveMethod } from './save.js';
 import type { EditLimitReason } from './source-map.js';
 
 /**
- * 편집 대상 문단. 로그 재적용은 같은 순서로 하므로 적용 시점 상태의 glyphSeq 로 가리킨다.
- * 같은 세션에서 편집한 블록을 다시 편집하면 editedBlock 에 그 편집 id 를 둔다(계약 5.2).
+ * The paragraph being edited. Log reapplication runs in the same order, so it is referenced by glyphSeq in the state at application time.
+ * When a block edited in the same session is edited again, its edit id is placed in editedBlock (contract 5.2).
  */
 export interface ParagraphTarget {
   pageIndex: number;
-  /** 적용 시점 PageModel 의 CharInfo.glyphSeq(LayoutParagraph.chars 순서). */
+  /** CharInfo.glyphSeq of the PageModel at application time (LayoutParagraph.chars order). */
   glyphSeqs: number[];
   editedBlock: string | null;
-  /** 원 문단 bbox. */
+  /** Original paragraph bbox. */
   bbox: Rect;
-  /** 표 셀 안 문단이면 셀 위치(M4, 없거나 null 이면 흐름 문단; M3 로그 호환을 위해 선택 필드). */
+  /** Cell position if the paragraph is inside a table cell (M4; absent or null means a flow paragraph; optional field for M3 log compatibility). */
   cell?: { table: number; row: number; col: number } | null;
 }
 
 /**
- * 글자 모양. M3 는 모양 바꾸기 UI 가 없으므로 "원본 글자 sourceChar 의 모양 복사" 로 나타낸다(계약 D4).
- * 쓰기는 그 글자 연산의 폰트 리소스·채움 색 연산을 가져온다. fontId·size·bold·italic·color 는 표시·판정용 사본이다.
+ * Character style. M3 has no UI for changing style, so it is expressed as "copy the style of the original character sourceChar" (contract D4).
+ * Writing takes over the font resource and fill color operators of that character's operation. fontId, size, bold, italic and color are copies for display and classification.
  */
 export interface RunStyle {
-  /** 적용 시점 PageModel.chars 인덱스. */
+  /** PageModel.chars index at application time. */
   sourceChar: number;
   fontId: number;
   size: number;
@@ -36,17 +36,17 @@ export interface RunStyle {
   italic: boolean;
   color: RGB | null;
   /**
-   * 글리프마다 더하는 자간(pt, 페이지 공간). 시작 상태가 원본 연산의 `Tc` 로 채운다(Tc × Tz × 글자 크기/Tf 크기).
-   * 리플로우가 클러스터 전진에 더하고, 쓰기는 위치 차이를 TJ 숫자로 옮긴다. 없으면 0(이전 로그·블록 호환).
+   * Letter spacing added per glyph (pt, page space). The start state fills it from the original operation's `Tc` (Tc × Tz × font size/Tf size).
+   * Reflow adds it to the cluster advance, and writing carries the position difference into TJ numbers. 0 if absent (compatibility with older logs and blocks).
    */
   charSpacing?: number;
   /**
-   * 가로 비율(원본 `Tz`/100, 장평). 리플로우가 글리프 전진에 곱하고 쓰기가 편집 블록에 `Tz` 로 쓴다. 없으면 1.
+   * Horizontal scale (original `Tz`/100). Reflow multiplies glyph advances by it, and writing emits it as `Tz` in the edit block. 1 if absent.
    */
   horizontalScale?: number;
 }
 
-/** 같은 모양의 텍스트 구간. 강제 줄바꿈은 "\n". */
+/** A text run with the same style. A forced line break is "\n". */
 export interface TextRun {
   text: string;
   style: RunStyle;
@@ -55,67 +55,67 @@ export interface TextRun {
 export type ParagraphAlign = 'left' | 'right' | 'center' | 'justify';
 
 /**
- * 문단 형식. 영역 초과 처리는 선택이 아니라 리플로우 규칙이다(2026-10-20 사용자 결정): 글이 영역 아래로 넘치면
- * 아래 변을 필요한 높이까지(areaLimit 까지) 자동으로 내린다(ReflowSummary.area). 이전 빌드가 쓴 overflow·fontScale
- * 필드(/PdfEditorFormat JSON·EditOp)는 읽을 때 무시한다.
+ * Paragraph format. Handling of area overflow is a reflow rule, not an option (user decision 2026-10-20): when text overflows below the area,
+ * the bottom edge is automatically lowered to the required height (up to areaLimit) (ReflowSummary.area). The overflow and fontScale
+ * fields written by earlier builds (/PdfEditorFormat JSON, EditOp) are ignored when read.
  */
 export interface ParagraphFormat {
-  /** 사용자가 정한 배치 영역(기본 원 문단 bbox, areaLimit 안). 실제로 쓴 영역은 ReflowSummary.area. */
+  /** Layout area chosen by the user (default: original paragraph bbox, within areaLimit). The area actually used is ReflowSummary.area. */
   area: Rect;
   align: ParagraphAlign;
-  /** 첫 줄 들여쓰기(pt, 음수는 내어쓰기). */
+  /** First-line indent (pt, negative for hanging indent). */
   firstLineIndent: number;
-  /** 기준선 간격(pt). */
+  /** Baseline spacing (pt). */
   lineHeight: number;
-  /** 첫 줄 기준선 − 영역 위쪽(pt). */
+  /** First-line baseline − area top (pt). */
   firstBaselineOffset: number;
 }
 
-/** 문단 텍스트 교체. M4 에서 셀·벡터 편집이 더해진다. */
+/** Paragraph text replacement. Cell and vector edits are added in M4. */
 export interface ReplaceParagraphOp {
   kind: 'replace-paragraph';
-  /** 편집 id(세션 안 고유). 편집 블록 /PdfEditorEdit 값과 같다. */
+  /** Edit id (unique within the session). Same as the edit block's /PdfEditorEdit value. */
   id: string;
   target: ParagraphTarget;
   runs: TextRun[];
   format: ParagraphFormat;
 }
 
-/** 편집 대상 벡터 패스(M4). */
-/** 패스 대상 확인용 지문(계약 D4). paintSeq 가 밀려도 다른 패스를 고치지 않게 plan·begin·재적용에서 비교한다. */
+/** Vector path being edited (M4). */
+/** Fingerprint for verifying the path target (contract D4). Compared in plan, begin and reapplication so a shifted paintSeq never edits a different path. */
 export interface PathFingerprint {
-  /** 칠하기 연산 이름(S·f·B 등). */
+  /** Paint operator name (S, f, B, etc.). */
   paintOp: string;
   constructOpCount: number;
-  /** 쪽 공간 상자(1e-3 pt 반올림). */
+  /** Page-space box (rounded to 1e-3 pt). */
   bbox: Rect;
-  /** 구성 연산 바이트의 해시(16진). */
+  /** Hash of the construction operator bytes (hex). */
   constructHash: string;
 }
 
 export interface PathTarget {
   pageIndex: number;
-  /** 선택한 칠하기 연산별 첫 paintSeq(적용 시점 PageModel 기준, 순서 재적용에서만 유효). */
+  /** First paintSeq per selected paint operator (relative to the PageModel at application time; valid only for in-order reapplication). */
   paintSeqs: number[];
-  /** paintSeqs 와 같은 순서. */
+  /** Same order as paintSeqs. */
   fingerprints: PathFingerprint[];
   bbox: Rect;
 }
 
-/** 벡터 패스 편집 내용. null 은 "바꾸지 않음". */
+/** Vector path edit content. null means "unchanged". */
 export interface PathEdit {
-  /** 페이지 공간 아핀(이동·확대축소만). */
+  /** Page-space affine (translation and scaling only). */
   transform: Matrix | null;
   fill: RGB | null;
   stroke: RGB | null;
-  /** 페이지 공간 pt. */
+  /** Page-space pt. */
   lineWidth: number | null;
   /**
-   * 점 단위 편집(한 패스만, 계약 D2): PageModel PathInfo.segments 순서의 점 번호 → 새 위치(페이지 공간).
-   * 점 번호는 segments 를 앞에서부터 센 점(M·L 은 1개, C 는 제어점 2개 + 끝점 1개). null 이면 없음.
+   * Point-level edit (single path only, contract D2): point number in PageModel PathInfo.segments order → new position (page space).
+   * The point number counts points from the start of segments (M and L give 1, C gives 2 control points + 1 end point). null means none.
    */
   points: { index: number; to: Point }[] | null;
-  /** 패스 삭제(계약 D2). true 면 다른 필드는 무시한다. */
+  /** Path deletion (contract D2). If true, the other fields are ignored. */
   delete: boolean;
 }
 
@@ -128,157 +128,157 @@ export interface EditPathOp {
 
 export type EditOp = ReplaceParagraphOp | EditPathOp;
 
-/** 패스 편집 제한 사유(M4, 연산 단위 사유 EditLimitReason 에 더해). */
+/** Path edit limit reasons (M4, in addition to the operation-level reasons in EditLimitReason). */
 export const PATH_LIMIT_REASONS = [
   'clip-path',
   'pattern-or-shading',
   'path-op-unparsed',
   'path-spans-streams',
   'inside-text-object',
-  'path-interleaved-ops', // 구성 ~ 칠하기 사이에 다른 연산(M4 검토 H3)
-  'soft-mask', // 칠하기 시점 SMask
-  'singular-ctm', // 문단 사유와 같은 이름·같은 뜻
+  'path-interleaved-ops', // other operations between construction and painting (M4 review H3)
+  'soft-mask', // SMask at paint time
+  'singular-ctm', // same name and meaning as the paragraph reason
 ] as const;
 
 export type PathLimitReason = (typeof PATH_LIMIT_REASONS)[number];
 
 export interface PathLimit {
   reason: PathLimitReason | EditLimitReason;
-  /** 사용자 표시용 설명(한국어). */
+  /** User-facing description (Korean). */
   detail: string;
 }
 
-/** 문단 단위 편집 제한 사유(연산 단위 사유 EditLimitReason 에 더해, 계약 5.1). */
+/** Paragraph-level edit limit reasons (in addition to the operation-level reasons in EditLimitReason, contract 5.1). */
 export const PARAGRAPH_LIMIT_REASONS = [
-  'not-flow-paragraph', // M4 부터 판정이 붙이지 않음(도형 라벨 2026-10-21·표 셀 M4 D1). 이전 결과 호환용
-  'vertical-or-rotated', // 세로쓰기·회전 줄
-  'remove-skipped', // 제거가 건너뛸 연산 포함(detail = RemoveSkipCode)
-  'mixed-content-sources', // 쪽 콘텐츠와 Form, 또는 서로 다른 Form 사용 경로에 걸침
-  'actualtext-partial', // ActualText MC 의 글리프 일부만 지움
-  'singular-ctm', // 삽입점 CTM 이 특이 행렬
-  'insertion-clipped', // 삽입점의 직사각형이 아닌 클립이 원 문단 bbox 를 덮지 않음
-  'bt-split-unsupported', // BT 를 나눌 수 없음(클립 텍스트 BT·변위 계산 불가·BT 안 q/cm, detail 에 사유)
-  'graphics-state-mismatch', // 원 글자와 삽입점의 SMask 가 다름·패턴 채움
+  'not-flow-paragraph', // No longer assigned by the classifier since M4 (figure labels 2026-10-21, table cells M4 D1). For compatibility with earlier results
+  'vertical-or-rotated', // vertical writing / rotated lines
+  'remove-skipped', // contains operations that removal would skip (detail = RemoveSkipCode)
+  'mixed-content-sources', // spans page content and a Form, or different Form usage paths
+  'actualtext-partial', // erases only some glyphs of an ActualText MC
+  'singular-ctm', // insertion point CTM is a singular matrix
+  'insertion-clipped', // the insertion point's non-rectangular clip does not cover the original paragraph bbox
+  'bt-split-unsupported', // BT cannot be split (clip-text BT, displacement not computable, q/cm inside BT; reason in detail)
+  'graphics-state-mismatch', // the SMask differs between the original character and the insertion point, or pattern fill
 ] as const;
 
 export type ParagraphLimitReason = (typeof PARAGRAPH_LIMIT_REASONS)[number];
 
 export interface ParagraphLimit {
   reason: ParagraphLimitReason | EditLimitReason;
-  /** reason 이 remove-skipped 이면 제거가 건너뛴 사유 코드. */
+  /** If reason is remove-skipped, the code of the reason removal skipped it. */
   code?: RemoveSkipCode;
-  /** 사용자 표시용 설명(한국어). */
+  /** User-facing description (Korean). */
   detail: string;
-  /** 해당 PageModel.chars 인덱스. 문단 전체에 해당하면 빈 배열. */
+  /** Corresponding PageModel.chars indices. An empty array if it applies to the whole paragraph. */
   chars: number[];
 }
 
-/** removeTextShowOps 건너뜀 사유 코드(계약 D2). */
+/** removeTextShowOps skip reason codes (contract D2). */
 export const REMOVE_SKIP_CODES = [
   'not-text-show',
-  'in-form', // Form 안 연산(복제 경로에서 처리)
-  'op-limit', // 연산 limits(spans-stream-boundary·tokenizer-error 등)
+  'in-form', // operation inside a Form (handled on the clone path)
+  'op-limit', // operation limits (spans-stream-boundary, tokenizer-error, etc.)
   'clip-text', // Tr 4–7
   'font-encoding-unresolved',
   'no-font-resource',
-  'reread-failed', // 연산 바이트를 다시 읽지 못함
-  'quote-operands', // " 피연산자 부족
+  'reread-failed', // operation bytes could not be reread
+  'quote-operands', // " has too few operands
   'font-size-zero',
   'hscale-zero',
-  'fallback-font', // MuPDF 대체 폰트(로드 실패)
+  'fallback-font', // MuPDF substitute font (load failure)
   'vertical',
   'type3',
   'width-uncertain',
-  'tj-bad-token', // TJ 배열에 문자열·숫자 밖 토큰
-  'cid-unmapped', // CID 매핑 없는 코드
+  'tj-bad-token', // token other than string or number in the TJ array
+  'cid-unmapped', // code with no CID mapping
   'glyph-count-mismatch',
 ] as const;
 
 export type RemoveSkipCode = (typeof REMOVE_SKIP_CODES)[number];
 
 export type EditWarningKind =
-  | 'font-fallback' // 원본 폰트에 없는 글자를 폴백 폰트로 씀
-  | 'glyph-missing' // 원본·폴백 모두 글리프가 없어 쓰지 않은 글자
-  | 'synthetic-style' // 폴백 폰트 합성 굵게·기울임
-  | 'tagged-structure-kept' // 새 텍스트가 원 MCID 안(구조 트리 불변)
-  | 'tagged-structure-unlinked' // 태그 쪽인데 새 텍스트가 구조와 연결되지 않음
-  | 'actualtext-cleared' // 지운 MC 의 ActualText 를 뺌
-  | 'reading-order-approximate' // 삽입점을 MC 바깥으로 옮겨 원래 자리와 어긋남(계약 D3 규칙 3)
-  | 'link-overlap' // 편집 문단과 겹치는 링크(유지)
-  | 'redact-overlap' // 겹치는 기존 Redact 주석(나중에 적용하면 새 텍스트도 지워짐)
-  | 'optional-content' // 선택적 콘텐츠 안(L7)
-  | 'area-overlaps-content' // (자동으로) 넓힌 영역이 다른 글자·도형과 겹침
-  | 'overflow-clipped' // 영역 상한에 막혀 넘친 줄이 CropBox·상위 Form BBox 에서 잘림
-  | 'color-space-changed' // 새 색을 쓰려고 색공간을 바꿈(M4 D3)
-  | 'shared-form' // 여러 곳이 쓰는 Form 안의 패스, 이 위치만 바뀜(M4)
-  | 'path-clipped' // 편집 후 패스 상자가 칠하기 시점 클립·Form BBox 밖(M4)
-  | 'table-rule-removed'; // 표 괘선으로 쓰인 패스를 지움(표 감지가 바뀔 수 있음, M4)
+  | 'font-fallback' // characters missing from the original font are written with a fallback font
+  | 'glyph-missing' // characters not written because neither the original nor the fallback has a glyph
+  | 'synthetic-style' // synthetic bold/italic of the fallback font
+  | 'tagged-structure-kept' // new text is inside the original MCID (structure tree unchanged)
+  | 'tagged-structure-unlinked' // tagged page, but the new text is not linked to the structure
+  | 'actualtext-cleared' // removed the ActualText of the erased MC
+  | 'reading-order-approximate' // insertion point moved outside the MC, so it differs from the original position (contract D3 rule 3)
+  | 'link-overlap' // link overlapping the edited paragraph (kept)
+  | 'redact-overlap' // existing overlapping Redact annotation (applying it later would also erase the new text)
+  | 'optional-content' // inside optional content (L7)
+  | 'area-overlaps-content' // the (automatically) expanded area overlaps other text or shapes
+  | 'overflow-clipped' // lines that overflow because of the area limit are clipped at the CropBox or parent Form BBox
+  | 'color-space-changed' // color space changed to use a new color (M4 D3)
+  | 'shared-form' // path inside a Form used in several places; only this location changes (M4)
+  | 'path-clipped' // after editing, the path box is outside the clip or Form BBox at paint time (M4)
+  | 'table-rule-removed'; // erased a path used as a table rule (table detection may change, M4)
 
 export interface EditWarning {
   kind: EditWarningKind;
-  /** 사용자 표시용 설명(한국어). 다른 언어 화면은 kind·count·chars·variant 로 뷰어가 문장을 만든다(2026-10-26). */
+  /** User-facing description (Korean). For other languages, the viewer builds the sentence from kind, count, chars and variant (2026-10-26). */
   message: string;
-  /** 문장에 들어가는 개수(폴백 글자 종류·지운 ActualText·겹친 링크·Redact 수). 없으면 rects 수. */
+  /** Count used in the sentence (number of fallback character kinds, erased ActualText, overlapping links, Redacts). The rects count if absent. */
   count?: number;
-  /** 문장에 들어가는 글자(폴백·글리프 없는 글자, 앞 20자). */
+  /** Characters used in the sentence (fallback and glyph-less characters, first 20). */
   chars?: string;
-  /** 같은 kind 안의 경우. tagged-structure-unlinked: form-clone(Form 복제로 /StructParents 삭제)·path-removed(태그 콘텐츠 안 패스 삭제). */
+  /** Case within the same kind. tagged-structure-unlinked: form-clone (/StructParents removed by cloning the Form), path-removed (path inside tagged content removed). */
   variant?: 'form-clone' | 'path-removed';
-  /** 관련 영역(링크·Redact 주석·겹침 상자). */
+  /** Related areas (links, Redact annotations, overlap boxes). */
   rects: Rect[];
 }
 
-/** 새 텍스트 삽입 방식(계약 D3). */
+/** How new text is inserted (contract D3). */
 export interface InsertionInfo {
-  /** 편집 블록 호출을 넣는 스트림: 쪽 콘텐츠 또는 복제한 Form. */
+  /** Stream where the edit block call is inserted: page content or a cloned Form. */
   container: 'page' | 'form-clone';
-  /** before-bt: BT 바로 앞, split-bt: BT 를 나눔, rewrite-block: 기존 편집 블록만 다시 씀. */
+  /** before-bt: right before BT, split-bt: splits BT, rewrite-block: only rewrites an existing edit block. */
   mode: 'before-bt' | 'split-bt' | 'rewrite-block';
-  /** 새 텍스트가 원 MCID 의 marked content 안에 들어가는지. MCID 가 없으면 null. */
+  /** Whether the new text goes inside the original MCID's marked content. null if there is no MCID. */
   mcidKept: boolean | null;
 }
 
-/** 편집 시작 전 판정(문서를 바꾸지 않는다, 계약 5.1·5.3). */
+/** Pre-edit classification (does not modify the document, contract 5.1, 5.3). */
 export interface ParagraphEditPlan {
   pageIndex: number;
-  /** 판정 시점 PageLayout 의 문단 id. */
+  /** Paragraph id in the PageLayout at classification time. */
   paragraphId: number;
-  /** 판정 시점 문서 revision. beginParagraphEdit 에 그대로 넘긴다. */
+  /** Document revision at classification time. Passed through unchanged to beginParagraphEdit. */
   revision: number;
   target: ParagraphTarget;
   editable: boolean;
   limits: ParagraphLimit[];
   warnings: EditWarning[];
-  /** 편집기 시작 텍스트·모양(계약 5.3). */
+  /** Editor start text and style (contract 5.3). */
   runs: TextRun[];
-  /** 텍스트 위치 → PageModel.chars 인덱스. 합성 공백은 -1. 길이 = 텍스트 길이. */
+  /** Text position → PageModel.chars index. -1 for synthetic spaces. Length = text length. */
   charIndexOfOffset: number[];
   format: ParagraphFormat;
-  /** 영역 상한: CropBox ∩ (Form 안이면 BBox)(A7-4). */
+  /** Area limit: CropBox ∩ (BBox if inside a Form) (A7-4). */
   areaLimit: Rect;
-  /** editable 이 false 이면 null. */
+  /** null if editable is false. */
   insertion: InsertionInfo | null;
-  /** 지울 연산 수(일부만 지우는 연산 포함)·복제할 Form 인스턴스 수. */
+  /** Number of operations to erase (including operations erased only in part) and number of Form instances to clone. */
   removal: { ops: number; partialOps: number; formInstances: number };
   save: { method: SaveMethod; changes: ChangeKind[] };
   planMs: number;
 }
 
-/** 마우스 오버 표시용 문단별 판정(getPageEditability). */
+/** Per-paragraph classification for hover display (getPageEditability). */
 export interface ParagraphEditability {
   paragraphId: number;
   bbox: Rect;
   editable: boolean;
-  /** 편집 블록이면 그 편집 id. */
+  /** The edit id if it is an edit block. */
   editedBlock: string | null;
   reasons: (ParagraphLimitReason | EditLimitReason)[];
-  /** 표 셀 안 문단이면 셀 위치, 아니면 null(M4). */
+  /** Cell position if the paragraph is inside a table cell, otherwise null (M4). */
   cell: { table: number; row: number; col: number } | null;
 }
 
-/** 패스별 판정(M4). */
+/** Per-path classification (M4). */
 export interface PathEditability {
-  /** PageModel.paths 인덱스. */
+  /** PageModel.paths index. */
   pathIndex: number;
   paintSeq: number;
   bbox: Rect;
@@ -292,13 +292,13 @@ export interface PageEditability {
   paragraphs: ParagraphEditability[];
   paths: PathEditability[];
   /**
-   * 패스 판정 오류(진단용). 패스 판정이 실패하면 `paths` 는 빈 목록이고 문단 판정은 그대로 돌려준다. 정상이면 없음.
+   * Path classification error (for diagnostics). If path classification fails, `paths` is an empty list and the paragraph classification is returned as is. Absent when normal.
    */
   pathError?: string;
   ms: number;
 }
 
-/** 패스 편집 시작 전 판정(M4, 문서를 바꾸지 않는다). */
+/** Pre-edit path classification (M4, does not modify the document). */
 export interface PathEditPlan {
   pageIndex: number;
   revision: number;
@@ -326,48 +326,48 @@ export interface BeginPathEditResult {
   plan: PathEditPlan;
 }
 
-/** 배치된 글리프(클러스터 단위). */
+/** Laid-out glyphs (per cluster). */
 export interface PlacedGlyph {
-  /** 클러스터 시작 텍스트 위치. */
+  /** Text position where the cluster starts. */
   offset: number;
-  /** 클러스터 길이(UTF-16). */
+  /** Cluster length (UTF-16). */
   length: number;
-  /** missing: 원본·폴백 모두 글리프가 없어 쓰지 않음(폭 0, 캐럿 위치용). */
+  /** missing: neither the original nor the fallback has a glyph, so it is not written (width 0, for caret positioning). */
   font: { kind: 'original'; fontId: number } | { kind: 'fallback' } | { kind: 'missing' };
-  /** 기준선 원점(페이지 공간). */
+  /** Baseline origin (page space). */
   x: number;
   y: number;
-  /** 전진량(pt, 조정 포함). */
+  /** Advance (pt, including adjustments). */
   advance: number;
-  /** 글자 크기(pt). */
+  /** Font size (pt). */
   size: number;
 }
 
 export interface PlacedLine {
-  /** 기준선 y. */
+  /** Baseline y. */
   baseline: number;
-  /** 줄 내용의 왼쪽·오른쪽(줄 끝 공백 제외). 빈 줄은 정렬 기준점. */
+  /** Left and right of the line content (excluding trailing whitespace). For an empty line, the alignment anchor. */
   x0: number;
   x1: number;
-  /** 올림(양수)·내림(음수), pt. 줄 상자 = [baseline − ascent, baseline − descent]. */
+  /** Ascent (positive) and descent (negative), pt. Line box = [baseline − ascent, baseline − descent]. */
   ascent: number;
   descent: number;
-  /** 이 줄 텍스트 위치 [start, end). 줄들이 텍스트를 빈틈 없이 덮고, 줄 끝 공백·강제 줄바꿈 문자를 포함한다. */
+  /** Text positions of this line [start, end). The lines cover the text without gaps and include trailing whitespace and forced line break characters. */
   start: number;
   end: number;
-  /** 강제 줄바꿈으로 끝남. */
+  /** Ends with a forced line break. */
   hardBreak: boolean;
 }
 
 export interface ReflowSummary {
-  /** 1개 이상(빈 텍스트도 캐럿용 줄 1개). */
+  /** At least one (even empty text has one line for the caret). */
   lines: PlacedLine[];
   glyphs: PlacedGlyph[];
-  /** 배치한 글자 상자의 합집합(넘친 줄 포함). */
+  /** Union of the laid-out character boxes (including overflowed lines). */
   contentBox: Rect;
-  /** 실제로 쓴 영역: 입력 영역(상한 안), 글이 넘치면 아래 변을 필요한 높이까지 내린 영역(상한까지). */
+  /** Area actually used: the input area (within the limit), or, if the text overflows, the area with its bottom edge lowered to the required height (up to the limit). */
   area: Rect;
-  /** 상한에 막혀 자동 확장 뒤에도 넘침. */
+  /** Still overflowing after automatic expansion because of the limit. */
   overflow: boolean;
   reflowMs: number;
 }
@@ -375,18 +375,18 @@ export interface ReflowSummary {
 export interface DraftInput {
   runs: TextRun[];
   format: ParagraphFormat;
-  /** IME 조합 중인 텍스트 위치 [start, end). 조합 중이 아니면 null. 조합 문자열은 runs 에 들어 있다. */
+  /** Text position being composed by the IME [start, end). null if not composing. The composition string is contained in runs. */
   composition: [number, number] | null;
-  /** 변경 영역 렌더 배율(뷰어 scale × devicePixelRatio). */
+  /** Render scale of the changed area (viewer scale × devicePixelRatio). */
   renderScale: number;
 }
 
 export interface DraftUpdate {
   draftId: string;
   reflow: ReflowSummary;
-  /** 그 시점의 전체 경고(계획 경고 포함, 같은 종류는 하나). */
+  /** All warnings at that point (including plan warnings, one per kind). */
   warnings: EditWarning[];
-  /** 변경 영역 렌더(clip 이 채워져 있다). */
+  /** Render of the changed area (clip is filled in). */
   region: RenderedPage;
   updateMs: number;
 }
@@ -394,20 +394,20 @@ export interface DraftUpdate {
 export interface BeginEditResult {
   draftId: string;
   plan: ParagraphEditPlan;
-  /** 시작 상태(원 텍스트) 미리보기. */
+  /** Preview of the start state (original text). */
   first: DraftUpdate;
 }
 
 export interface EditHistoryState {
-  /** 문서가 바뀔 때마다 오른다(커밋·undo·redo·재적용). 오래된 문단 id 방지. */
+  /** Increases every time the document changes (commit, undo, redo, reapplication). Guards against stale paragraph ids. */
   revision: number;
-  /** 지금 문서에 반영된 편집 id(로그 순서). 뷰어는 여기 없는 EditOp 를 복구 로그에서 버린다. */
+  /** Edit ids currently reflected in the document (log order). The viewer discards EditOps not listed here from the recovery log. */
   activeEditIds: string[];
   canUndo: boolean;
   canRedo: boolean;
-  /** 커밋된 편집 수(undo 한 것 제외). */
+  /** Number of committed edits (excluding undone ones). */
   edits: number;
-  /** 직전 동작으로 바뀐 쪽(0부터). */
+  /** Pages changed by the previous action (0-based). */
   affectedPages: number[];
 }
 
@@ -416,7 +416,7 @@ export interface CommitResult {
   history: EditHistoryState;
 }
 
-/** 쪽의 편집 블록(같은 세션에서 편집한 문단). */
+/** Edit blocks of a page (paragraphs edited in the same session). */
 export interface EditedBlock {
   editId: string;
   contentBox: Rect;

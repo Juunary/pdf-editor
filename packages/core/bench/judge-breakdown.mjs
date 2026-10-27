@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// 쪽 편집 가능 판정(첫 진입)의 구성을 Worker 밖(직접 PdfSession 호출, 구조화 복제 없음)에서 나눠 잰다(M5 계약 4.1).
+// Splits and measures the composition of the page editability classification (first entry) outside the Worker (direct PdfSession calls, no structured clone) (M5 contract 4.1).
 //
 //   pnpm --filter @pdf-editor/core build
 //   node packages/core/bench/judge-breakdown.mjs --doc /mnt/nas4/kjune/pdf-editor/fixtures/corpus/kogl-mods-cpi-202609.pdf --pages 3,12,21 --reps 5
 //
-// 한 반복 = 새 세션 둘. 세션 A: 폰트 적재 등 공통 초기화(0쪽 판정) 뒤 대상 쪽의 `getPageEditability` 를 처음 부른 전체 시간(콜드).
-// 세션 B: 같은 초기화 뒤 단계별로 순서대로 부른다(앞 단계 결과는 캐시를 재사용하므로 각 값은 그 단계가 새로 더한 시간).
-//   extract(세그먼트 없음) → extractSeg(있음) → sourceMap → link → layout → judge(나머지 판정). 값은 반복의 중앙값·최소.
-// 결과: out/m5-judge/<label>.json
+// One iteration = two new sessions. Session A: after common initialization such as font loading (page 0 classification), the total time of the first `getPageEditability` call on the target page (cold).
+// Session B: after the same initialization, call the steps in order (earlier step results reuse the cache, so each value is the time that step newly added).
+//   extract (no segments) -> extractSeg (with) -> sourceMap -> link -> layout -> judge (remaining classification). Values are the median and minimum over iterations.
+// Result: out/m5-judge/<label>.json
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,7 +39,7 @@ const ms = async (fn) => {
 async function session() {
   const s = new PdfSession();
   s.open(bytes.slice());
-  await s.getPageEditability(0); // 공통 초기화(폰트 적재)를 치운다.
+  await s.getPageEditability(0); // clear the common initialization (font loading) out of the way.
   return s;
 }
 

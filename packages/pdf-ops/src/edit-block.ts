@@ -1,9 +1,9 @@
 /**
- * 편집 블록 쓰기와 목록(docs/m3-contract.md 5.5·5.7·D3).
+ * Edit block writing and listing (docs/m3-contract.md 5.5, 5.7, D3).
  *
- * 블록 스트림: `q` → 텍스트 상태 명시 → `BT` → 모양이 바뀔 때 채움 색(원래 색공간)·Tr·gs·Tf → 줄마다 `Tm` 절대
- * 위치 → 글자는 `TJ`(위치 차이를 1/1000 텍스트 공간 단위 숫자로) → `ET` → `Q`. 블록 공간 = 사용자 공간이다
- * (/Matrix 가 삽입점 CTM 을 상쇄). 문자열은 원본 폰트면 그 폰트의 코드 바이트, 폴백 폰트면 2바이트 gid.
+ * Block stream: `q` → explicit text state → `BT` → when the style changes, fill color (original color space), Tr, gs, Tf → absolute `Tm`
+ * position per line → characters as `TJ` (position differences as numbers in 1/1000 text-space units) → `ET` → `Q`. Block space = user space
+ * (/Matrix cancels the insertion-point CTM). Strings are the font's code bytes for the original font, and 2-byte gids for the fallback font.
  */
 import type * as mupdf from 'mupdf';
 import type { ParagraphFormat, Point, TextRun } from '@pdf-editor/shared-types';
@@ -28,7 +28,7 @@ import { formatNumber } from './text-ops.js';
 const hex = (b: Uint8Array) => Array.from(b, (v) => v.toString(16).padStart(2, '0')).join('');
 const f = formatNumber;
 
-/** ExtGState 키 기본값(명세 기본 상태). SMask 는 판정(graphics-state-mismatch)에서 다룬다. */
+/** ExtGState key defaults (spec default state). SMask is handled in classification (graphics-state-mismatch). */
 function gsDefault(doc: mupdf.PDFDocument, key: string): mupdf.PDFObject | null {
   switch (key) {
     case 'ca':
@@ -67,7 +67,7 @@ const STROKE_OF: Record<ColorOpSpec['op'], string> = {
   k: 'K',
 };
 
-/** 블록 리소스 사전 모음. */
+/** Block resource dictionary collection. */
 class BlockResources {
   readonly font = new Map<string, { name: string; ref: mupdf.PDFObject }>();
   readonly cs = new Map<string, { name: string; ref: mupdf.PDFObject }>();
@@ -139,7 +139,7 @@ function colorOps(spec: readonly ColorOpSpec[], res: BlockResources, stroke: boo
   return out;
 }
 
-/** 같은 gs 목록(초안의 삽입점·모양 원천)은 초안 동안 바뀌지 않으므로 효력값을 한 번만 계산한다. */
+/** The same gs list (the draft's insertion point and style source) does not change during a draft, so the effective values are computed only once. */
 const gsCache = new WeakMap<readonly mupdf.PDFObject[], Map<string, mupdf.PDFObject>>();
 function cachedGs(list: readonly mupdf.PDFObject[]): Map<string, mupdf.PDFObject> {
   let v = gsCache.get(list);
@@ -150,7 +150,7 @@ function cachedGs(list: readonly mupdf.PDFObject[]): Map<string, mupdf.PDFObject
   return v;
 }
 
-/** 삽입점과 원 글자의 ExtGState 가 다르면 원 글자 상태를 재현하는 gs 사전(계약 D3). 같으면 null. */
+/** gs dictionary that reproduces the original character's state when the ExtGState of the insertion point and the original character differ (contract D3). null if they are the same. */
 function gsFor(
   doc: mupdf.PDFDocument,
   wc: WriteContext,
@@ -189,7 +189,7 @@ function fontLabel(ref: mupdf.PDFObject): string {
   return b.isName() ? b.asName() : '';
 }
 
-/** writeEditBlock 본체. */
+/** Body of writeEditBlock. */
 export function writeBlock(
   ctx: ParagraphEditContext,
   prepared: PreparedEdit,
@@ -215,7 +215,7 @@ export function writeBlock(
   const upItalic = applyLinear(invU, 0.2, -1);
   const upN = norm(up);
   const res = new BlockResources();
-  // 초안 중에는 문서가 바뀌었으므로 판정 시점 해석만 쓴다(R-L4).
+  // During a draft the document has changed, so only the classification-time resolution is used (R-L4).
   const styleOf = (sc: number): ResolvedStyle | null => styleFor(wc, sc);
 
   const out: string[] = ['q', '0 Tc 0 Tw 100 Tz 0 TL 0 Ts', 'BT'];
@@ -292,7 +292,7 @@ export function writeBlock(
         curFont = fontName;
         curSize = g.size;
       }
-      // 가로 비율(장평): Tz 는 글리프 모양·전진과 TJ 숫자 단위에 함께 곱해진다(PDF 32000 9.3.4).
+      // Horizontal scale (character width ratio): Tz is multiplied into the glyph shape and advance and the TJ number unit together (PDF 32000 9.3.4).
       const tz = g.horizontalScale ?? 1;
       if (tz !== curTz) {
         closeTJ();
@@ -333,7 +333,7 @@ export function writeBlock(
     .map((g) => g.offset);
   const fmt: BlockFormat = {
     v: 1,
-    // 현재 필드만 쓴다(이전 빌드의 overflow·fontScale 이 섞인 EditOp 를 재적용해도 남기지 않는다).
+    // Write only the current fields (do not leave overflow and fontScale from an older build even when reapplying an EditOp that mixes them).
     format: cleanParagraphFormat(format) ?? format,
     runs: runs.map((r, i) => {
       const rs = styleOf(r.style.sourceChar);
@@ -362,8 +362,8 @@ export function writeBlock(
 }
 
 /**
- * 리소스(쪽·Form 의 /XObject 사전, Form 재귀)에 /PdfEditorEdit Form 이 하나라도 있는가. 콘텐츠를 읽지 않는 빠른
- * 사전 검사다. listBlocks 가 찾는 블록은 모두 이 사전들 중 하나에 있으므로, false 이면 블록이 없다.
+ * Whether any /PdfEditorEdit Form exists in the resources (the /XObject dictionaries of the page and Forms, Form recursion). A quick
+ * pre-check that does not read content. Every block listBlocks finds is in one of these dictionaries, so false means there is no block.
  */
 function hasBlockResource(res: mupdf.PDFObject): boolean {
   const seen = new Set<number>();
@@ -390,11 +390,11 @@ function hasBlockResource(res: mupdf.PDFObject): boolean {
   return visit(res, 0);
 }
 
-/** 쪽 콘텐츠(Form 재귀)에서 /PdfEditorEdit 가 있고 사용 위치가 1곳인 Form(계약 D3·5.7). */
+/** Form in the page content (Form recursion) that has /PdfEditorEdit and exactly one usage location (contract D3, 5.7). */
 export function listBlocks(doc: mupdf.PDFDocument, pageIndex: number): EditBlockRef[] {
   const pageObj = doc.findPage(pageIndex);
   const res = pageObj.getInheritable('Resources');
-  // 블록 Form 이 리소스에 없으면 콘텐츠를 파싱하지 않는다(레이아웃 힌트로 쪽마다 부른다, docs/m3-integration.md 9.6).
+  // If the block Form is not in the resources, content is not parsed (called per page as a layout hint, docs/m3-integration.md 9.6).
   if (res.isNull() || !hasBlockResource(res)) return [];
   const contents = pageObj.get('Contents');
   const items: mupdf.PDFObject[] = [];

@@ -3,7 +3,7 @@ import { layoutParagraph, type WritableGlyph } from '../src/index.js';
 import { cmapPreimage, hmtxAdvance } from '../src/opentype.js';
 import { format, notoBytes, notoFace, seg, stable } from './helpers.js';
 
-// 번들 폴백 폰트(Noto Sans KR 서브셋, upem 1000): 1/1000 em = 폰트 단위.
+// Bundled fallback font (Noto Sans KR subset, upem 1000): 1/1000 em = font unit.
 const bytes = notoBytes();
 const hmtx = (gid: number) => hmtxAdvance('fallback', bytes, gid);
 const face = notoFace(hmtx);
@@ -21,8 +21,8 @@ function run(text: string, width = 1000) {
 }
 const gids = (lines: WritableGlyph[][]) => lines.flat().map((g) => g.gid);
 
-describe('opentype 셰이퍼(harfbuzz, kern 만)', () => {
-  it('kern 을 적용하고 쓰기 글리프에는 /W 폭을 싣는다', () => {
+describe('opentype shaper (harfbuzz, kern only)', () => {
+  it('applies kern and carries the /W width on write glyphs', () => {
     const r = run('To');
     const [t, o] = r.lines[0] ?? [];
     const kern = -76;
@@ -31,7 +31,7 @@ describe('opentype 셰이퍼(harfbuzz, kern 만)', () => {
     expect(r.summary.glyphs[0]?.advance).toBeCloseTo(((hmtx(gidOf('T')) + kern) / 1000) * 10, 9);
   });
 
-  it('줄 끝 클러스터의 다음 커닝은 뺀다', () => {
+  it('the next kerning of the last cluster on a line is subtracted', () => {
     const tWidth = (hmtx(gidOf('T')) / 1000) * 10;
     const r = run('To', tWidth + 0.5);
     expect(r.summary.lines).toHaveLength(2);
@@ -39,26 +39,26 @@ describe('opentype 셰이퍼(harfbuzz, kern 만)', () => {
     expect(r.summary.glyphs[0]?.advance).toBeCloseTo(tWidth, 9);
   });
 
-  it('합자·문맥 대체를 하지 않는다(fi·office·대시 모두 cmap gid)', () => {
+  it('does no ligatures or contextual substitution (fi, office and dashes all use the cmap gid)', () => {
     for (const text of ['fi', 'office', '——', 'ffl']) {
       expect(gids(run(text).lines)).toEqual([...text].map(gidOf));
     }
   });
 
-  it('언어 태그를 쓰지 않아 한국어 문장의 공백도 cmap 공백 글리프다', () => {
+  it('no language tag is used, so spaces in Korean sentences are also cmap space glyphs', () => {
     const r = run('한글 fi');
     const space = r.lines[0]?.[2];
     expect(space?.gid).toBe(gidOf(' '));
     expect(r.summary.glyphs[2]?.advance).toBeCloseTo(2.24, 9);
   });
 
-  it('쓰기 코드는 2바이트 gid(Identity-H)', () => {
+  it('the write code is a 2-byte gid (Identity-H)', () => {
     const g = run('漢').lines[0]?.[0];
     expect([...(g?.code ?? [])]).toEqual([(gidOf('漢') >> 8) & 0xff, gidOf('漢') & 0xff]);
   });
 
-  it('harfbuzz 가 숨긴 기본 무시 문자는 공백 글리프로 쓰지 않는다(ZWJ·SHY·ZWSP)', () => {
-    // harfbuzz 는 "a\u200Db" 의 ZWJ 를 공백 gid 로 낸다 → 클러스터를 cmap gid 로 대신.
+  it('default-ignorable characters hidden by harfbuzz are not written as space glyphs (ZWJ, SHY, ZWSP)', () => {
+    // harfbuzz emits the ZWJ in "a‍b" as a space gid -> replace the cluster with the cmap gid.
     expect(gids(run('a\u200Db').lines)).toEqual([gidOf('a'), gidOf('b')]);
     const shy = run('a\u00ADb');
     expect(gids(shy.lines)).toEqual([gidOf('a'), gidOf('b')]);
@@ -66,8 +66,8 @@ describe('opentype 셰이퍼(harfbuzz, kern 만)', () => {
     expect(gids(run('a\u200Bb').lines)).toEqual([gidOf('a'), gidOf('b')]);
   });
 
-  it('폴백 폰트에 없는 글자는 쓰지 않는다(missing)', () => {
-    // 옛한글 첫가끝 자모·그림 문자는 번들 서브셋에 없다(계약 1.4).
+  it('characters missing from the fallback font are not written (missing)', () => {
+    // Old Hangul conjoining jamo and pictographs are not in the bundled subset (contract 1.4).
     const r = run('a\u1100\u1161😀b');
     expect(r.summary.glyphs.map((g) => g.font.kind)).toEqual([
       'fallback',
@@ -78,7 +78,7 @@ describe('opentype 셰이퍼(harfbuzz, kern 만)', () => {
     expect(gids(r.lines)).toEqual([gidOf('a'), gidOf('b')]);
   });
 
-  it('여러 스크립트가 섞여도 모든 gid 는 자기 클러스터의 cmap gid 다', () => {
+  it('even with mixed scripts, every gid is the cmap gid of its own cluster', () => {
     const text = 'Hello, 한글 漢字 カナ ひらがな Ελληνικά Кириллица € ™ “quote” (괄호) 1–2';
     const r = run(text);
     for (const g of r.lines.flat()) {
@@ -87,7 +87,7 @@ describe('opentype 셰이퍼(harfbuzz, kern 만)', () => {
     }
   });
 
-  it('같은 입력이면 같은 결과', () => {
+  it('same input gives the same result', () => {
     const text = '가나다 To Wa 漢字 office\n끝';
     expect(stable(run(text, 60))).toEqual(stable(run(text, 60)));
   });

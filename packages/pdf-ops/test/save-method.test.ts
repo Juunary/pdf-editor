@@ -22,36 +22,36 @@ import {
 } from '../src/save-method.js';
 
 describe('decideSaveMethod', () => {
-  it('redaction 이 있으면 엔진 판단과 무관하게 전체 저장', () => {
+  it('with redaction, full save regardless of the engine decision', () => {
     const d = decideSaveMethod(['redaction', 'font-embed'], true);
     expect(d.method).toBe('full');
     expect(d.options).toBe(FULL_SAVE_OPTIONS);
   });
 
-  it('canBeSavedIncrementally=false 이면 전체 저장', () => {
+  it('full save if canBeSavedIncrementally=false', () => {
     expect(decideSaveMethod(['annotation'], false).method).toBe('full');
   });
 
-  it('주석·메타데이터만 바뀌면 증분 저장', () => {
+  it('incremental save if only annotations/metadata changed', () => {
     const d = decideSaveMethod(['annotation', 'metadata'], true);
     expect(d.method).toBe('incremental');
     expect(d.options).toBe('incremental');
   });
 
-  it('콘텐츠 스트림·폰트 변경은 전체 저장', () => {
+  it('content stream/font changes use full save', () => {
     expect(decideSaveMethod(['content-stream'], true).method).toBe('full');
     expect(decideSaveMethod(['font-embed'], true).method).toBe('full');
   });
 });
 
-describe('decideSaveMethod: 예상 피크 힙(파일 크기 × 실측 배율)', () => {
+describe('decideSaveMethod: expected peak heap (file size x measured ratio)', () => {
   const MIB = 2 ** 20;
 
-  it('size 를 넘기지 않으면 heap 없음(기존 호출 호환)', () => {
+  it('no heap if size is not passed (compatible with existing calls)', () => {
     expect(decideSaveMethod(['redaction'], false).heap).toBeUndefined();
   });
 
-  it('전체 저장 배율 4.48, 증분 3.98(docs/m0-day1-log.md 6.5)', () => {
+  it('full save ratio 4.48, incremental 3.98 (docs/m0-day1-log.md 6.5)', () => {
     expect(MEASURED_PEAK_HEAP_RATIO).toEqual({ full: 4.48, incremental: 3.98 });
     const d = decideSaveMethod(['redaction'], false, { inputBytes: 100 * MIB });
     expect(d.heap).toMatchObject({ ratio: 4.48, estimatedPeakBytes: Math.ceil(100 * MIB * 4.48) });
@@ -62,7 +62,7 @@ describe('decideSaveMethod: 예상 피크 힙(파일 크기 × 실측 배율)', 
     expect(i.heap!.ratio).toBe(3.98);
   });
 
-  it('상한 2 GiB 의 75% 초과 → warn, 100% 초과 → over-limit. 저장 방식은 바꾸지 않는다', () => {
+  it('above 75% of the 2 GiB limit -> warn, above 100% -> over-limit. The save method is not changed', () => {
     expect(WASM_HEAP_LIMIT_BYTES).toBe(2147483648);
     // 2048 MiB × 0.75 / 4.48 = 342.9 MiB, 2048 / 4.48 = 457.1 MiB
     expect(estimateSaveHeap('full', { inputBytes: 342 * MIB }).level).toBe('ok');
@@ -75,13 +75,13 @@ describe('decideSaveMethod: 예상 피크 힙(파일 크기 × 실측 배율)', 
     expect(estimateSaveHeap('full', { inputBytes: 400 * MIB }).message).toMatch(/88%/);
   });
 
-  it('Stream 입력 배율(3.48)을 넘기면 상한 초과 경계가 588 MiB 로 올라간다', () => {
+  it('passing the Stream input ratio (3.48) raises the over-limit boundary to 588 MiB', () => {
     const ratio = STREAM_INPUT_PEAK_HEAP_RATIO;
     expect(estimateSaveHeap('full', { inputBytes: 588 * MIB, ratio }).level).toBe('warn');
     expect(estimateSaveHeap('full', { inputBytes: 589 * MIB, ratio }).level).toBe('over-limit');
   });
 
-  it('상한·경고 비율·배율을 바꿀 수 있다', () => {
+  it('the limit, warning ratio and ratios can be changed', () => {
     const e = estimateSaveHeap('full', {
       inputBytes: 100 * MIB,
       limitBytes: 512 * MIB,
@@ -92,8 +92,8 @@ describe('decideSaveMethod: 예상 피크 힙(파일 크기 × 실측 배율)', 
   });
 });
 
-describe('FULL_SAVE_OPTIONS(A3-6·A3-7): 이미지 XObject resolve() 후에도 스트림이 남는다', () => {
-  it('garbage=yes 전체 저장은 MuPDF 1.28.x compact 결함(mupdf.js#201) 경로를 타지 않는다', () => {
+describe('FULL_SAVE_OPTIONS (A3-6, A3-7): the stream remains after resolve() on an image XObject', () => {
+  it('a garbage=yes full save does not hit the MuPDF 1.28.x compact defect (mupdf.js#201) path', () => {
     const src = new mupdf.PDFDocument();
     const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 16, 16], false);
     pix.clear(128);
@@ -115,7 +115,7 @@ describe('FULL_SAVE_OPTIONS(A3-6·A3-7): 이미지 XObject resolve() 후에도 �
   });
 });
 
-describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
+describe('FULL_SAVE_OPTIONS (A3-7): object streams (objstms)', () => {
   const open = (bytes: Uint8Array) =>
     mupdf.Document.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument;
   const save = (bytes: Uint8Array, options: string) => {
@@ -134,7 +134,7 @@ describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
   };
   const latin1 = (b: Uint8Array) => Buffer.from(b).toString('latin1');
 
-  /** 쪽마다 작은 사전 객체 40개를 단 20쪽 문서를 objstms 로 저장한 객체 스트림 구조 원본. */
+  /** Source with the object-stream structure: a 20-page document with 40 small dictionary objects per page, saved with objstms. */
   function objstmSource(): Uint8Array {
     const doc = new mupdf.PDFDocument();
     const font = doc.addSimpleFont(new mupdf.Font('Helvetica'));
@@ -155,7 +155,7 @@ describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
     return out;
   }
 
-  it('객체 스트림 원본을 풀지 않는다(objstms 없는 저장은 입력의 1.5배 이상)', () => {
+  it('does not unpack the object-stream source (a save without objstms is at least 1.5x the input)', () => {
     const src = objstmSource();
     const out = save(src, FULL_SAVE_OPTIONS);
     expect(out.length).toBeLessThan(src.length * 1.1);
@@ -164,7 +164,7 @@ describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
     expect(pageTexts(out)).toEqual(pageTexts(src));
   });
 
-  it('PDF-1.4 xref 표 원본은 헤더를 1.5 로 올리고, 세대 번호가 0 이 아닌 객체는 번호·세대를 유지한다', () => {
+  it('a PDF-1.4 xref table source raises the header to 1.5, and objects with a nonzero generation number keep their number and generation', () => {
     const content = 'BT /F1 24 Tf 20 40 Td (Generation test) Tj ET';
     const objs: [number, number, string][] = [
       [1, 0, '<</Type/Catalog/Pages 2 0 R>>'],
@@ -192,7 +192,7 @@ describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
     expect(pageTexts(new Uint8Array(Buffer.from(out, 'latin1')))[0]).toContain('Generation test');
   });
 
-  it('암호화 문서(소유자 비밀번호만)는 암호화를 유지하고 /Encrypt 를 객체 스트림에 넣지 않는다', () => {
+  it('an encrypted document (owner password only) keeps encryption and does not put /Encrypt into an object stream', () => {
     for (const method of ['aes-256', 'rc4-128']) {
       const enc = save(
         objstmSource(),
@@ -211,7 +211,7 @@ describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
     }
   });
 
-  it('같은 문서에서 전체 저장 뒤 주석만 더해 증분 저장해도 다시 열린다(PdfSession 은 저장 후 같은 문서를 계속 쓴다)', () => {
+  it('reopens even after a full save followed by an incremental save that only adds annotations on the same document (PdfSession keeps using the same document after saving)', () => {
     const src = objstmSource();
     const doc = open(src);
     doc.saveToBuffer(FULL_SAVE_OPTIONS).destroy();
@@ -236,7 +236,7 @@ describe('FULL_SAVE_OPTIONS(A3-7): 객체 스트림(objstms)', () => {
   });
 });
 
-describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
+describe('coefficient model (M5 D5, docs/m5-heap.md)', () => {
   const MIB = 2 ** 20;
   const model = (over: Partial<SaveModelInput> = {}): SaveModelInput => ({
     objectCount: 10_000,
@@ -248,7 +248,7 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
     ...over,
   });
 
-  it('필요량 = max(현재, 기본 + 저널) + 증가분, 예상 피크 = max(현재, min(필요량 × 1.2, 필요량 + 96 MiB))', () => {
+  it('required = max(current, base + journal) + increment, expected peak = max(current, min(required x 1.2, required + 96 MiB))', () => {
     const m = model();
     const inc = saveHeapIncrement('full', 12 * MIB, m);
     const c = SAVE_HEAP_COEFFICIENTS.full;
@@ -259,7 +259,7 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
     expect(e.model).toBe(SAVE_HEAP_MODEL_ID);
     expect(e.estimatedPeakBytes).toBe(Math.ceil((40 * MIB + inc) * HEAP_GROWTH_FACTOR));
     expect(e).toMatchObject({ objectCount: 10_000, rawStreamBytes: 10 * MIB, journalBytes: 0 });
-    // 큰 필요량은 + 96 MiB 가 더 작다.
+    // For a large required amount, + 96 MiB is smaller.
     const big = estimateSaveHeap('full', {
       inputBytes: 600 * MIB,
       model: model({ rawStreamBytes: 600 * MIB, objectStreamBytes: 0 }),
@@ -272,7 +272,7 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
         model({ rawStreamBytes: 600 * MIB, objectStreamBytes: 0 }),
       );
     expect(big.estimatedPeakBytes).toBe(Math.ceil(bigNeed + HEAP_GROWTH_CAP_BYTES));
-    // 저널이 현재 힙보다 크면 기본 + 저널을 쓴다.
+    // If the journal is larger than the current heap, base + journal is used.
     const j = estimateSaveHeap('full', {
       inputBytes: 12 * MIB,
       model: model({ journalBytes: 100 * MIB }),
@@ -280,7 +280,7 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
     expect(j.estimatedPeakBytes).toBe(Math.ceil((122 * MIB + inc) * HEAP_GROWTH_FACTOR));
   });
 
-  it('decideSaveMethod 는 model 이 있으면 계수 모델로 heap 을 채운다', () => {
+  it('decideSaveMethod fills heap with the coefficient model if a model is given', () => {
     const d = decideSaveMethod(['annotation'], true, { inputBytes: MIB, model: model() });
     expect(d.method).toBe('incremental');
     expect(d.heap!.model).toBe(SAVE_HEAP_MODEL_ID);
@@ -289,7 +289,7 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
     );
   });
 
-  it('지원 크기 상한: 이미지 위주 문서의 전체 저장 예상 피크가 상한을 넘기 시작하는 입력 크기', () => {
+  it('supported size limit: the input size at which the expected full-save peak of an image-heavy document starts to exceed the limit', () => {
     const limit = supportedInputBytes('full');
     expect(SUPPORTED_INPUT_BYTES).toBe(limit);
     expect(limit / MIB).toBeGreaterThan(700);
@@ -309,7 +309,7 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
     expect(at(limit + 2 * MIB)).toBe('over-limit');
   });
 
-  it('저널 상한(D4): 저널 + 증가분 > warn 경계면 다시 열기 권고, 메시지에 붙는다', () => {
+  it('journal limit (D4): if journal + increment > the warn boundary, a reopen recommendation is attached to the message', () => {
     const threshold = HEAP_WARN_FRACTION * WASM_HEAP_LIMIT_BYTES;
     const small = journalAdvice('full', {
       inputBytes: MIB,
@@ -324,17 +324,17 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
     expect(journalAdvice('full', size).advised).toBe(true);
     const e = estimateSaveHeap('full', size);
     expect(e.level).not.toBe('ok');
-    // 다시 열기 권고는 뷰어가 상태에 맞춰 붙인다(M2: 힙 문구에 넣으면 같은 권고가 두 번 붙었다).
+    // The reopen recommendation is attached by the viewer according to its state (M2: putting it in the heap text attached the same recommendation twice).
     expect(e.message).not.toMatch(/다시 열/);
     expect(e.grownHeapBasis).toBe(false);
     expect(journalAdvice('full', { inputBytes: MIB }).advised).toBe(false);
   });
 
-  it('직전 저장이 있으면 사용 중 힙 = 그 저장의 사용 추정 + 저장 뒤 늘어난 힙(H1)', () => {
+  it('if there was a previous save, heap in use = the usage estimate of that save + heap grown since the save (H1)', () => {
     const prior = { usedHeapBytes: 22 * MIB, heapAfterBytes: 898 * MIB };
     expect(usedHeapAfterSave(prior, 898 * MIB)).toBe(22 * MIB);
     expect(usedHeapAfterSave(prior, 950 * MIB)).toBe(74 * MIB);
-    // 525 MiB 이미지 문서 두 번째 저장(재현): 현재 힙 898 MiB 를 사용 중으로 보면 over-limit, 사용 추정이면 첫 저장과 같다.
+    // Second save of a 525 MiB image document (reproduction): treating the current heap of 898 MiB as in use gives over-limit; with the usage estimate it equals the first save.
     const input = 525 * MIB;
     const m = model({
       objectCount: 2104,
@@ -357,7 +357,7 @@ describe('계수 모델(M5 D5, docs/m5-heap.md)', () => {
     expect(next.estimatedPeakBytes).toBe(first.estimatedPeakBytes);
     expect(next.level).toBe('ok');
     expect(next).toMatchObject({ usedHeapBytes: 22 * MIB, priorSavePeakBytes: 898 * MIB });
-    // 예상은 현재 힙보다 작지 않다(선형 메모리는 줄지 않음).
+    // The estimate is not smaller than the current heap (linear memory does not shrink).
     const tiny = estimateSaveHeap('full', {
       inputBytes: MIB,
       model: model({ currentHeapBytes: 898 * MIB, usedHeapBytes: 22 * MIB }),

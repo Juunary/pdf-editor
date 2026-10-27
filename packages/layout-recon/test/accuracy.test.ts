@@ -62,7 +62,7 @@ describe('scoreLayout', () => {
     { type: 'paragraph', role: 'footer', lines: [6] },
   ];
 
-  it('완전 일치', () => {
+  it('exact match', () => {
     const s = scoreLayout(
       label(items),
       layoutOf([
@@ -79,7 +79,7 @@ describe('scoreLayout', () => {
     expect(s.misses).toEqual([]);
   });
 
-  it('문단 하나가 둘로 갈라지면 fp 2·fn 1, 줄 쌍 부분 점수', () => {
+  it('a paragraph split in two gives fp 2, fn 1, and a partial line pair score', () => {
     const s = scoreLayout(
       label(items),
       layoutOf([
@@ -95,7 +95,7 @@ describe('scoreLayout', () => {
     expect(s.misses).toHaveLength(1);
   });
 
-  it('본문 순서가 뒤집히면 τ = −1(머리·꼬리 제외)', () => {
+  it('reversed body order gives τ = −1 (excluding headers/footers)', () => {
     const l = layoutOf([
       para(0, [0], 'header'),
       para(1, [4, 5]),
@@ -105,7 +105,7 @@ describe('scoreLayout', () => {
     expect(scoreLayout(label(items), l).tau).toBe(-1);
   });
 
-  it('ignoreLines 는 비교에서 뺀다', () => {
+  it('ignoreLines are excluded from comparison', () => {
     const s = scoreLayout(
       label([{ type: 'paragraph', role: 'body', lines: [1, 2] }], [3]),
       layoutOf([para(0, [1, 2, 3])]),
@@ -113,7 +113,7 @@ describe('scoreLayout', () => {
     expect(s.paragraphs).toEqual({ tp: 1, fp: 0, fn: 0 });
   });
 
-  it('표: IoU 0.5 이상 매칭, 행·열 수, 셀 줄', () => {
+  it('tables: match at IoU 0.5 or higher, row/column counts, cell lines', () => {
     const l = label([
       {
         type: 'table',
@@ -159,14 +159,14 @@ describe('scoreLayout', () => {
   });
 });
 
-describe('역할 채점', () => {
+describe('role scoring', () => {
   const lbl = (role: ParagraphRole, lines: number[]): PageLabel['items'][number] => ({
     type: 'paragraph',
     role,
     lines,
   });
 
-  it('역할이 모두 같으면 대각선만 채운다', () => {
+  it('fills only the diagonal when all roles match', () => {
     const s = scoreLayout(
       label([lbl('heading', [0]), lbl('body', [1, 2]), lbl('caption', [3])]),
       layoutOf([para(0, [0], 'heading'), para(1, [1, 2]), para(2, [3], 'caption')]),
@@ -179,7 +179,7 @@ describe('역할 채점', () => {
     expect(s.roleMisses).toEqual([]);
   });
 
-  it('역할이 다르면 혼동표 칸과 roleMisses 에 남는다', () => {
+  it('differing roles are recorded in the confusion matrix cell and roleMisses', () => {
     const s = scoreLayout(
       label([lbl('caption', [0]), lbl('footnote', [1]), lbl('list-item', [2, 3])]),
       layoutOf([para(0, [0], 'body'), para(1, [1], 'list-item'), para(2, [2, 3], 'list-item')]),
@@ -190,12 +190,12 @@ describe('역할 채점', () => {
       'list-item': { 'list-item': 1 },
     });
     expect(s.roleMisses).toEqual(['caption[0] → body P0[0]', 'footnote[1] → list-item P1[1]']);
-    // 문단 경계 지표는 역할과 무관하다.
+    // Paragraph boundary metrics are independent of roles.
     expect(s.paragraphs).toEqual({ tp: 3, fp: 0, fn: 0 });
   });
 
-  it('경계가 틀려도 줄 Jaccard 0.5 이상이면 짝지어 역할을 비교한다', () => {
-    // 라벨 [1,2,3] 을 예측이 [1,2] + [3] 으로 갈랐다: [1,2] 는 J=2/3 로 짝, [3] 은 짝 없음.
+  it('even with wrong boundaries, pairs with line Jaccard of at least 0.5 are paired and their roles compared', () => {
+    // The prediction split label [1,2,3] into [1,2] + [3]: [1,2] pairs with J=2/3, [3] has no pair.
     const s = scoreLayout(
       label([lbl('heading', [1, 2, 3])]),
       layoutOf([para(0, [1, 2], 'heading'), para(1, [3], 'body')]),
@@ -203,8 +203,8 @@ describe('역할 채점', () => {
     expect(s.roles).toEqual({ heading: { heading: 1 }, none: { body: 1 } });
   });
 
-  it('짝 하한 미만이면 짝 없음: 라벨은 예측 열 none, 예측은 라벨 행 none', () => {
-    // 라벨 [1,2,3,4] vs 예측 [1],[2],[3],[4]: 각 J=1/4 < 0.5.
+  it('below the pairing lower bound there is no pair: the label goes to predicted column none, the prediction to label row none', () => {
+    // Label [1,2,3,4] vs predictions [1],[2],[3],[4]: each J=1/4 < 0.5.
     const s = scoreLayout(
       label([lbl('list-item', [1, 2, 3, 4])]),
       layoutOf([1, 2, 3, 4].map((l, k) => para(k, [l], 'list-item'))),
@@ -212,8 +212,8 @@ describe('역할 채점', () => {
     expect(s.roles).toEqual({ 'list-item': { none: 1 }, none: { 'list-item': 4 } });
   });
 
-  it('일대일 짝: Jaccard 가 큰 쪽이 먼저 짝을 가져간다', () => {
-    // 예측 [1,2,3] 은 라벨 [1,2,3](J=1)과 짝이고, 라벨 [4] 와 예측 [4]도 짝이다.
+  it('one-to-one pairing: the higher Jaccard takes the pair first', () => {
+    // Prediction [1,2,3] pairs with label [1,2,3] (J=1), and label [4] pairs with prediction [4].
     const s = scoreLayout(
       label([lbl('body', [1, 2, 3]), lbl('footnote', [4])]),
       layoutOf([para(0, [1, 2, 3]), para(1, [4], 'footnote')]),
@@ -221,19 +221,19 @@ describe('역할 채점', () => {
     expect(s.roles).toEqual({ body: { body: 1 }, footnote: { footnote: 1 } });
   });
 
-  it('표·도형 안 예측 문단과 짝이면 container 열, 짝 없는 표·도형 문단은 세지 않는다', () => {
+  it('pairing with a predicted paragraph inside a table or figure goes to the container column; unpaired table/figure paragraphs are not counted', () => {
     const inTable = { ...para(0, [1]), table: 0 };
     const inFigure = { ...para(1, [9]), figure: 0 };
     const s = scoreLayout(
       label([lbl('caption', [1])]),
       layoutOf([inTable, inFigure, para(2, [5], 'body')]),
     );
-    // 예측 P2([5])는 라벨 문단 줄이 없어 세지 않는다. P1([9])은 짝도 라벨 줄도 없다.
+    // Predicted P2([5]) has no label paragraph lines, so it is not counted. P1([9]) has neither a pair nor label lines.
     expect(s.roles).toEqual({ caption: { container: 1 } });
     expect(s.roleMisses).toEqual(['caption[1] → container P0[1]']);
   });
 
-  it('ignoreLines 는 짝짓기에서 뺀다', () => {
+  it('ignoreLines are excluded from pairing', () => {
     const s = scoreLayout(
       label([lbl('footnote', [1, 2])], [3]),
       layoutOf([para(0, [1, 2, 3], 'footnote'), para(1, [3], 'body')]),
@@ -241,7 +241,7 @@ describe('역할 채점', () => {
     expect(s.roles).toEqual({ footnote: { footnote: 1 } });
   });
 
-  it('합산: 역할별 정밀도·재현율·F1 과 짝 비율', () => {
+  it('aggregation: per-role precision, recall, F1 and pairing ratio', () => {
     const z = { tp: 0, fp: 0, fn: 0 };
     const page = (roles: PageScore['roles']): PageScore => ({
       paragraphs: z,
@@ -262,7 +262,7 @@ describe('역할 채점', () => {
       page({ caption: { caption: 2, body: 1 }, body: { body: 5, none: 1 }, none: { caption: 1 } }),
       page({ caption: { none: 1 }, footnote: { body: 2 } }),
     ]);
-    // caption: 라벨 4(일치 2), 예측 3(일치 2).
+    // caption: 4 labels (2 matched), 3 predictions (2 matched).
     expect(s.roles.caption).toEqual({
       support: 4,
       predicted: 3,
@@ -271,7 +271,7 @@ describe('역할 채점', () => {
       recall: 0.5,
       f1: 4 / 7,
     });
-    // body: 라벨 6(일치 5), 예측 5 + 1 + 2 = 8.
+    // body: 6 labels (5 matched), predictions 5 + 1 + 2 = 8.
     expect(s.roles.body).toMatchObject({ support: 6, predicted: 8, tp: 5 });
     expect(s.roles.footnote).toMatchObject({
       support: 2,
@@ -287,21 +287,21 @@ describe('역할 채점', () => {
       recall: null,
       f1: null,
     });
-    // 라벨 문단 3 + 6 + 1 + 2 = 12, 짝 없음 2(caption 1, body 1)를 빼면 짝 10, 그중 역할 일치 7.
+    // Label paragraphs 3 + 6 + 1 + 2 = 12; subtracting 2 unpaired (caption 1, body 1) gives 10 pairs, of which 7 have matching roles.
     expect(s.rolePairs).toEqual({ labeled: 12, paired: 10, match: 7 });
     expect(s.roleMatrix.none).toEqual({ caption: 1 });
   });
 });
 
 describe('kendallTau·summarizeScores', () => {
-  it('순위 일치율', () => {
+  it('rank concordance', () => {
     expect(kendallTau([1, 2, 3, 4])).toBe(1);
     expect(kendallTau([4, 3, 2, 1])).toBe(-1);
     expect(kendallTau([1, 3, 2])).toBeCloseTo(1 / 3);
     expect(kendallTau([1, 1])).toBeNull();
   });
 
-  it('합산은 쪽 평균이 아니라 개수 합', () => {
+  it('aggregation sums counts rather than averaging pages', () => {
     const z = { tp: 0, fp: 0, fn: 0 };
     const base = {
       pairs: z,
@@ -328,7 +328,7 @@ describe('kendallTau·summarizeScores', () => {
 });
 
 describe('xyCut', () => {
-  it('세로 빈 띠 우선: 두 열 + 위 제목', () => {
+  it('vertical empty band first: two columns + title above', () => {
     const r = xyCut([
       { bbox: [50, 50, 550, 70] },
       { bbox: [50, 100, 290, 400] },
@@ -342,8 +342,8 @@ describe('xyCut', () => {
   });
 });
 
-describe('scoreLayout 경계 사례', () => {
-  it('매칭되지 않은 예측 표·도형은 fp, 라벨 셀은 매칭이 없어도 total 에 든다', () => {
+describe('scoreLayout edge cases', () => {
+  it('unmatched predicted tables and figures are fp; label cells count toward total even without a match', () => {
     const l = label([
       {
         type: 'table',
@@ -385,7 +385,7 @@ describe('scoreLayout 경계 사례', () => {
     expect(s.cellLines).toEqual({ correct: 0, total: 2 });
   });
 
-  it('예측에서 빠진 라벨 줄은 문단 불일치이고 τ 에서 뺀 항목으로 센다', () => {
+  it('label lines missing from the prediction are paragraph mismatches and count as items excluded from τ', () => {
     const s = scoreLayout(
       label([
         { type: 'paragraph', role: 'body', lines: [0, 1] },

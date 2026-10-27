@@ -1,13 +1,13 @@
 /**
- * 문단 편집 엔진(M3, docs/m3-contract.md 4·5.7·D6·D9, docs/m3-core.md). 문서 1개의 저널 작업·편집 로그·초안을 맡고,
- * pdf-ops·reflow 는 `EditAdapter` 로만 부른다. `PdfSession` 이 쪽 캐시와 렌더를 `EditHost` 로 빌려준다.
+ * Paragraph edit engine (M3, docs/m3-contract.md 4, 5.7, D6, D9, docs/m3-core.md). Owns the journal operations, edit log and draft of one document,
+ * and calls pdf-ops and reflow only through `EditAdapter`. `PdfSession` lends its page cache and render to it as `EditHost`.
  *
- * 상태 모델
- * - 저널(MuPDF): 문단 편집 하나 = 작업 하나. 초안 = 열린 작업, 커밋 = `endOperation`, 취소 = `abandonOperation`.
- * - 로그: `base`(replayEdits 로 다시 적용한 것, undo 불가) + `undo` 스택 + `redo` 스택. 저널 단계와 1:1 이다.
- * - 작업이 열린 동안 MuPDF 는 `canUndo()`·`getJournal()` 이 예외라서 이력 질의는 모두 이 상태로 답한다.
- * - MuPDF 는 작업 안에서 객체를 처음 바꾸는 순간 redo 단계를 버리고, 그 작업을 `abandonOperation` 해도 되돌리지 않는다
- *   (docs/m3-core.md 2.4). 그래서 초안을 시작하는 순간과 객체를 바꾼 판정·저장 작업 뒤에 redo 스택을 저널에 맞춘다.
+ * State model
+ * - Journal (MuPDF): one paragraph edit = one operation. Draft = open operation, commit = `endOperation`, cancel = `abandonOperation`.
+ * - Log: `base` (re-applied with replayEdits, cannot be undone) + `undo` stack + `redo` stack. 1:1 with journal steps.
+ * - While an operation is open, MuPDF throws from `canUndo()` and `getJournal()`, so all history queries are answered from this state.
+ * - The moment an operation first changes an object, MuPDF discards the redo steps, and `abandonOperation` on that operation does not restore them
+ *   (docs/m3-core.md 2.4). So the redo stack is aligned with the journal at the moment a draft starts and after a classification or save operation that changed objects.
  */
 import * as mupdf from 'mupdf';
 import type {
@@ -68,10 +68,10 @@ import {
   type UncompressedStream,
 } from '@pdf-editor/pdf-ops';
 
-/** 문서에 임베딩하는 폴백 폰트의 BaseFont 이름(저장 때 서브셋 태그가 붙는다). */
+/** BaseFont name of the fallback font embedded in the document (a subset tag is attached on save). */
 const FALLBACK_FONT_NAME = 'NotoSansKR';
 
-/** 변경 없음 편집: 갱신 쓰기가 실패했고 직전 편집이 없을 때 원 바이트로 되돌리는 데 쓴다. */
+/** No-change edit: used to revert to the original bytes when an update write failed and there is no previous edit. */
 const IDENTITY_PATH_EDIT: PathEdit = {
   transform: null,
   fill: null,
@@ -81,29 +81,29 @@ const IDENTITY_PATH_EDIT: PathEdit = {
   delete: false,
 };
 
-/** 변경 영역 렌더에 더하는 여백(pt). 계약 8.3 의 변경 허용 영역 여백과 같다. */
+/** Margin (pt) added to the changed-area render. Same as the change-allowed area margin in contract 8.3. */
 const REGION_MARGIN_PT = 2;
 
-/** 세션이 편집 엔진에 빌려주는 것. */
+/** What the session lends to the edit engine. */
 export interface EditHost {
   readonly document: mupdf.PDFDocument;
-  /** 쪽 캐시 위의 판정 입력(추출 모델·원본 연결·매칭·레이아웃). */
+  /** Classification inputs on top of the page cache (extraction model, source link, matching, layout). */
   pageState(pageIndex: number): Pick<ParagraphEditContext, 'model' | 'map' | 'linkage' | 'layout'>;
-  /** 그 쪽의 추출·원본 연결·레이아웃 캐시와 ±2쪽 레이아웃 캐시를 비운다(계약 5.7). */
+  /** Clears that page's extraction, source-link and layout caches and the ±2-page layout caches (contract 5.7). */
   invalidateAround(pageIndex: number): void;
   renderRegion(pageIndex: number, scale: number, clip: Rect): RenderedPage;
-  /** 마지막 쪽 전체 렌더 배율(beginParagraphEdit 첫 미리보기 배율). */
+  /** Scale of the last full-page render (scale of the first preview of beginParagraphEdit). */
   readonly renderScale: number;
 }
 
 export interface EditEngineOptions {
   adapter: EditAdapter;
   loadFallbackFont?: (() => Promise<Uint8Array>) | undefined;
-  /** 편집 id·초안 id 생성. 기본 `crypto.randomUUID()`. 테스트에서 고정한다. */
+  /** Generates edit ids and draft ids. Default `crypto.randomUUID()`. Fixed in tests. */
   createId?: (() => string) | undefined;
 }
 
-/** 편집 RPC 를 지금 쓸 수 없는 상태(초안 중·열린 문서 없음·재적용 실패 등). */
+/** State where the edit RPCs cannot be used now (during a draft, no open document, reapply failure, etc.). */
 export class EditStateError extends Error {
   constructor(message: string) {
     super(message);
@@ -111,7 +111,7 @@ export class EditStateError extends Error {
   }
 }
 
-/** `beginParagraphEdit` 의 revision 이 현재와 다르다(오래된 문단 id). */
+/** The revision in `beginParagraphEdit` differs from the current one (stale paragraph id). */
 export class StaleRevisionError extends EditStateError {
   constructor(expected: number, actual: number) {
     super(`문서가 바뀌었습니다(revision ${actual}, 요청 ${expected}). 문단 판정을 다시 하세요.`);
@@ -119,21 +119,21 @@ export class StaleRevisionError extends EditStateError {
   }
 }
 
-/** 편집 블록을 다시 편집한 문단 편집의 원 블록 id. 패스 편집은 null. */
+/** Original block id of the paragraph edit that re-edited an edit block. null for path edits. */
 function editedBlockOf(op: EditOp): string | null {
   return op.kind === 'replace-paragraph' ? op.target.editedBlock : null;
 }
 
-/** 로그 항목: 커밋된 편집 하나와 그 결과. `op.kind` 로 갈린다(docs/m4-contract.md 4.4). */
+/** Log entry: one committed edit and its result. Distinguished by `op.kind` (docs/m4-contract.md 4.4). */
 interface ParagraphLogEntry {
   op: ReplaceParagraphOp;
   warnings: EditWarning[];
   summary: ReflowSummary;
-  /** 편집 블록에 폴백 폰트 글리프를 실제로 썼다(공백만 폴백이어도, 경고 유무와 별개). 저장 서브셋·font-embed 기준. */
+  /** The edit block actually used fallback font glyphs (even if only spaces were fallback, regardless of warnings). Basis for save subsetting and font-embed. */
   usesFallback: boolean;
 }
 
-/** 패스 편집 항목: 편집 블록·리플로우가 없어 `summary` 도 폴백 폰트 사용도 없다. */
+/** Path edit entry: has no edit block or reflow, so it has neither a `summary` nor fallback font use. */
 interface PathLogEntry {
   op: EditPathOp;
   warnings: EditWarning[];
@@ -147,10 +147,10 @@ function isParagraphEntry(entry: LogEntry): entry is ParagraphLogEntry {
 
 const usesFallbackOf = (entry: LogEntry): boolean => isParagraphEntry(entry) && entry.usesFallback;
 
-/** 편집이 바꾸는 쪽. 지금은 둘 다 한 쪽이다. undo·redo 의 캐시 무효화·메타 기록이 쓴다. */
+/** Pages the edit changes. For now both are the same page. Used by undo and redo for cache invalidation and meta recording. */
 const pagesOf = (op: EditOp): number[] => [op.target.pageIndex];
 
-/** 객체 번호들 중 스트림의 /Length 합. 사전만 조회한다(스트림은 읽지 않는다). */
+/** Sum of /Length of the streams among the object numbers. Only dictionaries are queried (streams are not read). */
 function streamLengths(doc: mupdf.PDFDocument, objectNumbers: readonly number[]): number {
   let sum = 0;
   for (const num of objectNumbers) {
@@ -171,26 +171,26 @@ interface ParagraphDraft {
   draftId: string;
   pageIndex: number;
   paragraphId: number;
-  /** 판정·제거 때의 쪽 상태. 쓰기는 이 시점의 PageModel 인덱스(sourceChar)를 가리킨다. */
+  /** Page state at classification and removal time. Writes refer to the PageModel indices (sourceChar) of this moment. */
   ctx: ParagraphEditContext;
   plan: Omit<ParagraphEditPlan, 'revision'>;
   prepared: PreparedEdit;
-  /** 로그에 남길 편집 id. */
+  /** Edit id to record in the log. */
   opId: string;
   runs: TextRun[];
   format: ParagraphFormat;
   summary: ReflowSummary;
   warnings: EditWarning[];
   usesFallback: boolean;
-  /** 갱신 실패 뒤 직전 상태로 되돌리지 못했다. 취소만 할 수 있다. */
+  /** Failed to restore the previous state after an update failure. Only cancel is possible. */
   broken: boolean;
-  /** 커밋 중(스트림 압축 대기, `#compactDraft`). 이 동안 이 초안의 갱신·커밋·취소를 받지 않는다. */
+  /** Committing (waiting for stream compression, `#compactDraft`). During this time updates, commits and cancels of this draft are rejected. */
   committing?: boolean;
 }
 
 /**
- * 패스 초안. 쓰기는 항상 원본 바이트 기준 절대 편집이라 갱신은 직전 상태와 무관하게 다시 쓴다.
- * 시작할 때 `#redo` 를 비우고(MuPDF 가 첫 변경에서 redo 를 버린다) 백업을 둬, 변경 없이 취소하면 되살린다.
+ * Path draft. Writes are always absolute edits against the original bytes, so an update rewrites regardless of the previous state.
+ * At start, `#redo` is cleared (MuPDF discards redo at the first change) and a backup is kept, so canceling without a change restores it.
  */
 interface PathDraft {
   kind: 'path';
@@ -200,14 +200,14 @@ interface PathDraft {
   plan: Omit<PathEditPlan, 'revision'>;
   prepared: PreparedPathEdit;
   opId: string;
-  /** 마지막으로 쓴 편집. 아직 쓰지 않았으면 null(커밋 불가). */
+  /** Last edit written. null if nothing was written yet (cannot commit). */
   edit: PathEdit | null;
-  /** 마지막으로 쓴 뒤의 패스 상자(처음에는 대상 상자). 다음 갱신의 "편집 전" 상자. */
+  /** Path box after the last write (initially the target box). The "before edit" box of the next update. */
   bbox: Rect;
   warnings: EditWarning[];
   broken: boolean;
   redoBackup: LogEntry[];
-  /** 커밋 중(스트림 압축 대기). */
+  /** Committing (waiting for stream compression). */
   committing?: boolean;
 }
 
@@ -228,15 +228,15 @@ export class EditEngine {
   #fonts: FontManager | null = null;
   #fallbackBytes: Uint8Array | null = null;
   #fallbackLoading: Promise<void> | null = null;
-  /** 폴백 폰트 로드가 실패한 적이 있고 아직 못 얻었다(R-L5). 폴백 없이 진행한다. */
+  /** Fallback font loading has failed before and has not been obtained (R-L5). Proceeds without a fallback. */
   #fallbackLoadError: string | null = null;
-  /** 저널을 켜기 직전(작업 밖)에 한 번 임베딩한 폴백 폰트 객체. 그 전에는 null. */
+  /** Fallback font object embedded once just before the journal is turned on (outside an operation). null before that. */
   #fallbackRef: mupdf.PDFObject | null = null;
 
   #journalOn = false;
-  /** 나눠 적용하는 재적용(`replayEdits(…, { more: true })`)이 이어지는 중. 저널은 아직 꺼져 있다. */
+  /** A replay applied in parts (`replayEdits(…, { more: true })`) is in progress. The journal is still off. */
   #replayOpen = false;
-  /** 커밋이나 재적용으로 문서가 한 번이라도 바뀌었다(undo 로 되돌렸어도 true). */
+  /** The document has been changed at least once by a commit or reapply (true even after undoing it). */
   #edited = false;
   #disposed = false;
   #failure: string | null = null;
@@ -248,7 +248,7 @@ export class EditEngine {
   #blocks = new Map<number, EditBlockRef[]>();
   #lastAffected: number[] = [];
   #pdfa: boolean | null = null;
-  /** 저널 보유 추정(D4): 커밋한 작업마다 그 작업이 바꾸거나 만든 스트림 객체의 /Length 합. */
+  /** Journal retention estimate (D4): for each committed operation, the sum of /Length of the stream objects it changed or created. */
   readonly #journalCost = new WeakMap<LogEntry, number>();
 
   constructor(host: EditHost, options: EditEngineOptions) {
@@ -258,28 +258,28 @@ export class EditEngine {
     this.#doc = host.document;
   }
 
-  // ---- 상태 질의 ----
+  // ---- State queries ----
 
   get hasDraft(): boolean {
     return this.#draft !== null;
   }
 
-  /** 편집 RPC 가 저널을 켰다(이후 저장은 D9 감싼 저장). */
+  /** An edit RPC turned the journal on (later saves are D9 wrapped saves). */
   get journalOn(): boolean {
     return this.#journalOn;
   }
 
   /**
-   * 편집이 한 번이라도 문서에 반영됐다(되돌린 뒤에도 true). 증분 구간에는 되돌린 객체의 흔적이 남을 수 있어
-   * 이 문서의 저장은 전체 저장이다(D9·A3-9).
+   * An edit has been reflected in the document at least once (true even after undoing). The incremental section may keep traces of undone objects,
+   * so saving this document is a full save (D9, A3-9).
    */
   get edited(): boolean {
     return this.#edited;
   }
 
   /**
-   * 저널을 켜면서 문서에 폴백 폰트(저장 때 garbage 가 빼는 미사용 객체)와 Info 가 새로 들어갔다. 증분 저장은 새 객체를
-   * 모두 덧붙이므로 이 문서의 저장은 전체 저장이다.
+   * Turning on the journal put a fallback font (an unused object that garbage removes on save) and Info newly into the document. An incremental save appends all new objects,
+   * so saving this document is a full save.
    */
   get hasNewObjects(): boolean {
     return this.#journalOn;
@@ -290,9 +290,9 @@ export class EditEngine {
   }
 
   /**
-   * 저널 보유 추정(byte, D4). 저널은 작업마다 바뀐 객체의 작업 전 내용을 보유하고(docs/m3-core.md 2.5: 교체한 스트림의
-   * 약 0.97배), undo 한 단계도 redo 를 위해 남는다. 그래서 undo·redo 목록에 있는 작업의 비용을 더한다. 새 편집이 redo 를
-   * 버리면 그 비용도 빠진다. 재적용한 편집(`#base`)은 저널 밖이라 세지 않는다.
+   * Journal retention estimate (bytes, D4). The journal holds the pre-operation content of objects changed by each operation (docs/m3-core.md 2.5: about
+   * 0.97x of the replaced stream), and one undone step also remains for redo. So the cost of operations in the undo and redo lists is added. When a new edit
+   * discards redo, that cost drops out too. Reapplied edits (`#base`) are outside the journal and are not counted.
    */
   get journalBytes(): number {
     let total = 0;
@@ -302,38 +302,38 @@ export class EditEngine {
   }
 
   /**
-   * 커밋한 작업의 저널 비용: pdf-ops 가 알려 준 바뀐·새 객체(`changedObjects`, 편집 블록 포함) 중 스트림의 /Length 합(사전
-   * 조회만). 처음 고치는 문단은 쪽 콘텐츠와 새 블록, 이미 편집한 블록을 다시 고치면 그 블록만 든다. 큰 스트림은 커밋 때
-   * 압축하므로(`#compactDraft`) 압축 크기다. 원본 파일에 있던 스트림의 첫 교체는 MuPDF 가 내용을 복사하지 않을 수 있어 과대
-   * 추정 쪽이다(docs/m5-heap.md 5절).
+   * Journal cost of a committed operation: sum of /Length of streams among the changed and new objects reported by pdf-ops (`changedObjects`, including edit blocks) (dictionary
+   * lookup only). For a paragraph edited for the first time, it covers the page content and the new block; for re-editing an existing block, only that block. Large streams are
+   * compressed at commit (`#compactDraft`), so this is the compressed size. The first replacement of a stream that was in the original file may not make MuPDF copy the content, so this leans toward
+   * overestimation (docs/m5-heap.md section 5).
    */
   #noteJournalCost(entry: LogEntry, changedObjects: readonly number[]): void {
     let bytes = 0;
     try {
       bytes = streamLengths(this.#doc, changedObjects);
     } catch {
-      // 추정값이라 실패하면 0 으로 둔다.
+      // It is an estimate, so use 0 on failure.
     }
     this.#journalCost.set(entry, bytes);
   }
 
   /**
-   * 폴백 폰트 로드 실패 사유(R-L5). 성공했거나 시도하지 않았으면 null. 실패하면 편집은 폴백 없이 진행하고 원본 폰트에 없는
-   * 글자만 `glyph-missing` 이 된다. 저널이 켜진 뒤에는 폴백 폰트를 문서에 넣을 수 없어 다시 시도하지 않는다.
+   * Reason the fallback font load failed (R-L5). null if it succeeded or was not attempted. On failure, editing proceeds without a fallback and only characters
+   * absent from the original font become `glyph-missing`. After the journal is on, a fallback font cannot be put into the document, so it is not retried.
    */
   get fallbackLoadError(): string | null {
     return this.#fallbackLoadError;
   }
 
-  /** MuPDF 저널 위치·단계(작업이 열려 있으면 null). 테스트·진단용. */
+  /** MuPDF journal position and step (null while an operation is open). For tests and diagnostics. */
   journalState(): { position: number; steps: string[] } | null {
     if (!this.#journalOn || this.#draft) return null;
     return this.#doc.getJournal();
   }
 
   /**
-   * 문서를 닫을 때(세션 close). pdf-ops 초안 상태와 FontManager(원본 폰트 탐침·폴백 `mupdf.Font`)를 해제한다(R-L3).
-   * 여러 번 불러도 된다.
+   * When closing the document (session close). Releases the pdf-ops draft state and FontManager (original font probes, fallback `mupdf.Font`) (R-L3).
+   * May be called multiple times.
    */
   dispose(): void {
     if (this.#disposed) return;
@@ -344,14 +344,14 @@ export class EditEngine {
   }
 
   /**
-   * pdf-ops 초안 상태(WriteContext·패스 준비 상태)를 버린다. 문서당 초안은 하나라 초안이 끝날 때(커밋·취소·실패 정리)와
-   * 재적용 뒤에 이 문서의 상태 전부를 버린다. 정리 실패는 편집 결과에 영향이 없어 삼킨다.
+   * Discards the pdf-ops draft state (WriteContext and path preparation state). There is one draft per document, so when a draft ends (commit, cancel, failure cleanup) and
+   * after a reapply, all of this document's state is discarded. Cleanup failure does not affect the edit result, so it is swallowed.
    */
   #releaseDraftState(): void {
     try {
       this.#adapter.releaseEdit(this.#doc);
     } catch {
-      // 참조만 끊는 정리라 실패해도 다음 동작에 영향이 없다.
+      // Cleanup that only drops references, so failure does not affect later behavior.
     }
   }
 
@@ -361,11 +361,11 @@ export class EditEngine {
     try {
       fonts?.dispose();
     } catch {
-      // 해제 실패는 무시한다(이미 해제됨 등).
+      // Ignore release failure (already released, etc.).
     }
   }
 
-  // ---- 판정(문서를 바꾸지 않는다) ----
+  // ---- Classification (does not change the document) ----
 
   async getPageEditability(pageIndex: number): Promise<PageEditability> {
     await this.#prepareRead();
@@ -391,8 +391,8 @@ export class EditEngine {
   }
 
   /**
-   * 쪽의 패스 판정 목록(어댑터 결과). 패스 판정 오류는 이 쪽의 패스 편집만 막는다: 빈 목록과 진단 문자열
-   * (`pathError`)을 돌려주고 문단 판정은 그대로 둔다(리뷰 M4).
+   * Path classification list of a page (adapter result). A path classification error blocks only path edits of this page: returns an empty list and a diagnostic string
+   * (`pathError`) and leaves paragraph classification as is (review M4).
    */
   #planPaths(ctx: ParagraphEditContext): { paths: PathEditability[]; pathError?: string } {
     try {
@@ -404,8 +404,8 @@ export class EditEngine {
   }
 
   /**
-   * 이 쪽의 편집 블록 목록(작업 문서 기준, 쪽마다 캐시). 레이아웃 복원 힌트(docs/m3-integration.md 9.6)용.
-   * 목록을 만들지 못하면 빈 목록(힌트 없이 보통 레이아웃).
+   * Edit block list of this page (based on the working document, cached per page). For layout reconstruction hints (docs/m3-integration.md 9.6).
+   * An empty list if the list cannot be built (normal layout without hints).
    */
   editBlocks(pageIndex: number): EditBlockRef[] {
     try {
@@ -415,7 +415,7 @@ export class EditEngine {
     }
   }
 
-  /** 이 쪽의 편집 블록(초안 중이면 초안 블록 포함, 작업 문서 기준). */
+  /** Edit blocks of this page (including draft blocks during a draft, based on the working document). */
   getPageEdits(pageIndex: number): PageEditInfo {
     this.#assertUsable();
     const entries = [...this.#base, ...this.#undo];
@@ -434,7 +434,7 @@ export class EditEngine {
         });
         continue;
       }
-      // 재편집은 블록 id 를 그대로 둘 수 있다(op.id 는 새로 만든다). 가장 나중 항목을 쓴다.
+      // A re-edit can keep the block id (op.id is newly created). Use the latest entry.
       const entry = [...entries]
         .reverse()
         .filter(isParagraphEntry)
@@ -453,7 +453,7 @@ export class EditEngine {
     return { pageIndex, blocks };
   }
 
-  // ---- 초안 ----
+  // ---- Draft ----
 
   async beginParagraphEdit(
     pageIndex: number,
@@ -509,7 +509,7 @@ export class EditEngine {
         clip,
       );
       this.#draft = draft;
-      // 제거·삽입으로 문서를 바꾼 순간 MuPDF 가 redo 단계를 버렸다(취소해도 돌아오지 않는다).
+      // MuPDF discarded the redo steps the moment the document was changed by removal or insertion (they do not come back even on cancel).
       this.#redo = [];
       return {
         draftId: draft.draftId,
@@ -546,8 +546,8 @@ export class EditEngine {
         input.format,
       );
     } catch (error) {
-      // 쓰기가 중간에 실패했으면 문서의 블록이 새 내용과 옛 내용 사이에 있을 수 있다. 직전 내용으로 다시 쓰고,
-      // 그것도 실패하면 이 초안은 취소만 허용한다(커밋하면 로그와 문서가 달라진다).
+      // If the write failed midway, the document's block may be between the new and old content. Rewrite with the previous content,
+      // and if that also fails, this draft allows only cancel (committing would make the log and document differ).
       try {
         this.#compose(
           draft.ctx,
@@ -602,13 +602,13 @@ export class EditEngine {
       summary: draft.summary,
       usesFallback: draft.usesFallback,
     };
-    // Info 기록은 이 편집 작업 안에서 한다: 저널에 기록되어 undo·redo 와 함께 움직이고, 저장 작업은 문서를 바꾸지
-    // 않아도 된다(바꾸면 redo 단계가 사라진다, docs/m3-core.md 2.4).
+    // Write Info inside this edit operation: it is recorded in the journal and moves together with undo and redo, and the save operation does not need to change
+    // the document (changing it would drop the redo steps, docs/m3-core.md 2.4).
     this.#writeMetadata([...this.#active(), entry]);
     this.#doc.endOperation();
     this.#draft = null;
     this.#releaseDraftState();
-    // 작업이 닫혔는데 저널 단계가 늘지 않았으면(닫기 실패 뒤 다시 닫음 등) 로그와 저널이 어긋난 것이다.
+    // If the operation closed but the journal steps did not increase (closed again after a close failure, etc.), the log and journal are out of sync.
     if (this.#doc.getJournal().position !== this.#undo.length + 1) {
       this.#failure = '커밋한 편집이 저널에 기록되지 않음';
       throw new EditStateError(`${this.#failure}. 문서를 다시 열어야 합니다.`);
@@ -624,9 +624,9 @@ export class EditEngine {
     return { op, history: this.#history() };
   }
 
-  // ---- M4 패스 편집(docs/m4-contract.md 4.4) ----
+  // ---- M4 path editing (docs/m4-contract.md 4.4) ----
 
-  /** 선택한 패스의 편집 계획. 문서를 바꾸지 않는다(저널이 켜졌으면 버리는 작업으로 감싼다). */
+  /** Edit plan of the selected path. Does not change the document (if the journal is on, it is wrapped in an operation that is discarded). */
   async planPathEdit(pageIndex: number, paintSeqs: number[]): Promise<PathEditPlan> {
     this.#assertUsable();
     this.#requireNoDraft('planPathEdit');
@@ -640,7 +640,7 @@ export class EditEngine {
     paintSeqs: number[],
     revision: number,
   ): Promise<BeginPathEditResult> {
-    // 첫 편집 계열 호출이 패스여도 폴백 폰트를 저널을 켜기 전에 임베딩해야 이후 문단 편집이 쓸 수 있다.
+    // Even if the first edit-family call is a path, the fallback font must be embedded before the journal is turned on so that later paragraph edits can use it.
     await this.#prepareEdit();
     this.#requireNoDraft('beginPathEdit');
     if (revision !== this.#revision) throw new StaleRevisionError(revision, this.#revision);
@@ -672,7 +672,7 @@ export class EditEngine {
       };
       this.#host.invalidateAround(pageIndex);
       this.#draft = draft;
-      // 준비·첫 쓰기가 문서를 바꾸면 MuPDF 가 redo 단계를 버린다. 변경 없이 취소하면 되살린다(`#cancelPath`).
+      // If preparation or the first write changes the document, MuPDF discards the redo steps. Canceling without a change restores them (`#cancelPath`).
       this.#redo = [];
       return { draftId: draft.draftId, plan: { ...plan, revision: this.#revision } };
     } catch (error) {
@@ -682,8 +682,8 @@ export class EditEngine {
   }
 
   /**
-   * 편집 내용을 스트림에 다시 쓰고(작업 안, 원본 기준 절대 편집이라 반복 호출 가능) 변경 영역(직전 쓴 상자 ∪ 새 상자)을
-   * 렌더한다. 첫 갱신의 직전 상자는 대상 상자다.
+   * Rewrites the edit content into the stream (inside an operation; an absolute edit against the original, so it can be called repeatedly) and renders the changed area (previous written box ∪ new box).
+   * The previous box of the first update is the target box.
    */
   async updatePathDraft(
     draftId: string,
@@ -700,8 +700,8 @@ export class EditEngine {
     try {
       written = this.#adapter.writePathEdit(draft.ctx, draft.prepared, edit);
     } catch (error) {
-      // 쓰기가 중간에 실패했으면 스트림이 새 내용과 옛 내용 사이에 있을 수 있다. 직전 편집(없으면 변경 없음 상태)을
-      // 다시 써 되돌리고, 그것도 실패하면 이 초안은 취소만 허용한다(커밋하면 로그와 문서가 달라진다).
+      // If the write failed midway, the stream may be between the new and old content. Rewrite the previous edit (or the no-change state if none)
+      // to revert, and if that also fails, this draft allows only cancel (committing would make the log and document differ).
       try {
         if (draft.edit) this.#adapter.writePathEdit(draft.ctx, draft.prepared, draft.edit);
         else this.#adapter.writePathEdit(draft.ctx, draft.prepared, IDENTITY_PATH_EDIT);
@@ -766,7 +766,7 @@ export class EditEngine {
     this.#draft = null;
     this.#releaseDraftState();
     this.#abandonOrFail();
-    // 작업을 버린 뒤에도 MuPDF 에 redo 가 남아 있으면(문서를 바꾸지 않았으면) core 의 redo 도 되살린다.
+    // If MuPDF still has redo after discarding the operation (the document was not changed), restore core's redo as well.
     this.#redo = this.#doc.canRedo() ? draft.redoBackup : [];
     this.#touched([draft.pageIndex]);
     return this.#history();
@@ -826,12 +826,12 @@ export class EditEngine {
     return this.#history();
   }
 
-  // ---- 복구(D6) ----
+  // ---- Recovery (D6) ----
 
   /**
-   * 새로 연 문서에 로그를 다시 적용한다. 저널을 끈 상태로 적용해 힙을 줄이고, 끝난 뒤 저널을 켠다(적용한 편집은
-   * undo 할 수 없다). 편집 RPC 를 한 번도 부르지 않은 세션에서만 쓸 수 있다. 중간에 실패하면 문서가 일부만 바뀐
-   * 상태이므로 이 세션의 편집 RPC 는 모두 막고 문서를 다시 열어야 한다.
+   * Reapplies the log to a newly opened document. Applies with the journal off to reduce the heap, and turns the journal on afterwards (applied edits
+   * cannot be undone). Usable only in a session that has never called an edit RPC. If it fails midway the document is only partly changed,
+   * so all edit RPCs of this session are blocked and the document must be reopened.
    */
   async replayEdits(ops: EditOp[], options: ReplayOptions = {}): Promise<EditHistoryState> {
     await this.#loadFallbackBytes();
@@ -843,7 +843,7 @@ export class EditEngine {
       );
     }
     const fonts = this.#ensureFonts();
-    // 저널이 꺼진 채라 Info 와 폴백 폰트는 기준 문서에 들어간다. 재적용한 글자가 폴백 폰트를 쓰므로 먼저 만든다.
+    // With the journal off, Info and the fallback font go into the base document. Reapplied characters use the fallback font, so create it first.
     this.#prepareDocument();
     const pages = new Set<number>(this.#replayOpen ? this.#lastAffected : []);
     const done = this.#base.length;
@@ -860,7 +860,7 @@ export class EditEngine {
       this.#releaseDraftState();
     }
     if (options.more === true) {
-      // 나눠 적용(계약 D4 진행 표시): 메타 기록·저널 켜기는 마지막 호출에서 한 번 한다.
+      // Applying in parts (contract D4 progress display): meta recording and turning on the journal are done once, in the last call.
       this.#replayOpen = true;
       this.#edited ||= ops.length > 0;
       this.#lastAffected = [...pages].sort((a, b) => a - b);
@@ -923,8 +923,8 @@ export class EditEngine {
   }
 
   /**
-   * 패스 편집 재적용(계약 4.4): 대상은 `paintSeq` 로 찾고 지문(칠하기 연산 이름·구성 연산 수·상자·구성 연산 해시)이 맞아야
-   * 한다. 안 맞으면 다른 패스를 고치지 않고 실패한다. paintSeq 는 적용 시점 모델 기준이라 로그 순서대로 적용할 때만 유효하다.
+   * Path edit reapply (contract 4.4): the target is found by `paintSeq`, and the fingerprint (paint operator name, number of construct operators, box, construct operator hash) must match.
+   * If it does not match, it fails without editing a different path. paintSeq is based on the model at apply time, so it is valid only when applied in log order.
    */
   #replayPath(op: EditPathOp): void {
     const pageIndex = op.target.pageIndex;
@@ -947,9 +947,9 @@ export class EditEngine {
     this.#touched([pageIndex], false);
   }
 
-  // ---- 저장(D9) ----
+  // ---- Save (D9) ----
 
-  /** 활성 편집이 있으면 저장 전 요약(5.8), 없으면 null. */
+  /** Pre-save summary (5.8) if there are active edits, otherwise null. */
   editSummary(): SaveEditSummary | null {
     const entries = this.#active();
     if (entries.length === 0) return null;
@@ -961,8 +961,8 @@ export class EditEngine {
   }
 
   /**
-   * 로그가 더하는 저장 변경 종류(계약 D9). 폴백 폰트 글리프를 실제로 쓴 활성 편집이 있으면 `font-embed`.
-   * runSave 의 서브셋 교체와 같은 기준이다(`font-fallback` 경고는 공백 폴백을 세지 않아 기준으로 쓰지 않는다).
+   * Save change kinds the log adds (contract D9). `font-embed` if there is an active edit that actually used fallback font glyphs.
+   * Same criterion as the subset swap in runSave (the `font-fallback` warning does not count space fallback, so it is not used as the criterion).
    */
   changeKinds(): ChangeKind[] {
     const entries = this.#active();
@@ -971,19 +971,19 @@ export class EditEngine {
   }
 
   /**
-   * 저장을 저널 작업으로 감싼다: `beginOperation('save')` → 폴백 서브셋 교체 → `fn`(saveToBuffer) →
-   * `abandonOperation`. 저장은 저널 단계를 만들지 않고 작업 문서는 저장 전 상태로 남는다. 저널이 꺼진 문서
-   * (편집 RPC 를 부른 적 없음)는 감싸지 않는다. 초안이 열려 있으면 예외.
+   * Wraps a save in a journal operation: `beginOperation('save')` -> fallback subset swap -> `fn` (saveToBuffer) ->
+   * `abandonOperation`. A save creates no journal step and the working document stays in its pre-save state. A document with the journal off
+   * (no edit RPC ever called) is not wrapped. Throws if a draft is open.
    *
-   * 계약 D9 는 Info 기록(`recordEditMetadata`)도 이 작업 안에서 하라고 하지만, 작업 안에서 객체를 바꾸면 MuPDF 가
-   * redo 단계를 버리고 abandon 해도 돌아오지 않는다. 그래서 Info 는 커밋 작업 안에서 기록하고
-   * (`commitParagraphEdit`), 이 작업은 폴백 폰트를 쓴 활성 편집이 있을 때만(서브셋 교체) 문서를 바꾼다. 그 경우
-   * undo 직후의 저장은 redo 를 잃는다(docs/m3-core.md 2.4).
+   * Contract D9 says to record Info (`recordEditMetadata`) inside this operation too, but changing objects inside the operation makes MuPDF
+   * discard the redo steps, and they do not come back even on abandon. So Info is recorded inside the commit operation
+   * (`commitParagraphEdit`), and this operation changes the document only when there is an active edit that used the fallback font (subset swap). In that case
+   * a save right after undo loses redo (docs/m3-core.md 2.4).
    */
   runSave<T>(fn: () => T): T {
     if (this.#disposed) throw new EditStateError('문서가 닫혔습니다.');
-    // R-M4: 엔진이 실패 상태여도 저장은 막지 않는다. 저널 상태를 믿을 수 없으므로 감싸지 않고 현재 문서를 그대로 내보낸다
-    // (undo 는 이미 막혀 있어 저널에 저장 단계가 생겨도 해가 없다). 경고는 `saveWarnings()` 로 알린다.
+    // R-M4: a failed engine state does not block saving. The journal state cannot be trusted, so export the current document as is without wrapping
+    // (undo is already blocked, so a save step in the journal does no harm). Warnings are reported via `saveWarnings()`.
     if (this.#failure) {
       this.#finalizeFallbackBestEffort();
       return fn();
@@ -997,7 +997,7 @@ export class EditEngine {
     try {
       if (usesFallback) {
         this.#fonts?.finalizeForSave();
-        // R-L2: pdf-ops 서브셋 교체는 /BaseFont 를 그대로 둔다. 저장 파일의 폰트 이름에 서브셋 태그를 붙인다.
+        // R-L2: the pdf-ops subset swap leaves /BaseFont as is. Attach a subset tag to the font name in the saved file.
         if (this.#fallbackRef) tagFallbackSubset(this.#doc, this.#fallbackRef);
       }
       result = fn();
@@ -1005,7 +1005,7 @@ export class EditEngine {
       try {
         this.#abandonOrFail();
       } catch {
-        // 원래 예외를 우선한다(세션은 이미 사용 불가로 표시했다).
+        // Prefer the original exception (the session is already marked unusable).
       }
       this.#reconcileRedo();
       throw error;
@@ -1016,10 +1016,10 @@ export class EditEngine {
   }
 
   /**
-   * 저장 때 사용자에게 알릴 경고(R-M4). 엔진이 실패 상태면 저널로 감싸지 않고 저장하므로 마지막 편집이 문서에 반영됐는지
-   * 확인해야 한다. 정상이면 빈 배열.
+   * Warnings to tell the user at save time (R-M4). If the engine is in a failed state, it saves without wrapping in the journal, so whether the last edit was reflected in the document
+   * must be checked. Empty array when normal.
    */
-  /** `saveWarnings()` 의 원인 코드(다른 언어 화면용). */
+  /** Cause code of `saveWarnings()` (for screens in other languages). */
   saveWarningCodes(): SaveWarningCode[] {
     return this.#failure ? ['edit-engine-failed'] : [];
   }
@@ -1033,9 +1033,9 @@ export class EditEngine {
   }
 
   /**
-   * 실패 상태 저장(R-M4)에서도 폴백 서브셋 교체(D9)와 서브셋 이름 태그(R-L2)를 시도한다. 저널로 감싸지 않으므로 작업 문서에
-   * 그대로 남지만 이 세션은 편집 RPC 가 막혀 다시 쓰지 않는다(두 처리 모두 같은 입력에 같은 결과). 실패는 무시한다
-   * (전체 폰트·태그 없는 이름으로 저장될 뿐 내용은 같다).
+   * Even in a failed-state save (R-M4), tries the fallback subset swap (D9) and the subset name tag (R-L2). Not wrapped in the journal, so it stays
+   * in the working document, but this session's edit RPCs are blocked and it is not written again (both steps give the same result for the same input). Failures are ignored
+   * (it is saved with the full font and an untagged name, but the content is the same).
    */
   #finalizeFallbackBestEffort(): void {
     try {
@@ -1043,11 +1043,11 @@ export class EditEngine {
       this.#fonts?.finalizeForSave();
       if (this.#fallbackRef) tagFallbackSubset(this.#doc, this.#fallbackRef);
     } catch {
-      // 최선 노력: 저장은 계속한다.
+      // Best effort: continue saving.
     }
   }
 
-  // ---- 내부 ----
+  // ---- Internals ----
 
   #active(): LogEntry[] {
     return [...this.#base, ...this.#undo];
@@ -1064,20 +1064,20 @@ export class EditEngine {
     };
   }
 
-  /** 할 일이 없는 undo/redo: 문서도 revision 도 바꾸지 않는다. */
+  /** undo/redo with nothing to do: changes neither the document nor the revision. */
   #unchanged(): EditHistoryState {
     this.#lastAffected = [];
     return this.#history();
   }
 
-  /** 문서가 바뀐 쪽의 캐시·블록 목록을 갱신한다(계약 5.7). */
+  /** Updates the caches and block lists of pages whose document changed (contract 5.7). */
   #touched(pages: number[], affected = true): void {
     for (const page of pages) {
       this.#host.invalidateAround(page);
       try {
         this.#blocks.set(page, this.#adapter.listEditBlocks(this.#doc, page));
       } catch {
-        // 문서와 로그는 이미 바뀌었다. 목록은 다음에 쓸 때 다시 만든다.
+        // The document and log have already changed. The list is rebuilt the next time it is needed.
         this.#blocks.delete(page);
       }
     }
@@ -1122,14 +1122,14 @@ export class EditEngine {
   }
 
   /**
-   * 커밋 직전(초안 작업 안): 이 편집이 풀린 채 다시 쓴 큰 스트림(쪽 콘텐츠·Form 사본·큰 편집 블록)을 Flate 로 압축한다.
-   * MuPDF 저널은 작업마다 바뀐 객체의 작업 전 내용을 스트림 버퍼째 보관하므로, 압축해 두면 다음 편집이 이 쪽을 다시 바꿀 때
-   * 저널로 넘어가는 버퍼가 풀린 크기가 아니라 압축 크기가 된다(docs/m5-followup.md 5.1, 코퍼스 8.9 MB 쪽 → 1.35 MB). 같은 작업
-   * 안이라 저널 단계는 늘지 않는다. 압축은 비동기라 그동안 초안을 `committing` 으로 막는다. 압축할 수 없으면 풀린 채 둔다(동작은
-   * 같고 메모리만 덜 준다). 넣은 스트림을 되돌리지도 못하면 초안을 손상으로 두고 커밋을 거절한다(취소하면 작업 전으로 돌아간다).
+   * Just before commit (inside the draft operation): compresses with Flate the large streams this edit rewrote uncompressed (page content, Form copies, large edit blocks).
+   * The MuPDF journal keeps the pre-operation content of objects changed by each operation as the whole stream buffer, so once compressed, the buffer that goes to the journal when the next edit changes this page again
+   * is the compressed size, not the uncompressed one (docs/m5-followup.md 5.1, corpus 8.9 MB page -> 1.35 MB). It is within the same operation,
+   * so no journal step is added. Compression is asynchronous, so the draft is blocked as `committing` meanwhile. If it cannot be compressed, it is left uncompressed (behavior is
+   * the same and it only saves less memory). If the inserted stream cannot be reverted either, the draft is left as broken and the commit is rejected (canceling returns to before the operation).
    */
   async #compactDraft(draft: Draft, streams: readonly UncompressedStream[]): Promise<void> {
-    // 첫 await 전에 막는다(같은 초안의 두 번째 커밋이 압축 대기 중에 끼어들지 않게).
+    // Block before the first await (so that a second commit of the same draft does not slip in while waiting for compression).
     draft.committing = true;
     try {
       await compactStreams(this.#doc, streams, () => !this.#disposed && this.#draft === draft);
@@ -1144,8 +1144,8 @@ export class EditEngine {
   }
 
   /**
-   * 커밋이 바꾼 객체 중 압축할 큰 스트림(풀린 채 쓴 쪽 콘텐츠·Form 사본 등, `COMPACT_MIN_BYTES` 이상). 없으면 커밋은 이전처럼
-   * 기다림 없이 끝난다. 고르다 실패하면(읽기 오류) 압축하지 않는다.
+   * Large streams to compress among the objects the commit changed (page content and Form copies written uncompressed, etc., `COMPACT_MIN_BYTES` or more). If there are none, the commit finishes without waiting,
+   * as before. If picking fails (read error), nothing is compressed.
    */
   #largeUncompressed(objectNumbers: readonly number[]): UncompressedStream[] {
     try {
@@ -1177,8 +1177,8 @@ export class EditEngine {
   }
 
   /**
-   * 판정 RPC 의 준비: 폴백 폰트 바이트 로드(실패하면 폴백 없이 진행, R-L5) → FontManager. 문서를 바꾸지 않고 저널도 켜지 않는다. 이 단계의
-   * `FallbackFontSource.ref()` 는 null 이다(계약 5.7).
+   * Preparation of a classification RPC: load fallback font bytes (if it fails, proceed without a fallback, R-L5) -> FontManager. Does not change the document or turn on the journal. At this stage
+   * `FallbackFontSource.ref()` is null (contract 5.7).
    */
   async #prepareRead(): Promise<void> {
     await this.#loadFallbackBytes();
@@ -1187,8 +1187,8 @@ export class EditEngine {
   }
 
   /**
-   * 첫 `beginParagraphEdit` 의 준비: 판정 준비 → Info 사전·폴백 폰트 임베딩(저널 밖, 한 번) → 저널 켜기. 저널 밖에서
-   * 만든 객체는 편집 취소·undo 로 사라지지 않는다(계약 D4·D9 수정 1, docs/m3-core.md 2.2·2.3).
+   * Preparation of the first `beginParagraphEdit`: classification preparation -> Info dictionary and fallback font embedding (outside the journal, once) -> turn on the journal. Objects created
+   * outside the journal do not disappear on edit cancel or undo (contract D4 and D9 fix 1, docs/m3-core.md 2.2 and 2.3).
    */
   async #prepareEdit(): Promise<void> {
     await this.#prepareRead();
@@ -1200,14 +1200,14 @@ export class EditEngine {
     this.#startJournal();
   }
 
-  /** 저널을 켜기 전(작업 밖)에 한 번: Info 사전 생성, 폴백 폰트 임베딩. */
+  /** Once, before turning on the journal (outside an operation): create the Info dictionary and embed the fallback font. */
   #prepareDocument(): void {
     ensureInfoDictionary(this.#doc);
     if (!this.#fallbackRef && this.#fallbackBytes) {
       const { font, ref } = embedFont(this.#doc, FALLBACK_FONT_NAME, this.#fallbackBytes);
-      // 문서가 폰트 파일 스트림을 가진다. 파싱한 `mupdf.Font` 는 더 쓰지 않으므로 바로 해제한다(R-L3, 순환마다 약 4 MB).
+      // The document holds the font file stream. The parsed `mupdf.Font` is no longer used, so release it right away (R-L3, about 4 MB per cycle).
       font.destroy();
-      // 폰트 사전 표지: 문서 안에서 폴백 폰트를 알아본다(저장 파일에서는 서브셋으로 바뀐다).
+      // Font dictionary marker: lets the fallback font be recognized inside the document (it becomes a subset in the saved file).
       ref.put('PdfEditorFallback', this.#doc.newBoolean(true));
       this.#fallbackRef = ref;
     }
@@ -1219,14 +1219,14 @@ export class EditEngine {
   }
 
   /**
-   * 폴백 폰트 바이트를 불러온다. 실패해도 예외로 올리지 않고(R-L5) 폴백 없이 진행한다: `FallbackFontSource.bytes()` 가
-   * 예외를 내면 FontManager 가 폴백 없음으로 다루어 원본 폰트에 없는 글자만 `glyph-missing` 이 된다. 실패는 캐시하지
-   * 않아 저널을 켜기 전의 다음 호출이 다시 시도한다.
+   * Loads the fallback font bytes. Even on failure it does not raise an exception (R-L5) and proceeds without a fallback: if `FallbackFontSource.bytes()`
+   * throws, FontManager treats it as no fallback, and only characters absent from the original font become `glyph-missing`. Failures are not cached,
+   * so the next call before the journal is turned on tries again.
    */
   async #loadFallbackBytes(): Promise<void> {
     const load = this.#options.loadFallbackFont;
     if (this.#fallbackBytes || !load) return;
-    // 저널을 켠 뒤에는 폴백 폰트를 임베딩할 수 없어 다시 시도해도 쓸 수 없다.
+    // After the journal is on, a fallback font cannot be embedded, so retrying would not make it usable.
     if (this.#fallbackLoadError !== null && this.#journalOn) return;
     const pending = (this.#fallbackLoading ??= load().then((bytes) => {
       this.#fallbackBytes = bytes;
@@ -1234,7 +1234,7 @@ export class EditEngine {
     try {
       await pending;
       if (this.#fallbackLoadError !== null) {
-        // FontManager 는 폴백 없음 판정을 캐시한다. 늦게 얻었으면 새로 만든다(편집 전이라 상태가 없다).
+        // FontManager caches the no-fallback classification. If obtained late, build a new one (no state before the edit).
         this.#fallbackLoadError = null;
         this.#disposeFonts();
       }
@@ -1280,11 +1280,11 @@ export class EditEngine {
   }
 
   /**
-   * 판정 호출을 버리는 작업으로 감싼다. 판정은 문서를 바꾸지 않아야 하지만, 폰트 배정이 폴백 폰트를 넣는 등의
-   * 변경을 하더라도 저널이 켜진 문서에서 작업 밖 변경은 예외이고, 변경이 남으면 undo 단계가 어긋난다.
+   * Wraps a classification call in a discarded operation. Classification must not change the document, but even if font assignment makes changes such as inserting a fallback font,
+   * a change outside an operation throws on a document with the journal on, and a remaining change would put the undo steps out of sync.
    */
   #probe<T>(fn: () => T): T {
-    // 저널이 꺼진 동안(첫 `beginParagraphEdit` 전)에는 문서를 바꿀 수 없으므로 감쌀 필요가 없다.
+    // While the journal is off (before the first `beginParagraphEdit`) the document cannot be changed, so no wrapping is needed.
     if (!this.#journalOn) return fn();
     const doc = this.#doc;
     doc.beginOperation('probe');
@@ -1295,7 +1295,7 @@ export class EditEngine {
       try {
         this.#abandonOrFail();
       } catch {
-        // 원래 예외를 우선한다(세션은 이미 사용 불가로 표시했다).
+        // Prefer the original exception (the session is already marked unusable).
       }
       this.#reconcileRedo();
       throw error;
@@ -1305,7 +1305,7 @@ export class EditEngine {
     return result;
   }
 
-  /** 열린 작업을 버린다. 버리지 못하면 작업이 열린 채 남아 이후 작업이 겹치므로 세션을 쓸 수 없는 상태로 둔다. */
+  /** Discards the open operation. If it cannot be discarded the operation stays open and later operations would overlap, so the session is left in an unusable state. */
   #abandonOrFail(): void {
     try {
       this.#doc.abandonOperation();
@@ -1315,9 +1315,9 @@ export class EditEngine {
     }
   }
 
-  /** 구조 연결이 끊긴 편집 문단 수: 같은 블록을 다시 편집한 항목은 마지막 하나만 센다(계약 5.8). */
+  /** Number of edited paragraphs whose structure link was broken: for items that re-edited the same block, only the last one is counted (contract 5.8). */
   #unlinkedBlocks(entries: LogEntry[]): number {
-    // 문단 편집은 블록 연쇄의 마지막 항목만, 패스 편집(Form 복제로 /StructParents 를 지움)은 항목마다 센다.
+    // For paragraph edits, only the last entry of a block chain counts; for path edits (Form duplication clears /StructParents), every entry counts.
     const paragraphs = entries.filter(isParagraphEntry);
     const byId = new Map(paragraphs.map((e) => [e.op.id, e]));
     const rootOf = (e: ParagraphLogEntry): string => {
@@ -1345,14 +1345,14 @@ export class EditEngine {
   }
 
   /**
-   * MuPDF 가 redo 단계를 버렸으면(작업 안에서 객체를 바꾼 뒤 abandon) core 의 redo 스택도 비운다. 작업이 열려 있지
-   * 않을 때만 부른다.
+   * If MuPDF discarded the redo steps (abandon after changing objects inside an operation), core's redo stack is cleared too. Call only when no operation
+   * is open.
    */
   #reconcileRedo(): void {
     if (this.#redo.length > 0 && !this.#doc.canRedo()) this.#redo = [];
   }
 
-  /** 활성 편집(재적용 포함)으로 Info `/PdfEditorEdits` 를 기록한다(계약 5.6). 열린 작업 안이나 저널이 꺼진 때 부른다. */
+  /** Records Info `/PdfEditorEdits` from the active edits (including reapplied ones) (contract 5.6). Call inside an open operation or while the journal is off. */
   #writeMetadata(entries: LogEntry[]): void {
     this.#adapter.recordEditMetadata(this.#doc, {
       pages: [...new Set(entries.flatMap((e) => pagesOf(e.op)))].sort((a, b) => a - b),
@@ -1362,13 +1362,13 @@ export class EditEngine {
     });
   }
 
-  /** 열린 초안 작업을 버리고 캐시를 되돌린다(begin 실패 경로). */
+  /** Discards the open draft operation and reverts the caches (begin failure path). */
   #rollback(pageIndex: number): void {
     try {
       this.#abandonOrFail();
       this.#reconcileRedo();
     } catch {
-      // 원래 예외를 우선한다(세션은 이미 사용 불가로 표시했다).
+      // Prefer the original exception (the session is already marked unusable).
     }
     this.#draft = null;
     this.#releaseDraftState();
@@ -1376,7 +1376,7 @@ export class EditEngine {
     this.#blocks.delete(pageIndex);
   }
 
-  /** 폰트 배정 → 리플로우 → 편집 블록 쓰기. 초안·재적용 공통. 열린 저널 작업(또는 저널 꺼짐) 안에서 부른다. */
+  /** Font assignment -> reflow -> edit block write. Common to draft and reapply. Call inside an open journal operation (or with the journal off). */
   #compose(
     ctx: ParagraphEditContext,
     plan: Omit<ParagraphEditPlan, 'revision'>,
@@ -1395,7 +1395,7 @@ export class EditEngine {
       areaLimit: plan.areaLimit,
     });
     this.#adapter.writeEditBlock(ctx, prepared, runs, format, result, fonts);
-    // 폴백 사용은 쓴 글리프로 정한다: 폴백 face 로 배정된 구간의 글리프가 배치 결과에 하나라도 있으면 사용.
+    // Fallback use is decided by the glyphs actually used: used if the layout result has even one glyph in a range assigned to the fallback face.
     const fallbackKeys = new Set(
       segments.flatMap((seg) => (seg.face?.kind === 'fallback' ? [seg.face.key] : [])),
     );
@@ -1418,9 +1418,9 @@ export class EditEngine {
 }
 
 /**
- * 패스 편집 경고 = 계획 경고 + 쓰기 경고(같은 종류는 하나로). 어댑터가 쓰기 경고를 주면(pdf-ops `pathEditWarnings`, 빈 배열
- * 포함) 그것만 쓰고, 주지 않으면 core 근사(`pathCoreWarnings`)로 대신한다. 둘을 함께 쓰면 근사의 거짓 양성
- * (`table-rule-removed`)이 정확한 판정을 덮는다.
+ * Path edit warnings = plan warnings + write warnings (same kinds merged into one). If the adapter gives write warnings (pdf-ops `pathEditWarnings`, including an empty
+ * array), only those are used; if not, the core approximation (`pathCoreWarnings`) substitutes. Using both together would let a false positive of the approximation
+ * (`table-rule-removed`) override the accurate classification.
  */
 function pathWarnings(
   plan: Omit<PathEditPlan, 'revision'>,
@@ -1439,10 +1439,10 @@ function hasWarning(entry: LogEntry, kind: EditWarning['kind']): boolean {
   return entry.warnings.some((w) => w.kind === kind);
 }
 
-/** 지문 상자 비교 허용 오차(S1 이 1e-3 pt 로 반올림해 채운다). */
+/** Tolerance for comparing fingerprint boxes (S1 fills them rounded to 1e-3 pt). */
 const FINGERPRINT_BOX_TOLERANCE = 2e-3;
 
-/** 로그의 패스 대상과 지금 계획의 대상이 다른 점(없으면 null). paintSeq 는 계획이 로그 값으로 찾은 것이라 지문만 비교한다. */
+/** How the log's path target differs from the current plan's target (null if none). paintSeq was found by the plan from the log value, so only fingerprints are compared. */
 export function fingerprintMismatch(logged: PathTarget, current: PathTarget): string | null {
   if (logged.fingerprints.length !== current.fingerprints.length) {
     return `칠하기 연산 수 ${logged.fingerprints.length} → ${current.fingerprints.length}`;
@@ -1467,8 +1467,8 @@ const sortedEqual = (a: number[], b: number[]): boolean =>
   [...a].sort((x, y) => x - y).every((v, i) => v === [...b].sort((x, y) => x - y)[i]);
 
 /**
- * 로그의 대상 글리프 목록(glyphSeq)과 같은 문단을 현재 쪽 레이아웃에서 찾는다. 재적용은 같은 순서로 하므로
- * 적용 시점의 PageModel 이 같고 글리프 목록이 일치해야 한다(계약 `ParagraphTarget`).
+ * Finds, in the current page layout, the paragraph that matches the log's target glyph list (glyphSeq). Reapply goes in the same order,
+ * so the PageModel at apply time must be the same and the glyph list must match (contract `ParagraphTarget`).
  */
 export function findParagraphId(
   ctx: ParagraphEditContext,
@@ -1484,9 +1484,9 @@ export function findParagraphId(
         return paragraph.id;
       }
     }
-    // 편집 블록 재편집(R4): 커밋한 블록의 줄을 레이아웃이 여러 문단으로 나누거나 이웃 문단 줄과 합칠 수 있다. 그 경우
-    // 판정은 블록 첫 문단 하나만 내보내고 대상 글자를 블록 전체로 넓히므로(pdf-ops analyzeParagraph), 로그의
-    // glyphSeqs 는 어느 레이아웃 문단과도 같지 않다. 블록 글자를 가진 문단마다 계획의 대상이 로그와 같은지 확인한다.
+    // Re-editing an edit block (R4): the layout may split the committed block's lines into several paragraphs or merge them with a neighboring paragraph's lines. In that case
+    // classification emits only the block's first paragraph and widens the target characters to the whole block (pdf-ops analyzeParagraph), so the log's
+    // glyphSeqs equals no layout paragraph. For each paragraph that has block characters, check that the plan's target equals the log's.
     if (target.editedBlock !== null && targetOf) {
       const wantedSet = new Set(wanted);
       const seqOf = (ci: number): number => ctx.model.chars[ci]?.glyphSeq ?? -1;
@@ -1516,9 +1516,9 @@ export function findParagraphId(
 }
 
 /**
- * 셀 대상(D1): `glyphSeqs[0]` 을 가진 문단이 속한 표 셀로 넓힌 뒤, 셀 문단 글리프 전체가 로그의 `glyphSeqs` 와 같고 셀
- * 위치(표·행·열)가 같을 때만 그 문단 id 를 돌려준다. 순서는 따지지 않는다(셀 안 문단 순서는 pdf-ops 시작 상태 규칙이
- * 정하고, 재적용은 로그의 runs 를 쓰므로 집합 일치가 결정성에 충분하다).
+ * Cell target (D1): after widening to the table cell that the paragraph with `glyphSeqs[0]` belongs to, returns that paragraph id only if all the cell's paragraph glyphs equal the log's `glyphSeqs` and the cell
+ * position (table, row, column) is the same. Order is not considered (paragraph order within a cell is decided by pdf-ops start-state rules,
+ * and reapply uses the log's runs, so set equality is enough for determinism).
  */
 function findCellParagraphId(
   ctx: ParagraphEditContext,

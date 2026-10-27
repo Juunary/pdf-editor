@@ -1,5 +1,5 @@
-/* viewer.css 는 창을 세로 flex 로 쓰고 창 스크롤을 막는다(#page-container 만 스크롤). 설정 패널은 고정 높이로 두고
-   넘치면 패널 안에서 스크롤해 좁은 창에서도 실행·내보내기 버튼에 닿게 한다. */
+/* viewer.css lays the window out as a vertical flex and blocks window scrolling (only #page-container scrolls). The settings panel has a fixed height
+   and scrolls inside itself on overflow, so the run/export buttons stay reachable in narrow windows. */
 #bench-panel {
   flex: none;
   max-height: 45vh;

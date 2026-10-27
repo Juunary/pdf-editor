@@ -2,20 +2,20 @@ import * as mupdf from 'mupdf';
 import type { Rect } from '@pdf-editor/shared-types';
 
 /**
- * 편집 전부터 문서에 있던 Redact 주석(적용 대기 중인 "가림 표시") 감지·보고와 처리 정책(PLAN.md 3.1).
+ * Detection, reporting and handling policy for Redact annotations that were in the document before editing (pending "redaction marks" awaiting application) (PLAN.md 3.1).
  *
- * 편집용 redaction 은 새 주석만 주석 단위 `applyRedaction()` 으로 적용하므로(redact.ts) 기존 주석은
- * 적용되지 않고 저장 후에도 표시로 남는다. 페이지 단위 `applyRedactions()` 처럼 페이지의 모든 Redact
- * 주석을 적용하는 동작이 필요할 때만 기존 주석을 임시 분리한다.
+ * Redaction for editing applies only new annotations via per-annotation `applyRedaction()` (redact.ts), so existing annotations are
+ * not applied and remain as marks after saving. Existing annotations are temporarily detached only when behavior that applies all
+ * Redact annotations on the page is needed, like page-level `applyRedactions()`.
  */
 
 export interface RedactAnnotInfo {
   pageIndex: number;
-  /** 페이지 `/Annots` 배열 순번 */
+  /** Index in the page `/Annots` array */
   annotIndex: number;
-  /** 간접 객체 번호(직접 객체면 0) */
+  /** Indirect object number (0 for a direct object) */
   objectNumber: number;
-  /** MuPDF 페이지 좌표(원점 좌상단) */
+  /** MuPDF page coordinates (origin at top left) */
   rect: Rect;
   quadPointCount: number;
   overlayText: string | null;
@@ -24,12 +24,12 @@ export interface RedactAnnotInfo {
 
 export interface RedactAnnotReport {
   total: number;
-  /** Redact 주석이 있는 페이지 번호(0부터) */
+  /** Page number (from 0) that has Redact annotations */
   pages: number[];
   annots: RedactAnnotInfo[];
 }
 
-/** 문서(또는 지정 페이지)의 Redact 주석 수·위치. */
+/** Count and positions of Redact annotations in the document (or the given pages). */
 export function listRedactAnnots(
   doc: mupdf.PDFDocument,
   pageIndices?: readonly number[],
@@ -62,14 +62,14 @@ export function listRedactAnnots(
   return { total: annots.length, pages: [...new Set(annots.map((a) => a.pageIndex))], annots };
 }
 
-/** 주석 /Rect(PDF 좌표) → MuPDF 페이지 좌표. */
+/** Annotation /Rect (PDF coordinates) → MuPDF page coordinates. */
 function annotRect(annot: mupdf.PDFObject, toFz: mupdf.Matrix): Rect {
   const r = annot.get('Rect');
   const t = mupdf.Rect.transform([0, 1, 2, 3].map((i) => r.get(i).asNumber()) as Rect, toFz);
   return [Math.min(t[0], t[2]), Math.min(t[1], t[3]), Math.max(t[0], t[2]), Math.max(t[1], t[3])];
 }
 
-/** 면적이 있는 교차 여부. */
+/** Whether they intersect with non-zero area. */
 export function rectsOverlap(a: Rect, b: Rect): boolean {
   return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 }
@@ -78,21 +78,21 @@ export type ImpactLevel = 'none' | 'info' | 'warn';
 
 export interface RedactionImpact {
   pageIndex: number;
-  /** 편집 전부터 페이지에 있던 Redact 주석. 편집은 이 주석을 적용하지 않는다 */
+  /** Redact annotations on the page from before editing. Editing does not apply these annotations */
   preexisting: RedactAnnotInfo[];
-  /** 그중 편집 영역과 겹치는 것: 나중에 적용하면 새 텍스트도 지워진다 */
+  /** Those overlapping the edit region: applying them later would also erase the new text */
   overlapping: RedactAnnotInfo[];
-  /** 편집 영역과 겹쳐 MuPDF redaction 이 함께 지우는 링크 */
+  /** Links overlapping the edit region that MuPDF redaction also erases */
   linksRemoved: { rect: Rect; uri: string }[];
   level: ImpactLevel;
   messages: string[];
 }
 
 /**
- * 편집용 redaction 전에 기존 Redact 주석·링크에 미치는 영향을 판정한다(정책 초안, 기본 "경고").
- * - 기존 Redact 주석 있음, 겹침 없음 → info: 적용하지 않고 표시로 남김
- * - 편집 영역과 겹치는 기존 Redact 주석 → warn: 나중에 적용하면 새 텍스트도 지워짐
- * - 편집 영역과 겹치는 링크 → warn: MuPDF redaction 이 링크를 지움(실측 2026-10-18)
+ * Classifies the effect on existing Redact annotations and links before redaction for editing (draft policy, default "warn").
+ * - Existing Redact annotation, no overlap → info: left as a mark, not applied
+ * - Existing Redact annotation overlapping the edit region → warn: applying it later would also erase the new text
+ * - Link overlapping the edit region → warn: MuPDF redaction erases the link (measured 2026-10-18)
  */
 export function assessRedactionImpact(
   doc: mupdf.PDFDocument,
@@ -133,17 +133,17 @@ export function assessRedactionImpact(
 
 export interface DetachedRedactAnnots {
   pageIndex: number;
-  /** 분리 전 `/Annots` 순서(간접 객체 번호) */
+  /** `/Annots` order before detaching (indirect object numbers) */
   order: number[];
   detached: mupdf.PDFObject[];
 }
 
 /**
- * 페이지 `/Annots` 에서 Redact 주석을 빼 둔다(임시 분리). 주석 객체 자체는 고치지 않는다.
+ * Takes Redact annotations out of the page `/Annots` (temporary detach). The annotation objects themselves are not modified.
  *
- * MuPDF 는 열려 있는 페이지 객체를 캐시하고 `/Annots` 변경을 다시 읽지 않는다(실측: 열린 페이지가 있으면
- * 분리 후에도 페이지 단위 redaction 이 분리한 주석을 적용함). 그래서 분리 후 새로 연 페이지에 분리한
- * 주석이 보이면 즉시 되돌리고 예외를 던진다. 호출 전 그 페이지의 `PDFPage` 를 모두 `destroy()` 해야 한다.
+ * MuPDF caches open page objects and does not re-read `/Annots` changes (measured: if an open page exists,
+ * page-level redaction still applies the detached annotations after detaching). So if a page newly opened after detaching shows
+ * the detached annotation, it is reverted immediately and an exception is thrown. Before calling, every `PDFPage` of that page must be `destroy()`ed.
  */
 export function detachRedactAnnots(
   doc: mupdf.PDFDocument,
@@ -177,7 +177,7 @@ export function detachRedactAnnots(
   return result;
 }
 
-/** 분리한 Redact 주석을 원래 순서 자리에 되돌린다. 분리 중 새로 생긴 주석은 뒤에 둔다. */
+/** Puts the detached Redact annotations back in their original order. Annotations newly created during detachment go at the end. */
 export function reattachRedactAnnots(doc: mupdf.PDFDocument, d: DetachedRedactAnnots): void {
   if (d.detached.length === 0) return;
   const pageObj = doc.findPage(d.pageIndex);
@@ -200,7 +200,7 @@ export function reattachRedactAnnots(doc: mupdf.PDFDocument, d: DetachedRedactAn
   pageObj.put('Annots', out);
 }
 
-/** Redact 주석을 임시 분리한 상태로 fn 을 실행하고 되돌린다(정책 "임시 분리"). */
+/** Runs fn with Redact annotations temporarily detached and then restores them (policy "temporary detach"). */
 export function withRedactAnnotsDetached<T>(
   doc: mupdf.PDFDocument,
   pageIndex: number,

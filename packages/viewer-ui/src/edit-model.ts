@@ -1,10 +1,10 @@
 /**
- * 편집 모델(순수): 텍스트·모양 구간·캐럿·선택·IME 조합 구간과 편집 중 글자 단위 되돌리기(계약 5.9, 1.3 I6).
+ * Edit model (pure): text, style ranges, caret, selection, IME composition range, and per-character undo during editing (contract 5.9, 1.3 I6).
  *
- * - 상태(`EditorState`)는 불변 값이다. 연산 함수는 새 상태를 돌려준다.
- * - 새로 입력한 글자의 모양은 캐럿 앞 글자의 모양(문단 맨 앞이면 뒤 글자, 빈 텍스트면 `baseStyle`, 계약 D4).
- * - 입력·붙여넣기는 NFC 로 정규화하고, 이웃 자소와 합쳐지는 경우(NFD 자모 입력)는 영향 구간을 다시 정규화한다.
- * - 되돌리기 단위(I6): 연속 입력은 0.5초 정지·캐럿 이동·공백·문장부호 뒤에서 끊긴다. 조합 확정 한 번은 그 단위에 들어간다.
+ * - The state (`EditorState`) is an immutable value. Operation functions return a new state.
+ * - The style of newly typed characters is that of the character before the caret (the following character at the paragraph start, `baseStyle` for empty text, contract D4).
+ * - Input and paste are normalized to NFC, and where they merge with neighboring graphemes (NFD jamo input), the affected range is normalized again.
+ * - Undo unit (I6): continuous input is split after a 0.5 s pause, caret move, whitespace, or sentence punctuation. One composition commit goes into that unit.
  */
 import type { RunStyle, TextRun } from '@pdf-editor/shared-types';
 import {
@@ -25,19 +25,19 @@ export interface StyleSpan {
   style: RunStyle;
 }
 
-/** 캐럿이 줄 바꿈 경계(소프트 줄바꿈 위치)에 있을 때 어느 줄에 그릴지. */
+/** Which line to draw the caret on when it is at a line-break boundary (soft line-break position). */
 export type Affinity = 'downstream' | 'upstream';
 
 export interface EditorState {
   text: string;
-  /** text 를 빈틈없이 덮는 모양 구간. text 가 비면 빈 배열. */
+  /** Style ranges that cover text without gaps. An empty array if text is empty. */
   spans: StyleSpan[];
-  /** 빈 텍스트에 입력할 때·빈 TextRun 의 모양. */
+  /** Style of typing into empty text, and of an empty TextRun. */
   baseStyle: RunStyle;
   caret: number;
   anchor: number;
   affinity: Affinity;
-  /** IME 조합 중인 [start, end). 조합 문자열은 text 안에 있다. */
+  /** [start, end) under IME composition. The composition string is inside text. */
   composition: [number, number] | null;
 }
 
@@ -60,7 +60,7 @@ function mergeSpans(spans: StyleSpan[]): StyleSpan[] {
   return out;
 }
 
-/** 계획의 시작 텍스트·모양으로 편집 상태를 만든다. 캐럿 기본 위치는 텍스트 끝. */
+/** Builds the edit state from the plan's start text and styles. The default caret position is the end of the text. */
 export function createEditorState(runs: TextRun[], caret?: number): EditorState {
   const first = runs[0];
   if (!first) throw new Error('편집 시작 runs 가 비어 있습니다');
@@ -82,19 +82,19 @@ export function createEditorState(runs: TextRun[], caret?: number): EditorState 
   };
 }
 
-/** 위치 index 글자의 모양. 범위 밖이면 null. */
+/** Style of the character at position index. null if out of range. */
 export function styleAt(state: EditorState, index: number): RunStyle | null {
   for (const s of state.spans) if (index >= s.start && index < s.end) return s.style;
   return null;
 }
 
-/** pos 에 새 글자를 넣을 때의 모양: 앞 글자, 맨 앞이면 뒤 글자, 빈 텍스트면 baseStyle. */
+/** Style when inserting a new character at pos: the previous character, the following one at the very start, baseStyle for empty text. */
 export function insertionStyle(state: EditorState, pos: number): RunStyle {
   if (state.text.length === 0) return state.baseStyle;
   return styleAt(state, pos > 0 ? pos - 1 : 0) ?? state.baseStyle;
 }
 
-/** 모양 구간 → 편집 RPC 의 `TextRun[]`. 빈 텍스트도 모양을 유지하기 위해 빈 run 하나를 남긴다. */
+/** Style ranges → the `TextRun[]` of the edit RPC. Empty text also keeps one empty run to preserve the style. */
 export function toRuns(state: EditorState): TextRun[] {
   if (state.text.length === 0) return [{ text: '', style: state.baseStyle }];
   return state.spans.map((s) => ({ text: state.text.slice(s.start, s.end), style: s.style }));
@@ -117,7 +117,7 @@ export function compositionText(state: EditorState): string {
   return state.composition ? state.text.slice(state.composition[0], state.composition[1]) : '';
 }
 
-/** [start, end) 를 insert 로 바꾼다(모양은 style). 새 텍스트와 구간을 돌려준다. */
+/** Replaces [start, end) with insert (style is style). Returns the new text and ranges. */
 function replaceRange(
   state: EditorState,
   start: number,
@@ -147,8 +147,8 @@ function withCaret(state: EditorState, pos: number): EditorState {
 }
 
 /**
- * [from, from+len) 를 새로 넣은 직후, 이웃 자소와 합쳐질 수 있는 영향 구간을 NFC 로 다시 정규화한다.
- * caret 은 삽입 끝(from+len)에 있다고 보고 정규화 뒤 같은 논리 위치로 옮긴다.
+ * Right after [from, from+len) is newly inserted, renormalizes to NFC the affected range that may merge with neighboring graphemes.
+ * The caret is taken to be at the insertion end (from+len) and is moved to the same logical position after normalization.
  */
 function fixupNfc(state: EditorState, from: number, len: number): EditorState {
   const end = from + len;
@@ -164,7 +164,7 @@ function fixupNfc(state: EditorState, from: number, len: number): EditorState {
   return { ...state, ...next, caret: pos, anchor: pos };
 }
 
-/** 선택(없으면 캐럿)을 raw 텍스트(정규화함)로 바꾼다. */
+/** Replaces the selection (the caret if none) with raw text (normalized). */
 export function insertText(state: EditorState, raw: string): EditorState {
   const text = normalizeInput(raw);
   if (text === '') return hasSelection(state) ? deleteSelection(state) : state;
@@ -203,7 +203,7 @@ export function deleteForward(state: EditorState, byWord = false): EditorState {
   return withCaret({ ...state, ...replaceRange(state, state.caret, to, '', style) }, state.caret);
 }
 
-/** 캐럿 이동. extend 이면 anchor 를 유지해 선택을 넓힌다. 조합은 호출자가 먼저 확정한다. */
+/** Caret move. With extend, keeps the anchor and widens the selection. The caller finalizes any composition first. */
 export function moveTo(
   state: EditorState,
   pos: number,
@@ -229,22 +229,22 @@ export function selectAll(state: EditorState): EditorState {
   return { ...state, anchor: 0, caret: state.text.length, affinity: 'downstream' };
 }
 
-/** pos 가 놓인 단어를 선택한다(더블클릭). */
+/** Selects the word containing pos (double-click). */
 export function selectWordAt(state: EditorState, pos: number): EditorState {
   const [a, b] = wordRangeAt(state.text, pos);
   return setSelection(state, a, b);
 }
 
-// ── IME 조합 ──────────────────────────────────────────────────────────
+// ── IME composition ───────────────────────────────────────────────────
 
-/** 조합 시작(compositionstart). 선택이 있으면 IME 가 바꿀 것이므로 먼저 지운다. */
+/** Composition start (compositionstart). If there is a selection, the IME will replace it, so it is deleted first. */
 export function beginComposition(state: EditorState): EditorState {
   if (state.composition) return state;
   const base = hasSelection(state) ? deleteSelection(state) : state;
   return { ...base, composition: [base.caret, base.caret], anchor: base.caret };
 }
 
-/** 조합 문자열 갱신(compositionupdate·input). 조합 구간의 텍스트를 text 로 바꾸고 캐럿을 조합 끝에 둔다. */
+/** Composition string update (compositionupdate, input). Replaces the text of the composition range with text and puts the caret at the composition end. */
 export function updateComposition(state: EditorState, text: string): EditorState {
   const base = state.composition ? state : beginComposition(state);
   const [s, e] = base.composition!;
@@ -262,8 +262,8 @@ export function updateComposition(state: EditorState, text: string): EditorState
 }
 
 /**
- * 조합 확정(compositionend). finalText 가 주어지면 그 문자열로 확정한다. 확정 문자열은 NFC 로 정규화한다.
- * 조합 중이 아니면 상태를 바꾸지 않는다.
+ * Composition end (compositionend). If finalText is given, finalizes with that string. The finalized string is normalized to NFC.
+ * Does not change the state if not composing.
  */
 export function endComposition(state: EditorState, finalText?: string): EditorState {
   if (!state.composition) return state;
@@ -282,9 +282,9 @@ export function endComposition(state: EditorState, finalText?: string): EditorSt
   return committed.length > 0 ? fixupNfc(cur, s, committed.length) : cur;
 }
 
-// ── 되돌리기 이력 ─────────────────────────────────────────────────────
+// ── Undo history ──────────────────────────────────────────────────────
 
-/** 이력에 저장하는 상태(조합 없음). */
+/** State stored in the history (no composition). */
 type Snapshot = Omit<EditorState, 'composition'>;
 
 const snapshotOf = (s: EditorState): Snapshot => ({
@@ -296,7 +296,7 @@ const snapshotOf = (s: EditorState): Snapshot => ({
   affinity: s.affinity,
 });
 
-/** 연속 입력이 한 단위로 묶이는 최대 정지 시간(ms, 계약 I6). */
+/** Maximum pause during which continuous input is grouped into one unit (ms, contract I6). */
 export const UNDO_PAUSE_MS = 500;
 
 export type UnitKind = 'input' | 'delete-back' | 'delete-forward' | 'standalone';
@@ -321,12 +321,12 @@ export class TextHistory {
     return this.redoStack.length > 0;
   }
 
-  /** 캐럿 이동·클릭 등으로 현재 단위를 닫는다. */
+  /** Closes the current unit by caret move, click, etc. */
   breakUnit(): void {
     this.open = null;
   }
 
-  /** 변경 하나를 기록한다. before = 변경 직전 상태, endsUnit = 이 변경 뒤 단위를 닫음. */
+  /** Records one change. before = the state just before the change, endsUnit = closes the unit after this change. */
   record(
     before: EditorState,
     afterCaret: number,
@@ -367,18 +367,18 @@ export class TextHistory {
 }
 
 export interface EditorModelOptions {
-  /** 시각(ms). 테스트에서 주입한다. */
+  /** Time (ms). Injected in tests. */
   now?: () => number;
-  /** 시작 캐럿 위치(기본 텍스트 끝). */
+  /** Start caret position (default: end of text). */
   caret?: number;
 }
 
-/** 편집 상태와 되돌리기 이력을 묶은 편집 모델. 연산은 텍스트가 바뀌었는지(boolean)를 돌려준다. */
+/** Edit model combining the edit state and the undo history. An operation returns whether the text changed (boolean). */
 export class EditorModel {
   state: EditorState;
   readonly history = new TextHistory();
   private readonly now: () => number;
-  /** 조합을 시작하기 전 상태(되돌리기 단위의 "변경 전"). */
+  /** State before composition started (the "before change" of the undo unit). */
   private compositionOrigin: EditorState | null = null;
 
   constructor(runs: TextRun[], options: EditorModelOptions = {}) {
@@ -402,13 +402,13 @@ export class EditorModel {
     return changed;
   }
 
-  /** 입력(beforeinput insertText). 조합 중이면 무시한다. */
+  /** Input (beforeinput insertText). Ignored while composing. */
   insertText(text: string): boolean {
     if (this.composing) return false;
     return this.apply(insertText(this.state, text), 'input', normalizeInput(text));
   }
 
-  /** 붙여넣기: 항상 별도 단위. */
+  /** Paste: always a separate unit. */
   paste(text: string): boolean {
     if (this.composing) return false;
     return this.apply(insertText(this.state, text), 'standalone', '');
@@ -424,13 +424,13 @@ export class EditorModel {
     return this.apply(deleteForward(this.state, byWord), 'delete-forward', '');
   }
 
-  /** 선택 삭제(잘라내기). 별도 단위. */
+  /** Delete selection (cut). A separate unit. */
   deleteSelection(): boolean {
     if (this.composing) return false;
     return this.apply(deleteSelection(this.state), 'standalone', '');
   }
 
-  /** 캐럿 이동·선택 변경(텍스트는 그대로). 조합 중이면 무시한다. */
+  /** Caret move / selection change (text unchanged). Ignored while composing. */
   moveTo(pos: number, extend = false, affinity: Affinity = 'downstream'): void {
     if (this.composing) return;
     this.apply(moveTo(this.state, pos, extend, affinity), 'standalone', '');
@@ -459,13 +459,13 @@ export class EditorModel {
     this.state = beginComposition(this.state);
   }
 
-  /** 조합 문자열 갱신. 이력에는 확정할 때 남긴다. */
+  /** Composition string update. Recorded in the history when finalized. */
   compositionUpdate(text: string): void {
     if (!this.composing) this.compositionOrigin = this.state;
     this.state = updateComposition(this.state, text);
   }
 
-  /** 조합 확정. finalText 가 없으면 현재 조합 문자열로 확정한다. 확정 문자열이 있었는지 돌려준다. */
+  /** Composition end. If there is no finalText, finalizes with the current composition string. Returns whether there was a finalized string. */
   compositionEnd(finalText?: string): boolean {
     if (!this.composing) return false;
     const origin = this.compositionOrigin ?? this.state;
@@ -474,16 +474,16 @@ export class EditorModel {
     const next = endComposition(this.state, finalText);
     const committed = next.text.slice(s, next.caret);
     if (committed.length > 0) {
-      // 조합 시작 전 상태가 "변경 전" 이다. 조합 확정 한 번은 앞뒤 입력과 같은 단위로 묶일 수 있다.
+      // The state before composition started is the "before change". One composition commit may be grouped into the same unit as the input before and after it.
       this.history.record(origin, next.caret, 'input', endsUndoUnit(committed), this.now());
     }
     this.state = next;
     return committed.length > 0;
   }
 
-  // ── 되돌리기 ──
+  // ── Undo ──
 
-  /** 글자 단위 되돌리기. 조합 중이면 무시한다(계약 I5). */
+  /** Per-character undo. Ignored while composing (contract I5). */
   undo(): boolean {
     if (this.composing) return false;
     const prev = this.history.undo(this.state);

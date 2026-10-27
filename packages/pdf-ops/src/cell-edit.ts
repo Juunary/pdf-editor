@@ -1,20 +1,20 @@
 /**
- * 표 셀 편집 대상(M4, docs/m4-contract.md 4.1·D1·D5). 문서를 읽지 않는 순수 계산이다.
+ * Table cell edit target (M4, docs/m4-contract.md 4.1, D1, D5). Pure computation that does not read the document.
  *
- * - 대상: 셀 하나 = 편집 단위(D1). 셀 안 문단 전부를 읽기 순서로 묶은 문단 하나로 다룬다.
- * - 줄 잇기: 셀 안 줄 사이(문단 안·문단 사이)는 자동 줄바꿈이면 공백, 아니면 "\n". 자동 줄바꿈 = 다음 줄 첫 단어가
- *   앞 줄 뒤 셀 안쪽 폭에 들어가지 않음. 문단 사이는 기준선 간격이 앞 문단 줄 간격과 같을(±10%) 때만 공백.
- *   계약의 "앞 줄이 셀 오른쪽 1em 안까지 참" 대신 이 판정을 쓴다: 오른쪽 정렬로 쌓은 숫자 줄이 공백으로 이어져 다시
- *   배치되면 위치가 바뀐다(코퍼스 실측, docs/m4-pdf-ops.md 계약 불일치 2).
- * - 셀 상자: 괘선 표는 레이아웃 셀 상자. 정렬 전략 표는 바깥 열·행을 이웃 간격 절반(없으면 1em)만큼, 표 상자가
- *   더 크면 표 상자까지 넓힌다(D5).
- * - 여백: 변마다 min(원 글자와 경계 간격, 2pt). 영역 상한(areaLimit) = (셀 상자 − 여백) ∪ 원 글자 상자(원 글자가
- *   셀 상자 밖으로 나온 셀에서 같은 텍스트가 초과가 되지 않게, docs/m4-pdf-ops.md 계약 불일치 3).
- * - 시작 영역: 세로는 글자 상자, 가로는 셀 상자 − 여백. 단 정렬한 쪽 변(왼쪽 정렬이면 왼쪽, 가운데면 양쪽 같은 값)은
- *   원 글자 간격을 그대로 써서 같은 텍스트 커밋에서 글자가 움직이지 않게 한다(계약 1.1 위치 보존 ≤ 0.5pt,
- *   docs/m4-pdf-ops.md 계약 불일치 1).
- * - 정렬: 괘선 표는 셀 안 좌·우 간격 비교(차 < 1pt 가운데, 오른쪽 간격이 작으면 오른쪽, 아니면 왼쪽). 정렬 전략 표는
- *   같은 열(병합 없는 셀) 글자 상자의 x0·x1·가운데 퍼짐이 가장 작은 키(셀 2개 이상일 때, 아니면 간격 비교).
+ * - Target: one cell = one edit unit (D1). All paragraphs in the cell are handled as a single paragraph joined in reading order.
+ * - Line joining: between lines in a cell (within and between paragraphs) is a space for an automatic wrap, otherwise "\n". Automatic wrap = the first word of the next line
+ *   would not fit in the inner cell width after the previous line. Between paragraphs, a space only when the baseline gap equals the previous paragraph's line spacing (±10%).
+ *   This check is used instead of the contract's "the previous line fills to within 1em of the cell's right edge": number lines stacked with right alignment
+ *   would be joined by spaces and laid out again, which moves their positions (corpus measurement, docs/m4-pdf-ops.md contract mismatch 2).
+ * - Cell box: for a ruled table, the layout cell box. For an alignment-strategy table, the outer columns/rows are widened by half the neighbor gap (1em if none), and up to the table box
+ *   if the table box is larger (D5).
+ * - Margin: per side min(gap between original characters and the boundary, 2pt). Area limit (areaLimit) = (cell box − margin) ∪ original character box (so that, in a cell where the original characters
+ *   stick out of the cell box, the same text does not become an overflow, docs/m4-pdf-ops.md contract mismatch 3).
+ * - Start area: vertically the character box, horizontally cell box − margin. But for the aligned side (left edge for left alignment, both sides equally for center),
+ *   the original character gap is used as is so that characters do not move on a same-text commit (contract 1.1 position preservation ≤ 0.5pt,
+ *   docs/m4-pdf-ops.md contract mismatch 1).
+ * - Alignment: for a ruled table, compare left/right gaps in the cell (difference < 1pt is center, a smaller right gap is right, otherwise left). For an alignment-strategy table,
+ *   the key with the smallest spread of x0, x1 and center of the character boxes in the same column (cells without merging) (when there are 2 or more cells, otherwise gap comparison).
  */
 import { offsetMap } from './text-map.js';
 import type {
@@ -31,18 +31,18 @@ import type {
 export interface CellTarget {
   table: LayoutTable;
   cell: TableCell;
-  /** 셀 상자(D5, 정렬 전략 표는 넓힌 상자). */
+  /** Cell box (D5; the widened box for an alignment-strategy table). */
   box: Rect;
-  /** (셀 상자 − 여백(변마다 min(간격, 2pt))) ∪ 원 글자 상자 = 영역 상한. */
+  /** (cell box − margin (per side min(gap, 2pt))) ∪ original character box = area limit. */
   limit: Rect;
-  /** 시작 영역의 가로(정렬한 변은 원 간격). */
+  /** Horizontal extent of the start area (original gap on the aligned side). */
   areaX: [number, number];
   align: ParagraphAlign;
-  /** 줄 간격: 첫 문단 값, 없으면 셀 줄 기준선 간격 중앙값(줄 1개면 null). */
+  /** Line spacing: the first paragraph's value, otherwise the median of cell line baseline gaps (null for a single line). */
   lineHeight: number | null;
-  /** 셀 문단을 이은 문단(id = 셀 첫 문단 id). */
+  /** Paragraph that joins the cell paragraphs (id = first cell paragraph id). */
   paragraph: LayoutParagraph;
-  /** 셀 문단 id 전부. */
+  /** All cell paragraph ids. */
   members: Set<number>;
 }
 
@@ -53,7 +53,7 @@ const unionRect = (a: Rect | null, b: Rect): Rect =>
     ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]
     : [...b];
 
-/** 문단이 든 셀(표 셀 문단이 아니거나 셀을 찾지 못하면 null). */
+/** Cell containing the paragraph (null if it is not a table cell paragraph or the cell is not found). */
 export function cellOfParagraph(
   layout: PageLayout,
   paragraphId: number,
@@ -65,7 +65,7 @@ export function cellOfParagraph(
   return table && cell ? { table, cell } : null;
 }
 
-/** 줄 상자들의 합(보이는 글자 줄). */
+/** Union of line boxes (visible character lines). */
 function linesBox(model: PageModel, lines: readonly number[]): Rect | null {
   let r: Rect | null = null;
   for (const li of lines) {
@@ -75,11 +75,11 @@ function linesBox(model: PageModel, lines: readonly number[]): Rect | null {
   return r;
 }
 
-/** 정렬 전략 표의 셀 상자: 바깥 열·행을 이웃 간격 절반(또는 표 상자)까지 넓힌다. */
+/** Cell box of an alignment-strategy table: outer columns/rows are widened to half the neighbor gap (or to the table box). */
 function textCellBox(model: PageModel, table: LayoutTable, cell: TableCell): Rect {
   const box: Rect = [...cell.bbox];
   const textOf = (c: TableCell) => linesBox(model, c.lines);
-  // 열 사이 글자 간격, 행 사이 글자 간격의 최솟값.
+  // Minimum of the character gap between columns and the character gap between rows.
   const gaps = (axis: 0 | 1): number[] => {
     const n = axis === 0 ? table.cols : table.rows;
     const out: number[] = [];
@@ -113,7 +113,7 @@ function textCellBox(model: PageModel, table: LayoutTable, cell: TableCell): Rec
   return box;
 }
 
-/** 정렬 전략 표의 열 정렬 키. 판단할 수 없으면 null. */
+/** Column alignment key of an alignment-strategy table. null if it cannot be determined. */
 function columnAlign(model: PageModel, table: LayoutTable, col: number): ParagraphAlign | null {
   const boxes = table.cells
     .filter((c) => c.col === col && c.colSpan === 1)
@@ -140,8 +140,8 @@ function gapAlign(text: Rect, box: Rect): ParagraphAlign {
 }
 
 /**
- * 앞 줄 끝에서 줄을 바꾼 것이 자동 줄바꿈인가: 다음 줄 첫 단어(+ 공백 0.25em)가 앞 줄 뒤 셀 안쪽 폭에 들어가지 않았으면
- * 자동 줄바꿈(공백으로 잇기), 들어갔으면 강제 줄바꿈("\n"). 오른쪽·가운데 정렬로 쌓은 짧은 줄(숫자 열 등)도 판정한다.
+ * Whether the line break at the end of the previous line is an automatic wrap: if the first word of the next line (+ 0.25em space) did not fit in the inner cell width after the previous line, it is an
+ * automatic wrap (join with a space); if it fit, a forced break ("\n"). Also classifies short lines stacked with right/center alignment (number columns, etc.).
  */
 function wrapped(model: PageModel, prev: number, next: number, innerWidth: number): boolean {
   const a = model.lines[prev];
@@ -159,7 +159,7 @@ function wrapped(model: PageModel, prev: number, next: number, innerWidth: numbe
   return width + 0.25 * size + word > innerWidth - 0.5;
 }
 
-/** 문단 안 줄 사이 공백 중 강제 줄바꿈으로 볼 곳을 "\n" 으로 바꾼 텍스트(길이·글자 대응은 그대로). */
+/** Text where, among spaces between lines in a paragraph, those to be treated as forced breaks are replaced with "\n" (length and character mapping unchanged). */
 function lineBreaks(model: PageModel, p: LayoutParagraph, innerWidth: number): string {
   if (p.lines.length < 2) return p.text;
   const text = p.text;
@@ -171,7 +171,7 @@ function lineBreaks(model: PageModel, p: LayoutParagraph, innerWidth: number): s
     const next = p.lines[k]!;
     const last = lineAt.lastIndexOf(prev);
     const first = lineAt.indexOf(next, last + 1);
-    // 줄 사이가 공백 하나일 때만(줄 끝 하이픈으로 붙인 경우는 그대로).
+    // Only when the line gap is a single space (leave it as is when joined by an end-of-line hyphen).
     if (last < 0 || first !== last + 2 || text[last + 1] !== ' ') continue;
     if (!wrapped(model, prev, next, innerWidth)) breaks.push(last + 1);
   }
@@ -180,7 +180,7 @@ function lineBreaks(model: PageModel, p: LayoutParagraph, innerWidth: number): s
   return out;
 }
 
-/** 셀 문단들을 한 문단으로 잇는다(D1). 줄 사이·문단 사이는 자동 줄바꿈이면 공백, 아니면 "\n". */
+/** Joins cell paragraphs into one paragraph (D1). Between lines and between paragraphs: a space for an automatic wrap, otherwise "\n". */
 function mergeParagraphs(
   model: PageModel,
   paras: readonly LayoutParagraph[],
@@ -214,14 +214,14 @@ function mergeParagraphs(
   };
 }
 
-/** 첫 보이는 글자의 기준선 y. */
+/** Baseline y of the first visible character. */
 function baselineOf(model: PageModel, line: number): number | null {
   const l = model.lines[line];
   const c = l?.chars.map((i) => model.chars[i]!).find((ch) => ch.text.trim() !== '');
   return c ? c.origin[1] : null;
 }
 
-/** 문단 사이: 자동 줄바꿈이고 기준선 간격이 앞 문단 줄 간격과 같으면(±10%) 공백, 아니면 "\n". */
+/** Between paragraphs: a space if it is an automatic wrap and the baseline gap equals the previous paragraph's line spacing (±10%), otherwise "\n". */
 function joiner(
   model: PageModel,
   prev: LayoutParagraph,
@@ -239,7 +239,7 @@ function joiner(
   return sameLeading && wrapped(model, lastLine, firstLine, innerWidth) ? ' ' : '\n';
 }
 
-/** 셀 문단들의 보이는(공백류가 아닌) 글자 상자 가로 범위. 없으면 null. */
+/** Horizontal range of the visible (non-whitespace) character boxes of the cell paragraphs. null if none. */
 function inkSpan(model: PageModel, paras: readonly LayoutParagraph[]): [number, number] | null {
   let x0 = Infinity;
   let x1 = -Infinity;
@@ -255,7 +255,7 @@ function inkSpan(model: PageModel, paras: readonly LayoutParagraph[]): [number, 
   return x0 <= x1 ? [x0, x1] : null;
 }
 
-/** 문단 paragraphId 의 셀 대상. 표 셀 문단이 아니면 null. */
+/** Cell target of paragraph paragraphId. null if it is not a table cell paragraph. */
 export function cellTarget(
   model: PageModel,
   layout: PageLayout,
@@ -277,16 +277,16 @@ export function cellTarget(
     Math.max(0, g),
   );
   const m = gap.map((g) => Math.min(g, MARGIN));
-  // 원 글자가 셀 상자 밖으로 나온 셀(괘선에 걸친 글자, 셀 배정은 줄 가운데 기준)도 같은 텍스트가 초과가 되지 않게
-  // 원 글자 상자를 상한에 합친다.
+  // For a cell whose original characters stick out of the cell box (characters straddling a ruling line; cell assignment is by line center), merge the original
+  // character box into the limit so the same text does not become an overflow.
   const limit = unionRect([box[0] + m[0]!, box[1] + m[1]!, box[2] - m[2]!, box[3] - m[3]!], t);
   const align =
     (table.strategy === 'text' && cell.colSpan === 1
       ? columnAlign(model, table, cell.col)
       : null) ?? gapAlign(t, box);
-  // 정렬한 변은 원 간격(위치 보존), 반대 변은 셀 경계 − 여백. 정렬한 변의 위치는 보이는 글자 잉크의 가로 범위로 정한다:
-  // 문단 상자는 줄 끝 공백 글리프까지 덮어, 리플로우 줄(줄 끝 공백 제외)이 가운데 정렬은 공백 폭 절반, 오른쪽 정렬은
-  // 공백 폭만큼 밀린다(docs/m4-pdf-ops.md 6절 #7, fed-combined-finstmt-2025 8쪽 1.0pt). 정렬 판정은 문단 상자 그대로.
+  // The aligned side uses the original gap (position preservation), the opposite side uses cell boundary − margin. The position of the aligned side is set from the horizontal range of the visible character ink:
+  // the paragraph box covers even the trailing-space glyph at line end, so reflowed lines (excluding the trailing space) shift by half a space width for center alignment and
+  // a full space width for right alignment (docs/m4-pdf-ops.md section 6 #7, fed-combined-finstmt-2025 page 8, 1.0pt). Alignment classification uses the paragraph box as is.
   const [i0, i1] = inkSpan(model, paras) ?? [t[0], t[2]];
   let areaX: [number, number];
   if (align === 'right') areaX = [limit[0], i1];

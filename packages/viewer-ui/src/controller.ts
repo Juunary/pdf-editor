@@ -1,10 +1,10 @@
 /**
- * 뷰어 상태 컨트롤러. 페이지 이동·렌더·추출 모델·검색·디버그 연동을 비동기로 조율한다.
+ * Viewer state controller. Asynchronously coordinates page navigation, rendering, the extraction model, search, and debug integration.
  *
- * - DOM 에 의존하지 않는다(캔버스 그리기와 이벤트는 컴포넌트 몫). 가짜 `ViewerHost` 로 Node 에서 테스트한다.
- * - 기능별 실패 격리: extractPage·searchText·linkPage 가 "M1 미구현" 예외를 내면 그 기능만 비활성화하고
- *   진단 로그(`host.log`)에 남긴다. 렌더·페이지 이동은 계속 동작한다.
- * - 느린 응답이 최신 상태를 덮지 않도록 요청마다 토큰으로 오래된 응답을 버린다.
+ * - Does not depend on the DOM (canvas drawing and events are the components' job). Tested in Node with a fake `ViewerHost`.
+ * - Per-feature failure isolation: if extractPage, searchText or linkPage throws an "M1 not implemented" exception, only that feature is disabled and
+ *   it is recorded in the diagnostic log (`host.log`). Rendering and page navigation keep working.
+ * - So that a slow response does not overwrite the latest state, stale responses are dropped using a per-request token.
  */
 import type {
   PageInfo,
@@ -39,7 +39,7 @@ import {
 
 export type FeatureName = 'text' | 'search' | 'debug' | 'layout' | 'edit' | 'path';
 
-/** 렌더가 끝난 현재 페이지. 오버레이 배치의 기준이다. */
+/** The current page whose render has finished. The reference for overlay layout. */
 export interface PageView {
   pageIndex: number;
   info: PageInfo;
@@ -65,7 +65,7 @@ export interface DebugData {
 
 export interface ViewerState {
   pageCount: number;
-  /** 이동을 요청한 페이지(렌더 완료 전일 수 있다). 렌더된 페이지는 view.pageIndex. */
+  /** Page whose navigation was requested (may be before the render completes). The rendered page is view.pageIndex. */
   pageIndex: number;
   loading: boolean;
   renderError: string | null;
@@ -73,15 +73,15 @@ export interface ViewerState {
   text: Loadable<TextData>;
   debugEnabled: boolean;
   debug: Loadable<DebugData>;
-  /** 레이아웃 오버레이(M2 getPageLayout: 문단·표·도형·읽기 순서). */
+  /** Layout overlay (M2 getPageLayout: paragraphs, tables, shapes, reading order). */
   layoutEnabled: boolean;
   layout: Loadable<DocumentPageLayout>;
-  /** 영구 비활성화 사유(없으면 null). */
+  /** Reason for permanent disablement (null if none). */
   disabled: Record<FeatureName, string | null>;
   find: FindState;
-  /** 문단 편집(M3) 상태. */
+  /** Paragraph editing (M3) state. */
   edit: EditState;
-  /** 올릴 때마다 쪽 캔버스를 현재 `view` 의 렌더로 다시 그린다(편집 취소 뒤 복원). */
+  /** Each time it is incremented, redraws the page canvas with the current `view` render (restore after edit cancel). */
   repaintToken: number;
 }
 
@@ -100,35 +100,35 @@ export interface ViewerControllerOptions {
   host: ViewerHost;
   pageCount: number;
   initialPage?: number;
-  /** 현재 환경 값을 읽는다(페이지를 그릴 때마다 호출). */
+  /** Reads the current environment values (called each time a page is drawn). */
   getEnvironment(): ViewerEnvironment;
-  /** pt 폭 → CSS 배율. 기본: 화면 폭 맞춤(`fitWidthScale`). */
+  /** pt width → CSS scale. Default: fit to screen width (`fitWidthScale`). */
   cssScaleFor?(pageWidthPt: number, env: ViewerEnvironment): number;
-  /** 검색어 입력 후 검색까지 대기(ms). 기본 200. */
+  /** Wait from search-term input to search (ms). Default 200. */
   findDebounceMs?: number;
-  /** 컴포넌트가 비트맵을 캔버스에 그린 뒤 호출된다. */
+  /** Called after a component draws the bitmap onto the canvas. */
   onPagePainted?(event: PagePaintedEvent): void;
-  /** 복구용 편집 로그(D6). 호출자(확장)가 같은 인스턴스를 복구 계층에도 준다. 없으면 내부에서 만든다. */
+  /** Edit log for recovery (D6). The caller (extension) also gives the same instance to the recovery layer. If absent, one is created internally. */
   editLog?: EditLog;
-  /** 시각(ms, performance.now). 테스트에서 주입한다. */
+  /** Time (ms, performance.now). Injected in tests. */
   now?(): number;
-  /** 렌더 캐시 상한(기본 8쪽·64 MiB). 벤치마크의 비교 실험용. */
+  /** Render cache limit (default 8 pages, 64 MiB). For benchmark comparison experiments. */
   renderCacheLimits?: RenderCacheLimits;
-  /** 유휴 시 다음 쪽을 미리 렌더한다(기본 true, M5 계약 4.1). */
+  /** Pre-render the next page when idle (default true, M5 contract 4.1). */
   prefetch?: boolean;
-  /** 유휴 시점에 `fn` 을 실행한다. 기본: `requestIdleCallback`(없으면 `setTimeout`). 테스트에서 주입한다. */
+  /** Runs `fn` at an idle moment. Default: `requestIdleCallback` (`setTimeout` if absent). Injected in tests. */
   scheduleIdle?(fn: () => void): void;
-  /** UI 문자열 표(`strings.ts`). 기본은 한국어. 확장은 브라우저 UI 언어로 고른다. */
+  /** UI string table (`strings.ts`). Korean by default. The extension picks it by the browser UI language. */
   strings?: ViewerStrings;
 }
 
 export type StateListener = (state: ViewerState) => void;
 
 const DEFAULT_FIND_DEBOUNCE_MS = 200;
-/** 환경 변화로 다시 그릴 최소 배율 차이(비율). */
+/** Minimum scale difference (ratio) that triggers a redraw on environment change. */
 const RESCALE_THRESHOLD = 0.005;
 
-/** 기능을 쓸 수 없는 사유. 쓸 수 있으면 null. 디버그는 PageModel 이 필요하다. */
+/** Reason a feature cannot be used. null if it can. Debug requires a PageModel. */
 export function featureDisabledReason(state: ViewerState, feature: FeatureName): string | null {
   const own = state.disabled[feature];
   if (own) return own;
@@ -137,19 +137,19 @@ export function featureDisabledReason(state: ViewerState, feature: FeatureName):
 }
 
 /**
- * "레이아웃·편집 표시" 버튼(사용자 요청 2026-10-22): 레이아웃 오버레이와 편집 가능 표시(켜면 클릭으로 패스 선택)를
- * 한 버튼으로 함께 켜고 끈다. 한쪽만 쓸 수 있으면 그쪽만 켠다.
+ * The "Layout/edit overlay" button (user request 2026-10-22): turns the layout overlay and the editability overlay (when on, clicking selects a path)
+ * on and off together with one button. If only one of them is available, only that one is toggled.
  */
 export interface OverlayToggleState {
-  /** 쓸 수 있는 쪽 중 하나라도 켜져 있으면 true(버튼 눌림). */
+  /** true if any of the available ones is on (button pressed). */
   on: boolean;
-  /** 레이아웃 오버레이를 쓸 수 없는 사유(쓸 수 있으면 null). */
+  /** Reason the layout overlay cannot be used (null if it can). */
   layoutReason: string | null;
-  /** 편집 가능 표시를 쓸 수 없는 사유(쓸 수 있으면 null). */
+  /** Reason the editability overlay cannot be used (null if it can). */
   marksReason: string | null;
 }
 
-/** 편집 RPC 가 없는 호스트(읽기 전용 하니스·벤치)의 편집 가능 표시 사유(한국어). */
+/** Editability overlay reason (Korean) for hosts without edit RPCs (read-only harness, benchmarks). */
 export const NO_EDIT_HOST_REASON = VIEWER_STRINGS.ko.noEditHost;
 
 export function overlayToggleState(
@@ -168,7 +168,7 @@ export function overlayToggleState(
   };
 }
 
-/** 합친 버튼의 제목(툴팁). 쓸 수 없는 쪽은 사유를 적는다. */
+/** Title (tooltip) of the combined button. For the unavailable one, the reason is given. */
 export function overlayToggleTitle(
   s: OverlayToggleState,
   pathSelect: boolean,
@@ -200,15 +200,15 @@ export class ViewerController {
   private searchPending = false;
   private disposed = false;
   private readonly loggedKinds = new Set<string>();
-  /** 편집(M3) 코디네이터. 호스트가 편집 RPC 를 주지 않으면 null. */
+  /** Edit (M3) coordinator. null if the host provides no edit RPC. */
   readonly edit: EditController | null;
   readonly editLog: EditLog;
-  /** 편집 중에 들어온 창 크기 변화(편집이 끝난 뒤 반영). */
+  /** Window size change that arrived during editing (applied after editing ends). */
   private envRefreshPending = false;
-  /** 쪽 렌더 LRU(8쪽·64 MiB 중 작은 쪽). 문서가 바뀐 쪽은 `invalidatePages` 가 버린다. */
+  /** Page render LRU (the smaller of 8 pages and 64 MiB). Pages whose document changed are dropped by `invalidatePages`. */
   readonly renderCache: RenderCache;
   private prefetchRunning = false;
-  /** UI 문자열 표(옵션 `strings`, 기본 한국어). */
+  /** UI string table (option `strings`, Korean by default). */
   readonly strings: ViewerStrings;
 
   constructor(private readonly options: ViewerControllerOptions) {
@@ -272,7 +272,7 @@ export class ViewerController {
           : null,
       });
     } else {
-      // 호스트가 편집 RPC 를 주지 않는 구성(예: 읽기 전용 하니스): 편집 UI 를 만들지 않는다.
+      // A configuration where the host provides no edit RPC (e.g. read-only harness): the edit UI is not created.
       this.edit = null;
     }
   }
@@ -308,14 +308,14 @@ export class ViewerController {
     this.patch({ disabled: { ...this.state.disabled, [feature]: reason } });
   }
 
-  /** 같은 종류의 로그는 한 번만 남긴다(페이지마다 반복되는 "미구현" 로그 방지). */
+  /** Logs of the same kind are recorded only once (prevents the "not implemented" log repeated on every page). */
   private logOnce(kind: string, event: string, data: unknown): void {
     if (this.loggedKinds.has(kind)) return;
     this.loggedKinds.add(kind);
     this.host.log(event, data);
   }
 
-  // ── 페이지 이동 · 렌더 ────────────────────────────────────────────────
+  // ── Page navigation · rendering ──────────────────────────────────────
 
   start(): Promise<void> {
     return this.goToPage(this.state.pageIndex);
@@ -329,7 +329,7 @@ export class ViewerController {
     return this.goToPage(stepPage(this.state.pageIndex, -1, this.state.pageCount));
   }
 
-  /** 입력창 문자열(1부터)로 이동. 유효하지 않으면 false 를 돌려주고 이동하지 않는다. */
+  /** Navigate by the input box string (1-based). If invalid, returns false and does not navigate. */
   goToPageInput(text: string): boolean {
     const index = parsePageInput(text, this.state.pageCount);
     if (index === null) return false;
@@ -339,23 +339,23 @@ export class ViewerController {
 
   async goToPage(index: number): Promise<void> {
     const target = clampPage(index, this.state.pageCount);
-    // 초안이 있으면 먼저 커밋한다(쪽 이동 중 초안을 잃지 않게). 커밋에 실패해 편집이 계속되면 이동하지 않는다.
+    // If there is a draft, commit it first (so the draft is not lost during page navigation). If the commit fails and editing continues, do not navigate.
     if (this.edit?.active && target !== this.state.pageIndex && !(await this.edit.commitActive())) {
       return;
     }
     if (target !== this.state.pageIndex) this.edit?.paths?.reset();
     const { pageIndex, loading, view } = this.state;
-    // 이미 보고 있거나 불러오는 중인 페이지는 다시 그리지 않는다.
+    // Do not redraw a page that is already being viewed or loaded.
     if (target === pageIndex && (loading || view?.pageIndex === target)) return;
     await this.loadView(target);
   }
 
-  /** 창 크기·확대/축소·dpr 변화 후 현재 페이지를 새 배율로 다시 그린다(추출 모델은 재사용). */
+  /** After a window size, zoom or dpr change, redraws the current page at the new scale (the extraction model is reused). */
   async refreshEnvironment(): Promise<void> {
     const view = this.state.view;
     if (!view || this.state.loading) return;
     if (this.edit?.active) {
-      // 편집 중에는 쪽 캔버스를 다시 그리지 않는다(변경 영역 합성 기준 배율 유지). 끝난 뒤 반영한다.
+      // Do not redraw the page canvas during editing (keeps the base scale for changed-region compositing). Apply it after editing ends.
       this.envRefreshPending = true;
       return;
     }
@@ -408,7 +408,7 @@ export class ViewerController {
     this.schedulePrefetch(target);
   }
 
-  /** 현재 쪽 처리가 끝난 유휴 시점에 다음 쪽을 같은 배율로 미리 렌더한다(1쪽). */
+  /** When the current page has finished processing and the app is idle, pre-renders the next page at the same scale (1 page). */
   private schedulePrefetch(from: number): void {
     if (this.options.prefetch === false || this.prefetchRunning) return;
     const idle =
@@ -444,13 +444,13 @@ export class ViewerController {
       const rendered = await this.host.renderPage({ pageIndex: next, scale });
       this.renderCache.put(next, scale, rendered, epoch);
     } catch {
-      // 미리 렌더는 최선 노력이다. 실패는 실제 이동 때 다시 드러난다.
+      // Pre-rendering is best effort. A failure resurfaces on the actual navigation.
     } finally {
       this.prefetchRunning = false;
     }
   }
 
-  /** 렌더와 별개로 추출 모델(텍스트 층·디버그)을 불러온다. 실패는 기능 단위로 격리한다. */
+  /** Loads the extraction model (text layer, debug) separately from rendering. Failures are isolated per feature. */
   private async loadPageData(pageIndex: number): Promise<void> {
     await this.ensureText(pageIndex);
     if (this.state.debugEnabled) await this.ensureDebug(pageIndex);
@@ -462,8 +462,8 @@ export class ViewerController {
   }
 
   /**
-   * 편집·undo·복구로 쪽 내용이 바뀐 뒤: 현재 쪽이 포함되면 쪽 캐시(추출 모델·레이아웃·편집 판정)를 버리고 다시 그린다.
-   * 검색 결과는 옛 위치이므로 지우고, 검색창이 열려 있으면 다시 검색한다.
+   * After page content changes through edit, undo or recovery: if the current page is included, discards the page cache (extraction model, layout, edit classification) and redraws.
+   * Search results are at old positions, so they are cleared and, if the search bar is open, the search is run again.
    */
   async invalidatePages(pages: number[]): Promise<void> {
     this.renderCache.invalidate(pages);
@@ -487,14 +487,14 @@ export class ViewerController {
     await this.loadView(current);
   }
 
-  /** 편집이 끝났을 때 보류했던 환경 변화를 반영한다. */
+  /** Applies the environment change deferred when editing ended. */
   private async flushPendingEnvironment(): Promise<void> {
     if (!this.envRefreshPending || this.edit?.active) return;
     this.envRefreshPending = false;
     await this.refreshEnvironment();
   }
 
-  /** 확장이 Worker 를 복구한 뒤 호출한다(편집 코디네이터가 초안 재시작·캐시 정리를 한다). */
+  /** Called after the extension recovers the Worker (the edit coordinator restarts the draft and cleans up the cache). */
   async handleWorkerRecovered(): Promise<void> {
     this.renderCache.clear();
     if (!this.edit) {
@@ -506,17 +506,17 @@ export class ViewerController {
     await this.edit.handleWorkerRecovered(history ?? null);
   }
 
-  /** 편집 코디네이터 호출 뒤 보류한 환경 변화를 반영한다(컴포넌트·확장이 편집 종료 뒤 부른다). */
+  /** Applies the environment change deferred after an edit coordinator call (components and the extension call it after editing ends). */
   async afterEditEnded(): Promise<void> {
     await this.flushPendingEnvironment();
   }
 
-  /** 추출 모델은 배율과 무관하므로, 사용자가 다른 페이지로 옮겼을 때만 응답을 버린다. */
+  /** The extraction model is independent of scale, so a response is dropped only when the user has moved to another page. */
   private isStalePage(pageIndex: number): boolean {
     return this.disposed || this.state.pageIndex !== pageIndex;
   }
 
-  /** 버린 요청이 남긴 loading 표시를 지워, 나중에 같은 페이지로 돌아왔을 때 다시 불러오게 한다. */
+  /** Clears the loading marker left by a dropped request so the page is reloaded if the user returns to it later. */
   private resetStaleLoading(kind: 'text' | 'debug' | 'layout', pageIndex: number): void {
     const current = this.state[kind];
     if (!this.disposed && current.status === 'loading' && current.pageIndex === pageIndex) {
@@ -543,7 +543,7 @@ export class ViewerController {
     } catch (e) {
       const failure = classifyFailure(e);
       if (failure.kind === 'unimplemented') {
-        // 미구현은 페이지와 무관한 기능 단위 사실이므로 이동했더라도 반영한다.
+        // "Not implemented" is a per-feature fact unrelated to the page, so it is applied even if the user navigated away.
         this.disable('text', failure.message);
         this.logOnce('extract-unavailable', 'extract-unavailable', {
           feature: '텍스트 선택 층·디버그 오버레이',
@@ -558,7 +558,7 @@ export class ViewerController {
     }
   }
 
-  // ── 디버그 오버레이 ──────────────────────────────────────────────────
+  // ── Debug overlay ────────────────────────────────────────────────────
 
   toggleDebug(): void {
     if (featureDisabledReason(this.state, 'debug')) return;
@@ -583,8 +583,8 @@ export class ViewerController {
     }
     this.patch({ debug: { status: 'loading', pageIndex } });
     try {
-      // 순서대로 부른다: core 세션은 쪽 SourceMap 을 캐시하고 linkPage 가 그 객체에 unmatched 를 표시하므로,
-      // linkPage 뒤에 받은 map 이 그 표시를 담는다(SourceMap 생성 1회).
+      // Called in order: the core session caches the page SourceMap and linkPage marks unmatched on that object,
+      // so the map received after linkPage carries those marks (SourceMap is created once).
       const linkage = await this.host.linkPage(pageIndex);
       const map = await this.host.getSourceMap(pageIndex);
       if (this.isStalePage(pageIndex)) return this.resetStaleLoading('debug', pageIndex);
@@ -609,11 +609,11 @@ export class ViewerController {
     }
   }
 
-  // ── 레이아웃 오버레이 ────────────────────────────────────────────────
+  // ── Layout overlay ───────────────────────────────────────────────────
 
   /**
-   * 레이아웃 오버레이와 편집 가능 표시를 함께 켜거나 끈다(툴바 "레이아웃·편집 표시"). 쓸 수 없는 쪽은 건드리지 않는다.
-   * 편집 가능 표시를 켜면 클릭으로 패스를 선택한다(`PathLayer`).
+   * Turns the layout overlay and the editability overlay on or off together (toolbar "레이아웃·편집 표시"). The unavailable one is left alone.
+   * When the editability overlay is on, clicking selects a path (`PathLayer`).
    */
   setOverlays(on: boolean): void {
     const s = overlayToggleState(this.state, this.edit !== null);
@@ -623,7 +623,7 @@ export class ViewerController {
     }
   }
 
-  /** 합친 버튼 누름: 켜져 있으면 둘 다 끄고, 꺼져 있으면 쓸 수 있는 쪽을 모두 켠다. */
+  /** Combined button press: if on, turns both off; if off, turns on all available ones. */
   toggleOverlays(): void {
     this.setOverlays(!overlayToggleState(this.state, this.edit !== null).on);
   }
@@ -672,9 +672,9 @@ export class ViewerController {
     }
   }
 
-  // ── 검색(Ctrl+F) ─────────────────────────────────────────────────────
+  // ── Search (Ctrl+F) ──────────────────────────────────────────────────
 
-  /** Ctrl+F 를 가로챌지. 검색을 쓸 수 없게 되면 브라우저 기본 동작에 맡긴다. */
+  /** Whether to intercept Ctrl+F. If search becomes unavailable, leaves it to the browser default. */
   shouldInterceptFind(): boolean {
     return this.state.disabled.search === null;
   }
@@ -714,7 +714,7 @@ export class ViewerController {
     if (find.query !== '' && !this.state.disabled.search) void this.runSearch();
   }
 
-  /** Enter(다음) / Shift+Enter(이전). 결과가 아직 없으면 즉시 검색한다. */
+  /** Enter (next) / Shift+Enter (previous). If there are no results yet, searches immediately. */
   submitFind(backwards = false): void {
     const find = this.state.find;
     if (find.query === '') return;
@@ -741,8 +741,8 @@ export class ViewerController {
   }
 
   /**
-   * 검색 실행. Worker 는 요청을 순서대로 처리하므로, 이전 검색이 끝나기 전에 온 요청은 최신 질의 하나만
-   * 대기시키고 끝난 뒤 이어서 실행한다(입력이 이어질 때 검색이 Worker 에 쌓이지 않게).
+   * Runs the search. The Worker handles requests in order, so for requests that arrive before the previous search finishes, only the latest query
+   * is held and run after it finishes (so searches do not pile up on the Worker while typing continues).
    */
   private async runSearch(): Promise<void> {
     if (this.state.find.query === '' || this.state.disabled.search) return;
@@ -798,20 +798,20 @@ export class ViewerController {
     }
   }
 
-  /** 현재 결과가 다른 페이지에 있으면 그 페이지로 이동한다. */
+  /** If the current result is on another page, navigates to that page. */
   private showCurrentHit(): void {
     const hit = currentHit(this.state.find);
     if (hit && hit.pageIndex !== this.state.pageIndex) void this.goToPage(hit.pageIndex);
   }
 
-  // ── 컴포넌트 보고 ────────────────────────────────────────────────────
+  // ── Component reports ────────────────────────────────────────────────
 
-  /** 컴포넌트가 진단 로그에 남길 때 쓴다. */
+  /** Used by components to write to the diagnostic log. */
   log(event: string, data?: unknown): void {
     this.host.log(event, data);
   }
 
-  /** 컴포넌트가 비트맵을 캔버스에 그린 직후 호출한다. */
+  /** Called right after a component draws the bitmap onto the canvas. */
   reportPainted(view: PageView): void {
     const { layout, rendered } = view;
     this.options.onPagePainted?.({

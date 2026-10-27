@@ -7,12 +7,12 @@ interface Props {
   find: FindState;
 }
 
-/** Ctrl+F 검색창. Enter 다음, Shift+Enter 이전, Esc 닫기. */
+/** Ctrl+F search bar. Enter next, Shift+Enter previous, Esc close. */
 export function FindBar({ controller, find }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const t = controller.strings;
 
-  // 열릴 때와 Ctrl+F 를 다시 누를 때마다 입력란에 포커스하고 전체 선택한다.
+  // Each time it opens and Ctrl+F is pressed again, focus the input field and select all.
   useEffect(() => {
     inputRef.current?.focus();
     inputRef.current?.select();
@@ -31,7 +31,7 @@ export function FindBar({ controller, find }: Props) {
         value={find.query}
         onInput={(e) => controller.setFindQuery(e.currentTarget.value)}
         onKeyDown={(e) => {
-          // 한글 IME 조합 중 Enter 는 조합 확정이므로 검색 이동으로 쓰지 않는다.
+          // Enter during Korean IME composition confirms the composition, so it is not used for search navigation.
           if (e.isComposing || e.keyCode === 229) return;
           if (e.key === 'Enter') {
             e.preventDefault();

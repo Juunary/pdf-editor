@@ -1,11 +1,11 @@
-// 실제 코퍼스 재실행(A7, docs/m0-corpus-recheck.md 2절). cli.ts 에서 호출한다.
+// Rerun on the real corpus (A7, docs/m0-corpus-recheck.md section 2). Called from cli.ts.
 //
-//   node scripts/corpus/fetch-corpus.mjs                     # fixtures/corpus/*.pdf 내려받기·해시 검증
-//   pnpm --filter @pdf-editor/spike-m0 spike:corpus          # 전체 → out/m0-corpus/corpus-result.json
+//   node scripts/corpus/fetch-corpus.mjs                     # download fixtures/corpus/*.pdf and verify hashes
+//   pnpm --filter @pdf-editor/spike-m0 spike:corpus          # everything → out/m0-corpus/corpus-result.json
 //   pnpm --filter @pdf-editor/spike-m0 spike:corpus -- --only kr-paper-1,us-report-1
 //
-// 문서마다 분석(구조·문단 선택)과 편집(문단 교체·전체 저장·재열기)을 각각 별도 Node 프로세스로 실행해
-// 저장 피크 WASM 힙을 문서별로 분리한다. 편집 결과 PDF 는 out/m0-corpus/edited/<id>.pdf.
+// For each document, analysis (structure·paragraph selection) and editing (paragraph replacement·full save·reopen) each run in a separate Node process to
+// separate the save-peak WASM heap per document. Edited result PDFs go to out/m0-corpus/edited/<id>.pdf.
 import { openPdf, wasmHeapBytes } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import {
@@ -80,7 +80,7 @@ export interface AnalyzeOutput {
   marks: Mark[];
 }
 
-/** 자식(분석): 구조 분석 + 문단 선택 + 문단별 Form·태그·폰트 문맥. 저장하지 않는다. */
+/** Child (analysis): structure analysis + paragraph selection + per-paragraph Form·tag·font context. Does not save. */
 export function analyzeForEdit(bytes: Uint8Array, mark: (p: string) => void = () => {}) {
   const doc = openPdf(bytes);
   mark('open');
@@ -159,7 +159,7 @@ export function analyzeForEdit(bytes: Uint8Array, mark: (p: string) => void = ()
   return { analysis: summary, selection: sel, paragraphs };
 }
 
-/** 자식 프로세스 진입점. */
+/** Child process entry point. */
 export function runCorpusChild(
   task: string,
   input: string,
@@ -223,7 +223,7 @@ const levelOf = (fraction: number): HeapLevel =>
   fraction > 1 ? 'over-limit' : fraction > HEAP_WARN_FRACTION ? 'warn' : 'ok';
 const LEVEL_RANK: Record<HeapLevel, number> = { ok: 0, warn: 1, 'over-limit': 2 };
 
-/** Poppler(독립 구현) 교차 확인: 재추출·검색어·편집 영역 밖 렌더 diff·폰트 표. */
+/** Poppler (independent implementation) cross-check: re-extraction·search terms·render diff outside the edit area·font table. */
 function popplerCheck(original: string, saved: string, edit: EditOutput) {
   const fonts = spawnSync('pdffonts', [saved], { encoding: 'utf8' });
   const fontRow =
@@ -231,7 +231,7 @@ function popplerCheck(original: string, saved: string, edit: EditOutput) {
       .split('\n')
       .find((l) => l.includes('NotoSansKR'))
       ?.trim() ?? null;
-  // pdffonts 열: name type encoding emb sub uni object ID
+  // pdffonts columns: name type encoding emb sub uni object ID
   const cols = fontRow?.split(/\s+/) ?? [];
   const flags = cols.length >= 8 ? cols.slice(-5, -2) : [];
   const paragraphs = edit.paragraphs.map((p) => {
@@ -301,7 +301,7 @@ export interface CorpusDocResult {
     actualBytes: number;
     actualFraction: number;
     actualLevel: HeapLevel;
-    /** 예측 수준 ≥ 실제 수준(미탐 아님) */
+    /** Predicted level ≥ actual level (not a miss) */
     noMiss: boolean;
     exact: boolean;
     actualRatio: number;
@@ -311,10 +311,10 @@ export interface CorpusDocResult {
     pageIndex: number;
     success: boolean;
     failures: string[];
-    /** 실패로 세지 않는 관찰(Poppler 렌더 미세 차이 등) */
+    /** Observations not counted as failures (minor Poppler render differences, etc.) */
     notes: string[];
   }[];
-  /** 텍스트가 있는 공유 Form 의 사용 위치 1곳만 복제·수정(M0 정책, A1-2). 해당 Form 이 있는 문서만 */
+  /** Clone·modify only one usage location of a shared Form that has text (M0 policy, A1-2). Only for documents that have such a Form */
   formEdits?: FormEditResult[];
   formEditError?: string;
 }
@@ -331,7 +331,7 @@ export function runCorpusCli(opts: {
   root: string;
   out: string;
   only: string[] | null;
-  /** false 면 저장 전 subsetFonts() 를 생략하는 대조 실행(--no-subset) */
+  /** If false, a control run that skips subsetFonts() before saving (--no-subset) */
   subsetFonts?: boolean;
 }): void {
   const { root, out } = opts;
@@ -420,7 +420,7 @@ export function runCorpusCli(opts: {
         if (pp && Object.values(pp.searchTermsFound).some((v) => !v))
           failures.push('poppler-search-miss');
         if (!pop.embedded || !pop.subset || !pop.toUnicode) failures.push('poppler-font-flags');
-        // 편집 영역 밖: 단어가 사라지거나 0.5pt 넘게 움직이면 실패, 그보다 작은 렌더 차이는 관찰로 기록
+        // Outside the edit area: fails if a word disappears or moves more than 0.5pt; smaller render differences are recorded as observations
         if (pp && pp.words.unmatched > 0) failures.push('poppler-word-lost');
         if (pp && pp.words.maxShiftPt > 0.5) failures.push('poppler-word-shift');
         if (pp && pp.words.maxShiftPt > 0.01) notes.push('poppler-word-subpt-shift');
@@ -478,7 +478,7 @@ export function runCorpusCli(opts: {
   console.log(`결과: ${relative(root, join(out, 'corpus-result.json'))}`);
 }
 
-/** 유형별 집계: 문단 성공·실패 사유·제한 사유·저장 힙 판정. */
+/** Aggregation by type: paragraph successes·failure reasons·restriction reasons·save-heap classification. */
 export function summarize(results: CorpusDocResult[]) {
   const byType: Record<string, ReturnType<typeof emptyAgg>> = {};
   const total = emptyAgg();

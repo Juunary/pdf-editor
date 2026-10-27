@@ -1,4 +1,4 @@
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다.
+// core must be imported before mupdf so the WASM heap measurement object is attached.
 import { openPdf } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import {
@@ -26,7 +26,7 @@ export interface BenchResult {
   output: Uint8Array;
 }
 
-/** 1쪽 문단 교체(스파이크와 같은 편집): redaction → 폴백 폰트 임베딩 → 새 콘텐츠 스트림. */
+/** Replace a paragraph on page 1 (same edit as the spike): redaction → fallback font embedding → new content stream. */
 export function applyBenchEdit(doc: mupdf.PDFDocument, fontBytes: Uint8Array): void {
   let page = doc.loadPage(0);
   redactRegions(page, [TARGET_RECT]);
@@ -50,7 +50,7 @@ export function applyBenchEdit(doc: mupdf.PDFDocument, fontBytes: Uint8Array): v
   );
 }
 
-/** 대형 문서 1쪽 문단 교체 후 전체 저장(스파이크와 같은 편집). */
+/** Full save after replacing a paragraph on page 1 of a large document (same edit as the spike). */
 export function runBenchFull(
   bytes: Uint8Array,
   fontBytes: Uint8Array,
@@ -88,7 +88,7 @@ export function runBenchFull(
   };
 }
 
-/** 대조: 같은 문서에 주석 1개만 추가하고 증분 저장. */
+/** Control: add just one annotation to the same document and save incrementally. */
 export function runBenchIncremental(bytes: Uint8Array, onPhase: (p: string) => void): BenchResult {
   const doc = openPdf(bytes);
   onPhase('open');

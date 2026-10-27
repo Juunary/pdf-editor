@@ -1,6 +1,6 @@
 /**
- * 폴백 폰트 수명(V1 시나리오)·D9 감싼 저장·로그 재적용 시험. 가짜 어댑터의 FontManager 는 계약 D4 의 수명 규칙(쓸 때마다
- * 객체가 있는지 확인하고 없으면 로더 바이트로 현재 작업 안에서 다시 넣는다)을 그대로 흉내 낸다.
+ * Tests for fallback font lifetime (V1 scenario), D9 wrapped save and log reapply. The FontManager of the fake adapter imitates the lifetime rule of contract D4 as is (each time it is used,
+ * it checks that the object exists and, if not, inserts it again from the loader bytes inside the current operation).
  */
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
@@ -25,7 +25,7 @@ import {
 
 const HANGUL_TEXT = '한글 문장을 넣습니다';
 
-/** 저장 결과를 새 문서로 연다. */
+/** Opens the save result as a new document. */
 function reopen(bytes: Uint8Array): mupdf.PDFDocument {
   return mupdf.PDFDocument.openDocument(bytes.slice(), 'application/pdf') as mupdf.PDFDocument;
 }
@@ -38,12 +38,12 @@ function reopenedText(bytes: Uint8Array): string {
   return t;
 }
 
-describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
-  it('폴백 폰트는 첫 시작에서 저널을 켜기 직전(작업 밖)에 한 번 임베딩되고 판정은 문서를 바꾸지 않는다', async () => {
+describe('fallback font lifetime (V1, contract D4 amendment 1)', () => {
+  it('the fallback font is embedded once on the first begin, just before enabling the journal (outside the operation), and the classification does not change the document', async () => {
     const { s } = harness();
     await s.getPageEditability(0);
     await s.planParagraphEdit(0, 1);
-    // 판정만으로는 Info·폴백 폰트·저널이 생기지 않는다.
+    // Classification alone creates no Info, fallback font or journal.
     expect(s.document.getTrailer().get('Info').isNull()).toBe(true);
     expect(fallbackFonts(s.document)).toHaveLength(0);
     expect(s.planSave({ changes: [] }).method).toBe('incremental');
@@ -53,7 +53,7 @@ describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
     expect(fonts).toHaveLength(1);
     expect(s.document.getTrailer().get('Info').isDictionary()).toBe(true);
     await s.cancelParagraphEdit(started.draftId);
-    // 취소해도 폴백 폰트는 저널 밖 객체라 그대로다.
+    // Even after cancel the fallback font stays, since it is an object outside the journal.
     expect(fallbackFonts(s.document).map((f) => f.asIndirect())).toEqual(
       fonts.map((f) => f.asIndirect()),
     );
@@ -61,7 +61,7 @@ describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
     s.close();
   });
 
-  it('폴백을 넣은 초안 취소 뒤 새 편집', async () => {
+  it('a new edit after cancelling a draft that inserted the fallback', async () => {
     const { s } = harness();
     const first = await begin(s, 1);
     await s.updateParagraphDraft(first.started.draftId, draftInput(first.plan, HANGUL_TEXT));
@@ -70,7 +70,7 @@ describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
     await s.cancelParagraphEdit(first.started.draftId);
     expect(journal(s)).toEqual({ position: 0, steps: [] });
 
-    // 취소 뒤에도 같은 폰트 객체를 쓴다(다시 임베딩하지 않는다).
+    // The same font object is used after cancel (not embedded again).
     const again = await begin(s, 1);
     await s.updateParagraphDraft(again.started.draftId, draftInput(again.plan, HANGUL_TEXT));
     expect(fallbackFonts(s.document).map((f) => f.asIndirect())).toEqual([fontNumber]);
@@ -83,12 +83,12 @@ describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
     s.close();
   });
 
-  it('폴백을 넣은 편집 undo 뒤 새 편집 → 저장', async () => {
+  it('a new edit after undoing an edit that inserted the fallback → save', async () => {
     const { s } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
     const fontNumber = fallbackFonts(s.document)[0]!.asIndirect();
     await s.undo();
-    // undo 로도 폰트 객체는 남는다(저널 밖 객체).
+    // The font object remains even after undo (an object outside the journal).
     expect(fallbackFonts(s.document).map((f) => f.asIndirect())).toEqual([fontNumber]);
     await editParagraph(s, 2, '다른 문장 입니다');
     expect(fallbackFonts(s.document).map((f) => f.asIndirect())).toEqual([fontNumber]);
@@ -100,7 +100,7 @@ describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
     expect(out).toContain('다른 문장 입니다');
     expect(out).toContain('first paragraph');
     expect(fallbackFonts(reopen(saved.bytes))).toHaveLength(1);
-    // 저장 뒤에도 undo/redo 가 정상이다.
+    // undo/redo also works normally after saving.
     await s.undo();
     expect(text(s)).not.toContain('다른 문장');
     await s.redo();
@@ -108,7 +108,7 @@ describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
     s.close();
   });
 
-  it('폴백 폰트를 쓰지 않은 편집만 저장하면 파일에 폴백 폰트가 없다(garbage 가 뺀다)', async () => {
+  it('saving only edits that did not use the fallback font leaves no fallback font in the file (garbage collection removes it)', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'Latin only');
     expect(fallbackFonts(s.document)).toHaveLength(1);
@@ -118,7 +118,7 @@ describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
     s.close();
   });
 
-  it('폴백을 쓴 편집 둘을 쌓은 뒤 순서대로 undo → redo, 폰트는 문서에 하나', async () => {
+  it('after stacking two edits that used the fallback, undo → redo in order, with one font in the document', async () => {
     const { s } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
     await editParagraph(s, 2, '두 번째 한글');
@@ -135,11 +135,11 @@ describe('폴백 폰트 수명(V1, 계약 D4 수정 1)', () => {
   });
 });
 
-describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffer → abandonOperation', () => {
-  it('저장 결과에 편집·Info·서브셋이 반영되고 작업 문서·저널은 저장 전 상태로 남는다', async () => {
+describe('D9 save: beginOperation → metadata record and subset → saveToBuffer → abandonOperation', () => {
+  it('the save result reflects the edits, Info and subset, and the working document and journal remain in the pre-save state', async () => {
     const { s, adapter } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
-    // Info 기록은 커밋 작업 안에서 한다(저널에 기록되어 undo·redo 와 함께 움직인다).
+    // The Info record is made inside the commit operation (recorded in the journal and moving together with undo and redo).
     expect(adapter.probe.metadataCalls).toEqual([{ pages: [0], structureNotUpdated: false }]);
     const stepsBefore = journal(s);
     const fontFile = (doc: mupdf.PDFDocument) => {
@@ -153,7 +153,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     expect(saved.options).toBe('garbage=yes,compress,objstms');
     expect(adapter.probe.metadataCalls).toHaveLength(1);
 
-    // 출력: 편집 반영, Info 기록, 폴백 서브셋.
+    // Output: edits reflected, Info record, fallback subset.
     const out = reopen(saved.bytes);
     expect(out.getTrailer().get('Info').get('PdfEditorEdits').asString()).toBe(
       'pages=1; structure=n/a',
@@ -162,11 +162,11 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     const outSize = fontFile(out).readStream().asUint8Array().length;
     expect(outSize).toBeLessThan(workingSize / 10);
 
-    // 작업 문서: 저널 단계 불변, 전체 폰트 유지.
+    // Working document: journal steps unchanged, full font kept.
     expect(journal(s)).toEqual(stepsBefore);
     expect(fontFile(s.document).readStream().asUint8Array().length).toBe(workingSize);
 
-    // 저장 뒤 계속 편집(새 음절이 빈 글리프가 되지 않음)하고 undo/redo.
+    // Keep editing after the save (new syllables do not become empty glyphs) and undo/redo.
     await editParagraph(s, 2, '새 음절 곰');
     const again = s.save({ changes: [] });
     expect(reopenedText(again.bytes)).toContain('새 음절 곰');
@@ -179,9 +179,9 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     s.close();
   });
 
-  it('Info 기록은 undo·redo 와 함께 움직인다', async () => {
+  it('the Info record moves together with undo and redo', async () => {
     const { s } = harness();
-    // 첫 `beginParagraphEdit` 가 빈 Info 사전을 만든다(저널을 켜기 전).
+    // The first `beginParagraphEdit` creates an empty Info dictionary (before enabling the journal).
     const warmup = await begin(s, 1);
     await s.cancelParagraphEdit(warmup.started.draftId);
     const info = () => s.document.getTrailer().get('Info').get('PdfEditorEdits');
@@ -190,7 +190,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     expect(info().asString()).toBe('pages=1; structure=n/a');
     await s.undo();
     expect(info().isNull()).toBe(true);
-    // 저장은 편집이 없는 상태이므로 Info 에 편집 쪽이 없다.
+    // The save is in a state with no edits, so Info has no edited pages.
     expect(
       reopen(s.save({ changes: [] }).bytes)
         .getTrailer()
@@ -203,7 +203,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     s.close();
   });
 
-  it('objstms 저장이 저널 단계를 만들지 않아 저장 직후 첫 undo 가 유효하다', async () => {
+  it('an objstms save creates no journal step, so the first undo right after saving is valid', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'Alpha');
     s.save({ changes: [] });
@@ -215,7 +215,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     s.close();
   });
 
-  it('planSave: 편집 요약·변경 종류(content-stream, 폴백 사용 시 font-embed)·전체 저장', async () => {
+  it('planSave: edit summary, change kinds (content-stream, font-embed when the fallback is used), full save', async () => {
     const { s } = harness();
     expect(s.planSave({ changes: [] })).toMatchObject({ method: 'incremental', edits: null });
     await editParagraph(s, 1, 'Latin only');
@@ -226,18 +226,18 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     plan = s.planSave({ changes: ['annotation'] });
     expect(plan.method).toBe('full');
     expect(plan.reason).toContain('content-stream');
-    // 마지막 편집(폴백)을 undo 하면 font-embed 가 빠지고, 모두 undo 하면 편집 요약이 없다.
+    // Undoing the last edit (fallback) drops font-embed, and undoing all of them leaves no edit summary.
     await s.undo();
     await s.undo();
     plan = s.planSave({ changes: [] });
     expect(plan.edits).toBeNull();
-    // 편집 이력이 있는(저널이 켜진) 문서는 변경이 없어도 전체 저장이다(증분 구간에 되돌린 객체 흔적 방지).
+    // A document with edit history (journal enabled) gets a full save even without changes (to avoid traces of reverted objects in the incremental section).
     expect(plan.method).toBe('full');
     expect(plan.reason).toContain('편집을 시작');
     s.close();
   });
 
-  it('세션에서 전체 저장을 한 번 했으면 이후 저장도 전체 저장', () => {
+  it('once a full save has been done in the session, later saves are full saves too', () => {
     const s = new PdfSession();
     s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
     expect(s.planSave({ changes: [] }).method).toBe('incremental');
@@ -249,7 +249,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     s.close();
   });
 
-  it('저널을 켜지 않은 문서(편집 RPC 미사용)의 저장은 감싸지 않는다', () => {
+  it('saving a document whose journal was not enabled (no edit RPC used) is not wrapped', () => {
     const s = new PdfSession({ editAdapter: createFakeAdapter() });
     s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
     const saved = s.save({ changes: ['annotation'] });
@@ -257,7 +257,7 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
     s.close();
   });
 
-  it('저장 중 예외는 작업을 버리고 저널을 유지한다', async () => {
+  it('an exception during save discards the operation and keeps the journal', async () => {
     const { s, adapter } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
     adapter.probe.failNext.finalize = true;
@@ -270,8 +270,8 @@ describe('D9 저장: beginOperation → 메타 기록·서브셋 → saveToBuffe
   });
 });
 
-describe('redo 단계 보존(MuPDF: 작업 안 첫 변경이 redo 를 버린다)', () => {
-  it('undo 뒤 저장해도 폴백을 쓰지 않았다면 redo 가 남는다', async () => {
+describe('redo step preservation (MuPDF: the first change in an operation discards redo)', () => {
+  it('if the fallback was not used, redo remains even after saving following an undo', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'Latin one');
     await editParagraph(s, 2, 'Latin two');
@@ -285,24 +285,24 @@ describe('redo 단계 보존(MuPDF: 작업 안 첫 변경이 redo 를 버린다)
     s.close();
   });
 
-  it('폴백을 쓴 편집이 있으면 undo 뒤 저장이 redo 를 잃고, core 상태도 저널에 맞춰 비운다', async () => {
+  it('if there is an edit that used the fallback, saving after undo loses redo, and the core state is cleared to match the journal', async () => {
     const { s } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
     await editParagraph(s, 2, 'Latin two');
     await s.undo();
     const saved = s.save({ changes: [] });
     expect(reopenedText(saved.bytes)).toContain(HANGUL_TEXT);
-    // 서브셋 교체가 작업 안에서 객체를 바꿔 MuPDF 가 redo 단계를 버렸다.
+    // The subset replacement changed objects inside the operation, so MuPDF discarded the redo steps.
     expect(await s.getEditHistory()).toMatchObject({ canUndo: true, canRedo: false, edits: 1 });
     expect(journal(s)).toEqual({ position: 1, steps: ['paragraph-edit'] });
     expect(await s.redo()).toMatchObject({ canRedo: false, affectedPages: [] });
-    // undo 는 정상.
+    // undo works normally.
     await s.undo();
     expect(text(s)).toContain('first paragraph');
     s.close();
   });
 
-  it('undo 뒤 초안을 시작하면 redo 가 없어지고 취소해도 돌아오지 않는다', async () => {
+  it('starting a draft after undo removes redo and it does not come back after cancel', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'Latin one');
     await s.undo();
@@ -316,7 +316,7 @@ describe('redo 단계 보존(MuPDF: 작업 안 첫 변경이 redo 를 버린다)
     s.close();
   });
 
-  it('undo 뒤 판정만 해서는 redo 가 남는다', async () => {
+  it('classification alone after undo leaves redo intact', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'Latin one');
     await s.undo();
@@ -329,7 +329,7 @@ describe('redo 단계 보존(MuPDF: 작업 안 첫 변경이 redo 를 버린다)
   });
 });
 
-/** 문서 상태 스냅샷: 쪽 콘텐츠·편집 블록 스트림 바이트와 글자(재적용 결정성 비교용). */
+/** Document state snapshot: page content and edit block stream bytes and characters (for comparing reapply determinism). */
 function snapshot(s: PdfSession) {
   const page = s.document.loadPage(0);
   const contents = page.getObject().get('Contents');
@@ -363,8 +363,8 @@ async function recordOps(h: Harness): Promise<EditOp[]> {
   return [first.op, second.op, third.op];
 }
 
-describe('replayEdits(D6 복구)', () => {
-  it('새 문서에 로그를 다시 적용하면 같은 결과이고 저널은 적용 뒤에 켜진다', async () => {
+describe('replayEdits (D6 recovery)', () => {
+  it('reapplying the log to a new document gives the same result and the journal is enabled after applying', async () => {
     const live = harness();
     const ops = await recordOps(live);
     const expected = snapshot(live.s);
@@ -380,14 +380,14 @@ describe('replayEdits(D6 복구)', () => {
       affectedPages: [0],
     });
     expect(history.revision).toBe(1);
-    // 재적용 결과 = 원래 편집 결과(가짜 어댑터 기준 결정성 틀).
+    // Reapply result = original edit result (determinism frame based on the fake adapter).
     expect(snapshot(fresh.s)).toEqual(expected);
-    // 저널은 재적용이 끝난 뒤에 켜졌으므로 재적용 편집은 undo 단계가 아니다.
+    // The journal was enabled after the reapply finished, so reapplied edits are not undo steps.
     expect(journal(fresh.s)).toEqual({ position: 0, steps: [] });
     expect((await fresh.s.undo()).edits).toBe(3);
     expect(snapshot(fresh.s)).toEqual(expected);
 
-    // 이어서 새 편집은 평소처럼 undo 된다.
+    // Afterwards new edits are undone as usual.
     await editParagraph(fresh.s, 0, 'After recovery');
     expect(text(fresh.s)).toContain('After recovery');
     const undone = await fresh.s.undo();
@@ -397,7 +397,7 @@ describe('replayEdits(D6 복구)', () => {
     fresh.s.close();
   });
 
-  it('같은 로그를 두 번 재적용해도 같은 바이트(결정성)', async () => {
+  it('reapplying the same log twice gives the same bytes (determinism)', async () => {
     const live = harness();
     const ops = await recordOps(live);
     const a = harness();
@@ -408,7 +408,7 @@ describe('replayEdits(D6 복구)', () => {
     for (const x of [live, a, b]) x.s.close();
   });
 
-  it('재적용 뒤 저장하면 편집이 파일에 있고 Info 기록이 붙는다', async () => {
+  it('saving after reapply puts the edits in the file and adds the Info record', async () => {
     const live = harness();
     const ops = await recordOps(live);
     const fresh = harness();
@@ -422,7 +422,7 @@ describe('replayEdits(D6 복구)', () => {
     fresh.s.close();
   });
 
-  it('빈 로그 재적용은 저널만 켠다', async () => {
+  it('reapplying an empty log only enables the journal', async () => {
     const { s } = harness();
     const history = await s.replayEdits([]);
     expect(history).toMatchObject({ edits: 0, canUndo: false, activeEditIds: [] });
@@ -431,11 +431,11 @@ describe('replayEdits(D6 복구)', () => {
     s.close();
   });
 
-  it('판정 RPC 뒤에는 허용하고(저널이 아직 꺼져 있음), 편집을 시작한 세션에서는 거절한다', async () => {
+  it('allowed after a classification RPC (the journal is still off), and rejected in a session that has begun editing', async () => {
     const live = harness();
     const ops = await recordOps(live);
     const { s } = harness();
-    await s.getPageEditability(0); // 복구 중 마우스 오버 판정이 먼저 불려도 된다
+    await s.getPageEditability(0); // a mouse-over classification during recovery may be called first
     await s.planParagraphEdit(0, 1);
     await expect(s.replayEdits(structuredClone(ops))).resolves.toMatchObject({ edits: 3 });
     await expect(s.replayEdits([])).rejects.toBeInstanceOf(EditStateError);
@@ -448,7 +448,7 @@ describe('replayEdits(D6 복구)', () => {
     s.close();
   });
 
-  it('대상 문단을 찾지 못하면 실패 위치를 알리고 이후 편집 RPC 를 막는다', async () => {
+  it('when the target paragraph is not found, reports the failure position and blocks later edit RPCs', async () => {
     const live = harness();
     const ops = await recordOps(live);
     const fresh = harness();
@@ -462,8 +462,8 @@ describe('replayEdits(D6 복구)', () => {
   });
 });
 
-describe('세션을 다시 열었을 때', () => {
-  it('저장한 파일의 편집 블록은 로그 없이도 목록에 나오고 영역은 BBox 로 어림한다', async () => {
+describe('when the session is reopened', () => {
+  it('the edit blocks of the saved file appear in the list even without the log, and the area is approximated by BBox', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'Persist me');
     const saved = s.save({ changes: [] });

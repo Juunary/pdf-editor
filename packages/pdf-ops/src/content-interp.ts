@@ -1,16 +1,16 @@
 /**
- * 콘텐츠 스트림 인터프리터(PLAN.md 3.4, docs/m1-contract.md 3절·5.1절).
+ * Content stream interpreter (PLAN.md 3.4, docs/m1-contract.md sections 3 and 5.1).
  *
- * MuPDF 1.28 pdf-op-run.c 의 Device 전달 동작을 에뮬레이션해 연산마다 바이트 범위·상태·글리프 원점과
- * glyphSeq·paintSeq 를 기록한다. 전달 시점 모델(docs/m1-pdf-ops.md 3.1):
- * - 텍스트는 "실행 단위"(같은 tos 모드의 연속 글리프)로 모였다가 플러시 시점(색·선 상태·gs·Q·cm·W·ET·
- *   marked content·페이지 끝, 다음 글리프의 Tr 변경)에 Device 로 간다. Tr 4–7 글리프는 클립 누적에도 들어가
- *   ET 에서 다시 간다(ET 재전송: 마지막 실행 단위 모드가 4–7 이면 clip, 3 이면 ignore, 그 밖은 없음).
- * - 글리프마다 도착(fill·stroke·fill+stroke·ignore·clip·clip-stroke)을 기록하고, 계수 정책
- *   (GlyphSeqPolicy)이 도착 → glyphSeq 를 정한다. 정책 전환은 상수 1개다.
- * - 칠하기 콜백(paintSeq)은 계약 3절 paintSeq 표를 따른다. 타일링 패턴은 MuPDF 와 같은 조건으로
- *   beginTile 경로(셀 미계수)와 직접 실행 경로(셀 내용을 타일 수만큼 번호만 소비)를 가른다.
- * - 이미지 XObject 는 간접 참조에서 get() 만 쓴다(resolve() 금지, PLAN.md 7절 리스크 7).
+ * Emulates the Device delivery behavior of MuPDF 1.28 pdf-op-run.c and, per operation, records the byte range, state, glyph origin,
+ * glyphSeq and paintSeq. Delivery-time model (docs/m1-pdf-ops.md 3.1):
+ * - Text is gathered into "execution units" (consecutive glyphs of the same tos mode) and goes to the Device at flush time (color, line state, gs, Q, cm, W, ET,
+ *   marked content, page end, Tr change on the next glyph). Tr 4–7 glyphs also go into the clip accumulation and
+ *   go again at ET (ET resend: clip if the last execution-unit mode is 4–7, ignore if 3, none otherwise).
+ * - Records the arrival of each glyph (fill, stroke, fill+stroke, ignore, clip, clip-stroke), and the counting policy
+ *   (GlyphSeqPolicy) decides arrival → glyphSeq. Switching policy is one constant.
+ * - Paint callbacks (paintSeq) follow the paintSeq table in contract section 3. Tiling patterns are split, under the same conditions as MuPDF, into
+ *   the beginTile path (cells not counted) and the direct execution path (cell content only consumes numbers, once per tile).
+ * - Image XObjects use only get() on an indirect reference (resolve() is forbidden, PLAN.md section 7 risk 7).
  */
 import type * as mupdf from 'mupdf';
 import type {
@@ -42,10 +42,10 @@ import { FontCache, type PdfFont } from './pdf-fonts.js';
 import { loadType3, T3_COLOR, T3_UNCACHEABLE, type Type3Font, type Type3Glyph } from './type3.js';
 
 /**
- * glyphSeq 계수 정책(계약 3.1 결정 대기).
- * - first-arrival: 글리프가 Device 에 처음 도착할 때 센다(pdf-ops 안 A).
- * - no-clip: clipText·clipStrokeText 도착은 세지 않는다. 그 밖의 도착은 모두 센다(core 안 A).
- *   이미 번호가 있는 글리프가 다시 세어지면(ET ignore 재전송) 그 번호는 소유 글리프 없이 소비된다.
+ * glyphSeq counting policy (contract 3.1, decision pending).
+ * - first-arrival: counted when the glyph first arrives at the Device (pdf-ops proposal A).
+ * - no-clip: arrivals of clipText and clipStrokeText are not counted. All other arrivals are counted (core proposal A).
+ *   If a glyph that already has a number is counted again (ET ignore resend), that number is consumed without an owning glyph.
  */
 export type GlyphSeqPolicy = 'first-arrival' | 'no-clip';
 export const GLYPH_SEQ_POLICY: GlyphSeqPolicy = 'first-arrival';
@@ -53,7 +53,7 @@ export const GLYPH_SEQ_POLICY: GlyphSeqPolicy = 'first-arrival';
 export interface InterpretOptions {
   maxFormDepth: number;
   policy: GlyphSeqPolicy;
-  /** 테스트용: Device 전달 순서 추적(텍스트 도착 `종류:글리프 수`, 칠하기 `P`). */
+  /** For tests: Device delivery order trace (text arrival `kind:glyph count`, paint `P`). */
   trace?: string[];
 }
 
@@ -71,17 +71,17 @@ type Arrival = 'fill' | 'stroke' | 'fill+stroke' | 'ignore' | 'clip' | 'clip-str
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
-/** 진행 중 경로 명령과 마지막 이동 명령의 인덱스(-1: 없음). h 의 현재점 복원에 쓴다. */
+/** Index of the in-progress path commands and the last move command (-1: none). Used to restore the current point on h. */
 interface PathBuf {
   cmds: number[][];
   move: number;
-  /** 이 경로를 만든 구성 연산 id(기록한 연산만, M4 SourceOp.pathOps). */
+  /** Id of the constituent operation that made this path (recorded operations only, M4 SourceOp.pathOps). */
   ops: number[];
 }
 
 const newPath = (): PathBuf => ({ cmds: [], move: -1, ops: [] });
 
-/** 피연산자 바이트 범위를 기록하는 연산 종류(M4 SourceOp.operandRanges). */
+/** Operation kinds that record operand byte ranges (M4 SourceOp.operandRanges). */
 const OPERAND_RANGE_KINDS: ReadonlySet<SourceOpKind> = new Set(['path-construct', 'color']);
 
 function concat(a: Matrix, b: Matrix): Matrix {
@@ -150,13 +150,13 @@ const kinds: [SourceOpKind, string][] = [
 ];
 for (const [kind, list] of kinds) for (const op of list.split(' ')) OP_KIND[op] = kind;
 
-/** 연산자 실행 시 텍스트 실행 단위를 플러시하는 연산(MuPDF pdf_flush_text 호출 위치). */
+/** Operations that flush the text execution unit when the operator runs (where MuPDF calls pdf_flush_text). */
 const FLUSHING = new Set(
   'CS cs SC SCN sc scn G g RG rg K k w j J M d ri Q cm W W* BMC BDC EMC MP DP'.split(' '),
 );
 
 interface TilingPattern {
-  /** PaintType 2(색 없는 패턴). 셀 안에서 채움·선 재질을 모두 해제한다. */
+  /** PaintType 2 (uncolored pattern). Releases both fill and stroke materials inside the cell. */
   uncolored: boolean;
   bbox: Rect4;
   xstep: number;
@@ -169,9 +169,9 @@ interface TilingPattern {
 
 interface Material {
   kind: 'color' | 'pattern' | 'shade';
-  /** kind = pattern 일 때 설정된 타일링 패턴(없으면 칠하지 않음). */
+  /** The tiling pattern set when kind = pattern (nothing painted if absent). */
   pattern: TilingPattern | null;
-  /** 패턴 기준 행렬: 설정 시점 상위 콘텐츠 시작 CTM(콘텐츠 → 사용자 공간). */
+  /** Pattern base matrix: CTM at the start of the parent content at set time (content → user space). */
   base: Matrix;
 }
 
@@ -179,9 +179,9 @@ interface GState {
   ctm: Matrix;
   clipDepth: number;
   font: PdfFont | null;
-  /** Tf 리소스가 없거나 MuPDF 가 로드하지 못해 hail-mary 글꼴로 대체됨. */
+  /** Tf resource missing or MuPDF failed to load it, so replaced with the hail-mary font. */
   fontFallback: boolean;
-  /** Type3 폰트면 글리프 준비 결과(직접 실행 판정용). */
+  /** Glyph preparation result for a Type3 font (for the direct-execution decision). */
   type3: Type3Font | null;
   fontResource: string;
   fontSize: number;
@@ -198,26 +198,26 @@ interface GState {
   lineWidth: number;
   lineJoin: number;
   miterLimit: number;
-  /** 효력 있는 채움 색 연산 id(cs 다음 sc/scn, 또는 g/rg/k 하나). 바꿀 때 새 배열로 바꾼다(연산 기록이 공유). */
+  /** Effective fill color operation ids (cs followed by sc/scn, or one of g/rg/k). Replaced with a new array when changed (operation records share it). */
   fillColorOps: number[];
-  /** 효력 있는 선 색 연산 id(CS 다음 SC/SCN, 또는 G/RG/K 하나, M4). */
+  /** Effective stroke color operation ids (CS followed by SC/SCN, or one of G/RG/K, M4). */
   strokeColorOps: number[];
-  /** 효력 있는 w 연산 id(M4). gs /LW 는 extGStateOps 로 본다. */
+  /** Effective w operation id (M4). gs /LW is handled via extGStateOps. */
   lineWidthOps: number[];
-  /** 실행한 gs 연산 id(바깥 → 안). 바꿀 때 새 배열로 바꾼다. */
+  /** Executed gs operation ids (outer → inner). Replaced with a new array when changed. */
   extGStateOps: number[];
-  /** 직사각형 클립의 교집합(페이지 공간). 직사각형이 아닌 클립이 걸리면 null. */
+  /** Intersection of rectangular clips (page space). null if a non-rectangular clip applies. */
   clipRect: Rect4 | null;
 }
 
-/** 열린 marked content 1개(스택 항목). */
+/** One open marked content (stack entry). */
 interface MarkedEntry {
   mcid: number | null;
   oc: boolean;
   info: OpenMarkedContent;
 }
 
-/** 경로 명령이 장치 공간에서 축 정렬 직사각형 하나면 그 사각형, 아니면 null(빈 경로는 빈 사각형). */
+/** The rectangle if the path commands are a single axis-aligned rectangle in device space, otherwise null (an empty path is an empty rectangle). */
 function rectOfPath(cmds: readonly number[][], dev: Matrix): Rect4 | null {
   const pts: Point[] = [];
   let closed = false;
@@ -233,7 +233,7 @@ function rectOfPath(cmds: readonly number[][], dev: Matrix): Rect4 | null {
     else return null;
   }
   if (pts.length === 0) return [0, 0, 0, 0];
-  // 마지막 점이 첫 점과 같으면(명시적으로 닫은 경로) 뺀다.
+  // If the last point equals the first point (an explicitly closed path), drop it.
   const eq = (a: Point, b: Point) => Math.abs(a[0] - b[0]) < 1e-3 && Math.abs(a[1] - b[1]) < 1e-3;
   if (pts.length === 5 && eq(pts[0]!, pts[4]!)) pts.pop();
   if (pts.length !== 4) return null;
@@ -260,7 +260,7 @@ function intersectRect(a: Rect4 | null, b: Rect4 | null): Rect4 | null {
   return r;
 }
 
-/** 장치 공간에서 축 정렬을 유지하는 행렬(회전 0·90·180·270, 뒤집기)인가. */
+/** Whether the matrix keeps axis alignment in device space (rotations of 0, 90, 180, 270, flips). */
 const axisAligned = (m: Matrix) =>
   (Math.abs(m[1]) < 1e-9 && Math.abs(m[2]) < 1e-9) ||
   (Math.abs(m[0]) < 1e-9 && Math.abs(m[3]) < 1e-9);
@@ -271,14 +271,14 @@ const cloneGs = (g: GState): GState => ({
   stroke: { ...g.stroke },
 });
 
-/** 글리프 1개(또는 소유 없는 계수용 글리프). */
+/** One glyph (or a glyph for unowned counting). */
 interface GlyphRef {
   glyph: SourceGlyph | null;
   op: SourceOp | null;
   counted: boolean;
-  /** 텍스트 공간 → 콘텐츠 공간 글리프 행렬(MuPDF fz_text 의 trm). 원점은 도착 시점 CTM 으로 계산한다. */
+  /** Text space → content space glyph matrix (trm of MuPDF fz_text). The origin is computed with the CTM at arrival time. */
   trm: Matrix;
-  /** 디바이스 공간 근사 경계(타일링 패턴 텍스트 판정용). */
+  /** Approximate bounds in device space (for the tiling-pattern text decision). */
   box: Rect4;
 }
 
@@ -296,12 +296,12 @@ interface Segment {
 interface ExecCtx {
   bytes: Uint8Array;
   segments: Segment[];
-  /** 리소스 체인(안쪽 먼저). MuPDF pdf_lookup_resource 는 바깥 콘텐츠 리소스까지 찾는다. */
+  /** Resource chain (innermost first). MuPDF pdf_lookup_resource also searches the outer content's resources. */
   resources: mupdf.PDFObject[];
   formPath: FormStep[];
-  /** false = 패턴 셀 등 계수 전용(연산 기록 없음). */
+  /** false = counting only, such as a pattern cell (no operation records). */
   owned: boolean;
-  /** 이 콘텐츠 시작 시 CTM(패턴 기준). */
+  /** CTM at the start of this content (pattern base). */
   parentCtm: Matrix;
   inheritsResources: boolean;
   structParents: boolean;
@@ -336,10 +336,10 @@ function numberArray(obj: mupdf.PDFObject, n: number): number[] | null {
 
 const objNum = (o: mupdf.PDFObject) => (o.isIndirect() ? o.asIndirect() : null);
 
-/** 널 객체에서도 안전한 get(mupdf 의 null PDFObject 는 get 을 부를 수 없다). */
+/** get that is safe on null objects too (a null PDFObject in mupdf cannot have get called). */
 const at = (o: mupdf.PDFObject, key: string) => (o.isNull() ? o : o.get(key));
 
-/** 토큰 목록에서 MuPDF 식 피연산자: 최상위 숫자(앞에서부터), 이름(첫째·둘째), 마지막 문자열, 마지막 배열·사전. */
+/** MuPDF-style operands from a token list: top-level numbers (from the front), names (first and second), last string, last array/dictionary. */
 interface Operands {
   nums: number[];
   names: string[];
@@ -377,7 +377,7 @@ function readOperands(tokens: readonly Token[]): Operands {
 
 const num = (o: Operands, i: number) => o.nums[i] ?? 0;
 
-/** 사전 토큰에서 /key 다음 숫자. */
+/** The number after /key in dictionary tokens. */
 function dictNumber(tokens: readonly Token[], key: string): number | null {
   for (let i = 0; i + 1 < tokens.length; i++) {
     const t = tokens[i]!;
@@ -399,18 +399,18 @@ export class ContentInterpreter {
   private tm: Matrix = [...IDENTITY];
   private tlm: Matrix = [...IDENTITY];
   private run: PendingRun | null = null;
-  /** MuPDF tos.text_mode: 마지막 실행 단위 모드(Type3 보정 포함). */
+  /** MuPDF tos.text_mode: mode of the last execution unit (including Type3 correction). */
   private tosMode = 0;
   private clipAccum: GlyphRef[] | null = null;
   private hidden = 0;
   private marked: MarkedEntry[] = [];
-  /** record 가 쓰는 marked content 사본. 스택이 바뀌면 null 로 비운다. */
+  /** Marked content copy used by record. Cleared to null when the stack changes. */
   private markedSnap: OpenMarkedContent[] | null = null;
-  /** BT 와 ET 사이(현재 콘텐츠 기준). */
+  /** Between BT and ET (relative to the current content). */
   private inText = false;
   /**
-   * 진행 중 경로(콘텐츠 공간): [0,x,y] 이동, [1,x,y] 선, [2,x1,y1,x2,y2,x3,y3] 곡선, [3] 닫기.
-   * pathRight = MuPDF only_right_angles(생성 시 판정).
+   * In-progress path (content space): [0,x,y] move, [1,x,y] line, [2,x1,y1,x2,y2,x3,y3] curve, [3] close.
+   * pathRight = MuPDF only_right_angles (decided at creation).
    */
   private pathBuf: PathBuf = newPath();
   private pathRight = true;
@@ -422,17 +422,17 @@ export class ContentInterpreter {
   private readonly userToPage: Matrix;
   private aborted = false;
   private patternDepth = 0;
-  /** 직접 실행 중인 패턴 셀·Type3 글리프의 소유 연산(바깥 기준). */
+  /** Owning operation of a directly executed pattern cell or Type3 glyph (outer reference). */
   private cellOwner: SourceOp | null = null;
   /**
-   * MuPDF 장치 MASK 플래그(d1 이 켠다). 켜진 동안 색 연산은 색도 바꾸지 않고 텍스트도 플러시하지 않는다
-   * (pdf_run_cs 등의 MASK 검사). Type3 직접 실행 뒤에는 MuPDF 가 장치 플래그를 되돌리므로 글리프 프로시저 안에서만
-   * 유효하다. 페이지 콘텐츠의 d1(비표준)은 페이지 끝까지 남는다.
+   * MuPDF device MASK flag (turned on by d1). While on, color operations neither change the color nor flush text
+   * (the MASK check in pdf_run_cs etc.). After a direct Type3 execution MuPDF restores the device flags, so it is
+   * valid only inside the glyph procedure. A d1 in page content (non-standard) remains until the page ends.
    */
   private deviceMask = false;
   private readonly type3Cache = new Map<number, Type3Font>();
   private readonly type3Running = new Set<Type3Font>();
-  /** 실행 중인 콘텐츠(지연 플러시의 패턴 리소스 체인용). */
+  /** Content being executed (for the pattern resource chain of deferred flush). */
   private cur: ExecCtx | null = null;
 
   constructor(
@@ -498,7 +498,7 @@ export class ContentInterpreter {
       parts.push(bytes);
       offset += bytes.byteLength + 1;
     });
-    // MuPDF 는 /Contents 배열을 공백(0x20) 1바이트로 이어 붙여 한 스트림처럼 해석한다(fz_open_concat pad).
+    // MuPDF joins the /Contents array with one space (0x20) byte and interprets it as a single stream (fz_open_concat pad).
     const joined = new Uint8Array(Math.max(0, offset - 1));
     let o = 0;
     parts.forEach((p, i) => {
@@ -525,7 +525,7 @@ export class ContentInterpreter {
       if (!op.text) continue;
       const seqs = op.text.glyphs.map((g) => g.seq).filter((s): s is number => s !== null);
       if (seqs.length === 0) continue;
-      // 글리프가 많은 연산에서 전개 인자 수 한도를 넘지 않게 반복으로 구한다.
+      // Compute by iteration so an operation with many glyphs does not exceed the spread-argument limit.
       let lo = seqs[0]!;
       let hi = lo;
       for (const v of seqs) {
@@ -544,7 +544,7 @@ export class ContentInterpreter {
     };
   }
 
-  // ---- 실행 ----
+  // ---- Execution ----
 
   private exec(ctx: ExecCtx): void {
     const { ops, error } = parseContentOpsLenient(ctx.bytes);
@@ -554,7 +554,7 @@ export class ContentInterpreter {
       if (this.aborted) break;
       this.execOp(ctx, op);
     }
-    // 콘텐츠 끝(MuPDF pdf_process_end → op_END): 실행 단위만 플러시한다. 클립 누적은 남는다.
+    // End of content (MuPDF pdf_process_end → op_END): flushes only the execution unit. The clip accumulation remains.
     if (!this.aborted) this.flushText();
     this.cur = prev;
     if (error && ctx.owned) {
@@ -655,7 +655,7 @@ export class ContentInterpreter {
     const gs = this.gs;
     if (rec && rec.kind === 'path-construct') this.pathBuf.ops.push(rec.id);
     switch (op.op) {
-      // 그래픽 상태
+      // Graphics state
       case 'q':
         this.gstack.push(cloneGs(gs));
         break;
@@ -666,7 +666,7 @@ export class ContentInterpreter {
       }
       case 'cm':
         if (this.clipAccum && this.clipAccum.length > 0) {
-          // MuPDF: 클립 텍스트 누적 중 CTM 변경은 예외로 페이지 해석을 끝낸다.
+          // MuPDF: a CTM change during clip text accumulation ends page interpretation with an exception.
           this.aborted = true;
           this.errors.push({
             stream: this.local(ctx, op.start, op.end).seg.ref,
@@ -692,7 +692,7 @@ export class ContentInterpreter {
           gs.extGStateOps = [...gs.extGStateOps, rec.id];
         }
         break;
-      // 경로
+      // Path
       case 'm':
         this.pathCmd([0, num(o, 0), num(o, 1)]);
         break;
@@ -712,7 +712,7 @@ export class ContentInterpreter {
         this.pathCmd([2, num(o, 0), num(o, 1), num(o, 2), num(o, 3), num(o, 2), num(o, 3)]);
         break;
       case 're': {
-        // MuPDF fz_rectto: 이동 + 선 3개 + 닫기.
+        // MuPDF fz_rectto: move + 3 lines + close.
         const [x, y, w, h] = [num(o, 0), num(o, 1), num(o, 2), num(o, 3)];
         this.pathCmd([0, x, y]);
         this.pathCmd([1, x + w, y]);
@@ -747,7 +747,7 @@ export class ContentInterpreter {
       case 'n':
         this.paintPath(rec, false, false);
         break;
-      // 텍스트
+      // Text
       case 'BT':
         this.tm = [...IDENTITY];
         this.tlm = [...IDENTITY];
@@ -807,7 +807,7 @@ export class ContentInterpreter {
       case '"':
         this.showText(ctx, rec, op, o);
         break;
-      // 색
+      // Color
       case 'CS':
       case 'cs':
         this.setColorSpace(ctx, op.op === 'cs' ? gs.fill : gs.stroke, o.names[0] ?? '');
@@ -822,7 +822,7 @@ export class ContentInterpreter {
       case 'scn':
         this.setColor(ctx, op.op === 'sc' || op.op === 'scn' ? gs.fill : gs.stroke, o.names[0]);
         if ((op.op === 'sc' || op.op === 'scn') && rec) {
-          // 색공간 연산(cs)이 앞에 있으면 함께 둔다(값만으로는 색공간을 알 수 없다).
+          // If a color space operation (cs) precedes it, keep it too (the value alone does not reveal the color space).
           const first = gs.fillColorOps[0];
           const cs = first !== undefined && this.ops[first]?.op === 'cs' ? [first] : [];
           gs.fillColorOps = [...cs, rec.id];
@@ -844,7 +844,7 @@ export class ContentInterpreter {
         this.setColorSpace(ctx, gs.fill, 'DeviceColor');
         if (rec) gs.fillColorOps = [rec.id];
         break;
-      // 이미지·셰이드·XObject
+      // Images, shades, XObjects
       case 'sh':
         if (this.hidden === 0 && o.names[0] && this.resource(ctx, 'Shading', o.names[0])) {
           this.paint(rec);
@@ -888,7 +888,7 @@ export class ContentInterpreter {
     }
   }
 
-  /** gs 실행. 리소스가 없으면 false. */
+  /** Executes gs. false if the resource is missing. */
   private execGs(ctx: ExecCtx, name: string | undefined): boolean {
     if (!name) return false;
     const g = this.resource(ctx, 'ExtGState', name);
@@ -946,7 +946,7 @@ export class ContentInterpreter {
     if (isOC && props && this.oc.isHidden(props)) this.hidden++;
   }
 
-  // ---- 경로 ----
+  // ---- Path ----
 
   private pathCmd(cmd: number[]): void {
     if (cmd[0] === 2) this.pathRight = false;
@@ -954,16 +954,16 @@ export class ContentInterpreter {
     if (cmd[0] === 0) path.move = path.cmds.length;
     path.cmds.push(cmd);
     if (cmd[0] === 3) {
-      // 닫기: 현재점을 마지막 이동점으로(인덱스로 찾아 경로 길이와 무관하게 상수 시간).
+      // Close: sets the current point to the last move point (found by index, constant time regardless of path length).
       const move = path.move >= 0 ? path.cmds[path.move] : undefined;
       if (move) this.pathCur = [move[1]!, move[2]!];
     } else this.pathCur = [cmd.at(-2)!, cmd.at(-1)!];
   }
 
   /**
-   * 진행 중 경로의 디바이스 공간 경계와 직각 경로 여부(MuPDF fz_bound_path)를 구하고 경로를 비운다.
-   * 직각 CTM 이면 경로 공간 경계를 변환하고 생성 시 판정을 쓴다. 그 밖은 변환한 선분으로 다시 판정한다
-   * (축 정렬 허용치 0.001, 곡선은 직각 아님, 끝의 이동은 무시).
+   * Gets the device-space bounds of the in-progress path and whether it is a right-angle path (MuPDF fz_bound_path), then clears the path.
+   * With a right-angle CTM, transforms the path-space bounds and uses the creation-time decision. Otherwise re-decides from the transformed segments
+   * (axis-alignment tolerance 0.001, curves are not right-angle, a trailing move is ignored).
    */
   private takePath(dev: Matrix): { box: Rect4; right: boolean; empty: boolean } {
     const cmds = this.pathBuf.cmds;
@@ -1065,7 +1065,7 @@ export class ContentInterpreter {
     }
   }
 
-  /** MuPDF adjust_rect_for_stroke: 반폭 확장, 직각 경로·퇴화 사각형은 마이터 제외. */
+  /** MuPDF adjust_rect_for_stroke: half-width expansion; right-angle paths and degenerate rectangles exclude the miter. */
   private expandForStroke(r: Rect4, dev: Matrix, rightAngles: boolean): Rect4 {
     let e = this.gs.lineWidth / 2 || 0.5;
     const degenerate = r[2] === r[0] || r[3] === r[1];
@@ -1076,7 +1076,7 @@ export class ContentInterpreter {
     return [r[0] - e, r[1] - e, r[2] + e, r[3] + e];
   }
 
-  /** 경로 칠하기 재질별 콜백: 색 1, 셰이딩 패턴 clip+fillShade 2, 타일링 clip 1 + 셀(직접 실행 시). */
+  /** Paint callbacks per material for path painting: color 1, shading pattern clip+fillShade 2, tiling clip 1 + cell (when executed directly). */
   private paintMaterial(rec: SourceOp | null, what: 'fill' | 'stroke', bbox: Rect4): void {
     const m = this.gs[what];
     if (m.kind === 'color') {
@@ -1085,7 +1085,7 @@ export class ContentInterpreter {
       this.paint(rec);
       this.paint(rec);
     } else if (m.pattern) {
-      // MuPDF: 패턴 칠하기는 알파 0 이면 건너뛴다(경로만).
+      // MuPDF: pattern painting is skipped when alpha is 0 (path only).
       if ((what === 'fill' ? this.gs.fillAlpha : this.gs.strokeAlpha) === 0) return;
       this.paint(rec);
       this.showPattern(m, bbox, what, rec);
@@ -1095,12 +1095,12 @@ export class ContentInterpreter {
   private paint(owner: SourceOp | null): void {
     this.options.trace?.push('P');
     const seq = this.paintCounter++;
-    // 직접 실행한 패턴 셀 안의 칠하기는 그 패턴 칠하기 연산이 소유한다(계약 수정 3).
+    // Painting inside a directly executed pattern cell is owned by that pattern-painting operation (contract amendment 3).
     const o = owner ?? this.cellOwner;
     if (o) (o.paintSeq ??= []).push(seq);
   }
 
-  // ---- 패턴 ----
+  // ---- Pattern ----
 
   private loadPattern(obj: mupdf.PDFObject): TilingPattern | null {
     const bbox = numberArray(obj.get('BBox'), 4);
@@ -1141,8 +1141,8 @@ export class ContentInterpreter {
     };
   }
 
-  /** MuPDF pdf_show_pattern 의 타일 판정. 직접 실행 경로면 셀 내용을 타일 수만큼 계수 전용으로 실행한다. */
-  /** owner: 패턴으로 칠하는 연산(경로 칠하기·텍스트 실행 단위 첫 연산·이미지 마스크). */
+  /** MuPDF pdf_show_pattern tile decision. On the direct execution path, runs the cell content for counting only, once per tile. */
+  /** owner: the operation painting with the pattern (path painting, first operation of a text execution unit, image mask). */
   private showPattern(
     m: Material,
     area: Rect4,
@@ -1159,7 +1159,7 @@ export class ContentInterpreter {
     let fy1 = (local[3] - pat.bbox[1]) / pat.ystep;
     if (fx0 > fx1) [fx0, fx1] = [fx1, fx0];
     if (fy0 > fy1) [fy0, fy1] = [fy1, fy0];
-    // beginTile 경로: core 는 캐시됨(1)을 돌려 셀을 실행시키지 않는다(계약 3절).
+    // beginTile path: core returns cached (1) so the cell is not executed (contract section 3).
     if ((fx1 - fx0 > 1 || fy1 - fy0 > 1) && !pat.usesBlending) return;
     const x0 = Math.floor(fx0 + 0.001);
     const y0 = Math.floor(fy0 + 0.001);
@@ -1172,7 +1172,7 @@ export class ContentInterpreter {
     const bytes = readStreamBytes(pat.stream);
     const invU = invert(this.userToPage);
     if (tiles === 0) return;
-    // 셀 내용은 페이지 콘텐츠 밖(L4). 칠하기 번호는 owner 가 갖고, 셀 글리프는 소유 없이 번호만 소비한다.
+    // Cell content is outside page content (L4). The owner holds the paint number, and cell glyphs only consume numbers with no owner.
     const outer = this.cellOwner;
     if (!outer && owner) this.addLimit(owner, 'outside-page-content');
     this.cellOwner = outer ?? owner;
@@ -1187,7 +1187,7 @@ export class ContentInterpreter {
     this.cellOwner = outer;
   }
 
-  /** 소유 연산 없이 번호만 소비하는 하위 실행(패턴 셀). */
+  /** Sub-execution that only consumes numbers with no owning operation (pattern cell). */
   private runCountOnly(
     bytes: Uint8Array,
     pat: TilingPattern,
@@ -1209,7 +1209,7 @@ export class ContentInterpreter {
     this.gs = cloneGs(saved);
     this.gstack = [];
     this.gs.ctm = ctm;
-    // MuPDF pdf_show_pattern: 색 있는 패턴은 칠하는 쪽 재질만, 색 없는 패턴은 둘 다 색으로 되돌린다.
+    // MuPDF pdf_show_pattern: for a colored pattern only the painting-side material, for an uncolored pattern both revert to color.
     const unset = pat.uncolored ? [this.gs.fill, this.gs.stroke] : [this.gs[what]];
     for (const m of unset) {
       if (m.kind === 'pattern') {
@@ -1246,7 +1246,7 @@ export class ContentInterpreter {
     this.markedSnap = null;
   }
 
-  // ---- 색 ----
+  // ---- Color ----
 
   private setColorSpace(ctx: ExecCtx, m: Material, name: string): void {
     let isPattern = name === 'Pattern';
@@ -1280,7 +1280,7 @@ export class ContentInterpreter {
     m.base = [...ctx.parentCtm];
   }
 
-  // ---- 텍스트 ----
+  // ---- Text ----
 
   private translateLine(tx: number, ty: number): void {
     this.tlm = preTranslate(this.tlm, tx, ty);
@@ -1322,11 +1322,11 @@ export class ContentInterpreter {
         this.addLimit(rec, 'font-encoding-unresolved');
       }
     }
-    // MuPDF: 폰트가 없으면(Tf 전) 그리지 않는다.
+    // MuPDF: if there is no font (before Tf), nothing is drawn.
     if (!font) return;
     const items: (Token | number)[] = [];
     if (op.op === 'TJ') {
-      // 텍스트 배열: 문자열과 숫자. MuPDF 는 배열 안 Tw·Tc 키워드를 앞 숫자로 실행한다.
+      // Text array: strings and numbers. MuPDF executes Tw and Tc keywords inside the array using the preceding number.
       for (const t of o.array ?? []) {
         if (t.kind === 'string' || t.kind === 'hexstring') items.push(t);
         else if (t.kind === 'number') items.push(t.value as number);
@@ -1399,7 +1399,7 @@ export class ContentInterpreter {
       box: [box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1],
     };
 
-    // MuPDF pdf_show_char: 실행 단위 플러시, Type3 모드 보정, 캐시 불가 Type3 글리프 직접 실행.
+    // MuPDF pdf_show_char: execution-unit flush, Type3 mode correction, direct execution of uncacheable Type3 glyphs.
     const render = gs.render;
     const type3 = font.subtype === 'Type3';
     const t3 = type3 ? gs.type3 : null;
@@ -1413,11 +1413,11 @@ export class ContentInterpreter {
     }
     if (type3hitr) this.tosMode -= 4;
     if (type3 && this.tosMode !== 3) this.tosMode = 0;
-    // 색 있는(d0) Type3 글리프는 패턴 색으로 칠하지 않고 직접 실행한다.
+    // A colored (d0) Type3 glyph is executed directly rather than painted with the pattern color.
     if (t3glyph && t3glyph.flags & T3_COLOR && gs.fill.kind !== 'color') renderDirect = true;
     if (renderDirect && this.tosMode !== 3 && t3 && t3glyph) {
       this.renderType3Direct(rec, t3, t3glyph, trm);
-      // 글리프는 추출용으로 보이지 않게(Tr 3) 보낸다.
+      // The glyph is sent invisible (Tr 3) for extraction.
       this.tosMode = 3;
     }
     this.run.glyphs.push(ref);
@@ -1435,9 +1435,9 @@ export class ContentInterpreter {
   }
 
   /**
-   * 캐시 불가 Type3 글리프의 프로시저를 장치로 직접 실행한다(MuPDF fz_render_t3_glyph_direct → pdf_run_glyph).
-   * 새 처리기와 같이 텍스트 객체·숨김·marked content 는 따로 두고, 현재 gstate(색·선 상태)를 이어 받으며 글꼴은
-   * 비운다. CTM = FontMatrix × 글리프 trm × CTM. 칠하기 번호는 그 텍스트 연산이 소유하고 outside-page-content(L4).
+   * Directly executes the procedure of an uncacheable Type3 glyph on the device (MuPDF fz_render_t3_glyph_direct → pdf_run_glyph).
+   * Like the new handler, the text object, hidden state and marked content are kept separate, the current gstate (color, line state) is inherited, and the font is
+   * cleared. CTM = FontMatrix × glyph trm × CTM. The paint number is owned by that text operation, with outside-page-content (L4).
    */
   private renderType3Direct(
     rec: SourceOp | null,
@@ -1518,11 +1518,11 @@ export class ContentInterpreter {
     this.pathCur = saved.pathCur;
     this.pendingClip = saved.pendingClip;
     this.cellOwner = saved.cellOwner;
-    // MuPDF pdf_show_char: 직접 실행 전 장치 플래그를 저장했다가 되돌린다.
+    // MuPDF pdf_show_char: saves the device flags before direct execution and restores them afterwards.
     this.deviceMask = saved.deviceMask;
   }
 
-  /** 실행 단위 플러시(MuPDF pdf_flush_text). */
+  /** Flushes the execution unit (MuPDF pdf_flush_text). */
   private flushText(): void {
     const run = this.run;
     this.run = null;
@@ -1572,7 +1572,7 @@ export class ContentInterpreter {
     }
   }
 
-  /** ET 의 클립 누적 플러시(MuPDF pdf_flush_clip_text). */
+  /** Flushes the clip accumulation at ET (MuPDF pdf_flush_clip_text). */
   private flushClipText(): void {
     const glyphs = this.clipAccum;
     this.clipAccum = null;
@@ -1586,7 +1586,7 @@ export class ContentInterpreter {
     }
   }
 
-  /** 글리프 도착 → 계수 정책. 번호를 받는 도착에서 원점을 그 시점 CTM 으로 다시 계산한다. */
+  /** Glyph arrival → counting policy. For an arrival that receives a number, recomputes the origin with the CTM at that time. */
   private arrive(kind: Arrival, glyphs: readonly GlyphRef[]): void {
     this.options.trace?.push(
       `${kind}:${glyphs.length}:${glyphs.map((g) => (g.counted ? 'R' : 'N')).join('')}`,
@@ -1602,18 +1602,18 @@ export class ContentInterpreter {
       const seq = this.glyphCounter++;
       if (g.glyph) {
         g.glyph.seq = seq;
-        // MuPDF 는 텍스트 객체를 플러시 시점의 CTM 으로 보낸다(ET 재전송 전 Q, Form 경계를 넘는 실행 단위).
+        // MuPDF sends the text object with the CTM at flush time (Q before ET resend, execution unit crossing a Form boundary).
         g.glyph.origin = apply(this.deviceCtm(), g.trm[4], g.trm[5]);
       }
     }
   }
 
-  // ---- 이미지·XObject ----
+  // ---- Images and XObjects ----
 
   private imagePaints(rec: SourceOp | null, isMask: boolean, hasMask: boolean, bbox: Rect4): void {
     if (this.hidden > 0) return;
     if (isMask) {
-      // 색 공간 없는 마스크: 채움 재질로 칠한다(MuPDF pdf_show_image_imp).
+      // Mask without a color space: painted with the fill material (MuPDF pdf_show_image_imp).
       const m = this.gs.fill;
       if (m.kind === 'color') this.paint(rec);
       else if (m.kind === 'shade') {
@@ -1655,7 +1655,7 @@ export class ContentInterpreter {
     if (!oc.isNull() && this.oc.isHidden(oc)) return;
     const kind = subtype.asName();
     if (kind === 'Image') {
-      // 이미지: 간접 참조에서 get() 만(resolve() 금지).
+      // Image: only get() on an indirect reference (resolve() is forbidden).
       const im = xobj.get('ImageMask');
       const isMask = im.isBoolean() && im.asBoolean();
       const hasMask = !xobj.get('SMask').isNull() || xobj.get('Mask').isStream();
@@ -1676,7 +1676,7 @@ export class ContentInterpreter {
       ctm: [...this.gs.ctm],
     };
     const formPath = [...ctx.formPath, step];
-    // 순환: MuPDF 도 실행하지 않는다(BBox 클립 없음). 깊이 상한: xobject.ts 색인과 같은 조건.
+    // Cycle: MuPDF does not execute it either (no BBox clip). Depth limit: same condition as the xobject.ts index.
     if (number !== null && this.activeForms.has(number)) {
       if (rec) this.addLimit(rec, 'form-depth-exceeded');
       return;
@@ -1689,12 +1689,12 @@ export class ContentInterpreter {
     const ownRes = xobj.get('Resources');
     const savedGs = this.gs;
     const savedStack = this.gstack;
-    // MuPDF 는 Form 마다 marked content 스택을 따로 둔다(숨김 카운터는 공유). MCID 는 바깥 것을 이어 받는다.
+    // MuPDF keeps a separate marked content stack per Form (the hidden counter is shared). MCID is inherited from the outer one.
     const savedMarked = [...this.marked];
     this.gs = cloneGs(savedGs);
     this.gstack = [];
     this.gs.ctm = concat(matrix, this.gs.ctm);
-    // BBox 클립: pdf_show_path(clip) 와 같이 진행 중 경로를 소비한다.
+    // BBox clip: consumes the in-progress path, as in pdf_show_path(clip).
     this.pathBuf = newPath();
     this.pathRight = true;
     this.pendingClip = null;
@@ -1751,7 +1751,7 @@ export class ContentInterpreter {
   }
 }
 
-/** buildSourceMap 본체. 계수 정책을 지정할 수 있다(테스트·정책 비교용, 패키지 index 에서 내보내지 않음). */
+/** Body of buildSourceMap. The counting policy can be specified (for tests and policy comparison, not exported from the package index). */
 export function buildSourceMapImpl(
   doc: mupdf.PDFDocument,
   pageIndex: number,

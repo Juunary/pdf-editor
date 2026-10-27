@@ -1,5 +1,5 @@
 /**
- * 계약 2.1–2.4 불변식 검사. 위반 설명 목록을 돌려준다(빈 배열 = 통과). 시험·코퍼스 전수 점검·개발 모드 단언용.
+ * Invariant check for contract 2.1–2.4. Returns a list of violation descriptions (empty array = pass). For tests, exhaustive corpus checks and dev-mode assertions.
  */
 import type { PageLayout, PageModel } from '@pdf-editor/shared-types';
 

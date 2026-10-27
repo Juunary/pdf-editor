@@ -1,10 +1,10 @@
 /**
- * 기능 호출 실패 분류. M1·M3 병렬 구현 중 core 의 일부 RPC 는 "미구현" 예외를 낸다(M1: extractPage·searchText·linkPage,
- * M3: 편집 RPC). 이 경우 해당 기능만 영구 비활성화하고, 그 외 오류는 그 호출만 실패로 둔다.
- * Comlink 가 Worker 예외를 Error 로 복원하므로 메시지로 판별한다.
+ * Classification of feature-call failures. While M1 and M3 are implemented in parallel, some core RPCs throw a "not implemented" exception (M1: extractPage, searchText, linkPage,
+ * M3: edit RPCs). In that case only the affected feature is permanently disabled; any other error fails just that call.
+ * Comlink restores Worker exceptions as Error, so they are identified by message.
  *
- * `recovered`: 뷰어가 Worker 를 새로 만들어 문서를 복구했다는 표시(확장 `WorkerRecoveredError`, 계약 D6).
- * 호출한 쪽의 초안·요청은 사라졌으므로 호출자가 다시 시작해야 한다.
+ * `recovered`: marker that the viewer recreated the Worker and recovered the document (extension `WorkerRecoveredError`, contract D6).
+ * The caller's draft/request is gone, so the caller must start over.
  */
 export type FailureKind = 'unimplemented' | 'recovered' | 'error';
 
@@ -13,7 +13,7 @@ export interface Failure {
   message: string;
 }
 
-/** 복구 알림 오류의 `name`. 확장의 복구 계층과 뷰어 UI 가 공유하는 규약이다. */
+/** `name` of the recovery notice error. A convention shared by the extension's recovery layer and the viewer UI. */
 export const WORKER_RECOVERED_ERROR_NAME = 'WorkerRecoveredError';
 
 export function classifyFailure(error: unknown): Failure {

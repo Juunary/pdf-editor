@@ -1,6 +1,6 @@
 /**
- * 확장 뷰어의 저장 흐름·알림(계약 5.8·5.9, D6): 실제 확장·Worker·문서(m0-sample.pdf)에 `?e2e` 이음매로 저장 판정과
- * 복구 오류를 주입해 대화상자·알림을 확인한다. 편집 RPC 가 필요한 흐름은 통합 때 켠다(docs/m3-viewer-ui.md 5절).
+ * Save flow and notices of the extension viewer (contract 5.8·5.9, D6): injects save classifications and
+ * recovery errors through the `?e2e` seam into the real extension, Worker and document (m0-sample.pdf) and checks the dialogs and notices. Flows needing the edit RPC are enabled at integration (docs/m3-viewer-ui.md section 5).
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
@@ -51,7 +51,7 @@ async function diagEvents(page: Page, name: string): Promise<{ event: string; da
   return log.filter((e) => e.event === name);
 }
 
-/** 문서를 연 뷰어(`?e2e`). beforeOpen 은 파일을 고르기 전에 이음매를 손볼 기회다. */
+/** A viewer with a document open (`?e2e`). beforeOpen is a chance to adjust the seam before picking the file. */
 async function openViewer(beforeOpen?: (page: Page) => Promise<void>): Promise<Page> {
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/viewer.html?e2e`);
@@ -83,12 +83,12 @@ const plan = (extra: Record<string, unknown>) => ({
   ...extra,
 });
 
-test.describe('지원 문서 크기 상한(M5 C7, 리스크 8)', () => {
-  test('열린 문서 바이트 수가 SUPPORTED_INPUT_BYTES(790 MiB)를 넘으면 열 때 알리고, 작은 문서는 알리지 않는다', async () => {
+test.describe('supported document size cap (M5 C7, risk 8)', () => {
+  test('when the opened document byte count exceeds SUPPORTED_INPUT_BYTES (790 MiB) a notice shows on open, and a small document gets none', async () => {
     const small = await openViewer();
     await expect(small.locator('#notice-bar [data-notice="size"]')).toHaveCount(0);
     await small.close();
-    // 값 주입: open 응답의 byteLength 만 800 MiB 로 바꾼다(문서는 그대로).
+    // Value injection: only the open response's byteLength is changed to 800 MiB (the document stays the same).
     const page = await openViewer(async (p) => {
       await p.evaluate(() => {
         const pdf = (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf;
@@ -103,13 +103,13 @@ test.describe('지원 문서 크기 상한(M5 C7, 리스크 8)', () => {
     await page.close();
   });
 
-  test('크기 알림 통합(I3): 열 때 바이트 기준 안내 → 판정 ok 는 유지, warn 이면 같은 칸을 바꾸고 상한은 한 번만', async () => {
+  test('size notice integration (I3): byte-based notice on open → classification ok keeps it, warn replaces the same slot, and the cap appears only once', async () => {
     const page = await openViewer(async (p) => {
       await p.evaluate((okPlan) => {
         const pdf = (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf;
         const real = (pdf.open as (b: ArrayBuffer) => Promise<Record<string, unknown>>).bind(pdf);
         pdf.open = async (b: ArrayBuffer) => ({ ...(await real(b)), byteLength: 800 * 2 ** 20 });
-        // 열기 직후 판정(reportSizeLimit)은 ok: 바이트 기준 안내를 그대로 둔다.
+        // The classification right after opening (reportSizeLimit) is ok: the byte-based notice is left as is.
         pdf.planSave = async () => okPlan;
       }, plan({}));
     });
@@ -122,7 +122,7 @@ test.describe('지원 문서 크기 상한(M5 C7, 리스크 8)', () => {
     await expect.poll(async () => (await diagEvents(page, 'size-plan')).length).toBe(1);
     await expect(notice).toContainText('지원 크기 790 MiB');
 
-    // 저장 전 판정 warn: 같은 칸이 판정 문구로 바뀐다(알림은 여전히 하나).
+    // Pre-save classification warn: the same slot is replaced by the classification text (still a single notice).
     await page.evaluate(
       (warnPlan) => {
         (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf.planSave =
@@ -153,8 +153,8 @@ test.describe('지원 문서 크기 상한(M5 C7, 리스크 8)', () => {
   });
 });
 
-test.describe('저장 전 판정(5.8)', () => {
-  test('over-limit 은 저장하지 않고 중단 안내를 보인다', async () => {
+test.describe('pre-save classification (5.8)', () => {
+  test('over-limit does not save and shows an abort notice', async () => {
     const page = await openViewer();
     await page.evaluate(
       (p) => {
@@ -176,7 +176,7 @@ test.describe('저장 전 판정(5.8)', () => {
     await page.close();
   });
 
-  test('over-limit 근거가 이미 커진 힙이면 "그래도 저장 시도" 를 고를 수 있다(H1)', async () => {
+  test('when over-limit is due to an already grown heap, "그래도 저장 시도" can be chosen (H1)', async () => {
     const page = await openViewer();
     await page.evaluate(
       (p) => {
@@ -206,7 +206,7 @@ test.describe('저장 전 판정(5.8)', () => {
     await page.close();
   });
 
-  test('warn·구조 연결 끊김·PDF/A 는 확인 창, 취소하면 저장하지 않고 확인하면 저장한다', async () => {
+  test('warn, structure link loss and PDF/A show a confirmation window; cancel does not save, confirm saves', async () => {
     const page = await openViewer();
     await page.evaluate(
       (p) => {
@@ -227,13 +227,13 @@ test.describe('저장 전 판정(5.8)', () => {
     await dialog.locator('[data-dialog-button="cancel"]').click();
     await expect(dialog).toBeHidden();
     expect(await diagEvents(page, 'save')).toHaveLength(0);
-    // Esc 도 취소
+    // Esc also cancels
     await chooseSave(page, 'save-downloads');
     await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     expect(await diagEvents(page, 'save')).toHaveLength(0);
-    // 확인하면 저장한다
+    // Confirming saves
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       (async () => {
@@ -246,7 +246,7 @@ test.describe('저장 전 판정(5.8)', () => {
     await page.close();
   });
 
-  test('문제 없으면 확인 창 없이 저장한다', async () => {
+  test('saves without a confirmation window when there is no problem', async () => {
     const page = await openViewer();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
@@ -261,8 +261,8 @@ test.describe('저장 전 판정(5.8)', () => {
   });
 });
 
-test.describe('저장 중 Worker 복구(A3-3)', () => {
-  test('복구 알림 오류를 받으면 다시 저장할지 묻고, 다시 저장하면 저장된다', async () => {
+test.describe('Worker recovery during save (A3-3)', () => {
+  test('on a recovery notice error, asks whether to save again, and saving again succeeds', async () => {
     const page = await openViewer();
     await page.evaluate(() => {
       const pe = (window as unknown as { __pe: Pe }).__pe;
@@ -290,7 +290,7 @@ test.describe('저장 중 Worker 복구(A3-3)', () => {
     await page.close();
   });
 
-  test('"나중에" 를 고르면 저장하지 않는다', async () => {
+  test('choosing "나중에" does not save', async () => {
     const page = await openViewer();
     await page.evaluate(() => {
       const pe = (window as unknown as { __pe: Pe }).__pe;
@@ -310,8 +310,8 @@ test.describe('저장 중 Worker 복구(A3-3)', () => {
   });
 });
 
-test.describe('열기 시 알림', () => {
-  test('Redact 주석 보고(A2-2): 보고가 있으면 알림 줄에 표시한다', async () => {
+test.describe('notice on open', () => {
+  test('Redact annotation report (A2-2): when there is a report, it is shown in the notice line', async () => {
     const page = await openViewer(async (p) => {
       await p.evaluate(() => {
         (window as unknown as { __pe: Pe }).__pe.pdf.listRedactAnnots = async () => ({
@@ -328,7 +328,7 @@ test.describe('열기 시 알림', () => {
     await page.close();
   });
 
-  test('실제 core 보고(A2-2): Redact 주석이 없는 문서는 알림 없이 진단 로그에 total 0', async () => {
+  test('real core report (A2-2): a document without Redact annotations logs total 0 in the diagnostics log without a notice', async () => {
     const page = await openViewer();
     await expect.poll(async () => (await diagEvents(page, 'redact-report')).length).toBe(1);
     expect(await diagEvents(page, 'redact-report-unavailable')).toHaveLength(0);
@@ -336,7 +336,7 @@ test.describe('열기 시 알림', () => {
     await page.close();
   });
 
-  test('Redact 보고가 실패하면 알림 없이 진단 로그만 남긴다', async () => {
+  test('when the Redact report fails, only a diagnostics log entry is left, without a notice', async () => {
     const page = await openViewer(async (p) => {
       await p.evaluate(() => {
         (window as unknown as { __pe: Pe }).__pe.pdf.listRedactAnnots = async () => {

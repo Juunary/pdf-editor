@@ -1,7 +1,7 @@
 /**
- * 툴바 저장 메뉴(사용자 요청 2026-10-22): 프린터 아이콘 버튼 하나가 저장 / 다른 이름으로 저장 / (개발 빌드만)
- * downloads 저장 메뉴를 연다. 비활성 조건·키보드(Enter·화살표·Home·End·Esc)·바깥 클릭·화면 안 배치·Ctrl+S 바로 저장을 확인한다.
- * 스토어 빌드에 downloads 저장이 없는 것은 release-smoke.spec.ts 와 verify-dist --release 가 확인한다.
+ * Toolbar save menu (user request 2026-10-22): a single printer-icon button opens a menu of Save / Save as / (development builds only)
+ * save to downloads. Checks the disabled condition, keyboard (Enter, arrows, Home, End, Esc), outside click, on-screen placement and Ctrl+S direct save.
+ * That the store build has no save-to-downloads item is checked by release-smoke.spec.ts and verify-dist --release.
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
@@ -36,8 +36,8 @@ test.afterAll(async () => {
 });
 
 /**
- * FSA 피커를 없앤(=저장이 chrome.downloads 로 가는) 뷰어에 문서를 연다. 헤드리스는 피커를 바로 취소하기 때문이다.
- * 메뉴 세 항목(개발 빌드의 downloads 저장 포함)을 보려면 진단 표시(`?diag`)를 켠다(사용자 요청 2026-10-23).
+ * Opens a document in a viewer with the FSA picker removed (= saving goes through chrome.downloads), because headless cancels the picker immediately.
+ * To see all three menu items (including save to downloads in development builds), turn on the diagnostics display (`?diag`) (user request 2026-10-23).
  */
 async function openViewer(width = 1280, height = 800, diag = true): Promise<Page> {
   const page = await context.newPage();
@@ -63,7 +63,7 @@ async function saveEvents(page: Page): Promise<{ trigger: string; channel: strin
 
 const focusedId = (page: Page) => page.evaluate(() => document.activeElement?.id ?? null);
 
-test('문서가 없으면 비활성, 아이콘은 인라인 SVG, 이름·제목은 "저장"', async () => {
+test('disabled without a document, icon is an inline SVG, name and title are "저장"', async () => {
   const page = await context.newPage();
   const external: string[] = [];
   page.on('request', (r) => {
@@ -77,14 +77,14 @@ test('문서가 없으면 비활성, 아이콘은 인라인 SVG, 이름·제목�
   await expect(button).toHaveAttribute('aria-haspopup', 'menu');
   await expect(button.locator('svg')).toHaveCount(1);
   expect(await button.locator('img, use, image').count()).toBe(0);
-  // 이전 저장 버튼 셋은 툴바에 없고 메뉴 항목으로만 남는다.
+  // The old set of save buttons is gone from the toolbar and remains only as menu items.
   await expect(page.locator('#toolbar > #save, #toolbar > #save-as')).toHaveCount(0);
   await expect(page.locator('#save-menu')).toBeHidden();
   expect(external).toEqual([]);
   await page.close();
 });
 
-test('진단 표시가 꺼져 있으면(기본) 메뉴는 두 항목이고 ↑↓ 는 두 항목만 돈다', async () => {
+test('when the diagnostics display is off (default) the menu has two items and ↑↓ cycle through only those two', async () => {
   const page = await openViewer(1280, 800, false);
   const menu = page.locator('#save-menu');
   await page.locator('#save-menu-button').focus();
@@ -103,7 +103,7 @@ test('진단 표시가 꺼져 있으면(기본) 메뉴는 두 항목이고 ↑�
   await page.close();
 });
 
-test('마우스: 열면 세 항목(개발 빌드, 진단 표시), 바깥을 누르면 닫히고, 항목을 고르면 닫힌 뒤 저장한다', async () => {
+test('mouse: opening shows three items (development build, diagnostics display), clicking outside closes, choosing an item closes then saves', async () => {
   const page = await openViewer();
   const button = page.locator('#save-menu-button');
   const menu = page.locator('#save-menu');
@@ -115,16 +115,16 @@ test('마우스: 열면 세 항목(개발 빌드, 진단 표시), 바깥을 누�
     '다른 이름으로 저장',
     'downloads 저장',
   ]);
-  // 바깥(문서 영역) 클릭 → 닫힘
+  // Click outside (document area) → closes
   await page.locator('#page-container').click({ position: { x: 5, y: 5 } });
   await expect(menu).toBeHidden();
   await expect(button).toHaveAttribute('aria-expanded', 'false');
-  // 버튼을 다시 누르면 열리고, 한 번 더 누르면 닫힌다.
+  // Pressing the button again opens it, and pressing once more closes it.
   await button.click();
   await expect(menu).toBeVisible();
   await button.click();
   await expect(menu).toBeHidden();
-  // 저장: 메뉴가 닫히고 저장 판정 → chrome.downloads(FSA 없음) → 상태 줄 "저장됨".
+  // Save: the menu closes and the save classification → chrome.downloads (no FSA) → status line "저장됨".
   await button.click();
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#save')]);
   expect(statSync(await download.path()).size).toBe(statSync(SAMPLE).size);
@@ -134,7 +134,7 @@ test('마우스: 열면 세 항목(개발 빌드, 진단 표시), 바깥을 누�
   await page.close();
 });
 
-test('키보드: Enter·↓ 로 열고 ↑↓(순환)·Home·End 로 옮기며 Esc 는 닫고 버튼으로, Enter 로 실행', async () => {
+test('keyboard: open with Enter/↓, move with ↑↓ (cycling)/Home/End, Esc closes and returns to the button, Enter executes', async () => {
   const page = await openViewer();
   const menu = page.locator('#save-menu');
   await page.locator('#save-menu-button').focus();
@@ -156,14 +156,14 @@ test('키보드: Enter·↓ 로 열고 ↑↓(순환)·Home·End 로 옮기며 E
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
   expect(await focusedId(page)).toBe('save-menu-button');
-  // ↑ 로 열면 마지막 항목, ↓ 로 열면 첫 항목
+  // Opening with ↑ gives the last item, opening with ↓ gives the first item
   await page.keyboard.press('ArrowUp');
   await expect(menu).toBeVisible();
   expect(await focusedId(page)).toBe('save-downloads');
   await page.keyboard.press('Escape');
   await page.keyboard.press('ArrowDown');
   expect(await focusedId(page)).toBe('save');
-  // Enter 로 실행(downloads 저장)
+  // Execute with Enter (save to downloads)
   await page.keyboard.press('End');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
@@ -172,7 +172,7 @@ test('키보드: Enter·↓ 로 열고 ↑↓(순환)·Home·End 로 옮기며 E
   await download.path();
   await expect(menu).toBeHidden();
   expect((await saveEvents(page)).map((e) => e.trigger)).toEqual(['downloads']);
-  // Tab 은 메뉴를 닫는다.
+  // Tab closes the menu.
   await page.locator('#save-menu-button').focus();
   await page.keyboard.press('Enter');
   await expect(menu).toBeVisible();
@@ -181,7 +181,7 @@ test('키보드: Enter·↓ 로 열고 ↑↓(순환)·Home·End 로 옮기며 E
   await page.close();
 });
 
-test('Ctrl+S 는 메뉴 없이 바로 저장한다(열린 메뉴는 닫는다)', async () => {
+test('Ctrl+S saves directly without the menu (an open menu is closed)', async () => {
   const page = await openViewer();
   await page.locator('#page-container').click({ position: { x: 5, y: 5 } });
   const [download] = await Promise.all([
@@ -191,7 +191,7 @@ test('Ctrl+S 는 메뉴 없이 바로 저장한다(열린 메뉴는 닫는다)',
   await download.path();
   await expect(page.locator('#save-menu')).toBeHidden();
   expect((await saveEvents(page)).map((e) => e.trigger)).toEqual(['ctrl+s']);
-  // 메뉴를 연 채로 Ctrl+S: 메뉴가 닫히고 저장한다.
+  // Ctrl+S with the menu open: the menu closes and the save runs.
   await page.click('#save-menu-button');
   await expect(page.locator('#save-menu')).toBeVisible();
   const [second] = await Promise.all([
@@ -205,7 +205,7 @@ test('Ctrl+S 는 메뉴 없이 바로 저장한다(열린 메뉴는 닫는다)',
 });
 
 for (const width of [320, 400, 1280]) {
-  test(`메뉴는 화면 안에 열린다(${width}px, 버튼을 오른쪽 끝에 둔 경우 포함)`, async () => {
+  test(`the menu opens inside the screen (${width}px, including when the button is at the right end)`, async () => {
     const page = await openViewer(width, 700);
     const inViewport = async (tag: string) => {
       const vw = await page.evaluate(() => document.documentElement.clientWidth);
@@ -219,7 +219,7 @@ for (const width of [320, 400, 1280]) {
     await page.click('#save-menu-button');
     await inViewport('기본 위치');
     await page.keyboard.press('Escape');
-    // 버튼을 툴바 오른쪽 끝으로 옮겨도 메뉴가 왼쪽으로 비켜 화면 안에 들어온다.
+    // Even if the button is moved to the right end of the toolbar, the menu shifts left and stays inside the screen.
     await page.evaluate(() => {
       const wrap = document.getElementById('save-menu-wrap')!;
       wrap.style.order = '99';

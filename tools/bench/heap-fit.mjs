@@ -1,18 +1,18 @@
-// 저장 힙 모델 계수 적합·검증(docs/m5-heap.md 3·4절).
-// 사용: node tools/bench/heap-fit.mjs out/m5-heap/measure.jsonl [더 많은 jsonl ...] [--json out/m5-heap/fit.json]
-// - 저장 경로(full·incremental)마다 계수를 두 방법으로 정한다.
-//   ls: 비음수 최소 제곱 후 적합 표본 전부를 덮도록 배율 k 를 올린다(계약 D5 문구 그대로).
-//   lp: 적합 표본 전부를 덮는다는 제약(미탐 0) 아래 상대 과대 추정 합을 최소화한다(선형 계획, 계수 ≥ 0).
-// - 문서 단위 leave-one-out: 검증 문서를 빼고 적합한 계수로 그 문서를 예측한다. HOLDOUT(대용량)은 적합에서 빼고 검증만 한다.
-// - 미탐: 측정 피크 > 예상 피크(측정 실패는 피크 = 상한으로 본다). 과탐: warn·over-limit 판정 중 측정 피크 < 상한 × 0.5.
-// - 비교: 이전 배율 모델(입력 × 3.48 전체 / 2.98 증분, `STREAM_INPUT_PEAK_HEAP_RATIO`).
+// Save-heap model coefficient fit and validation (docs/m5-heap.md sections 3·4).
+// Usage: node tools/bench/heap-fit.mjs out/m5-heap/measure.jsonl [more jsonl ...] [--json out/m5-heap/fit.json]
+// - Coefficients are set per save path (full·incremental) with two methods.
+//   ls: non-negative least squares, then raise the scale k until all fit samples are covered (wording of contract D5).
+//   lp: minimize the sum of relative over-estimates under the constraint of covering all fit samples (zero misses) (linear programming, coefficients ≥ 0).
+// - Per-document leave-one-out: predict the held-out document with coefficients fit without it. HOLDOUT (large documents) is excluded from the fit and used only for validation.
+// - Miss: measured peak > estimated peak (a failed measurement counts as peak = limit). False alarm: among warn·over-limit classifications, measured peak < limit × 0.5.
+// - Comparison: the earlier scale model (input × 3.48 full / 2.98 incremental, `STREAM_INPUT_PEAK_HEAP_RATIO`).
 import { readFileSync, writeFileSync } from 'node:fs';
 import { HOLDOUT } from './synth.mjs';
 
 const MIB = 2 ** 20;
 const LIMIT = 2 ** 31;
 const WARN = 0.75;
-/** emscripten 힙 확장 규칙(docs/m0-dod-xobject-redact-save.md 3.1): 새 크기 = max(요청, 현재 × 1.2), 요청 + 96 MiB 이하. */
+/** emscripten heap growth rule (docs/m0-dod-xobject-redact-save.md 3.1): new size = max(requested, current × 1.2), at most requested + 96 MiB. */
 const GROWTH = 1.2;
 const GROWTH_CAP = 96 * MIB;
 const OLD_RATIO = { full: 3.48, incremental: 2.98 };
@@ -38,7 +38,7 @@ const rows = files
     const journal = r.plan?.heap?.journalBytes ?? 0;
     const held = Math.max(current, base + journal);
     const peak = r.ok ? r.peak : LIMIT;
-    // 표본 추정이면 원 스트림 = 입력(상한)으로 본다(`saveHeapIncrement` 와 같은 규칙).
+    // For a sample estimate, treat the original stream as the input (upper bound) (same rule as `saveHeapIncrement`).
     const raw = r.stats.approximate
       ? Math.max(r.stats.rawStreamBytes, r.inputBytes)
       : r.stats.rawStreamBytes;
@@ -64,13 +64,13 @@ const rows = files
     };
   });
 
-/** 모델 입력. objectBytes = (입력 − 원 스트림) + 객체 스트림을 푼 크기(객체 사전·배열의 대략 크기). */
+/** Model inputs. objectBytes = (input − original stream) + decoded size of object streams (rough size of object dictionaries·arrays). */
 const FEATURE_SETS = {
   contract: ['inputBytes', 'objectCount', 'rawStreamBytes'],
   objbytes: ['inputBytes', 'objectCount', 'rawStreamBytes', 'objectBytes'],
 };
 
-/** 작은 연립방정식(가우스 소거). 특이하면 null. */
+/** Small system of linear equations (Gaussian elimination). null if singular. */
 function solve(A, b) {
   const n = b.length;
   const M = A.map((row, i) => [...row, b[i]]);
@@ -88,7 +88,7 @@ function solve(A, b) {
   return M.map((row, i) => row[n] / row[i]);
 }
 
-/** 비음수 최소 제곱(변수 ≤ 4: 부분집합 전수). X 는 행 = 표본. 계수 배열(열 순서). */
+/** Non-negative least squares (variables ≤ 4: exhaustive over subsets). X rows = samples. Coefficient array (column order). */
 function nnls(X, y) {
   const p = X[0].length;
   let best = null;
@@ -110,15 +110,15 @@ function nnls(X, y) {
 }
 
 /**
- * 모델 형태.
- * - linear: 예상 피크 = H + inc (계약 D5 그대로). H = max(현재 힙, 기본 + 저널).
- * - step: 예상 피크 = max(현재, min(1.2 × (H + inc), H + inc + 96 MiB)). 힙 확장이 한 번에 현재의 1.2배까지 커지는 계단을 덮는다.
- * inc = k × (d + a·입력 + b·객체 + c·원 스트림). d 는 intercept 변형에서만.
+ * Model shapes.
+ * - linear: estimated peak = H + inc (as in contract D5). H = max(current heap, base + journal).
+ * - step: estimated peak = max(current, min(1.2 × (H + inc), H + inc + 96 MiB)). Covers the step where one heap growth reaches 1.2× the current size.
+ * inc = k × (d + a·input + b·objects + c·original stream). d only in the intercept variant.
  */
 /**
- * 객체형 계수 하한(사전값, MiB 단위 계수: objectCount 는 Mi 개당 MiB = 개당 byte). 객체 크기 신호를 가진 측정 문서가
- * nasa-se-handbook 하나뿐이라 그 문서를 빼면(LOO) 계수가 0 으로 떨어진다. 하한은 측정 문서 전체에서 본 객체당·객체 바이트당
- * 증가분의 대략 값이다(docs/m5-heap.md 3.2).
+ * Lower bounds for object-type coefficients (prior values, coefficients in MiB units: objectCount is MiB per Mi objects = bytes per object). Only one measured document carries an object-size signal
+ * (nasa-se-handbook), so leaving it out (LOO) drops the coefficients to 0. The bounds are rough per-object and per-object-byte
+ * increments seen across all measured documents (docs/m5-heap.md 3.2).
  */
 const PRIOR = { objectCount: 400, objectBytes: 1.5 };
 const FORMS = {};
@@ -159,13 +159,13 @@ function predictWith(form, coef, k, r) {
 }
 
 /**
- * 선형 계획 min c·x s.t. A x ≥ b, x ≥ 0 (c ≥ 0). 쌍대 max b·y s.t. Aᵀy ≤ c, y ≥ 0 을 단체법(Bland 규칙)으로 풀고
- * 원 문제 해를 여유 변수 열의 목적 행 값으로 읽는다. 변수 수 ≤ 5, 제약 수 ≤ 수백.
+ * Linear program min c·x s.t. A x ≥ b, x ≥ 0 (c ≥ 0). Solves the dual max b·y s.t. Aᵀy ≤ c, y ≥ 0 with the simplex method (Bland's rule) and
+ * reads the primal solution from the objective-row values of the slack-variable columns. Variables ≤ 5, constraints ≤ a few hundred.
  */
 function lp(A, b, c) {
   const m = c.length;
   const n = A.length;
-  // 행 i(원 변수 i): Σ_k A[k][i] y_k + s_i = c_i
+  // row i (primal variable i): Σ_k A[k][i] y_k + s_i = c_i
   const T = Array.from({ length: m }, (_, i) => {
     const row = new Array(n + m + 1).fill(0);
     for (let k = 0; k < n; k++) row[k] = A[k][i];
@@ -209,14 +209,14 @@ function lp(A, b, c) {
   return Array.from({ length: m }, (_, i) => Math.max(0, z[n + i]));
 }
 
-/** 표본이 요구하는 최소 증가분(MiB). 측정 피크를 덮으려면 필요량이 얼마여야 하는지 식을 거꾸로 푼다. */
+/** Minimum increment (MiB) a sample requires. Inverts the formula to find how much is needed to cover the measured peak. */
 function requiredIncrement(form, r) {
   if (r.peak <= r.current) return -Infinity;
   const need = form.step ? Math.max(r.peak / GROWTH, r.peak - GROWTH_CAP) : r.peak;
   return (need - r.held) / MIB;
 }
 
-/** 적합(lp): 미탐 0 제약 아래 상대 과대 추정 합 최소. `form.lower` 는 계수 하한(사전값, MiB 단위 계수). */
+/** Fit (lp): minimize the sum of relative over-estimates under zero misses. `form.lower` is the coefficient lower bound (prior values, coefficients in MiB units). */
 function fitLp(form, train) {
   const names = form.intercept ? ['intercept', ...form.features] : form.features;
   const lb = names.map((n) => form.lower?.[n] ?? 0);
@@ -239,11 +239,11 @@ function fitLp(form, train) {
         c,
       )
     : Array(p).fill(0);
-  // 수치 오차로 생기는 미세한 미탐을 막는다.
+  // Prevents tiny misses caused by numerical error.
   return { coef: extra.map((v, j) => (v + lb[j]) * (1 + 1e-9)), k: 1 + 1e-6 };
 }
 
-/** 적합(ls): 비음수 최소 제곱 → 적합 표본을 모두 덮는 최소 배율 k(≥ 1). */
+/** Fit (ls): non-negative least squares → the smallest scale k (≥ 1) that covers all fit samples. */
 function fitLs(form, train) {
   const X = train.map((r) => features(r, form));
   const y = train.map((r) => Math.max(0, r.y) / MIB);
@@ -279,7 +279,7 @@ function judge(pred, r) {
   };
 }
 
-/** 문서·저장 경로별 시나리오 최대 측정 피크. 과탐(문서 기준)은 판정이 난 시나리오에서 이 값이 상한 × 0.5 미만인 경우. */
+/** Maximum measured peak per document and save path across scenarios. A false alarm (per document) is a case where this value is below limit × 0.5 for a scenario that was flagged. */
 const docMax = new Map();
 for (const r of rows) {
   const key = `${r.id}:${r.method}`;
@@ -306,7 +306,7 @@ const result = { forms: {}, old: {}, rows: [] };
 for (const method of ['full', 'incremental']) {
   const all = rows.filter((r) => r.method === method);
   const fitSet = all.filter((r) => !r.holdout);
-  // 이전 배율 모델
+  // previous scale model
   const oldJ = all.map((r) => ({
     id: r.id,
     view: r.view,
@@ -357,9 +357,9 @@ for (const [m, o] of Object.entries(result.old)) {
   );
 }
 /**
- * 안전 여유(선택한 형태 `CHOSEN`): 증가분 = KS × (lp 증가분) + AS. KS 는 계수 오차, AS 는 작은 문서의 힙 확장 계단을
- * 덮는다. LOO 미탐 0 을 만족하는 조합 중 과탐(문서 기준 → 시나리오 기준)이 가장 적고 여유가 작은 것을 고른다.
- * 여유를 LOO 로 고르므로 LOO 결과는 여유 선택에 쓰인 값이다(docs/m5-heap.md 4절에 밝힌다).
+ * Safety margin (chosen form `CHOSEN`): increment = KS × (lp increment) + AS. KS covers coefficient error, AS covers the heap-growth step of small documents.
+ * Pick, among combinations with zero LOO misses, the one with the fewest false alarms (per document → per scenario) and the smallest margin.
+ * Because the margin is chosen by LOO, the LOO result is the value used to select the margin (stated in docs/m5-heap.md section 4).
  */
 const CHOSEN = 'lp/objbytes/step+d/prior';
 const KS = [1, 1.02, 1.05, 1.1, 1.2, 1.3, 1.5];
@@ -400,7 +400,7 @@ for (const method of ['full', 'incremental']) {
           ...judge(predictWith(form, m.coef, m.k, r), r),
         };
       });
-      // 평균 과대 추정(예상 ÷ 측정, 실패 표본 제외): 같은 과탐이면 여유가 작은 쪽을 고르는 기준.
+      // Mean over-estimate (estimate ÷ measured, failed samples excluded): the criterion for preferring the smaller margin when false alarms are equal.
       const okRows = judged.filter((j, i) => all[i].ok);
       const excess =
         okRows.reduce((t, j, i) => t + j.pred / all.filter((r) => r.ok)[i].peak, 0) / okRows.length;

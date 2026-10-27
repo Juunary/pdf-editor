@@ -1,6 +1,6 @@
 /**
- * 표 검출 실데이터 점검(디버그 전용). TABLES_DEBUG_DIR(PageModel JSON 덤프 디렉터리)이 있을 때만 돈다.
- * 결과는 TABLES_DEBUG_OUT(기본 <DIR>/../tables-debug) 에 summary.json·summary.txt 로 쓴다.
+ * Table detection check on real data (debug only). Runs only when TABLES_DEBUG_DIR (a directory of PageModel JSON dumps) is set.
+ * Results are written to TABLES_DEBUG_OUT (default <DIR>/../tables-debug) as summary.json and summary.txt.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,8 +12,8 @@ import { detectTables } from '../src/tables.js';
 
 const DIR = process.env.TABLES_DEBUG_DIR;
 
-describe.skipIf(!DIR)('표 검출 실데이터 점검', () => {
-  it('덤프 쪽마다 표를 찾아 요약을 쓴다', () => {
+describe.skipIf(!DIR)('table detection real-data check', () => {
+  it('finds tables for each dumped page and writes a summary', () => {
     const dir = DIR!;
     const out = process.env.TABLES_DEBUG_OUT ?? path.join(dir, '..', 'tables-debug');
     fs.mkdirSync(out, { recursive: true });

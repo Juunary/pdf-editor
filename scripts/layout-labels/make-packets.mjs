@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * 정확도 라벨 작업 묶음 생성(docs/m2-contract.md 4.1). 쪽마다 줄 상자·번호를 그린 PNG 와 줄 목록 TXT 를 만든다.
- * 줄 번호 = PageModel.lines 인덱스(core extractPageModel, includePathSegments: true).
+ * Generates accuracy-label work packets (docs/m2-contract.md 4.1). Per page, makes a PNG with line boxes·numbers drawn and a TXT line list.
+ * Line number = PageModel.lines index (core extractPageModel, includePathSegments: true).
  *
  *   pnpm build
- *   node scripts/layout-labels/make-packets.mjs <코퍼스 디렉터리> <출력 디렉터리> <문서 id>:<쪽,쪽,...> ...
- *   node scripts/layout-labels/make-packets.mjs --stats <코퍼스 디렉터리> <문서 id>:<쪽,...> ...
- *   node scripts/layout-labels/make-packets.mjs --layout <코퍼스 디렉터리> <출력 디렉터리> <문서 id>:<쪽,...> ...
+ *   node scripts/layout-labels/make-packets.mjs <corpus directory> <output directory> <doc id>:<page,page,...> ...
+ *   node scripts/layout-labels/make-packets.mjs --stats <corpus directory> <doc id>:<page,...> ...
+ *   node scripts/layout-labels/make-packets.mjs --layout <corpus directory> <output directory> <doc id>:<page,...> ...
  *
- * --layout: 줄 대신 복원 결과(reconstructPage)를 그린다. 흐름 문단 상자(역할별 색)와 최상위 읽기 순서 번호,
- * 표(청록, 격자), 도형(노랑). 출력 <문서 id>-p<쪽>-layout.png. 실패 분석용(정답 아님).
+ * --layout: draws the reconstruction result (reconstructPage) instead of lines. Flow paragraph boxes (color by role) and top-level reading-order numbers,
+ * tables (cyan, grid), shapes (yellow). Output <doc id>-p<page>-layout.png. For failure analysis (not ground truth).
  *
- * 쪽 번호는 0부터. 출력: <출력>/<문서 id>-p<쪽 3자리>.png / .txt
+ * Page numbers are 0-based. Output: <output>/<doc id>-p<page, 3 digits>.png / .txt
  */
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';

@@ -1,6 +1,6 @@
-// 코드에 넣은 계수(`packages/pdf-ops` SAVE_HEAP_COEFFICIENTS)로 측정 JSON 을 다시 판정한다(docs/m5-heap.md 4절 표).
-// 사용: node tools/bench/heap-check.mjs out/m5-heap/measure-v3.jsonl [...]
-// 이 판정은 최종 계수(전체 적합 + 여유) 기준이다. LOO 는 heap-fit.mjs 가 낸다.
+// Re-classifies the measurement JSON with the coefficients in the code (`packages/pdf-ops` SAVE_HEAP_COEFFICIENTS) (docs/m5-heap.md section 4 table).
+// Usage: node tools/bench/heap-check.mjs out/m5-heap/measure-v3.jsonl [...]
+// This classification uses the final coefficients (full fit + margin). LOO is produced by heap-fit.mjs.
 import { readFileSync } from 'node:fs';
 import {
   estimateSaveHeapModel,
@@ -21,7 +21,7 @@ const rows = process.argv
       .map((l) => JSON.parse(l)),
   )
   .filter((r) => r.stats);
-/** 첫 저장 실측 피크. 첫 저장에서 실패했으면 상한(저장 2회 시나리오는 두 번째 저장 실패가 r.ok=false 로 온다). */
+/** Measured peak of the first save. If the first save failed, the limit (in the two-save scenario a failure of the second save arrives as r.ok=false). */
 const firstPeak = (r) => (typeof r.peak === 'number' ? r.peak : LIMIT);
 const docMax = new Map();
 for (const r of rows) {

@@ -7,18 +7,18 @@ import { PageSurface } from './components/PageSurface.js';
 import { pageArrowLayout } from './page-nav.js';
 
 export interface MountTargets {
-  /** 툴바 안 컨트롤(페이지 이동·찾기·레이아웃·편집 버튼)과 검색창. */
+  /** Controls in the toolbar (page navigation, find, layout and edit buttons) and the search bar. */
   controls: HTMLElement;
-  /** 페이지 표면(캔버스와 오버레이). */
+  /** Page surface (canvas and overlays). */
   pages: HTMLElement;
 }
 
-/** 창 크기·확대/축소(dpr) 변화 후 다시 맞추기까지의 대기(ms). */
+/** Wait (ms) until re-fitting after a window size or zoom (dpr) change. */
 const RESIZE_DEBOUNCE_MS = 150;
 
 /**
- * 뷰어 UI 를 마운트한다. 첫 페이지는 호출자가 `controller.start()` 로 불러온다(열기 실패 처리를 호출자가
- * 하도록). 반환 함수는 마운트를 해제하고 컨트롤러를 정리한다. 컨트롤러는 호출자가 만든다(Worker 연결·환경 값 주입).
+ * Mounts the viewer UI. The caller loads the first page with `controller.start()` (so that the caller
+ * handles open failures). The returned function unmounts and cleans up the controller. The caller creates the controller (Worker connection, environment value injection).
  */
 export function mountViewer(targets: MountTargets, controller: ViewerController): () => void {
   controller.edit?.setInputBuffer(new DomInputBuffer());
@@ -32,8 +32,8 @@ export function mountViewer(targets: MountTargets, controller: ViewerController)
     targets.pages,
   );
 
-  // 쪽 화살표 자리(좌우 칸 또는 쪽 위 겹침)를 문서 영역 폭으로 정한다(style.css `[data-pe-arrows]`). 호스트의 쪽 맞춤
-  // 폭도 같은 함수(`pageArrowLayout`)로 정하므로 둘이 어긋나지 않는다.
+  // Decide the page-arrow slots (side slots or overlap over the page) from the document-area width (style.css `[data-pe-arrows]`). The host's fit-to-page
+  // width is also decided by the same function (`pageArrowLayout`), so the two do not diverge.
   const pages = targets.pages;
   const syncArrows = () => {
     pages.dataset.peArrows = pageArrowLayout(pages.clientWidth).placement;

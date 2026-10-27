@@ -1,14 +1,14 @@
 {
   "appName": {
     "message": "PDF Editor",
-    "description": "확장 이름(스토어 등록·chrome://extensions). 개발 빌드는 빌드 단계에서 \" (dev)\" 를 붙인다."
+    "description": "Extension name (Web Store listing, chrome://extensions). Dev builds append \" (dev)\" at build time."
   },
   "appDescription": {
     "message": "Chrome 에서 PDF 를 열어 글자 선택·검색, 문단·표 셀·도형 편집, 저장까지 기기 안에서 처리합니다.",
-    "description": "요약 설명, 132자 이하. 출처: docs/store/listing.md 요약."
+    "description": "Short description, at most 132 characters. Source: summary in docs/store/listing.md."
   },
   "actionTitle": {
     "message": "PDF Editor 뷰어 열기",
-    "description": "툴바 버튼 툴팁."
+    "description": "Toolbar button tooltip."
   }
 }

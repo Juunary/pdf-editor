@@ -7,8 +7,8 @@ import { buildTestPageModel, type HelperPolicy } from './helpers/page-model.js';
 import { deliveryTrace } from './helpers/device-log.js';
 
 /**
- * buildSourceMap·linkPage 합성 PDF 테스트. 기대값의 기준은 MuPDF Device 콜백(테스트 전용 PageModel)이다.
- * 매칭 기준: 총수 차이 0, 글자·도형 전부 매칭, 원점 오차 0.01pt 이하.
+ * Synthetic PDF tests for buildSourceMap and linkPage. The reference for expected values is the MuPDF Device callbacks (test-only PageModel).
+ * Matching criteria: total count difference 0, all glyphs and shapes matched, origin error at most 0.01pt.
  */
 
 interface Built {
@@ -17,7 +17,7 @@ interface Built {
 
 type Res = Record<string, unknown>;
 
-/** 1쪽 문서. content 가 배열이면 /Contents 배열. 꺼진 OCG /OC1, Helvetica /F1 을 둔다. */
+/** 1-page document. If content is an array, a /Contents array. Provides the disabled OCG /OC1 and Helvetica /F1. */
 function build(
   content: string | string[],
   resources?: (doc: mupdf.PDFDocument, ctx: { F1: mupdf.PDFObject; ocg: mupdf.PDFObject }) => Res,
@@ -69,8 +69,8 @@ function expectFull(r: { map: SourceMap; link: PageLinkage }) {
 }
 
 /**
- * 소유 연산이 없는 번호(패턴 셀 내용, no-clip 정책의 재전송 중복)는 매칭 대상이 아니다.
- * 총수 차이 0 과, 소유 번호를 가진 글자·도형이 전부 매칭됐는지 본다.
+ * Numbers without an owning operation (pattern cell content, duplicate re-sends under the no-clip policy) are not matching targets.
+ * Checks that the total count difference is 0 and that all glyphs and shapes with owned numbers matched.
  */
 function expectOwned(r: { map: SourceMap; link: PageLinkage; model: PageModel }) {
   const owned = new Set<number>();
@@ -109,8 +109,8 @@ const shading = {
 const rgbImage = (doc: mupdf.PDFDocument) =>
   doc.addImage(new mupdf.Image(new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 2, 2], false)));
 
-describe('buildSourceMap: 스트림·바이트 범위', () => {
-  it('/Contents 배열 3개, 스트림 경계에 걸친 연산(피연산자·문자열)', () => {
+describe('buildSourceMap: streams and byte ranges', () => {
+  it('3 /Contents arrays, operations spanning stream boundaries (operands, strings)', () => {
     const b = build(['BT /F1 12 Tf 50', '700 Td (A', ') Tj ET 0 0 5 5 re f']);
     const r = match(b);
     expectFull(r);
@@ -120,14 +120,14 @@ describe('buildSourceMap: 스트림·바이트 범위', () => {
     expect(td.limits).toContain('spans-stream-boundary');
     const tj = r.map.ops.find((o) => o.op === 'Tj')!;
     expect(tj.limits).toContain('spans-stream-boundary');
-    // MuPDF 는 스트림을 공백으로 잇는다: 문자열 안 경계 바이트가 글리프(코드 32)가 된다.
+    // MuPDF joins streams with a space: a boundary byte inside a string becomes a glyph (code 32).
     expect(tj.text!.glyphs.map((g) => g.code)).toEqual([65, 32]);
     const f = r.map.ops.find((o) => o.op === 'f')!;
     expect(f.stream.contentsIndex).toBe(2);
     expect(f.limits).not.toContain('spans-stream-boundary');
   });
 
-  it('연산 범위·글리프 바이트 범위(리터럴 이스케이프·16진)', () => {
+  it('operation ranges and glyph byte ranges (literal escapes, hex)', () => {
     const content = 'BT /F1 12 Tf 50 700 Td (a\\(b\\101) Tj <41 42> Tj ET';
     const r = match(build(content));
     expectFull(r);
@@ -146,7 +146,7 @@ describe('buildSourceMap: 스트림·바이트 범위', () => {
   });
 });
 
-describe('Form XObject 재귀', () => {
+describe('Form XObject recursion', () => {
   const formDoc = () =>
     build('q 1 0 0 1 50 400 cm /Fx1 Do Q /Fx3 Do', (doc, { F1 }) => {
       const fx2 = doc.addStream(`${bt('(N2) Tj')} 0 0 10 10 re f`, {
@@ -162,7 +162,7 @@ describe('Form XObject 재귀', () => {
         Matrix: [2, 0, 0, 2, 0, 0],
         Resources: { Font: { F1 }, XObject: { Fx2: fx2 } },
       });
-      // 자체 /Resources 없는 Form(L1): 페이지 리소스의 /F1 을 쓴다.
+      // A Form without its own /Resources (L1): uses /F1 from the page resources.
       const fx3 = doc.addStream(bt('(L1) Tj'), {
         Type: 'XObject',
         Subtype: 'Form',
@@ -171,7 +171,7 @@ describe('Form XObject 재귀', () => {
       return { XObject: { Fx1: fx1, Fx3: fx3 } };
     });
 
-  it('중첩 Form 의 실행 순서·formPath·ctm 이 xobject.ts 사용 위치 색인과 일치', () => {
+  it('execution order, formPath and ctm of nested Forms match the xobject.ts usage-site index', () => {
     const b = formDoc();
     const r = match(b);
     expectFull(r);
@@ -188,7 +188,7 @@ describe('Form XObject 재귀', () => {
       expect(path.at(-1)!.objectNumber).toBe(u.objectNumber);
       expect(path.at(-1)!.ctm).toEqual(u.path.at(-1)!.ctm);
       expect(path.at(-1)!.nameRange).toEqual(u.path.at(-1)!.nameRange);
-      // Do 는 BBox clipPath 1개를 소유한다.
+      // Do owns one BBox clipPath.
       expect(d.paintSeq?.length).toBe(1);
     });
     const l1 = textOps(r.map).find(
@@ -198,7 +198,7 @@ describe('Form XObject 재귀', () => {
     expect(r.map.streams.filter((s) => s.contentsIndex === null).length).toBe(3);
   });
 
-  it('깊이 상한·순환은 form-depth-exceeded', () => {
+  it('depth limit and cycles give form-depth-exceeded', () => {
     const b = formDoc();
     const map = buildSourceMap(b.doc, 0, { maxFormDepth: 2 });
     const deep = map.ops.filter((o) => o.limits.includes('form-depth-exceeded'));
@@ -222,8 +222,8 @@ describe('Form XObject 재귀', () => {
   });
 });
 
-describe('텍스트 상태와 글리프 원점', () => {
-  it('Tm·Td·TD·T*·TL·Tc·Tw·Tz·Ts·TJ 조정·\'·" ', () => {
+describe('text state and glyph origins', () => {
+  it('Tm·Td·TD·T*·TL·Tc·Tw·Tz·Ts·TJ adjustment·\'·" ', () => {
     const r = match(
       build(
         'BT /F1 11 Tf 0.9 0.2 -0.2 0.9 40 600 Tm 1.5 Tc 4 Tw 85 Tz 3 Ts (a b  c) Tj 0 -14 TD (d e) Tj T* [(F) -250 (g) 120.5 ( h)] TJ 16 TL (i j) \' 2 0.5 (k l) " ET',
@@ -232,7 +232,7 @@ describe('텍스트 상태와 글리프 원점', () => {
     expectFull(r);
   });
 
-  it('회전·확대 CTM 과 페이지 /Rotate', () => {
+  it('rotating/scaling CTM and page /Rotate', () => {
     const doc = new mupdf.PDFDocument();
     const F1 = doc.addSimpleFont(new mupdf.Font('Times-Roman'));
     const page = doc.addPage(
@@ -251,7 +251,7 @@ describe('텍스트 상태와 글리프 원점', () => {
     expectFull(r);
   });
 
-  it('Type0 Identity-H(addFont)·폭 정보 없는 표준 14 폰트', () => {
+  it('Type0 Identity-H (addFont) and standard 14 fonts without width information', () => {
     const r = match(
       build(
         'BT /F2 14 Tf 50 650 Td <002400250026> Tj ET BT /F3 13 Tf 50 600 Td (Std14 \\(no Widths\\) Wy) Tj ET',
@@ -272,7 +272,7 @@ describe('텍스트 상태와 글리프 원점', () => {
     expectFull(r);
   });
 
-  it('세로쓰기 Identity-V(/W2·DW2 기본값)', () => {
+  it('vertical writing Identity-V (/W2, DW2 defaults)', () => {
     const r = match(
       build('BT /V 16 Tf 300 700 Td 2 Tc <00240025> Tj [<0026> -300 <0027>] TJ ET', (doc) => {
         const V = doc.addFont(new mupdf.Font('Helvetica'));
@@ -293,7 +293,7 @@ describe('텍스트 상태와 글리프 원점', () => {
     expectFull(r);
   });
 
-  it('CID 매핑을 모르는 미리 정의된 CMap: 원점이 어긋나도 번호 연속으로 매칭(font-encoding-unresolved)', () => {
+  it('predefined CMap whose CID mapping is unknown: matched by number continuity even if origins deviate (font-encoding-unresolved)', () => {
     const r = match(
       build('BT /K 12 Tf 50 700 Td <0041004200430044> Tj ET', (doc) => {
         const K = doc.addFont(new mupdf.Font('Helvetica'));
@@ -307,7 +307,7 @@ describe('텍스트 상태와 글리프 원점', () => {
     expect(r.link.stats.matchedChars).toBe(r.link.stats.chars);
   });
 
-  it('Type3 폰트(/FontMatrix 비기본), Tr 1·7 은 MuPDF 규칙대로 fill·ignore', () => {
+  it('Type3 font (non-default /FontMatrix), Tr 1 and 7 are fill and ignore per MuPDF rules', () => {
     const r = match(
       build('BT /T 20 Tf 50 700 Td (AB) Tj 1 Tr (A) Tj 7 Tr (B) Tj 0 Tr ET', (doc) => ({
         Font: {
@@ -334,8 +334,8 @@ describe('텍스트 상태와 글리프 원점', () => {
   });
 });
 
-describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
-  /** 코드 65·66 두 글리프 Type3 폰트. procs = [A 프로시저, B 프로시저]. */
+describe('direct execution of Type3 glyphs (MuPDF render_direct)', () => {
+  /** Type3 font with two glyphs, codes 65 and 66. procs = [A procedure, B procedure]. */
   const type3 = (doc: mupdf.PDFDocument, procs: [string, string], res: Res = {}) =>
     doc.addObject({
       Type: 'Font',
@@ -356,7 +356,7 @@ describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
     return trace;
   };
 
-  it('d0 + 색 지정 없는 칠하기 = 캐시 불가 → 글리프마다 프로시저 직접 실행 + ignoreText(arXiv pdfTeX 유형)', () => {
+  it('d0 + paint without color setting = not cacheable -> run the procedure directly per glyph + ignoreText (arXiv pdfTeX type)', () => {
     const b = build('BT /T 20 Tf 50 700 Td (ABA) Tj ET', (doc) => ({
       Font: {
         T: type3(doc, ['600 0 d0 0 0 500 500 re f', '700 0 d0 0 0 250 500 re f 0 0 9 9 re f']),
@@ -374,7 +374,7 @@ describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
     expect(tj.limits).toEqual(expect.arrayContaining(['type3-font', 'outside-page-content']));
   });
 
-  it('d1 + 선 상태 미정 B = 캐시 불가, 글리프 안 MASK 는 직접 실행 뒤 되돌아간다(zen-ko 유형)', () => {
+  it('d1 + B with undetermined line state = not cacheable; MASK inside a glyph is restored after direct execution (zen-ko type)', () => {
     const b = build(
       'BT /T 20 Tf 50 700 Td (AB) Tj ET /Pattern cs /SP scn 10 10 50 50 re f 1 0 0 rg BT /F1 12 Tf 60 600 Td (x) Tj ET',
       (doc) => ({
@@ -388,8 +388,8 @@ describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
         Pattern: { SP: doc.addObject({ Type: 'Pattern', PatternType: 2, Shading: shading }) },
       }),
     );
-    // 글리프마다 fillPath+strokePath(B 글리프 안 1 0 0 rg 는 MASK 로 무시). MuPDF 가 직접 실행 뒤 장치 플래그를
-    // 되돌리므로 뒤의 패턴 설정은 적용되어 f 는 clip+fillShade 2개.
+    // fillPath+strokePath per glyph (1 0 0 rg inside the B glyph is ignored as MASK). MuPDF restores the device flags after direct execution,
+    // so the later pattern setup is applied and f gives 2: clip+fillShade.
     expect(traceMatches(b)).toEqual([
       'P',
       'P',
@@ -404,7 +404,7 @@ describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
     expectFull(match(b));
   });
 
-  it('d1 에서 w·j·d 를 모두 정하고 선을 그리면 캐시 가능, d 가 빠지면 캐시 불가', () => {
+  it('cacheable if d1 sets all of w, j, d and draws a line; not cacheable if d is missing', () => {
     const b = build('BT /T 20 Tf 50 700 Td (AB) Tj ET', (doc) => ({
       Font: {
         T: type3(doc, [
@@ -413,12 +413,12 @@ describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
         ]),
       },
     }));
-    // A 는 캐시 가능(fill), B 는 대시 미정으로 직접 실행(fillPath+strokePath+ignore).
+    // A is cacheable (fill); B runs directly because the dash is undetermined (fillPath+strokePath+ignore).
     expect(traceMatches(b)).toEqual(['fill:1:N', 'P', 'P', 'ignore:1:N']);
     expectFull(match(b));
   });
 
-  it('색 있는(d0, 색 지정) 글리프 + 패턴 채움 색 = 직접 실행', () => {
+  it('a colored glyph (d0, color set) + pattern fill color = direct execution', () => {
     const b = build('/Pattern cs /SP scn BT /T 20 Tf 50 700 Td (A) Tj ET', (doc) => ({
       Font: {
         T: type3(doc, ['600 0 d0 0 1 0 rg 0 0 500 500 re f', '700 0 d0 0 0 1 rg 0 0 9 9 re f']),
@@ -429,7 +429,7 @@ describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
     expectFull(match(b));
   });
 
-  it('꺼진 /OC 안에서도 직접 실행 칠하기는 온다(새 처리기는 숨김 카운터가 0)', () => {
+  it('directly executed paints still arrive inside an /OC that is off (the new handler has hidden counter 0)', () => {
     const b = build('/OC /OC1 BDC BT /T 20 Tf 50 700 Td (AB) Tj ET EMC', (doc) => ({
       Font: { T: type3(doc, ['600 0 d0 0 0 500 500 re f', '700 0 d0 0 0 250 500 re f']) },
     }));
@@ -438,7 +438,7 @@ describe('Type3 글리프 직접 실행(MuPDF render_direct)', () => {
   });
 });
 
-describe('텍스트 렌더 방식(Tr 0–7)과 ET 재전송', () => {
+describe('text render modes (Tr 0-7) and ET re-send', () => {
   const cases = [
     '(A) Tj 1 Tr (B) Tj 2 Tr (C) Tj 3 Tr (D) Tj',
     '4 Tr (Ab) Tj (Cd) Tj',
@@ -458,24 +458,24 @@ describe('텍스트 렌더 방식(Tr 0–7)과 ET 재전송', () => {
   for (const c of cases) {
     it(`first-arrival: ${c}`, () => expectFull(match(build(bt(c)))));
   }
-  // no-clip(core 안 A): ET ignore 재전송 중복은 소유 없는 번호가 된다(그 글자는 매칭되지 않음).
+  // no-clip (core option A): duplicate ET ignore re-sends become numbers without an owner (those characters are not matched).
   for (const c of cases) {
     it(`no-clip: ${c}`, () => void expectOwned(match(build(bt(c)), 'no-clip')));
   }
-  it('no-clip: ignore 재전송 중복 글자 수', () => {
+  it('no-clip: number of duplicate ignore re-send characters', () => {
     const r = match(build(bt(cases[7]!)), 'no-clip');
     expect(expectOwned(r).unownedChars).toBe(2);
   });
 
-  it('first-arrival: Tr 7 글리프는 ET 시점 번호, Device 에 안 오는 글리프는 null', () => {
+  it('first-arrival: Tr 7 glyphs get the ET-time number, glyphs that do not reach the Device are null', () => {
     const r = match(build(bt('7 Tr (A) Tj 0 Tr (B) Tj 7 Tr (C) Tj 0 Tr')));
     const seq = textOps(r.map).map((o) => o.text!.glyphs.map((g) => g.seq));
-    // B 표시(0) 뒤 ET 재전송 없음(마지막 글리프 Tr 7 → clip AC: 1, 2).
+    // After displaying B (0) there is no ET re-send (the last glyph's Tr 7 -> clip AC: 1, 2).
     expect(seq).toEqual([[1], [0], [2]]);
     expect(textOps(r.map)[0]!.limits).toContain('clip-text');
   });
 
-  it('Form 안 텍스트가 페이지 BT 의 실행 단위·클립 누적에 합쳐진다', () => {
+  it('text inside a Form is merged into the execution unit and clip accumulation of the page BT', () => {
     const r = match(
       build('BT /F1 12 Tf 50 700 Td 7 Tr (A) Tj /Fx Do (B) Tj ET 0 Tr', (doc, { F1 }) => ({
         XObject: {
@@ -492,8 +492,8 @@ describe('텍스트 렌더 방식(Tr 0–7)과 ET 재전송', () => {
   });
 });
 
-describe('선택적 콘텐츠·marked content', () => {
-  it('꺼진 /OC: Tr 0–2·경로·이미지·셰이드는 없음, 클립·Tr 3·ET 재전송은 계수', () => {
+describe('optional content and marked content', () => {
+  it('/OC off: no Tr 0-2, paths, images or shades; clips, Tr 3 and ET re-sends are counted', () => {
     const r = match(
       build(
         [
@@ -529,12 +529,12 @@ describe('선택적 콘텐츠·marked content', () => {
     expect(t.at(-1)!.optionalContent).toBe(false);
   });
 
-  it('BT 안의 꺼진 BDC: marked content 경계에서 실행 단위가 나뉜다', () => {
+  it('a disabled BDC inside BT: execution units are split at marked content boundaries', () => {
     expectFull(match(build(bt('(A) Tj /OC /OC1 BDC (B) Tj EMC (C) Tj'))));
     expectFull(match(build(bt('/OC /OC1 BDC (A) Tj 1 0 0 rg EMC (B) Tj'))));
   });
 
-  it('OCMD(AnyOn·AllOff)·켜진 OCG', () => {
+  it('OCMD (AnyOn, AllOff) and enabled OCG', () => {
     const r = match(
       build(
         '/OC /M1 BDC (a) Tj EMC /OC /M2 BDC (b) Tj EMC /OC /On BDC (c) Tj EMC'.replace(
@@ -557,7 +557,7 @@ describe('선택적 콘텐츠·marked content', () => {
     expectFull(r);
   });
 
-  it('MCID 와 tagged-content', () => {
+  it('MCID and tagged-content', () => {
     const r = match(
       build(
         '/P <</MCID 3>> BDC /Span <</MCID 4>> BDC BT /F1 9 Tf (x) Tj ET EMC EMC BT /F1 9 Tf (y) Tj ET',
@@ -571,8 +571,8 @@ describe('선택적 콘텐츠·marked content', () => {
   });
 });
 
-describe('도형·이미지·패턴', () => {
-  it('W 클립·빈 경로·B 계열', () => {
+describe('shapes, images, patterns', () => {
+  it('W clip, empty path, B family', () => {
     const r = match(
       build(
         '0 0 9 9 re W f 0 0 9 9 re W* S 0 0 9 9 re W n 0 0 9 9 re W B f 50 50 m S 0 0 9 9 re b*',
@@ -584,7 +584,7 @@ describe('도형·이미지·패턴', () => {
     expect(r.map.ops.filter((o) => o.op === 'n')[0]!.clipDepth).toBe(2);
   });
 
-  it('인라인 이미지(데이터 안 EI·마스크)·이미지 XObject(/SMask 는 2개)', () => {
+  it('inline images (EI inside data, mask) and image XObjects (/SMask counts 2)', () => {
     const r = match(
       build(
         'q 9 0 0 9 0 0 cm BI /W 2 /H 1 /CS /G /BPC 8 ID EI EI Q q 9 0 0 9 20 0 cm BI /IM true /W 8 /H 1 ID \x80 EI Q q 9 0 0 9 40 0 cm /I1 Do Q q 9 0 0 9 60 0 cm /I2 Do Q',
@@ -621,7 +621,7 @@ describe('도형·이미지·패턴', () => {
     expect(r.map.ops.filter((o) => o.op === 'Do').map((o) => o.paintSeq?.length)).toEqual([1, 2]);
   });
 
-  it('셰이딩 패턴: 칠하기·선·텍스트(Tr 0·2, 채움 패턴 + 선 색)', () => {
+  it('shading pattern: fill, stroke, text (Tr 0 and 2, fill pattern + stroke color)', () => {
     const r = match(
       build(
         '/Pattern cs /SP scn /Pattern CS /SP SCN 10 10 50 50 re f 100 10 50 50 re S 200 10 50 50 re B BT /F1 20 Tf 50 700 Td (Ab) Tj 2 Tr (Cd) Tj ET 0 Tr 0 G BT /F1 20 Tf 50 650 Td 2 Tr (Gh) Tj ET 0 Tr',
@@ -633,7 +633,7 @@ describe('도형·이미지·패턴', () => {
     expectFull(r);
   });
 
-  it('패턴 색 Tr 6: 같은 객체 clipStrokeText 는 1단계로 건너뛴다(계약 수정 6, 수정 2 규칙의 불일치 회귀)', () => {
+  it('pattern color Tr 6: clipStrokeText of the same object is skipped at step 1 (contract amendment 6, regression of the amendment 2 rule mismatch)', () => {
     const b = build(
       '/Pattern cs /SP scn /Pattern CS /SP SCN BT /F1 20 Tf 50 700 Td 6 Tr (Ef) Tj ET 0 Tr ' +
         '0 g /Pattern CS /SP SCN BT /F1 20 Tf 50 650 Td 6 Tr (Gh) Tj ET 0 Tr',
@@ -644,7 +644,7 @@ describe('도형·이미지·패턴', () => {
     const trace: string[] = [];
     const map = buildSourceMapImpl(b.doc, 0, 8, 'first-arrival', trace);
     expect(trace.map((t) => t.replace(/:[NR]+$/, ''))).toEqual(deliveryTrace(b.doc.loadPage(0)));
-    // (Ef) 채움·선 모두 패턴, (Gh) 채움 색·선 패턴. 표시 글리프 4개.
+    // (Ef) fill and stroke both patterns, (Gh) fill color and stroke pattern. 4 displayed glyphs.
     expect(trace).toEqual([
       'clip:2:NN',
       'P',
@@ -657,13 +657,13 @@ describe('도형·이미지·패턴', () => {
       'clip:2:RR',
     ]);
     expect(map.glyphCount).toBe(4);
-    // 수정 6 판정은 일치한다.
+    // The amendment 6 classification matches.
     expectFull(match(b));
-    // 수정 2 의 1단계(fill·stroke 만 건너뜀)는 같은 객체 clipStrokeText 가 항목을 소비·비워 ET 재전송 2+2개를 새로 셌다.
+    // Step 1 of amendment 2 (skipping only fill/stroke) made the same-object clipStrokeText consume and empty entries, so it newly counted 2+2 ET re-sends.
     expect(buildTestPageModel(b.doc, 0, 'first-arrival-v2').glyphCount).toBe(8);
   });
 
-  it('타일링 패턴: 직접 실행(작은 영역, 셀 글리프 포함)과 beginTile 경로(큰 영역)', () => {
+  it('tiling pattern: direct execution (small region, including cell glyphs) and the beginTile path (large region)', () => {
     const r = match(
       build(
         '/Pattern cs /TP scn 0 0 10 10 re f 100 100 9 9 re f 200 200 50 50 re f 0 g /Pattern CS /TP SCN 2 w 300 300 5 5 re S',
@@ -683,8 +683,8 @@ describe('도형·이미지·패턴', () => {
         }),
       ),
     );
-    // 직접 실행 셀(10×10 → 1, 9×9 → 1, 선 5×5 → 4 타일): 셀 fillPath 는 패턴 칠하기 연산이 소유하고
-    // outside-page-content 를 단다(계약 3절). 셀 글리프는 소유 연산 없이 번호만 소비한다.
+    // Direct-execution cells (10x10 -> 1, 9x9 -> 1, line 5x5 -> 4 tiles): the cell fillPath is owned by the pattern paint operation
+    // and carries outside-page-content (contract section 3). Cell glyphs only consume numbers, without an owning operation.
     expect(expectOwned(r)).toEqual({ unownedChars: 6, unownedPaints: 0 });
     const painted = r.map.ops.filter((o) => o.op === 'f' || o.op === 'S');
     expect(painted.map((o) => o.paintSeq?.length)).toEqual([2, 2, 1, 5]);
@@ -697,7 +697,7 @@ describe('도형·이미지·패턴', () => {
     expect(r.map.errors).toEqual([]);
   });
 
-  it('타일링 패턴: 선 패턴 셀 안에서 채움 패턴이 남아 셀이 다시 실행된다(색 있는 패턴은 칠하는 쪽만 해제)', () => {
+  it('tiling pattern: a fill pattern remains inside a stroke pattern cell so the cell runs again (a colored pattern releases only the painting side)', () => {
     const r = match(
       build('/Pattern cs /TP scn /Pattern CS /TP SCN 300 300 1 1 re S 400 400 1 1 re B', (doc) => ({
         Pattern: {
@@ -713,12 +713,12 @@ describe('도형·이미지·패턴', () => {
         },
       })),
     );
-    // S: clipStroke 1 + 4타일 × (clip + 중첩 셀 fill) = 9, B: clip + 4 fill + clipStroke + 8 = 14.
+    // S: clipStroke 1 + 4 tiles x (clip + nested cell fill) = 9, B: clip + 4 fill + clipStroke + 8 = 14.
     expect(r.model.paintCount).toBe(23);
     expectOwned(r);
   });
 
-  it('SMask: 마스크 구간 콜백은 세지 않는다', () => {
+  it('SMask: callbacks in the mask section are not counted', () => {
     const r = match(
       build(
         'q /S1 gs BT /F1 12 Tf 50 700 Td (A) Tj ET 10 10 50 50 re f /Fx Do /Sh sh Q 0 0 1 1 re f',
@@ -747,24 +747,24 @@ describe('도형·이미지·패턴', () => {
   });
 });
 
-describe('오류·제한', () => {
-  it('Tf 리소스 누락: MuPDF 는 hail-mary 글꼴로 그린다(번호·원점 일치, font-encoding-unresolved)', () => {
+describe('errors and limits', () => {
+  it('missing Tf resource: MuPDF draws with the hail-mary font (numbers and origins match, font-encoding-unresolved)', () => {
     const r = match(build('BT /Missing 12 Tf 50 700 Td (AB c) Tj ET BT 50 650 Td (no font) Tj ET'));
     expectFull(r);
     const [missing, noFont] = textOps(r.map);
     expect(missing!.limits).toContain('font-encoding-unresolved');
     expect(missing!.text!.glyphs.every((g) => g.seq !== null)).toBe(true);
-    // 첫 BT 의 Tf 가 gstate 에 남으므로 두 번째도 hail-mary 로 그린다.
+    // The Tf of the first BT remains in gstate, so the second is also drawn with hail-mary.
     expect(noFont!.text!.glyphs.every((g) => g.seq !== null)).toBe(true);
   });
 
-  it('Tf 전 텍스트는 그리지 않는다', () => {
+  it('text before Tf is not drawn', () => {
     const r = match(build('BT 50 650 Td (no font) Tj ET'));
     expectFull(r);
     expect(textOps(r.map)[0]!.text!.glyphs).toEqual([]);
   });
 
-  it('토크나이저 오류: 그 전 연산만 기록, tokenizer-error', () => {
+  it('tokenizer error: records only the operations before it, tokenizer-error', () => {
     const map = buildSourceMap(build('0 0 9 9 re f BT /F1 9 Tf (open Tj ET').doc, 0);
     expect(map.errors.length).toBe(1);
     expect(map.ops.map((o) => o.op)).toEqual(['re', 'f', 'BT', 'Tf']);
@@ -772,12 +772,12 @@ describe('오류·제한', () => {
   });
 });
 
-describe('linkPage 재동기화', () => {
-  it('번호가 어긋난 구간을 원점으로 재동기화하고 실패는 -1·unmatched', () => {
+describe('linkPage resynchronization', () => {
+  it('resynchronizes a misnumbered section by origin, and failures are -1 and unmatched', () => {
     const b = build(`${bt('(Hello world) Tj')} ${bt('0 -20 Td (Second line) Tj')}`);
     const model = buildTestPageModel(b.doc, 0);
     const map = buildSourceMap(b.doc, 0);
-    // 모델에 없는 글자 1개를 끼워 넣어 이후 번호를 1씩 민다.
+    // Insert one character not in the model so that subsequent numbers shift by 1.
     const extra = { ...model.chars[3]!, origin: [500, 500] as [number, number] };
     const chars = [...model.chars.slice(0, 4), extra, ...model.chars.slice(4)].map((c, i) => ({
       ...c,
@@ -790,7 +790,7 @@ describe('linkPage 재동기화', () => {
     expect(link.charGlyph[5]).toBe(4);
   });
 
-  it('원점 오차가 허용치를 넘으면 매칭하지 않는다', () => {
+  it('does not match if the origin error exceeds the tolerance', () => {
     const b = build(bt('(abc) Tj'));
     const model = buildTestPageModel(b.doc, 0);
     const map = buildSourceMap(b.doc, 0);
@@ -806,8 +806,8 @@ describe('linkPage 재동기화', () => {
   });
 });
 
-describe('성능 회귀: 긴 경로', () => {
-  it('re 20,000개를 한 경로로 칠해도 경로 닫기가 경로 길이에 비례하지 않는다(이전 4.7 s)', () => {
+describe('performance regression: long path', () => {
+  it('painting 20,000 re as one path, path closing is not proportional to the path length (previously 4.7 s)', () => {
     const parts: string[] = [];
     for (let i = 0; i < 20_000; i++) {
       parts.push(`${(i % 100) * 6} ${Math.floor(i / 100) * 3} 4 2 re`);
@@ -819,11 +819,11 @@ describe('성능 회귀: 긴 경로', () => {
     const ms = performance.now() - t0;
     expect(map.paintCount).toBe(1);
     expect(map.ops.filter((o) => o.op === 're')).toHaveLength(20_000);
-    // 수정 후 실측 약 0.05 s. 동시 실행 부하를 감안한 넉넉한 상한.
+    // About 0.05 s measured after the fix. A generous upper bound that allows for concurrent load.
     expect(ms).toBeLessThan(2_000);
   });
 
-  it('글리프 150,000개짜리 Tj 도 glyphSeq 범위를 구한다(전개 인자 수 한도 없음)', () => {
+  it('a Tj with 150,000 glyphs also gets its glyphSeq range (no limit on the number of spread arguments)', () => {
     const { doc } = build(`BT /F1 0.01 Tf 0 0 Td (${'a'.repeat(150_000)}) Tj ET`);
     const map = buildSourceMap(doc, 0);
     expect(map.glyphCount).toBe(150_000);

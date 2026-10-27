@@ -1,7 +1,7 @@
-// THIRD_PARTY_NOTICES.txt 생성(docs/m5-contract.md D6).
-// - JS 패키지: 릴리스 빌드의 소스맵(`sources`)에 나타난 node_modules 패키지만 센다(번들 그래프). 개발 의존성은 번들에
-//   들어가지 않으므로 목록에 없다.
-// - WASM·폰트: 번들 그래프에 안 보이므로 scripts/release/third-party-extra.json 의 수동 표를 쓴다.
+// Generate THIRD_PARTY_NOTICES.txt (docs/m5-contract.md D6).
+// - JS packages: counts only node_modules packages that appear in the release build's source maps (`sources`) (bundle graph). Dev dependencies do not go into the bundle, so
+//   they are not in the list.
+// - WASM·fonts: not visible in the bundle graph, so the manual table in scripts/release/third-party-extra.json is used.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,10 +15,10 @@ const PNPM_SOURCE = /node_modules\/\.pnpm\/([^/]+)\/node_modules\/((?:@[^/]+\/)?
 const PLAIN_SOURCE = /node_modules\/((?:@[^/]+\/)?[^/]+)/;
 
 /**
- * 소스맵 파일들에서 번들에 들어간 서드파티 패키지를 모은다.
+ * Collects third-party packages included in the bundle from the source map files.
  * @param {string[]} mapFiles
- * @param {string} [nodeModulesRoot] pnpm 저장소 루트(기본: 저장소 루트)
- * @returns {{ name: string, version: string, dir: string }[]} 이름순
+ * @param {string} [nodeModulesRoot] pnpm store root (default: repository root)
+ * @returns {{ name: string, version: string, dir: string }[]} sorted by name
  */
 export function collectBundlePackages(mapFiles, nodeModulesRoot = REPO_ROOT) {
   const found = new Map();
@@ -53,7 +53,7 @@ export function collectBundlePackages(mapFiles, nodeModulesRoot = REPO_ROOT) {
     }));
 }
 
-/** 패키지 디렉터리의 LICENSE·NOTICE·COPYING 파일 텍스트. */
+/** Text of the LICENSE·NOTICE·COPYING files in a package directory. */
 export function readLicenseTexts(dir) {
   return readdirSync(dir)
     .filter((f) => LICENSE_FILE.test(f))

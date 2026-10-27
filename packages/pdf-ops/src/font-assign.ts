@@ -1,19 +1,19 @@
 /**
- * 폰트 배정(docs/m3-contract.md D4): 글자(클러스터) 단위로 원본 폰트 → 폴백 폰트 → 없음(glyph-missing).
+ * Font assignment (docs/m3-contract.md D4): per character (cluster), original font → fallback font → none (glyph-missing).
  *
- * 원본 폰트로 쓸 수 있는 조건(모두)
- * - (iv) Type1·MMType1·TrueType·Type0(가로쓰기), MuPDF 가 로드할 수 있고 폭이 정확함.
- * - (i) 문자 → 코드 역매핑: ToUnicode(bfchar·bfrange) 또는 단순 폰트 Encoding(기본 인코딩 + Differences 글리프 이름).
- *   후보가 여럿이면 판정 시점 쪽 상태(SourceMap)에서 쓰인 코드를 우선한다(세션 이력과 무관, 재적용 결정성).
- *   역매핑 키는 NFC 이고, 없으면 기본 글자 + 결합 문자(NFD)로 찾는다.
- * - (ii) 임베디드 폰트는 그 코드의 글리프가 실제로 그려진다(렌더 탐침: 임시 문서에 폰트를 옮겨 글리프 id 와 잉크를
- *   확인). MuPDF·Word 류 서브셋은 안 쓰는 글리프의 외곽선만 비우므로 gid 존재로 판정하지 않는다. 공백류는 제외.
- * - (iii) 명세 폭 > 0(결합 문자 제외).
+ * Conditions for using the original font (all)
+ * - (iv) Type1, MMType1, TrueType or Type0 (horizontal writing), loadable by MuPDF, with exact widths.
+ * - (i) Character → code reverse mapping: ToUnicode (bfchar, bfrange) or the simple font Encoding (base encoding + Differences glyph names).
+ *   With several candidates, the code used in the classification-time page state (SourceMap) is preferred (independent of session history, deterministic on reapply).
+ *   Reverse-mapping keys are NFC; if absent, look up by base character + combining marks (NFD).
+ * - (ii) For an embedded font, the glyph for that code is actually drawn (render probe: move the font to a temporary document and check the glyph id and ink).
+ *   MuPDF/Word-style subsets only empty the outlines of unused glyphs, so the existence of a gid is not the criterion. Whitespace is excluded.
+ * - (iii) Spec width > 0 (excluding combining marks).
  *
- * 폴백 폰트(Noto Sans KR glyf 서브셋, cmap 일대일)는 core 가 저널을 켜기 직전(작업 밖)에 한 번 넣는다(계약 D4
- * 수정 1). FontManager 는 넣지 않고 `FallbackFontSource.ref()` 객체만 편집 블록 Resources 에 참조로 둔다. 커버리지는
- * 폰트 cmap, 폭·Ascent·Descent 는 같은 바이트를 임시 문서에 `addFont` 한 결과(/W·FontDescriptor)로 정한다. 저장 작업
- * 안에서만 서브셋으로 바꾼다.
+ * The fallback font (Noto Sans KR glyf subset, one-to-one cmap) is embedded by core once just before turning on the journal (outside the operation) (contract D4
+ * amendment 1). FontManager does not embed it and only places the `FallbackFontSource.ref()` object by reference in the edit block Resources. Coverage is
+ * determined by the font cmap, and widths, Ascent and Descent by the result of `addFont`ing the same bytes into a temporary document (/W, FontDescriptor). It is replaced
+ * by a subset only inside a save operation.
  */
 import * as mupdf from 'mupdf';
 import type { EditWarning, SourceMap } from '@pdf-editor/shared-types';
@@ -48,7 +48,7 @@ export const isWhitespaceCluster = (c: string) => /^\s+$/u.test(c);
 const isCombining = (cp: number) => /\p{M}/u.test(String.fromCodePoint(cp));
 const isMarkChar = (c: string) => /^\p{M}$/u.test(c);
 
-/** 원본 폰트 클러스터 판정: 글리프와, 기본 글자만 쓰고 뺀 결합 문자. */
+/** Original font cluster classification: the glyph, and the combining marks left out when only the base character is used. */
 interface Decision {
   glyphs: EncodedGlyph[];
   missing: string[];
@@ -136,7 +136,7 @@ function lexCMap(data: Uint8Array): CTok[] {
 
 const codeOf = (b: number[]) => b.reduce((v, x) => ((v << 8) | x) >>> 0, 0);
 
-/** ToUnicode CMap 의 bfchar·bfrange 를 코드 → 텍스트로 읽는다. */
+/** Reads bfchar and bfrange of a ToUnicode CMap into code → text. */
 export function parseToUnicode(data: Uint8Array): ToUnicodeEntry[] {
   const toks = lexCMap(data);
   const out: ToUnicodeEntry[] = [];
@@ -172,7 +172,7 @@ export function parseToUnicode(data: Uint8Array): ToUnicodeEntry[] {
             const base = third.b;
             for (let code = l; code <= h; code++) {
               const dst = [...base];
-              // 명세: 마지막 바이트를 늘린다. 실제로는 마지막 UTF-16 단위를 늘리는 생성기가 대부분이라 그 방식을 쓴다.
+              // Spec: increment the last byte. In practice most generators increment the last UTF-16 unit, so that approach is used.
               const last = ((dst[dst.length - 2] ?? 0) << 8) | (dst[dst.length - 1] ?? 0);
               const v = last + (code - l);
               dst[dst.length - 2] = (v >> 8) & 0xff;
@@ -198,7 +198,7 @@ export function parseToUnicode(data: Uint8Array): ToUnicodeEntry[] {
   return out;
 }
 
-/** ToUnicode CMap 본문(2바이트 코드, bfchar). */
+/** ToUnicode CMap body (2-byte codes, bfchar). */
 export function toUnicodeCMap(entries: readonly ToUnicodeEntry[]): string {
   const hex4 = (n: number) => n.toString(16).padStart(4, '0');
   const utf16 = (t: string) =>
@@ -224,7 +224,7 @@ export function toUnicodeCMap(entries: readonly ToUnicodeEntry[]): string {
   return `${out.join('\n')}\n`;
 }
 
-// ---------------------------------------------------------------- 원본 폰트
+// ---------------------------------------------------------------- Original font
 
 function encodingTable(name: string): EncodingTable | null {
   if (name === 'StandardEncoding') return STANDARD_ENCODING;
@@ -233,7 +233,7 @@ function encodingTable(name: string): EncodingTable | null {
   return null;
 }
 
-/** 글리프 이름 → 텍스트. 표 이름, uniXXXX(…), uXXXX[XX]. */
+/** Glyph name → text. Table names, uniXXXX(…), uXXXX[XX]. */
 function nameToText(name: string): string | null {
   const u = glyphNameToUnicode(name);
   if (u !== null) return String.fromCodePoint(u);
@@ -248,7 +248,7 @@ function nameToText(name: string): string | null {
   return null;
 }
 
-/** 단순 폰트 Encoding → 코드별 텍스트. 알 수 없으면 null. */
+/** Simple font Encoding → per-code text. null if unknown. */
 function simpleEncodingTexts(dict: mupdf.PDFObject, symbolic: boolean): (string | null)[] | null {
   const names: (string | null)[] = new Array<string | null>(256).fill(null);
   const enc = dict.get('Encoding');
@@ -287,12 +287,12 @@ function isEmbedded(fd: mupdf.PDFObject): boolean {
   return !fd.isNull() && ['FontFile', 'FontFile2', 'FontFile3'].some((k) => fd.get(k).isStream());
 }
 
-/** 원본 폰트 1개의 역매핑·글리프 판정 캐시. */
+/** Reverse-mapping and glyph classification cache for one original font. */
 export class OriginalFont {
   readonly key: string;
   readonly pdf: PdfFont;
   readonly embedded: boolean;
-  /** (iv)를 만족하지 않으면 그 사유. */
+  /** The reason if (iv) is not satisfied. */
   readonly unusable: string | null;
   readonly ascent: number;
   readonly descent: number;
@@ -300,8 +300,8 @@ export class OriginalFont {
   private readonly reverse = new Map<string, { code: number; bytes: Uint8Array }[]>();
   private readonly glyphOk = new Map<number, boolean>();
   /**
-   * 쪽 상태(SourceMap)별 후보 우선순위·판정. 같은 SourceMap 이면 세션 이력과 관계없이 같은 코드를 고른다
-   * (재적용 결정성, docs/m3-integration.md 8절 M3). 처음 만든 쪽의 사용 코드를 다른 쪽·나중 상태에 쓰지 않는다.
+   * Candidate priority and classification per page state (SourceMap). The same SourceMap picks the same code regardless of session history
+   * (reapply determinism, docs/m3-integration.md section 8 M3). Codes used on the page first built are not applied to another page or a later state.
    */
   private readonly views = new WeakMap<SourceMap, CodeView>();
   private readonly noMapView: CodeView = { used: new Set(), decided: new Map() };
@@ -359,13 +359,13 @@ export class OriginalFont {
   }
 
   private addCode(text: string, code: number, bytes: Uint8Array): void {
-    // NBSP 로 적힌 공백 글리프(MuPDF addFont ToUnicode)는 공백 후보로도 쓴다.
+    // A whitespace glyph written as NBSP (MuPDF addFont ToUnicode) is also used as a space candidate.
     if (text === '\u00a0') this.addCodeFor(' ', code, bytes);
     this.addCodeFor(text, code, bytes);
   }
 
   private addCodeFor(text: string, code: number, bytes: Uint8Array): void {
-    // 코드 바이트가 폰트 코드 분할과 맞는지 확인한다(ToUnicode 코드스페이스가 폰트 CMap 과 다를 수 있다).
+    // Check that the code bytes match the font's code splitting (the ToUnicode codespace can differ from the font CMap).
     const dec = this.pdf.decode(bytes);
     if (dec.length !== 1 || dec[0]!.code !== code) return;
     const list = this.reverse.get(text) ?? [];
@@ -392,8 +392,8 @@ export class OriginalFont {
   }
 
   /**
-   * 배정할 쪽 상태를 고른다. 후보가 여럿이면 이 SourceMap(판정 시점 쪽 상태)에서 쓰인 코드를 우선한다. 같은 쪽
-   * 상태면 같은 결과다(초안 ctx·재적용 ctx 는 모두 제거 전 쪽 상태다).
+   * Picks the page state to assign. With several candidates, the code used in this SourceMap (classification-time page state) is preferred. The same page
+   * state gives the same result (the draft ctx and reapply ctx are both the pre-removal page state).
    */
   useMap(map: SourceMap | null, fontObjectNumber: number | null): void {
     if (!map || fontObjectNumber === null) {
@@ -421,8 +421,8 @@ export class OriginalFont {
   }
 
   /**
-   * 클러스터를 코드로 바꿀 방법(앞에서부터 시도). 역매핑 키는 NFC 다. NFC 키가 없거나 그 글리프가 없으면 기본 글자 +
-   * 결합 문자(NFD 분해)를 따로 찾는다. 한글 음절처럼 분해 결과가 결합 문자가 아니면 분해하지 않는다.
+   * Ways to turn a cluster into codes (tried from the front). Reverse-mapping keys are NFC. If there is no NFC key or that glyph is absent, look up base character +
+   * combining marks (NFD decomposition) separately. If the decomposition result is not combining marks, as with Hangul syllables, it is not decomposed.
    */
   private alternatives(t: string): string[][] {
     const nfc = t.normalize('NFC');
@@ -453,7 +453,7 @@ export class OriginalFont {
     return isCombining(cp);
   }
 
-  /** 클러스터들을 미리 판정한다(필요한 글리프는 한 번의 렌더 탐침으로). */
+  /** Classifies clusters in advance (the needed glyphs in a single render probe). */
   prepare(texts: Iterable<string>): void {
     if (this.unusable !== null) return;
     const decided = this.view.decided;
@@ -475,8 +475,8 @@ export class OriginalFont {
   }
 
   /**
-   * 방법 하나가 모두 되면 그 글리프. 아니면 기본 글자 + 결합 문자 분해에서 기본 글자만 되는 경우 기본 글자와 되는
-   * 결합 문자만 쓰고 나머지 결합 문자는 missing 으로 돌려준다(기본 글자를 버리지 않는다).
+   * If one way works entirely, that glyph. Otherwise, in a base character + combining mark decomposition where only the base character works, uses the base character and only the working
+   * combining marks, and returns the remaining combining marks as missing (the base character is not dropped).
    */
   private decide(alts: string[][]): Decision | null {
     for (const parts of alts) {
@@ -503,14 +503,14 @@ export class OriginalFont {
     return { glyphs, missing };
   }
 
-  /** 클러스터의 원본 글리프. 결합 문자 일부만 빠진 경우도 기본 글자 글리프를 돌려준다(빠진 것은 missingMarks). */
+  /** Original glyph of a cluster. Returns the base character glyph even when only some combining marks are missing (the missing ones are missingMarks). */
   encode(cluster: string): EncodedGlyph[] | null {
     if (cluster === '\n') return [];
     if (!this.view.decided.has(cluster)) this.prepare([cluster]);
     return this.view.decided.get(cluster)?.glyphs ?? null;
   }
 
-  /** encode 가 빼고 돌려준 결합 문자(없으면 빈 배열). */
+  /** Combining marks that encode left out and returned (empty array if none). */
   missingMarks(cluster: string): string[] {
     if (cluster === '\n') return [];
     if (!this.view.decided.has(cluster)) this.prepare([cluster]);
@@ -518,8 +518,8 @@ export class OriginalFont {
   }
 
   /**
-   * 렌더 탐침: 임시 문서에 폰트 사전을 옮기고 코드마다 칸 하나에 그린 뒤, Device 로 글리프 id(0 = .notdef)를,
-   * 렌더로 잉크를 확인한다. 둘 다 있어야 쓸 수 있다.
+   * Render probe: move the font dictionary into a temporary document, draw each code in one cell, then confirm the glyph id (0 = .notdef) with the Device and
+   * the ink by rendering. Both must be present to be usable.
    */
   private probe(entries: [number, Uint8Array][]): void {
     if (!this.probeDoc) {
@@ -554,7 +554,7 @@ export class OriginalFont {
         fillText: (text, ctm, cs) => {
           text.walk({
             showGlyph: (_f, trm, gid) => {
-              // trm 원점은 CTM 적용 전(사용자 공간)이다. 장치 공간(y 아래)으로 옮겨 칸을 찾는다.
+              // The trm origin is before CTM application (user space). Move it to device space (y down) to find the cell.
               const x = trm[4] * ctm[0] + trm[5] * ctm[2] + ctm[4];
               const y = trm[4] * ctm[1] + trm[5] * ctm[3] + ctm[5];
               const k = cellOf(x, y - 10);
@@ -596,12 +596,12 @@ export class OriginalFont {
     }
   }
 
-  /** 진단·테스트용: 코드의 글리프 판정(탐침 결과). 판정 전이면 undefined. */
+  /** For diagnostics and tests: classification of a code's glyph (probe result). undefined before classification. */
   glyphUsable(code: number): boolean | undefined {
     return this.glyphOk.get(code);
   }
 
-  /** 탐침 임시 문서를 해제한다(R-L3). 여러 번 불러도 된다. 해제 뒤 탐침이 필요하면 임시 문서를 다시 만든다. */
+  /** Releases the probe temporary document (R-L3). Safe to call repeatedly. If a probe is needed after release, the temporary document is recreated. */
   destroy(): void {
     this.probeFont?.destroy();
     this.probeFont = null;
@@ -609,35 +609,35 @@ export class OriginalFont {
     this.probeDoc = null;
   }
 
-  /** doc 은 탐침 출처(원본 문서) 확인용. */
+  /** doc is for confirming the probe source (the original document). */
   get document(): mupdf.PDFDocument {
     return this.doc;
   }
 }
 
-// ---------------------------------------------------------------- 폴백 폰트
+// ---------------------------------------------------------------- Fallback font
 
-/** 폴백 폰트 원천(계약 수정 1, paragraph-edit.ts FallbackFontSource 와 같은 모양). */
+/** Fallback font source (contract amendment 1, same shape as paragraph-edit.ts FallbackFontSource). */
 export interface FallbackSource {
   bytes(): Uint8Array;
   ref(): mupdf.PDFObject | null;
 }
 
-/** 폴백 폰트 지표(바이트에서 한 번 계산). */
+/** Fallback font metrics (computed once from the bytes). */
 interface FallbackMetrics {
   font: mupdf.Font;
-  /** gid → /W 폭(1/1000 em, MuPDF addFont 가 쓰는 값). */
+  /** gid → /W width (1/1000 em, the value MuPDF addFont uses). */
   widths: PdfFont;
   face: FontFace;
 }
 
-/** 문서당 하나의 폰트 상태(FontManager 본체). */
+/** One font state per document (body of FontManager). */
 export class FontState {
   readonly cache: FontCache;
   private readonly originals = new Map<string, OriginalFont>();
   private metrics: FallbackMetrics | null | undefined;
   private disposed = false;
-  /** 이 세션에서 편집 블록에 쓴 폴백 gid(저장 서브셋용). */
+  /** Fallback gids used in edit blocks in this session (for the save subset). */
   readonly usedFallbackGids = new Set<number>();
 
   constructor(
@@ -665,8 +665,8 @@ export class FontState {
   }
 
   /**
-   * 폴백 폰트 지표. 같은 바이트를 임시 문서에 addFont 해 /W·Ascent·Descent 를 읽는다(core 의 embedFont 와 같은
-   * MuPDF 함수라 값이 같다). 바이트를 얻지 못하면 null(폴백 없음).
+   * Fallback font metrics. calls addFont with the same bytes on a temporary document and reads /W, Ascent and Descent (the same
+   * MuPDF function as core's embedFont, so the values are the same). null if the bytes cannot be obtained (no fallback).
    */
   private fallbackMetrics(): FallbackMetrics | null {
     this.assertLive();
@@ -699,15 +699,15 @@ export class FontState {
         },
       };
     } finally {
-      // PdfFont 는 폭 표만 JS 로 들고 있어 임시 문서를 닫아도 된다.
+      // PdfFont holds only the width table in JS, so the temporary document can be closed.
       tmp.destroy();
     }
     return this.metrics;
   }
 
   /**
-   * WASM 자원 해제(R-L3): 원본 폰트마다 탐침 임시 문서, 폴백 `mupdf.Font`. 문서를 닫거나 FontManager 를 버릴 때
-   * 한 번 부른다(여러 번 불러도 된다). 해제 뒤 배정·폴백 조회는 예외. 문서·편집 블록 객체는 건드리지 않는다.
+   * Releases WASM resources (R-L3): the probe temporary document per original font, and the fallback `mupdf.Font`. Call once when closing the document or discarding the FontManager
+   * (calling several times is fine). After release, assignment and fallback lookups throw. Document and edit block objects are not touched.
    */
   dispose(): void {
     if (this.disposed) return;
@@ -722,12 +722,12 @@ export class FontState {
     if (this.disposed) throw new Error('FontState 가 해제됨');
   }
 
-  /** 폴백 face(배정·배치용). 폴백 폰트가 없으면 null. */
+  /** Fallback face (for assignment and layout). null if there is no fallback font. */
   fallbackFace(): FontFace | null {
     return this.fallbackMetrics()?.face ?? null;
   }
 
-  /** 폴백 폰트가 클러스터의 모든 코드포인트를 갖는가(폰트 cmap). */
+  /** Whether the fallback font has all code points of the cluster (font cmap). */
   fallbackHas(cluster: string): boolean {
     const f = this.fallbackMetrics()?.font;
     if (!f) return false;
@@ -735,14 +735,14 @@ export class FontState {
     return true;
   }
 
-  /** 문서에 넣어 둔 폴백 폰트 객체(쓰기용). core 가 아직 넣지 않았으면 null. */
+  /** Fallback font object placed in the document (for writing). null if core has not embedded it yet. */
   fallbackRef(): mupdf.PDFObject | null {
     return this.fallback.ref();
   }
 
   /**
-   * 배정(계약 D4). runs[i] 의 모양 원천 글꼴(resolve)로 쓸 수 있으면 원본, 아니면 폴백, 둘 다 없으면 face null.
-   * 강제 줄바꿈 "\n" 은 앞 구간의 폰트를 따른다(글리프 없음).
+   * Assignment (contract D4). The original if usable as the style source font (resolve) of runs[i], otherwise the fallback, and face null if neither.
+   * A forced line break "\n" follows the font of the preceding span (no glyph).
    */
   assign(
     text: string,
@@ -788,7 +788,7 @@ export class FontState {
           face = this.fallbackFace();
           if (face && !isWhitespaceCluster(c.text)) fallbackChars.add(c.text);
         } else if (orig && orig.unusable === null && orig.encode(c.text)) {
-          // 결합 문자만 두 폰트에 모두 없다: 기본 글자는 원본으로 쓰고 그 결합 문자만 없음으로 알린다.
+          // Only the combining marks are missing from both fonts: the base character is used from the original and only those combining marks are reported as missing.
           face = orig.face;
           for (const m of orig.missingMarks(c.text)) missingChars.add(m);
         } else face = null;
@@ -860,8 +860,8 @@ export class FontState {
   }
 
   /**
-   * 저장 작업(계약 D9) 안에서만: 폴백 폰트를 이 세션에서 쓴 글리프만 남긴 서브셋으로 바꾸고 표시를 /Subset 으로 바꾼다.
-   * 작업을 버리면 되돌아간다.
+   * Only inside a save operation (contract D9): replaces the fallback font with a subset keeping only the glyphs used in this session and changes the display to /Subset.
+   * Discarding the operation reverts it.
    */
   finalizeForSave(): void {
     const ref = this.fallback.ref();
@@ -879,7 +879,7 @@ export class FontState {
     const sub = subsetFontBytes(FALLBACK_NAME, bytes, used);
     writeStreamBytes(file, sub);
     if (!file.get('Length1').isNull()) file.put('Length1', sub.byteLength);
-    // ToUnicode·/W 도 쓴 글리프만 남긴다(전체 cmap ToUnicode 가 저장 파일에 약 21 KB).
+    // ToUnicode and /W also keep only the used glyphs (the full-cmap ToUnicode is about 21 KB in the saved file).
     const tu = ref.resolve().get('ToUnicode');
     if (tu.isStream()) {
       const keep = parseToUnicode(readStreamBytes(tu)).filter((e) =>

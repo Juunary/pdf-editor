@@ -1,9 +1,9 @@
 /**
- * 편집 제한 사유·편집 경고 문구를 화면 언어로 고른다. 표는 labels-data.ts, 언어는 `ViewerStrings`(strings.ts).
+ * Chooses edit-limit reason and edit warning text in the display language. Tables are in labels-data.ts; the language is `ViewerStrings` (strings.ts).
  *
- * core·pdf-ops 가 만드는 사유 설명(`ParagraphLimit.detail`·`PathLimit.detail`)과 경고 문장(`EditWarning.message`)은
- * 한국어다. 한국어 화면은 그 문장을 그대로 쓰고(더 구체적인 진단 정보 포함), 영어 화면은 사유 코드·경고 종류·수치로
- * 표에서 문장을 만든다(사용자 결정 2026-10-26).
+ * The reason descriptions (`ParagraphLimit.detail`, `PathLimit.detail`) and warning sentences (`EditWarning.message`) produced by core and pdf-ops
+ * are in Korean. The Korean UI uses those sentences as is (they carry more specific diagnostic information); the English UI builds sentences from
+ * the tables using reason codes, warning kinds and numbers (user decision 2026-10-26).
  */
 import type { EditWarning } from '@pdf-editor/shared-types';
 import type { WarningTextKey } from './labels-data.js';
@@ -11,14 +11,14 @@ import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 
 export * from './labels-data.js';
 
-/** 사유 코드 → 화면 언어 문구. 표에 없는 코드는 "편집할 수 없습니다 (코드)". */
+/** Reason code → display-language text. A code not in the table becomes "편집할 수 없습니다 (code)". */
 export function limitLabel(reason: string, t: ViewerStrings = VIEWER_STRINGS.ko): string {
   return (t.limitLabels as Record<string, string>)[reason] ?? t.limitUnknown(reason);
 }
 
 /**
- * 제한 목록 → 팝오버·패스 패널 문구(중복 제거). 한국어 화면은 core 설명(detail)이 있으면 그것을, 영어 화면은 사유 코드
- * 문구를 쓴다. 비어 있으면 fallback 한 줄.
+ * Limit list → popover/path panel text (deduplicated). The Korean UI uses the core description (detail) if present, the English UI uses the reason-code
+ * text. If empty, a single fallback line.
  */
 export function limitItems(
   limits: readonly { reason: string; detail: string }[],
@@ -31,7 +31,7 @@ export function limitItems(
   return items.length > 0 ? [...new Set(items)] : [fallback];
 }
 
-/** 편집 경고 → 화면 언어 문장. 한국어 화면은 core 문장(message)이 있으면 그대로, 영어 화면은 종류·수치로 만든다. */
+/** Edit warning → display-language sentence. The Korean UI uses the core sentence (message) as is if present; the English UI builds it from kind and numbers. */
 export function warningText(w: EditWarning, t: ViewerStrings = VIEWER_STRINGS.ko): string {
   if (t.lang === 'ko' && w.message !== '') return w.message;
   const key = (w.variant ? `${w.kind}:${w.variant}` : w.kind) as WarningTextKey;

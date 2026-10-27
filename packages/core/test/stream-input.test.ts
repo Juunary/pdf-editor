@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(src/wasm-module.ts).
+// core must be imported before mupdf so that the WASM heap probe object is attached (src/wasm-module.ts).
 import { PdfSession, openPdf, renderPageRgba } from '../src/index.js';
 import * as mupdf from 'mupdf';
 import { buildPdf } from './pdf-fixtures.js';
@@ -12,7 +12,7 @@ function threePagePdf(): Uint8Array {
   ]);
 }
 
-/** 쪽 트리에 연결되지 않은 비압축 잡음 스트림을 많이 단 큰 PDF(열기·1쪽 렌더가 대부분을 읽지 않아야 한다). */
+/** A large PDF with many uncompressed noise streams not linked to the page tree (open and page-1 render must not read most of it). */
 function largePdf(): Uint8Array {
   const doc = new mupdf.PDFDocument();
   const font = doc.addSimpleFont(new mupdf.Font('Helvetica'));
@@ -32,15 +32,15 @@ function largePdf(): Uint8Array {
   return doc.saveToBuffer('').asUint8Array().slice();
 }
 
-describe('Stream 입력(A3-1)', () => {
-  it('세션은 기본으로 Stream 입력으로 열고, buffer 는 선택할 수 있다', () => {
+describe('Stream input (A3-1)', () => {
+  it('the session opens with Stream input by default, and buffer can be selected', () => {
     const s = new PdfSession();
     expect(s.open(threePagePdf()).inputMode).toBe('stream');
     expect(s.open(threePagePdf(), 'buffer').inputMode).toBe('buffer');
     s.close();
   });
 
-  it('전체 저장 결과가 Buffer 입력과 바이트 동일(편집 포함)', () => {
+  it('full save output is byte-identical to Buffer input (including edits)', () => {
     const bytes = threePagePdf();
     const save = (mode: 'buffer' | 'stream') => {
       const s = new PdfSession();
@@ -54,12 +54,12 @@ describe('Stream 입력(A3-1)', () => {
     const stream = save('stream');
     expect(stream.method).toBe('full');
     expect(Buffer.from(stream.bytes).equals(Buffer.from(buffer.bytes))).toBe(true);
-    // 저장한 결과를 다시 열어 쪽 수를 확인한다.
+    // Reopen the saved result and check the page count.
     const reopened = openPdf(stream.bytes);
     expect(reopened.countPages()).toBe(2);
   });
 
-  it('변경 없는 증분 저장 결과도 Buffer 입력과 바이트 동일', () => {
+  it('incremental save output without changes is also byte-identical to Buffer input', () => {
     const bytes = threePagePdf();
     const save = (mode: 'buffer' | 'stream') => {
       const s = new PdfSession();
@@ -74,7 +74,7 @@ describe('Stream 입력(A3-1)', () => {
     expect(Buffer.from(stream.bytes).equals(Buffer.from(buffer.bytes))).toBe(true);
   });
 
-  it('열기와 1쪽 렌더가 읽는 양이 파일의 1/4 미만', () => {
+  it('open and page-1 render read less than 1/4 of the file', () => {
     const bytes = largePdf();
     expect(bytes.byteLength).toBeGreaterThan(4 * 1024 * 1024);
     let read = 0;
@@ -88,7 +88,7 @@ describe('Stream 입력(A3-1)', () => {
     doc.destroy();
   });
 
-  it('JS 래퍼를 놓은 뒤에도 문서를 렌더·저장할 수 있다', () => {
+  it('the document can still be rendered and saved after the JS wrapper is released', () => {
     const s = new PdfSession();
     s.open(threePagePdf());
     expect(s.renderPage({ pageIndex: 2, scale: 1 }).width).toBe(300);
@@ -96,7 +96,7 @@ describe('Stream 입력(A3-1)', () => {
     s.close();
   });
 
-  it('저장 전 판정은 Stream 입력이면 계수 모델(M5 D5), buffer 는 배율 모델 4.48·3.98', () => {
+  it('the pre-save check uses the coefficient model for Stream input (M5 D5), and the scale model 4.48·3.98 for buffer', () => {
     const s = new PdfSession();
     s.open(threePagePdf());
     const stats = s.documentStats();

@@ -1,7 +1,7 @@
 /**
- * 코퍼스 편집 측정(docs/m3-contract.md 8.2·8.3) 도구: 세 엔진 렌더·텍스트, 픽셀 비교, 표본 문장 생성, 객체 비교.
- * 엔진 호출은 pdf-ops `test/helpers/engines.ts` 와 같은 방식(MuPDF·pdfjs-dist 6.4.299 legacy·Poppler pdftoppm/pdftotext).
- * 좌표는 페이지 공간(MuPDF 쪽 좌표). 렌더 원점은 쪽 경계 왼쪽 위(`origin`).
+ * Corpus edit measurement tools (docs/m3-contract.md 8.2, 8.3): three-engine render and text, pixel comparison, sample sentence generation, object comparison.
+ * Engines are called the same way as pdf-ops `test/helpers/engines.ts` (MuPDF, pdfjs-dist 6.4.299 legacy, Poppler pdftoppm/pdftotext).
+ * Coordinates are in page space (MuPDF page coordinates). The render origin is the top-left of the page bounds (`origin`).
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,7 +23,7 @@ export const ENGINES: Engine[] = ['mupdf', 'pdfjs', 'poppler'];
 export interface Raster {
   width: number;
   height: number;
-  /** RGB 3채널. */
+  /** RGB, 3 channels. */
   data: Uint8Array;
 }
 
@@ -32,7 +32,7 @@ export const popplerAvailable = (): boolean => !spawnSync('pdftoppm', ['-v']).er
 export const openMupdf = (bytes: Uint8Array): mupdf.PDFDocument =>
   mupdf.Document.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument;
 
-/** 쪽 경계 왼쪽 위(페이지 공간). */
+/** Top-left of the page bounds (page space). */
 export function pageOrigin(bytes: Uint8Array, pageIndex: number): [number, number] {
   const doc = openMupdf(bytes);
   try {
@@ -47,7 +47,7 @@ export function pageOrigin(bytes: Uint8Array, pageIndex: number): [number, numbe
 
 function mupdfRasterDoc(doc: mupdf.Document, pageIndex: number): Raster {
   const page = doc.loadPage(pageIndex);
-  // showExtras=false: 주석 제외.
+  // showExtras=false: annotations excluded.
   const pix = page.toPixmap(
     mupdf.Matrix.scale(SCALE, SCALE),
     mupdf.ColorSpace.DeviceRGB,
@@ -66,7 +66,7 @@ function mupdfRasterDoc(doc: mupdf.Document, pageIndex: number): Raster {
   }
 }
 
-/** MuPDF 로 여러 쪽 렌더(한 번 열기). */
+/** Renders several pages with MuPDF (opens once). */
 export function mupdfRasters(bytes: Uint8Array, pages: number[]): Map<number, Raster> {
   const doc = openMupdf(bytes);
   try {
@@ -119,7 +119,7 @@ async function pdfjsRaster(bytes: Uint8Array, pageIndex: number): Promise<Raster
     const rgba = context.getImageData(0, 0, w, h).data;
     const data = new Uint8Array(w * h * 3);
     for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
-      // 투명 배경은 흰색으로 합성한다.
+      // A transparent background is composited onto white.
       const a = rgba[i + 3]! / 255;
       data[j] = Math.round(rgba[i]! * a + 255 * (1 - a));
       data[j + 1] = Math.round(rgba[i + 1]! * a + 255 * (1 - a));
@@ -188,15 +188,15 @@ export async function raster(
 }
 
 export interface DiffResult {
-  /** 허용 영역 밖 채널 차 > 8 픽셀 수. 크기가 다르면 -1. */
+  /** Number of pixels outside the allowed area with channel difference > 8. -1 if the sizes differ. */
   pixels: number;
-  /** 다른 픽셀의 외접 상자(페이지 공간). 없으면 null. */
+  /** Bounding box of the differing pixels (page space). null if none. */
   bbox: Rect | null;
-  /** 다른 픽셀 중 최대 채널 차. */
+  /** Maximum channel difference among the differing pixels. */
   maxDelta: number;
 }
 
-/** 두 렌더의 허용 영역(페이지 공간 사각형 + margin pt) 밖 다른 픽셀(계약 8.3). */
+/** Differing pixels of two renders outside the allowed area (page-space rectangles + margin pt) (contract 8.3). */
 export function diffOutside(
   a: Raster,
   b: Raster,
@@ -254,10 +254,10 @@ export function diffOutside(
   };
 }
 
-/** 렌더 전체가 같은지(채널 차 > 8 픽셀 수). */
+/** Whether the whole render is the same (number of pixels with channel difference > 8). */
 export const diffAll = (a: Raster, b: Raster): number => diffOutside(a, b, [], [0, 0], 0).pixels;
 
-/** 사각형 안 잉크(흰색과 채널 차 > 64) 픽셀 수. */
+/** Number of ink pixels inside the rectangle (channel difference from white > 64). */
 export function inkInside(a: Raster, r: Rect, origin: [number, number]): number {
   const x0 = Math.max(0, Math.floor((r[0] - origin[0]) * SCALE));
   const y0 = Math.max(0, Math.floor((r[1] - origin[1]) * SCALE));
@@ -273,14 +273,14 @@ export function inkInside(a: Raster, r: Rect, origin: [number, number]): number 
   return n;
 }
 
-/** 글리프 상자: x..x+advance, 기준선 − 0.8·size .. 기준선 + 0.2·size(과제 정의). */
+/** Glyph box: x..x+advance, baseline − 0.8·size .. baseline + 0.2·size (task definition). */
 export function glyphBox(g: PlacedGlyph): Rect {
   const x0 = Math.min(g.x, g.x + g.advance);
   const x1 = Math.max(g.x, g.x + g.advance);
   return [x0, g.y - 0.8 * g.size, x1, g.y + 0.2 * g.size];
 }
 
-/** 쪽 텍스트(읽기 순서). MuPDF 구조화 텍스트, pdf.js getTextContent. */
+/** Page text (reading order). MuPDF structured text, pdf.js getTextContent. */
 export async function pageText(engine: 'mupdf' | 'pdfjs', bytes: Uint8Array, pageIndex: number) {
   if (engine === 'mupdf') {
     const doc = openMupdf(bytes);
@@ -305,8 +305,8 @@ export async function pageText(engine: 'mupdf' | 'pdfjs', bytes: Uint8Array, pag
 }
 
 /**
- * 상자 안 글자(계약 8.3 텍스트 판정): MuPDF 는 글자 사각형 중심, pdf.js 는 텍스트 항목 기준점(transform 원점,
- * 글자 높이 0.3 만큼 위로 올림)이 box(+margin) 안인 것을 추출 순서대로 잇는다.
+ * Characters inside a box (contract 8.3 text check): MuPDF uses the glyph rectangle center, pdf.js uses the text item anchor (transform origin,
+ * raised by 0.3 of the glyph height) and joins those inside box (+margin) in extraction order.
  */
 export async function textInBox(
   engine: 'mupdf' | 'pdfjs',
@@ -356,14 +356,14 @@ export async function textInBox(
   }
 }
 
-/** 텍스트 판정용: 공백류와 기본 무시 문자(Default_Ignorable_Code_Point, 계약 8.3 수정 4)를 지운다. */
+/** For the text check: removes whitespace and default-ignorable characters (Default_Ignorable_Code_Point, contract 8.3 amendment 4). */
 export const squash = (s: string): string =>
   s.replace(/[\s\p{Default_Ignorable_Code_Point}]+/gu, '');
 
-/** 순서 판정용: squash + NFKC(합자 ﬁ 등 엔진별 차이 흡수). */
+/** For the order check: squash + NFKC (absorbs per-engine differences such as the ligature ﬁ). */
 export const orderNorm = (s: string): string => squash(s.normalize('NFKC'));
 
-/** 모든 출현 위치. */
+/** All occurrence positions. */
 function occurrences(hay: string, needle: string): number[] {
   const out: number[] = [];
   if (!needle) return out;
@@ -372,9 +372,9 @@ function occurrences(hay: string, needle: string): number[] {
 }
 
 /**
- * `hay` 에서 `text` 의 첫 글자 또는 마지막 글자 위치를 유일한 부분 문자열로 찾는다.
- * which='head': text 앞부분(길이 minLen..maxLen) 중 hay 에 한 번만 나오는 가장 짧은 것의 시작 위치.
- * which='tail': 뒷부분 중 유일한 것의 끝 위치(마지막 글자 인덱스). 없으면 'not-found', 여럿이면 'ambiguous'.
+ * Finds the position of the first or last character of `text` in `hay` as a unique substring.
+ * which='head': the start position of the shortest prefix of text (length minLen..maxLen) that occurs only once in hay.
+ * which='tail': the end position (last character index) of the unique suffix. 'not-found' if none, 'ambiguous' if several.
  */
 export function locate(
   hay: string,
@@ -396,9 +396,9 @@ export function locate(
   return sawAmbiguous ? 'ambiguous' : 'not-found';
 }
 
-// ---- 표본 문장 ----
+// ---- Sample sentences ----
 
-/** FNV-1a 32비트. */
+/** FNV-1a 32-bit. */
 export function hash32(s: string): number {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
@@ -492,7 +492,7 @@ export const LATIN_WORDS = [
   'stable',
 ];
 
-/** (ii) 라틴 문장: 문서 id + 문단 id 시드, 길이 = 원 길이 × [0.7, 1.3). */
+/** (ii) Latin sentence: seed = document id + paragraph id, length = original length × [0.7, 1.3). */
 export function latinSentence(docId: string, paragraphId: number, originalLength: number): string {
   const r = rng(hash32(`${docId}#${paragraphId}#latin`));
   const target = Math.max(20, Math.round(originalLength * (0.7 + 0.6 * r())));
@@ -508,7 +508,7 @@ export function latinSentence(docId: string, paragraphId: number, originalLength
   return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
 }
 
-/** (iii) 한글 문장 목록: KS X 1001 한자·하이픈·숫자 포함. */
+/** (iii) Hangul sentence list: includes KS X 1001 Hanja, hyphens and digits. */
 export const KOREAN_SENTENCES = [
   '이 문단은 2026년 10월 20일에 편집기로 고쳐 쓴 한글 문장입니다.',
   '大韓民國 문서 편집 시험 - 제3차 측정 결과를 기록합니다.',
@@ -518,18 +518,18 @@ export const KOREAN_SENTENCES = [
   '편집 영역 밖의 화면은 바뀌지 않아야 하며, 오차는 0픽셀이다.',
 ];
 
-/** (iii) 원본에 없는 한글 문장 추가(계약 8.2 "추가"): 원 텍스트 뒤에 공백 + 목록 문장. */
+/** (iii) Add a Hangul sentence not in the original (contract 8.2): original text followed by a space + a list sentence. */
 export function koreanSentence(docId: string, paragraphId: number): string {
   const r = rng(hash32(`${docId}#${paragraphId}#ko`));
   return KOREAN_SENTENCES[Math.floor(r() * KOREAN_SENTENCES.length)]!;
 }
 
-// ---- 객체 비교 ----
+// ---- Object comparison ----
 
 export interface PageObjects {
-  /** 디코드한 콘텐츠 스트림(배열이면 이어 붙임)의 FNV 해시와 길이. */
+  /** FNV hash and length of the decoded content stream (concatenated if an array). */
   content: string;
-  /** Resources 최상위 키와 하위 사전 키(정렬). 상속 포함. */
+  /** Top-level Resources keys and sub-dictionary keys (sorted). Includes inherited ones. */
   resources: string;
 }
 

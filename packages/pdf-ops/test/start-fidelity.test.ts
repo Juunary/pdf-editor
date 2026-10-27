@@ -1,6 +1,6 @@
 /**
- * 시작 상태 충실도(docs/m3-integration.md 10.4 제안 1·2, docs/m4-pdf-ops.md 6절 #7): 원본 자간 Tc 를 RunStyle.charSpacing
- * 으로 싣고, 원 줄 자연 폭이 영역보다 넓으면(TJ 커닝) 시작 영역을 넓혀 같은 텍스트 편집이 줄을 더 일찍 바꾸지 않는다.
+ * Start-state fidelity (docs/m3-integration.md 10.4 proposals 1 and 2, docs/m4-pdf-ops.md section 6 #7): carries the original character spacing Tc as RunStyle.charSpacing,
+ * and if the natural width of the original line exceeds the region (TJ kerning), widens the start region so that a same-text edit does not wrap the line earlier.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import type * as mupdf from 'mupdf';
@@ -23,7 +23,7 @@ beforeAll(async () => {
 const ctxOf = (doc: mupdf.PDFDocument) =>
   pageContext(doc, 0, { segments: true, fixedGroups: true });
 
-/** 같은 텍스트로 커밋하고 다시 읽은 쪽 상태와 배치 결과. */
+/** Page state and layout result after committing with the same text and re-reading. */
 function sameTextCommit(ctx: ParagraphEditContext, paragraphId: number) {
   const fm = new FontManager(ctx.doc, fallbackFor(ctx.doc));
   const plan = planParagraphEdit(ctx, fm, paragraphId);
@@ -41,7 +41,7 @@ function sameTextCommit(ctx: ParagraphEditContext, paragraphId: number) {
   return { plan, result, after: ctxOf(ctx.doc) };
 }
 
-/** 보이는 글자의 원점(쪽 순서). */
+/** Origins of the visible characters (page order). */
 const origins = (ctx: ParagraphEditContext) =>
   ctx.model.chars.filter((c) => c.text.trim() !== '').map((c) => c.origin);
 
@@ -52,8 +52,8 @@ function maxShift(a: readonly (readonly number[])[], b: readonly (readonly numbe
 
 const LINES = ['The quick brown fox jumps over the lazy', 'dog.'];
 
-describe('자간 Tc(제안 1)', () => {
-  it('Tc 를 RunStyle.charSpacing(pt)으로 싣고 같은 텍스트 커밋이 글자 위치를 지킨다', () => {
+describe('character spacing Tc (proposal 1)', () => {
+  it('carries Tc as RunStyle.charSpacing (pt) and a same-text commit preserves character positions', () => {
     const content = LINES.map(
       (t, i) => `BT /F1 10 Tf -0.4 Tc 1 0 0 1 72 ${250 - 12 * i} Tm (${t}) Tj ET`,
     ).join(' ');
@@ -68,7 +68,7 @@ describe('자간 Tc(제안 1)', () => {
     expect(maxShift(before, origins(after))).toBeLessThanOrEqual(0.05);
   });
 
-  it('추출이 합성 공백을 넣은 넓은 자간(자간 띄어쓰기)은 자간을 싣지 않는다(간격을 두 번 더하지 않음)', () => {
+  it('wide letter spacing for which extraction inserted synthetic spaces (letter-spaced words) does not carry the spacing (the gap is not added twice)', () => {
     const content = 'BT /F1 10 Tf 4 Tc 1 0 0 1 72 250 Tm (DEPARTMENT OF THE TREASURY) Tj ET';
     const ctx = ctxOf(makeDoc([{ content }]));
     const p = ctx.layout.paragraphs[0]!;
@@ -80,7 +80,7 @@ describe('자간 Tc(제안 1)', () => {
     expect(origins(after)).toHaveLength(before.length);
   });
 
-  it('가로 비율 Tz 를 RunStyle.horizontalScale 로 싣고 편집 블록에 Tz 로 써 같은 텍스트 커밋이 글자 위치를 지킨다', () => {
+  it('carries the horizontal scale Tz as RunStyle.horizontalScale and writes it as Tz in the edit block so a same-text commit preserves character positions', () => {
     const content = LINES.map(
       (t, i) => `BT /F1 10 Tf 85 Tz -0.2 Tc 1 0 0 1 72 ${250 - 12 * i} Tm (${t}) Tj ET`,
     ).join(' ');
@@ -97,8 +97,8 @@ describe('자간 Tc(제안 1)', () => {
     expect(stream).toContain('85 Tz');
   });
 
-  it('Tm 배율·Tz 를 곱해 페이지 공간 값으로 바꾼다', () => {
-    // Tf 5 × Tm 2 = 글자 크기 10pt, Tc 0.1 × 배율 2 × Tz 0.5 = 0.1pt.
+  it('multiplies the Tm scale and Tz to convert to page-space values', () => {
+    // Tf 5 x Tm 2 = font size 10pt, Tc 0.1 x scale 2 x Tz 0.5 = 0.1pt.
     const content = `BT /F1 5 Tf 0.1 Tc 50 Tz 2 0 0 2 72 250 Tm (${LINES[0]}) Tj ET`;
     const ctx = ctxOf(makeDoc([{ content }]));
     const p = findParagraph(ctx, 'quick brown');
@@ -106,7 +106,7 @@ describe('자간 Tc(제안 1)', () => {
     expect(plan.runs[0]!.style.charSpacing).toBeCloseTo(0.1, 6);
   });
 
-  it('Tm 으로 가로만 줄인 글자는 horizontalScale 로, 기울인 글자는 1 로 본다', () => {
+  it('characters narrowed horizontally by Tm count as horizontalScale, slanted ones as 1', () => {
     const plan = (tm: string) => {
       const ctx = ctxOf(makeDoc([{ content: `BT /F1 10 Tf ${tm} Tm (${LINES[0]}) Tj ET` }]));
       const p = findParagraph(ctx, 'quick brown');
@@ -116,7 +116,7 @@ describe('자간 Tc(제안 1)', () => {
     expect('horizontalScale' in plan('1 0 0.2 1 72 250').runs[0]!.style).toBe(false);
   });
 
-  it('Tc 가 0 이면 charSpacing 을 넣지 않는다(이전 로그와 같은 모양)', () => {
+  it('charSpacing is not set when Tc is 0 (same shape as the previous log)', () => {
     const content = `BT /F1 10 Tf 72 250 Td (${LINES[0]}) Tj ET`;
     const ctx = ctxOf(makeDoc([{ content }]));
     const p = findParagraph(ctx, 'quick brown');
@@ -124,7 +124,7 @@ describe('자간 Tc(제안 1)', () => {
     expect('charSpacing' in plan.runs[0]!.style).toBe(false);
   });
 
-  it('커밋한 블록을 다시 편집해도 자간을 /PdfEditorFormat 에서 되살린다', () => {
+  it('even when re-editing a committed block, the letter spacing is restored from /PdfEditorFormat', () => {
     const content = LINES.map(
       (t, i) => `BT /F1 10 Tf -0.4 Tc 1 0 0 1 72 ${250 - 12 * i} Tm (${t}) Tj ET`,
     ).join(' ');
@@ -137,9 +137,9 @@ describe('자간 Tc(제안 1)', () => {
   });
 });
 
-describe('영역 가로 보정(제안 2)', () => {
-  it('TJ 로 좁힌 줄은 시작 영역을 자연 폭까지 넓혀 같은 텍스트가 줄을 더 일찍 바꾸지 않는다', () => {
-    // 각 줄의 단어 사이를 TJ 로 좁힌다(셰이퍼 폭보다 좁게 놓임).
+describe('region horizontal adjustment (proposal 2)', () => {
+  it('a line narrowed by TJ widens the start region to the natural width so the same text does not wrap earlier', () => {
+    // Narrow the gaps between words of each line with TJ (placed narrower than the shaper width).
     const tj = (t: string) =>
       `[${t
         .split(' ')
@@ -159,7 +159,7 @@ describe('영역 가로 보정(제안 2)', () => {
     expect(result.summary.lines).toHaveLength(p.lines.length);
   });
 
-  it('넓히는 쪽에 이웃 내용이 있으면 그 앞에서 멈춘다', () => {
+  it('if there is neighboring content on the widening side, stops before it', () => {
     const tj = (t: string) =>
       `[${t
         .split(' ')
@@ -168,7 +168,7 @@ describe('영역 가로 보정(제안 2)', () => {
     const text = LINES.map((t, i) => `BT /F1 10 Tf 1 0 0 1 72 ${250 - 12 * i} Tm ${tj(t)} ET`);
     const base = ctxOf(makeDoc([{ content: text.join(' ') }]));
     const right = findParagraph(base, 'quick brown').bbox[2];
-    // 원 줄 오른쪽 2pt 에 세로 막대(이웃 내용).
+    // A vertical bar (neighboring content) 2pt to the right of the original line.
     const bar = `0 0 1 rg ${right + 2} 200 3 60 re f`;
     const ctx = ctxOf(makeDoc([{ content: `${text.join(' ')} ${bar}` }]));
     const p = findParagraph(ctx, 'quick brown');
@@ -177,7 +177,7 @@ describe('영역 가로 보정(제안 2)', () => {
     expect(plan.format.area[2]).toBeLessThanOrEqual(right + 1.5 + 1e-6);
   });
 
-  it('원 줄이 영역 안에 들면 영역을 바꾸지 않는다', () => {
+  it('if the original line fits in the region, the region is not changed', () => {
     const content = LINES.map((t, i) => `BT /F1 10 Tf 72 ${250 - 12 * i} Td (${t}) Tj ET`).join(
       ' ',
     );
@@ -188,15 +188,15 @@ describe('영역 가로 보정(제안 2)', () => {
   });
 });
 
-describe('셀 정렬 기준(불일치 #7)', () => {
-  it('줄 끝 공백까지 가운데 맞춘 셀도 같은 텍스트 커밋에서 글자가 움직이지 않는다', () => {
+describe('cell alignment reference (mismatch #7)', () => {
+  it('even a cell centered including the trailing space does not move characters on a same-text commit', () => {
     const xs = [100, 200, 300, 400];
     const rows = [100, 130, 160, 190];
     const H = 300;
     const rules: string[] = [];
     for (const y of rows) rules.push(`${xs[0]} ${H - y} m ${xs[3]} ${H - y} l S`);
     for (const x of xs) rules.push(`${x} ${H - rows[0]!} m ${x} ${H - rows[3]!} l S`);
-    // "Total " 폭(Helvetica 10) = 25.01pt: 줄 끝 공백을 포함해 셀 가운데(150)에 맞춘다.
+    // Width of "Total " (Helvetica 10) = 25.01pt: centered in the cell (150), including the trailing space.
     const cells: string[] = [];
     for (let r = 0; r < 3; r++)
       for (let c = 0; c < 3; c++) {

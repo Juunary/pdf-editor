@@ -1,15 +1,15 @@
 /**
- * 오류 상세(상태 줄·알림·편집기 오류 줄의 콜론 뒤)를 화면 언어로 만든다(사용자 결정 2026-10-26).
+ * Builds the error detail (after the colon in the status line, notices and the editor error line) in the display language (user decision 2026-10-26).
  *
- * Worker·core·확장 복구 계층이 내는 예외 메시지는 한국어 진단 문장이다(core 예외만 80여 곳). 예외를 모두 코드로 바꾸는 대신
- * 한국어 화면은 메시지를 그대로 쓰고, 영어 화면은 (1) 오류 이름(`Error.name`, Comlink 가 Worker 예외의 name 을 그대로 옮김)
- * (2) 알려진 메시지 형태 표 (3) 한글이 없는 메시지(MuPDF·브라우저 영어 오류)는 그대로 (4) 그 밖은 일반 문장 순으로 고른다.
- * 원래 메시지는 호출자가 진단 기록에 남긴다.
+ * Exception messages produced by the Worker, core and the extension recovery layer are Korean diagnostic sentences (core exceptions alone number 80 or so). Instead of converting every exception to a code,
+ * the Korean UI uses the message as is, and the English UI chooses in this order: (1) the error name (`Error.name`, which Comlink carries over from the Worker exception unchanged)
+ * (2) the table of known message shapes (3) messages without Hangul (MuPDF/browser English errors) as is (4) anything else gets a generic sentence.
+ * The caller records the original message in the diagnostic log.
  */
 
 const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힣]/;
 
-/** 오류 이름 → 영어 문장. */
+/** Error name → English sentence. */
 const EN_BY_NAME: Readonly<Record<string, string>> = {
   WorkerRecoveredError: 'The worker stopped and the document was recovered.',
   RecoveryFailedError: 'Could not recover the document. Reopen the file.',
@@ -18,7 +18,7 @@ const EN_BY_NAME: Readonly<Record<string, string>> = {
     'The document changed and the selected path is different. Select the path again.',
 };
 
-/** 알려진 한국어 메시지 형태 → 영어 문장(앞에서부터 처음 맞는 것). */
+/** Known Korean message shapes → English sentence (the first match from the top). */
 const EN_PATTERNS: readonly [RegExp, string | ((m: RegExpExecArray) => string)][] = [
   [/PDF 요청 실패: HTTP (\d+)/, (m) => `PDF request failed: HTTP ${m[1]}`],
   [
@@ -48,7 +48,7 @@ const EN_PATTERNS: readonly [RegExp, string | ((m: RegExpExecArray) => string)][
 
 const EN_GENERIC = 'An internal error occurred.';
 
-/** 오류 → 메시지(classifyFailure 와 같은 규칙). */
+/** Error → message (same rule as classifyFailure). */
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : typeof error === 'string' ? error : String(error);
 }
@@ -58,11 +58,11 @@ function errorName(error: unknown): string | null {
     const name = (error as { name: unknown }).name;
     return typeof name === 'string' ? name : null;
   }
-  // 이미 글자로 바뀐 오류("이름: 메시지", String(e)·저장 결과)
+  // An error that has already been turned into text ("name: message", String(e), save result)
   return typeof error === 'string' ? (/^(\w+Error):/.exec(error)?.[1] ?? null) : null;
 }
 
-/** 영어 화면의 오류 상세. */
+/** Error detail for the English UI. */
 export function errorDetailEn(error: unknown): string {
   const byName = EN_BY_NAME[errorName(error) ?? ''];
   if (byName) return byName;

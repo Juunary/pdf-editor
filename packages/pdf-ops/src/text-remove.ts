@@ -1,21 +1,21 @@
 /**
- * 원본 연결 정보(SourceMap) 기반 텍스트 제거(A7-2 설계 검증, docs/m1-decisions.md).
+ * Text removal based on the source linkage (SourceMap) (A7-2 design verification, docs/m1-decisions.md).
  *
- * MuPDF 페이지 redaction 은 쪽 콘텐츠 전체를 다시 직렬화해 원본 바이트 위치를 잃고, ActualText 가 있는 쪽에서
- * 편집하지 않은 줄을 옮긴다(docs/m0-corpus-recheck.md C2). 이 함수는 지울 텍스트 표시 연산(Tj·TJ·'·")의
- * 바이트만, 같은 총 전진량을 가진 숫자 하나짜리 TJ 로 바꾼다. 텍스트 행렬(Tm)이 원래와 같은 자리에서 끝나므로
- * 같은 BT 안 뒤따르는 글자의 위치가 바뀌지 않고, 스트림의 나머지 바이트는 그대로 남는다.
+ * MuPDF page redaction re-serializes the whole page content and loses original byte positions, and on pages with ActualText
+ * it moves lines that were not edited (docs/m0-corpus-recheck.md C2). This function replaces only the bytes of the text-showing operations (Tj, TJ, ', ") to be erased
+ * with a single-number TJ having the same total advance. Since the text matrix (Tm) ends at the same place as before,
+ * the positions of characters that follow in the same BT do not change, and the rest of the stream's bytes remain as they are.
  *
- * 전진량은 명세 폭(`PdfFont.advanceSpec`, 실수 /Widths·/W)으로 계산한다. MuPDF 는 폭을 정수로 반올림하므로
- * 소수 폭 폰트에서는 MuPDF 렌더의 뒤 글자가 반올림 오차만큼 움직이고, 명세대로 그리는 뷰어에서는 그대로다.
+ * The advance is computed from spec widths (`PdfFont.advanceSpec`, real-valued /Widths and /W). MuPDF rounds widths to integers, so
+ * with fractional-width fonts the later characters in a MuPDF render move by the rounding error, while in viewers that draw per the spec they stay put.
  *
- * 범위: 페이지 콘텐츠의 가로쓰기 연산 전체 제거. 다음은 건너뛰고 사유 코드(`RemoveSkipCode`, 설명은 detail)를
- * 돌려준다: Form XObject 안 연산(M3 문단 편집은 Form 복제 경로, paragraph-edit.ts), 클립 텍스트(Tr 4–7), 세로쓰기,
- * Type3, 폰트 폭 불확실·MuPDF 대체 폰트, CID 매핑 없는 코드, Tf 크기 0·Tz 0. 연산 일부만 지우기와 Form 안 텍스트는
- * M3 문단 편집(edit-plan.ts)이 같은 분석(show-ops.ts)으로 처리한다. MuPDF redaction 대체 경로는 쓰지 않는다(계약 D2).
+ * Scope: removal of whole horizontal-writing operations in page content. The following are skipped and a reason code (`RemoveSkipCode`, explanation in detail)
+ * is returned: operations inside a Form XObject (M3 paragraph editing uses the Form duplication path, paragraph-edit.ts), clip text (Tr 4–7), vertical writing,
+ * Type3, fonts with uncertain widths or MuPDF substitute fonts, codes without CID mapping, Tf size 0 and Tz 0. Erasing only part of an operation and text inside a Form are
+ * handled by M3 paragraph editing (edit-plan.ts) with the same analysis (show-ops.ts). The MuPDF redaction fallback path is not used (contract D2).
  *
- * 콘텐츠 스트림을 다른 쪽 /Contents 나 같은 /Contents 배열의 다른 칸과 공유하면 그 스트림을 고치지 않고 사본을
- * 만들어 이 쪽의 해당 칸만 사본으로 바꾼다.
+ * If the content stream is shared with another page's /Contents or another slot of the same /Contents array, that stream is not modified; a copy is
+ * made and only this page's slot is switched to the copy.
  */
 import type * as mupdf from 'mupdf';
 import type { RemoveSkipCode, SourceMap } from '@pdf-editor/shared-types';
@@ -25,13 +25,13 @@ import { FontCache } from './pdf-fonts.js';
 import { analyzeShow, isSkip, rewriteShow } from './show-ops.js';
 
 export interface RemoveTextResult {
-  /** 바꾼 연산 id. */
+  /** Replaced operation ids. */
   removed: number[];
-  /** 건너뛴 연산과 사유 코드(detail 은 사용자 표시용 설명). */
+  /** Skipped operations and reason codes (detail is an explanation for display to the user). */
   skipped: { opId: number; code: RemoveSkipCode; detail: string }[];
-  /** 다시 쓴 콘텐츠 스트림 객체 번호(공유 스트림이면 새로 만든 사본 번호). */
+  /** Object number of the rewritten content stream (the number of the newly created copy if the stream is shared). */
   streams: number[];
-  /** 공유 스트림이라 사본을 만들어 이 쪽 /Contents 의 해당 칸만 바꾼 기록. */
+  /** Record of a shared stream: a copy was made and only this page's slot in /Contents was changed. */
   copied: { contentsIndex: number; from: number; to: number }[];
 }
 
@@ -41,7 +41,7 @@ export interface Replacement {
   text: string;
 }
 
-/** 같은 스트림·같은 /Contents 칸의 교체 묶음. */
+/** Replacement group for the same stream and the same /Contents slot. */
 interface Group {
   num: number;
   slot: number;
@@ -50,14 +50,14 @@ interface Group {
 
 const latin1 = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
 
-/** 쪽 /Contents 의 칸 slot 이 가리키는 간접 객체 번호. 없으면 null. */
+/** Indirect object number that slot of the page /Contents points to. null if none. */
 export function contentsSlotNumber(pageObj: mupdf.PDFObject, slot: number): number | null {
   const contents = pageObj.get('Contents');
   const item = contents.isArray() ? contents.get(slot) : slot === 0 ? contents : null;
   return item?.isIndirect() ? item.asIndirect() : null;
 }
 
-/** 모든 쪽 /Contents 에서 스트림 객체 num 을 가리키는 칸 수(같은 배열 안 중복 포함). */
+/** Number of slots in all page /Contents that point to stream object num (including duplicates within the same array). */
 export function contentsUseCount(doc: mupdf.PDFDocument, num: number): number {
   let n = 0;
   const pages = doc.countPages();
@@ -73,7 +73,7 @@ export function contentsUseCount(doc: mupdf.PDFDocument, num: number): number {
   return n;
 }
 
-/** 이 쪽 /Contents 의 칸 slot 만 ref 로 바꾼다. 배열은 새 직접 배열로 바꿔 다른 쪽과 공유하던 배열을 고치지 않는다. */
+/** Changes only slot of this page's /Contents to ref. The array is replaced with a new direct array so an array shared with other pages is not modified. */
 export function replaceContentsSlot(
   doc: mupdf.PDFDocument,
   pageObj: mupdf.PDFObject,
@@ -91,8 +91,8 @@ export function replaceContentsSlot(
 }
 
 /**
- * 원본 바이트 기준 교체 목록을 한 번에 적용한다(계약 D2). 같은 위치의 삽입(빈 범위)은 그 위치의 교체보다 먼저,
- * 같은 위치 삽입끼리는 목록 순서대로 들어간다. 범위가 겹치면 예외.
+ * Applies a replacement list based on original bytes all at once (contract D2). An insertion at the same position (empty range) goes before the replacement at that position,
+ * and insertions at the same position go in list order. Throws if ranges overlap.
  */
 export function applyReplacements(bytes: Uint8Array, list: readonly Replacement[]): Uint8Array {
   list = list
@@ -110,7 +110,7 @@ export function applyReplacements(bytes: Uint8Array, list: readonly Replacement[
   return concatBytes(parts);
 }
 
-/** SourceMap 의 텍스트 표시 연산들을 지운다(같은 전진량의 빈 TJ 로 교체). */
+/** Erases the text-showing operations of the SourceMap (replaced with an empty TJ of the same advance). */
 export function removeTextShowOps(
   doc: mupdf.PDFDocument,
   map: SourceMap,
@@ -149,7 +149,7 @@ export function removeTextShowOps(
       skip('op-limit', `편집 제한: ${op.limits.join(', ')}`);
       continue;
     }
-    // 빈 TJ 로 바꾸면 클립 경로에 글리프가 없어져 클립 안 그림이 드러나거나(MuPDF: 클립 없음) 뷰어마다 다르다.
+    // Replacing with an empty TJ would leave no glyphs in the clip path, so content drawn inside the clip would show (MuPDF: no clip) or differ per viewer.
     if (op.limits.includes('clip-text') || op.text.renderMode >= 4) {
       skip('clip-text', `클립 텍스트(Tr ${op.text.renderMode})`);
       continue;
@@ -184,7 +184,7 @@ export function removeTextShowOps(
     result.removed.push(id);
   }
 
-  // 쓰기 전에 모두 계산·검증한다(중간 실패로 일부만 바뀌지 않게).
+  // Compute and validate everything before writing (so a mid-way failure does not change only part of it).
   const writes = [...groups.values()].map((g) => {
     if (contentsSlotNumber(pageObj, g.slot) !== g.num) {
       throw new Error(`SourceMap 이 문서와 다름: /Contents[${g.slot}] ≠ ${g.num} 0 R`);

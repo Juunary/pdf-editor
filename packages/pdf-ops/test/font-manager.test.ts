@@ -13,7 +13,7 @@ import { editParagraph, loadFallback, fallbackFor } from './helpers/edit-driver.
 import { inkInside, pageText, raster, squash } from './helpers/engines.js';
 import { engines, makeDoc } from './helpers/fixtures-m3.js';
 
-/** 계약 D4 폰트 배정과 V4(외곽선·폭 판정 = 렌더, 폴백 ToUnicode 복사·검색). */
+/** Contract D4 font assignment and V4 (outline/width classification = render, fallback ToUnicode copy/search). */
 beforeAll(async () => {
   await loadModules();
 });
@@ -37,7 +37,7 @@ function runsOf(ctx: ParagraphEditContext, needle: string, text: string): TextRu
   ];
 }
 
-/** 클러스터별 배정 결과: o = 원본, f = 폴백, - = 없음. */
+/** Assignment result per cluster: o = original, f = fallback, - = none. */
 function faces(fm: FontManager, ctx: ParagraphEditContext, runs: TextRun[]): string {
   const text = runs.map((r) => r.text).join('');
   const { segments } = fm.assign(ctx, text, runs);
@@ -56,8 +56,8 @@ function faces(fm: FontManager, ctx: ParagraphEditContext, runs: TextRun[]): str
 }
 
 /**
- * Noto Sans KR 을 Type0(Identity-H)로 넣은 문서. subsetText 가 있으면 FontFile2 를 그 글자 외곽선만 남긴 서브셋
- * 바이트로 바꾼다(gid 유지, ToUnicode·/W 는 전체 그대로: MuPDF·Word 류 서브셋과 같은 상태).
+ * A document with Noto Sans KR embedded as Type0 (Identity-H). If subsetText is given, FontFile2 is replaced with a subset
+ * keeping only the outlines of those characters (gids kept, ToUnicode and /W left whole: the same state as MuPDF/Word-style subsets).
  */
 function notoDoc(text: string, subsetText?: string) {
   const full = loadFallback();
@@ -79,15 +79,15 @@ function notoDoc(text: string, subsetText?: string) {
   return { doc: reopen(src), font };
 }
 
-describe('원본 폰트 역매핑(i)·형식(iv)', () => {
-  it('Type1(단순, WinAnsi): 라틴·악센트는 원본, 한글은 폴백', () => {
+describe('original font reverse mapping (i), format (iv)', () => {
+  it('Type1 (simple, WinAnsi): Latin and accented characters use the original, Hangul uses the fallback', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Helvetica sample text.) Tj ET']);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
     expect(faces(fm, ctx, runsOf(ctx, 'Helvetica', 'Héllo 한'))).toBe('oooooof');
   });
 
-  it('TrueType(단순)·Type0(Identity-H) 폰트 역매핑', () => {
+  it('TrueType (simple) and Type0 (Identity-H) font reverse mapping', () => {
     const src = new mupdf.PDFDocument();
     const T = src.addSimpleFont(new mupdf.Font('NotoSansKR', loadFallback()));
     src.insertPage(
@@ -113,7 +113,7 @@ describe('원본 폰트 역매핑(i)·형식(iv)', () => {
     ).toBe('ooooooo');
   });
 
-  it('후보가 여럿이면 이 쪽에서 쓰인 코드를 우선한다', () => {
+  it('with several candidates, the code used on this page is preferred', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Used \\310 code here.) Tj ET']);
     const f1 = doc.findPage(0).get('Resources').get('Font').get('F1');
     f1.delete('ToUnicode');
@@ -134,8 +134,8 @@ describe('원본 폰트 역매핑(i)·형식(iv)', () => {
   });
 });
 
-describe('리뷰 반영(docs/m3-integration.md 8절)', () => {
-  it('M3: 후보 우선순위는 배정하는 쪽 상태로 정한다(먼저 다른 쪽을 배정한 이력과 무관)', () => {
+describe('review fixes (docs/m3-integration.md section 8)', () => {
+  it('M3: candidate priority is decided by the state of the page being assigned (independent of having assigned another page first)', () => {
     const doc = makeDoc([
       'BT /F1 12 Tf 50 200 Td (Used \\310 code here.) Tj ET',
       'BT /F1 12 Tf 50 200 Td (Plain A text here.) Tj ET',
@@ -163,7 +163,7 @@ describe('리뷰 반영(docs/m3-integration.md 8절)', () => {
     expect(codeOf(fresh, c0, 'Used')).toEqual([200]);
   });
 
-  it('H1: NFC 입력은 분해형 ToUnicode 키로, 없는 결합 문자는 기본 글자를 남기고 그 문자만 없음', () => {
+  it('H1: NFC input maps to decomposed ToUnicode keys; for a missing combining character the base character is kept and only that character is missing', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Accent sample text.) Tj ET']);
     const f1 = doc.findPage(0).get('Resources').get('Font').get('F1');
     const cmap =
@@ -184,16 +184,16 @@ describe('리뷰 반영(docs/m3-integration.md 8절)', () => {
   });
 });
 
-describe('외곽선(ii)·폭(iii) 판정과 V4(렌더 결과와 같음)', () => {
-  it('서브셋이 외곽선만 비운 글리프는 gid 가 있어도 원본으로 쓰지 않는다(세 엔진 잉크로 확인)', async () => {
+describe('outline (ii) and width (iii) classification and V4 (same as the render result)', () => {
+  it('a glyph whose outline the subset emptied is not used from the original even if its gid exists (checked with three-engine ink)', async () => {
     const chars = '가나다라마abcxyz';
     const { doc, font } = notoDoc('가나 ab', '가나다 abc');
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
     const decided = faces(fm, ctx, runsOf(ctx, '가나', chars));
-    // 서브셋에 남긴 글리프(가나다abc)만 원본.
+    // Only the glyphs kept in the subset (가나다abc) use the original.
     expect(decided).toBe('oooffooofff');
-    // 같은 폰트로 각 글자를 강제로 그려 세 엔진 잉크를 본다.
+    // Force-draw each character with the same font and check the ink of the three engines.
     const N = doc.findPage(0).get('Resources').get('Font').get('N');
     const cells = [...chars].map((c, i) => ({
       c,
@@ -219,9 +219,9 @@ describe('외곽선(ii)·폭(iii) 판정과 V4(렌더 결과와 같음)', () => 
     }
   });
 
-  it('명세 폭 0 인 코드는 원본으로 쓰지 않는다(pdfTeX 류 /Widths)', () => {
+  it('a code with specified width 0 is not used from the original (pdfTeX-style /Widths)', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Width zero sample.) Tj ET']);
-    // 표준 14 폰트라 /Widths 가 없다. 32–126 폭을 넣고 'x' 만 0 으로 둔다.
+    // A standard 14 font, so there is no /Widths. Provide widths for 32-126 and set only 'x' to 0.
     const f1 = doc.findPage(0).get('Resources').get('Font').get('F1');
     const helv = new mupdf.Font('Helvetica');
     const copy = doc.newArray();
@@ -237,8 +237,8 @@ describe('외곽선(ii)·폭(iii) 판정과 V4(렌더 결과와 같음)', () => 
   });
 });
 
-describe('글자 단위 폴백과 glyph-missing', () => {
-  it('폴백 섞인 줄, 두 폰트 모두 없는 글자는 face null·경고, 줄바꿈은 앞 폰트', () => {
+describe('per-character fallback and glyph-missing', () => {
+  it('a line mixing fallback: a character in neither font gets face null and a warning; a line break takes the preceding font', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Mixed fallback line.) Tj ET']);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
@@ -252,7 +252,7 @@ describe('글자 단위 폴백과 glyph-missing', () => {
     expect(w).toContain('font-fallback');
     expect(w).toContain('glyph-missing');
     expect(warnings.find((x) => x.kind === 'glyph-missing')!.message).toContain('😀');
-    // 다른 언어 화면용 수치·글자(2026-10-26): message 의 글자와 같다.
+    // Numbers and characters for other-language screens (2026-10-26): same as the characters in message.
     const missing = warnings.find((x) => x.kind === 'glyph-missing')!;
     expect(missing.chars).toContain('😀');
     expect(missing.count).toBe([...missing.chars!].length);
@@ -263,14 +263,14 @@ describe('글자 단위 폴백과 glyph-missing', () => {
   });
 });
 
-describe('폴백 폰트 수명·저장 서브셋(D4·D9)', () => {
-  it('저장 작업 안에서만 서브셋: 저장 파일은 작고 세 엔진이 한글을 추출·검색, 작업 문서는 전체 폰트 유지', async () => {
+describe('fallback font lifetime and save subset (D4, D9)', () => {
+  it('subset only inside the save operation: the saved file is small and three engines extract/search Hangul, the working document keeps the full font', async () => {
     const doc = makeDoc([
       'BT /F1 12 Tf 50 250 Td (Before paragraph.) Tj ET BT /F1 12 Tf 50 200 Td (Target paragraph.) Tj ET',
     ]);
     const source = fallbackFor(doc);
     const fm = new FontManager(doc, source);
-    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
+    // As in core, the fallback font and Info are created before the journal is turned on (contract D4/D9 amendment 1).
     doc.enableJournal();
     const ctx = pageContext(doc, 0);
     doc.beginOperation('edit');
@@ -310,7 +310,7 @@ describe('폴백 폰트 수명·저장 서브셋(D4·D9)', () => {
     for (const e of engines()) {
       expect(squash(await pageText(e, saved, 0)), e).toContain('서브셋저장확인문장');
     }
-    // MuPDF 검색: 하이라이트 중심이 배치한 글자 상자 안.
+    // MuPDF search: the highlight center is inside the glyph box that was laid out.
     const page = reopened.loadPage(0);
     const hits = page.search('저장', {});
     page.destroy();
@@ -328,8 +328,8 @@ describe('폴백 폰트 수명·저장 서브셋(D4·D9)', () => {
   });
 });
 
-describe('V4 폴백 ToUnicode 왕복(계약 수정 2)', () => {
-  it('폴백 cmap 의 모든 코드 포인트(공백류 제외): gid 로 그린 글자의 추출 = 그 코드 포인트(불일치 0)', async () => {
+describe('V4 fallback ToUnicode round trip (contract amendment 2)', () => {
+  it('every code point of the fallback cmap (excluding whitespace): extraction of a character drawn by gid = that code point (0 mismatches)', async () => {
     const bytes = loadFallback();
     const font = new mupdf.Font('NotoSansKR', bytes);
     const cps: number[] = [];
@@ -338,7 +338,7 @@ describe('V4 폴백 ToUnicode 왕복(계약 수정 2)', () => {
       if (/\s/u.test(String.fromCodePoint(cp))) continue;
       if (font.encodeCharacter(cp) > 0) cps.push(cp);
     }
-    // 한 쪽에 60자 × 40줄, gid 를 Identity-H 2바이트로 그린다.
+    // 60 characters x 40 lines on one page, drawing gids as 2-byte Identity-H.
     const src = new mupdf.PDFDocument();
     const ref = embedFont(src, 'NotoSansKR', bytes).ref;
     const PER = 2400;
@@ -382,15 +382,15 @@ describe('V4 폴백 ToUnicode 왕복(계약 수정 2)', () => {
       `폴백 ToUnicode 왕복(MuPDF): 코드 포인트 ${cps.length}, 불일치 ${mismatch} ${examples.join(' ')}`,
     );
     expect(mismatch).toBe(0);
-    // pdf.js·Poppler: 쪽 텍스트(공백 제거)를 코드 포인트 순서와 비교한다. pdf.js 는 텍스트 내용에서
-    // U+00B5(MICRO SIGN)를 U+03BC 로 바꾼다(엔진 자체 정규화, 실측 2026-10-19). 그 한 쌍은 같다고 본다.
+    // pdf.js and Poppler: compare the page text (whitespace removed) with the code point order. pdf.js converts
+    // U+00B5 (MICRO SIGN) to U+03BC in text content (the engine's own normalization, measured 2026-10-19). That one pair is treated as equal.
     const engineNorm: Record<string, Map<number, number>> = { pdfjs: new Map([[0x3bc, 0xb5]]) };
     for (const e of engines().filter((x) => x !== 'mupdf')) {
       let bad = 0;
       const ex: string[] = [];
       for (let p = 0; p * PER < cps.length; p++) {
         const norm = engineNorm[e];
-        // 왕복 확인은 모든 코드 포인트(기본 무시 문자 포함)를 보므로 공백만 지운다.
+        // The round-trip check looks at every code point (including default-ignorable characters), so only whitespace is removed.
         const got = [...(await pageText(e, out, p)).replace(/\s+/gu, '')]
           .map((c) => c.codePointAt(0)!)
           .map((c, k) => (norm?.get(c) === cps[p * PER + k] ? cps[p * PER + k]! : c));

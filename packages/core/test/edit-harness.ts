@@ -1,4 +1,4 @@
-/** 편집 엔진 시험 공용 도구: 가짜 어댑터를 넣은 세션, 문단 편집 흐름, 문서 상태 읽기. */
+/** Shared tools for edit engine tests: a session with the fake adapter, the paragraph edit flow, and document state reads. */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
@@ -47,7 +47,7 @@ export function harness(pageCount = 1, options: { noInfo?: boolean } = {}): Harn
   const bytes = buildPdf(pages);
   s.open(bytes);
   if (options.noInfo !== false) {
-    // buildPdf 문서에는 /Info 가 없다(첫 편집 RPC 가 만든다).
+    // buildPdf documents have no /Info (the first edit RPC creates it).
     expect(s.document.getTrailer().get('Info').isNull()).toBe(true);
   }
   return { s, adapter, fontLoads };
@@ -59,7 +59,7 @@ export const text = (s: PdfSession, pageIndex = 0): string =>
     .chars.map((c) => c.text)
     .join('');
 
-/** 저널 상태. 저널은 첫 `beginParagraphEdit` 에서 켜지므로 그 전에는 빈 상태다. */
+/** Journal state. The journal is enabled on the first `beginParagraphEdit`, so it is empty before that. */
 export const journal = (s: PdfSession): { position: number; steps: string[] } => {
   try {
     return s.document.getJournal();
@@ -79,7 +79,7 @@ export async function begin(s: PdfSession, paragraphId: number, pageIndex = 0) {
   return { plan, started };
 }
 
-/** 문단 편집 하나(시작 → 갱신 → 커밋). */
+/** One paragraph edit (begin → update → commit). */
 export async function editParagraph(
   s: PdfSession,
   paragraphId: number,
@@ -91,7 +91,7 @@ export async function editParagraph(
   return s.commitParagraphEdit(started.draftId);
 }
 
-/** 폴백 폰트 객체 목록(폰트 사전 /PdfEditorFallback 표지). 픽스처의 F2 도 같은 폰트이지만 표지가 없다. */
+/** List of fallback font objects (marked by /PdfEditorFallback in the font dictionary). The fixture's F2 is the same font but has no marker. */
 export function fallbackFonts(doc: mupdf.PDFDocument): mupdf.PDFObject[] {
   const found: mupdf.PDFObject[] = [];
   for (let n = 1; n < doc.countObjects(); n++) {

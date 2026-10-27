@@ -21,27 +21,27 @@ import {
 } from './extract-stext.js';
 import { pageRotation, transformPoint } from './page-geometry.js';
 
-/** 추출 계측값(PageModel 에는 넣지 않는다. 측정·테스트용). */
+/** Extraction measurements (not put into PageModel; for measurement and tests). */
 export interface ExtractStats {
-  /** 센 글리프 수(= chars.length). */
+  /** Number of glyphs counted (= chars.length). */
   glyphs: number;
-  /** 구조화 텍스트 글자 수(주석·위젯 텍스트, Tr 4–6 중복 포함). */
+  /** Number of structured-text characters (including annotation and widget text, and Tr 4–6 duplicates). */
   stextChars: number;
-  /** 구조화 텍스트 글자와 짝이 된 글리프 수. */
+  /** Number of glyphs paired with a structured-text character. */
   matched: number;
-  /** 짝이 없어 quad 를 근사하고 line 을 -1 로 둔 글리프 수. */
+  /** Number of glyphs with no match, whose quad was approximated and whose line was set to -1. */
   approximated: number;
-  /** 짝이 되지 못한 구조화 텍스트 글자 수. */
+  /** Number of structured-text characters left unpaired. */
   stextOnly: number;
-  /** 그중 공백(MuPDF 가 간격으로 합성한 공백 포함). */
+  /** Of those, spaces (including spaces MuPDF synthesized for gaps). */
   stextOnlySpaces: number;
-  /** ET 재전송(Tr 4–7 클립 콜백)으로 소비해 세지 않은 글리프 수. */
+  /** Number of glyphs consumed by ET re-sends (Tr 4–7 clip callbacks) and not counted. */
   retransmitted: number;
-  /** clipText·clipStrokeText 가 처음 센 글리프 수(Tr 7, 패턴 색 텍스트, 꺼진 /OC 의 재전송 …). */
+  /** Number of glyphs first counted by clipText and clipStrokeText (Tr 7, pattern-color text, re-sends of a disabled /OC, ...). */
   clipCounted: number;
-  /** 색 변환에 실패해 rgb 를 null 로 둔 횟수. */
+  /** Number of times color conversion failed and rgb was left null. */
   colorFailures: number;
-  /** 실행이 끝났을 때 클립 스택에 남은 항목 수. 0 이 아니면 클립 콜백(popClip 짝)을 놓친 것이다. */
+  /** Number of entries left on the clip stack when the run ended. If not 0, a clip callback (the popClip pair) was missed. */
   clipDepth: number;
 }
 
@@ -50,15 +50,15 @@ export interface ExtractResult {
   stats: ExtractStats;
 }
 
-/** quad 근사에 쓰는 글자 위·아래 높이(글자 크기 대비). 구조화 텍스트 값이 없을 때만 쓴다. */
+/** Heights above and below the character used for quad approximation (relative to font size). Used only when there is no structured-text value. */
 const APPROX_ASCENT = 0.95;
 const APPROX_DESCENT = 0.25;
 
 /**
- * 페이지 하나의 추출 모델과 계측값을 만든다. 주석·위젯은 제외한다(`runPageContents`).
- * MuPDF 경고는 실행 중에만 가로채 `warnings` 에 담고, 끝나면 로그 콜백을 해제한다(`setLog(null)`).
- * mupdf.js 1.28.1 은 현재 로거를 읽는 API 가 없어 이전 로거로 되돌리지 못한다. 이 저장소에서 `setLog` 를 쓰는
- * 곳은 여기뿐이므로 해제가 곧 기본값(MuPDF 기본 출력) 복원이다. 다른 곳에서 로거를 둘 때는 이 함수를 감싸야 한다.
+ * Builds the extraction model and measurements for one page. Annotations and widgets are excluded (`runPageContents`).
+ * MuPDF warnings are intercepted only during the run and put into `warnings`; afterwards the log callback is released (`setLog(null)`).
+ * mupdf.js 1.28.1 has no API to read the current logger, so the previous logger cannot be restored. In this repository `setLog` is used
+ * only here, so releasing it is the same as restoring the default (MuPDF default output). If a logger is set elsewhere, this function must be wrapped.
  */
 export function extractPageDetailed(page: mupdf.PDFPage, request: ExtractRequest): ExtractResult {
   const t0 = performance.now();
@@ -89,7 +89,7 @@ function build(
   const collector = new DeviceCollector(bounds, colors, request.includePathSegments === true);
 
   const device = new mupdf.Device({
-    // 텍스트 래퍼는 collector 가 넘겨받아(직전 객체 비교용) 놓는다. guard 가 건너뛰면(실패 뒤·소프트 마스크 안) 여기서 놓는다.
+    // The collector takes over the text wrapper (for comparing against the previous object) and releases it. If guard skips (after a failure, or inside a soft mask), release it here.
     fillText: (text, ctm, cs, color) => {
       if (!collector.guard(() => collector.fillText(text, ctm, cs, color))) text.destroy();
       cs.destroy();
@@ -131,7 +131,7 @@ function build(
     },
     fillShade: (shade, ctm, alpha) => {
       collector.guard(() => collector.fillShade(shade, ctm, alpha));
-      // 빌린 참조(종료자가 놓으면 셰이드가 해제됨, 실측: "Unexpected mesh type …"). pdf-ops 공용 도구로 해제.
+      // Borrowed reference (if the finalizer releases it, the shade is freed; measured: "Unexpected mesh type ..."). Release with the shared pdf-ops tool.
       releaseBorrowedShade(shade);
     },
     fillImage: (image, ctm, alpha) => {
@@ -153,7 +153,7 @@ function build(
       cs.destroy();
     },
     endMask: () => collector.guard(() => collector.endMask(), true),
-    // 0 이 아닌 값: 타일링 패턴 셀 내용을 MuPDF 가 실행하지 않는다(쪽 콘텐츠 순서 밖).
+    // Non-zero value: MuPDF does not execute the tiling pattern cell content (outside the page content order).
     beginTile: () => {
       collector.guard(() => collector.beginTile());
       return 1;
@@ -172,8 +172,8 @@ function build(
   try {
     stext = readStructuredText(page);
   } catch (e) {
-    // 구조화 텍스트가 실패해도(손상된 셰이딩 메시 등) Device 에서 얻은 정보로 모델을 만든다.
-    // 모든 글자는 quad 근사·line -1 이 된다.
+    // Even if structured text fails (corrupt shading mesh, etc.), build the model from the information obtained from the Device.
+    // All characters get an approximated quad and line -1.
     const reason = e instanceof Error ? e.message : String(e);
     messages.push(`구조화 텍스트 생성 실패: ${reason}`);
     stext = { chars: [], lines: [], blocks: [] };
@@ -231,16 +231,16 @@ function build(
 }
 
 /**
- * Device 글리프와 구조화 텍스트를 결합해 chars·lines·blocks 를 만든다.
- * 줄·블록에는 글리프와 짝이 된 글자만 남기고(Tr 4–6 중복 줄·합성 공백·주석 텍스트 제외),
- * 비는 줄·블록은 뺀다.
+ * Joins Device glyphs and structured text to build chars, lines and blocks.
+ * Lines and blocks keep only characters paired with a glyph (excluding Tr 4–6 duplicate lines, synthetic spaces and annotation text),
+ * and empty lines and blocks are dropped.
  */
 function assemble(
   glyphs: readonly RawGlyph[],
   matches: ReadonlyArray<ReturnType<typeof matchGlyphs>[number]>,
   stext: StextData,
 ): { chars: CharInfo[]; lines: LineInfo[]; blocks: BlockInfo[]; approximated: number[] } {
-  // 줄·블록 인덱스 재배치: 짝이 된 글자가 있는 줄만 남긴다.
+  // Re-index lines and blocks: keep only lines that have a paired character.
   const lineMap = new Map<number, number>();
   const blockMap = new Map<number, number>();
   const lines: LineInfo[] = [];
@@ -248,8 +248,8 @@ function assemble(
   for (let l = 0; l < stext.lines.length; l++) {
     const line = stext.lines[l]!;
     const kept: number[] = [];
-    // 글리프와 짝이 없는 구조화 텍스트 공백(MuPDF 가 글자 간격으로 합성)은 앞뒤 글자 사이에 있을 때만
-    // 앞 글자 위치를 spaceAfter 에 담는다(줄 처음·끝의 공백은 읽기 텍스트에 필요 없다).
+    // A structured-text space with no glyph match (synthesized by MuPDF for character spacing) puts the previous character's position into spaceAfter
+    // only when it lies between characters (spaces at the start or end of a line are not needed in the reading text).
     const spaceAfter: number[] = [];
     let pendingSpace = false;
     for (const ch of line.chars) {
@@ -257,7 +257,7 @@ function assemble(
         if (ch.rune === 0x20 || ch.rune === 0xa0) pendingSpace = kept.length > 0;
         continue;
       }
-      // 합자의 뒷부분(owner 만 같고 primary 가 아닌 글자)은 글리프당 한 번만 넣는다.
+      // For the trailing part of a ligature (a character with the same owner but not primary), add it only once per glyph.
       if (matches[ch.owner] !== ch) continue;
       if (pendingSpace) spaceAfter.push(kept.length - 1);
       pendingSpace = false;
@@ -304,7 +304,7 @@ function assemble(
   return { chars, lines, blocks, approximated };
 }
 
-/** 구조화 텍스트에 없는 글자의 quad 를 글리프 행렬·advance 로 근사한다(순서 ul, ur, ll, lr). */
+/** Approximates the quad of a character absent from the structured text from the glyph matrix and advance (order ul, ur, ll, lr). */
 function approximateQuad(g: RawGlyph): Quad {
   const advance = Math.abs(g.advance);
   const [x0, x1, top, bottom] =

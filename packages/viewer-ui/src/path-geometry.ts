@@ -1,6 +1,6 @@
 /**
- * 벡터 패스 편집의 순수 기하(M4 계약 4.5, D2): 패스 평탄화·맞음 판정·점 번호·상자 핸들 변환.
- * DOM 에 의존하지 않는다. 좌표는 페이지 공간(pt, y 아래)이다.
+ * Pure geometry for vector path editing (M4 contract 4.5, D2): path flattening, hit testing, point numbering, box handle transform.
+ * Does not depend on the DOM. Coordinates are in page space (pt, y down).
  */
 import type { HandleName } from './edit-geometry.js';
 import type {
@@ -14,11 +14,11 @@ import type {
 
 export const HANDLE_NAMES: readonly HandleName[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 
-/** 선 맞음 허용 거리(화면 px, 계약 4.5). */
+/** Line hit tolerance distance (screen px, contract 4.5). */
 export const STROKE_HIT_PX = 4;
-/** 곡선 평탄화 분할 수. */
+/** Number of subdivisions for flattening a curve. */
 const CURVE_STEPS = 12;
-/** 상자 최소 크기(pt). */
+/** Minimum box size (pt). */
 export const MIN_BOX = 1;
 
 export const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
@@ -27,7 +27,7 @@ export function applyMatrix(m: Matrix, p: Point): Point {
   return [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
 }
 
-/** 같은 패스(칠하기 연산 하나)의 PathInfo 묶음과 판정. `B` 계열은 PathInfo 2개가 한 후보다. */
+/** The PathInfo group and classification of the same path (one paint operation). In the `B` family, two PathInfos make one candidate. */
 export interface PathCandidate {
   paintSeq: number;
   infos: PathInfo[];
@@ -35,7 +35,7 @@ export interface PathCandidate {
   bbox: Rect;
 }
 
-/** 편집 대상(판정 목록에 있는) 패스만 후보로 묶는다. 판정이 없는 PathInfo(클립 등)는 뺀다. */
+/** Groups only paths that are edit targets (in the classification list) as candidates. A PathInfo without classification (clip, etc.) is excluded. */
 export function buildCandidates(
   paths: readonly PathInfo[],
   editability: readonly PathEditability[],
@@ -59,7 +59,7 @@ export function buildCandidates(
   return [...out.values()];
 }
 
-/** 하위 경로(꼭짓점 열)로 평탄화한 페이지 공간 경로. */
+/** Page-space path flattened into subpaths (vertex sequences). */
 export interface FlatSubpath {
   points: Point[];
   closed: boolean;
@@ -118,7 +118,7 @@ function distToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
 }
 
-/** 선까지의 최소 거리(pt). 닫힌 경로는 마지막 → 처음 변도 센다. */
+/** Minimum distance to the line (pt). For a closed path, the last → first edge is counted too. */
 export function distanceToStroke(subpaths: readonly FlatSubpath[], p: Point): number {
   let best = Infinity;
   for (const sp of subpaths) {
@@ -133,7 +133,7 @@ export function distanceToStroke(subpaths: readonly FlatSubpath[], p: Point): nu
   return best;
 }
 
-/** 채움 안쪽 판정(열린 하위 경로는 닫힌 것으로 본다). evenOdd 가 아니면 0 아닌 감김 규칙. */
+/** Fill inside test (an open subpath is treated as closed). If not evenOdd, the nonzero winding rule. */
 export function insideFill(subpaths: readonly FlatSubpath[], p: Point, evenOdd: boolean): boolean {
   let winding = 0;
   let crossings = 0;
@@ -155,7 +155,7 @@ export function insideFill(subpaths: readonly FlatSubpath[], p: Point, evenOdd: 
   return evenOdd ? crossings % 2 === 1 : winding !== 0;
 }
 
-/** 경로 공간 선 두께 → 페이지 공간 pt(CTM 의 √|det|, 계약 4.3). */
+/** Path-space line width → page-space pt (√|det| of the CTM, contract 4.3). */
 export function pageLineWidth(info: PathInfo): number {
   if (info.lineWidth === null) return 0;
   const det = Math.abs(info.ctm[0] * info.ctm[3] - info.ctm[1] * info.ctm[2]);
@@ -163,9 +163,9 @@ export function pageLineWidth(info: PathInfo): number {
 }
 
 /**
- * 한 후보가 점 p 에 맞는가. 선(stroke 계열)은 min(허용거리, …) 안, 채움은 안쪽.
- * tolPt = 화면 4px 에 해당하는 pt. 선 폭의 절반도 맞음에 더한다(굵은 선 안쪽 클릭).
- * segments 가 없으면(추출에 포함하지 않음) 상자 안쪽으로 근사한다.
+ * Whether a candidate hits point p. A stroke (stroke family) hits within min(tolerance, …); a fill hits inside.
+ * tolPt = the pt corresponding to 4 screen px. Half the line width is also added to the hit (clicks inside a thick line).
+ * If there are no segments (not included in the extraction), approximated by the inside of the box.
  */
 export function candidateHit(c: PathCandidate, p: Point, tolPt: number): boolean {
   for (const info of c.infos) {
@@ -188,7 +188,7 @@ export function candidateHit(c: PathCandidate, p: Point, tolPt: number): boolean
 
 const area = (r: Rect): number => Math.max(0, r[2] - r[0]) * Math.max(0, r[3] - r[1]);
 
-/** 맞는 후보 중 가장 작은 것(같으면 나중에 칠한 것). 없으면 null. */
+/** The smallest of the hit candidates (the one painted later if equal). null if none. */
 export function pickPath(
   candidates: readonly PathCandidate[],
   p: Point,
@@ -219,14 +219,14 @@ export function unionRect(rects: readonly Rect[]): Rect {
   return [x0, y0, x1, y1];
 }
 
-/** 이동. */
+/** Move. */
 export function translateBox(box: Rect, dx: number, dy: number): Rect {
   return [box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy];
 }
 
 /**
- * 상자 핸들 끌기: 변·모서리를 (dx, dy) 옮긴 상자. 모서리에서 keepRatio 면 원래 가로세로 비율을 유지하고
- * 반대 모서리를 고정한다. 변 핸들은 비율 고정을 쓰지 않는다. 최소 크기(MIN_BOX)를 보장한다.
+ * Box handle drag: the box with an edge or corner moved by (dx, dy). At a corner with keepRatio, keeps the original aspect ratio
+ * and fixes the opposite corner. Edge handles do not use ratio locking. Guarantees the minimum size (MIN_BOX).
  */
 export function resizeBox(
   box: Rect,
@@ -256,7 +256,7 @@ export function resizeBox(
   return [x0, y0, x1, y1];
 }
 
-/** 상자 from → to 로 보내는 크기·이동 아핀(회전 없음). 크기 0 인 축은 이동만. */
+/** Size/translation affine that maps box from → to (no rotation). An axis of size 0 only translates. */
 export function boxTransform(from: Rect, to: Rect): Matrix {
   const w = from[2] - from[0];
   const h = from[3] - from[1];
@@ -269,26 +269,26 @@ export function isIdentity(m: Matrix, eps = 1e-9): boolean {
   return IDENTITY.every((v, i) => Math.abs(m[i]! - v) <= eps);
 }
 
-/** 변환 뒤 상자(회전 없는 변환). */
+/** Box after the transform (a transform without rotation). */
 export function transformRect(m: Matrix, r: Rect): Rect {
   const a = applyMatrix(m, [r[0], r[1]]);
   const b = applyMatrix(m, [r[2], r[3]]);
   return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
 }
 
-/** 점 편집용 점 하나. index 는 `PathEdit.points` 번호(segments 를 앞에서부터 센 0 기준 번호). */
+/** One point for point editing. index is the `PathEdit.points` number (a 0-based number counting segments from the start). */
 export interface PathPoint {
   index: number;
   kind: 'anchor' | 'control';
-  /** 페이지 공간 위치. */
+  /** Page-space position. */
   p: Point;
-  /** 제어점이면 이어진 꼭짓점의 위치(손잡이 선을 그리는 데 쓴다). */
+  /** For a control point, the position of the connected vertex (used to draw the handle line). */
   anchor?: Point;
 }
 
 /**
- * 점 번호 규칙(shared-types edit.ts): M·L 은 1개, C 는 제어점 2개 + 끝점 1개, Z 는 0개.
- * 0 기준으로 센다(계약에 시작 번호가 없어 가정, docs/m4-viewer-ui.md 계약 불일치 #1).
+ * Point numbering rule (shared-types edit.ts): M and L are 1 each, C is 2 control points + 1 endpoint, Z is 0.
+ * Counted from 0 (assumed because the contract has no starting number, docs/m4-viewer-ui.md contract mismatch #1).
  */
 export function pathPoints(info: PathInfo): PathPoint[] {
   const segs: PathSegment[] = info.segments ?? [];
@@ -320,9 +320,9 @@ const sameSpot = (a: Point, b: Point) =>
   Math.abs(a[1] - b[1]) <= SAME_POINT * Math.max(1, Math.abs(a[1]));
 
 /**
- * 꼭짓점 `index` 를 옮길 때 함께 옮길 붙은 제어점. `v`(첫 제어점 = 앞 꼭짓점)·`y`(둘째 제어점 = 끝점)는 모델에서
- * 제어점이 꼭짓점과 같은 자리에 겹쳐 나타난다. 꼭짓점만 옮기면 겹침이 깨져 연산이 `c` 로 바뀌므로(M4 리뷰 L3)
- * 겹친 제어점을 같이 옮겨 `v`·`y` 를 유지한다. 제어점을 직접 끌 때는 해당 없음(빈 목록).
+ * The attached control point to move together when moving vertex `index`. For `v` (first control point = previous vertex) and `y` (second control point = endpoint), the model shows
+ * the control point overlapping the vertex at the same place. Moving only the vertex would break the overlap and change the operator to `c` (M4 review L3),
+ * so the overlapping control point is moved too, keeping `v` and `y`. Not applicable when a control point is dragged directly (empty list).
  */
 export function companionPoints(points: readonly PathPoint[], index: number): PathPoint[] {
   const moved = points.find((p) => p.index === index);
@@ -336,7 +336,7 @@ export function companionPoints(points: readonly PathPoint[], index: number): Pa
   );
 }
 
-/** 점 하나를 `to` 로 옮긴 편집 값(점 단위 편집, 한 번에 한 점). */
+/** Edit value with one point moved to `to` (point-level edit, one point at a time). */
 export function pointEdit(index: number, to: Point): { index: number; to: Point }[] {
   return [{ index, to }];
 }

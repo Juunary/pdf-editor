@@ -7,19 +7,19 @@ import { FUZZ_SEEDS, randomDoc } from './helpers/fuzz-content.js';
 import { buildTestPageModel, type HelperPolicy } from './helpers/page-model.js';
 
 /**
- * glyphSeq 정책 측정(docs/m1-pdf-ops.md 4절). 같은 시드 퍼징 문서에서 테스트 전용 PageModel(core 쪽 판정)과
- * SourceMap 을 매칭해 실패 쪽 수를 센다. 실패 = 총수 차이 또는 소유 번호 글자·도형 미매칭.
- * 글리프 단위로는 인터프리터가 아는 실제 첫 도착(N)·재전송(R)과 core 쪽 판정을 같은 전달 순서에서 비교한다.
- * - 가짜 재전송: 판정 R, 실제 N. 키(폰트, gid, trm, ctm)가 같은 다른 글리프가 센 목록에 있었다는 뜻이다(구조적 한계).
- * - 놓친 재전송: 판정 N, 실제 R.
- * 측정값은 고정 시드라 결정적이며, 바뀌면 원인을 확인하고 문서와 함께 고친다.
+ * glyphSeq policy measurement (docs/m1-pdf-ops.md section 4). On the same-seed fuzz documents, matches the test-only PageModel (core-side classification) with
+ * the SourceMap and counts failed pages. Failure = total count difference or an unmatched glyph/shape with an owned number.
+ * At the glyph level, compares the actual first arrival (N) and re-send (R) known to the interpreter with the core-side classification on the same delivery sequence.
+ * - False re-send: classified R, actually N. It means another glyph with the same key (font, gid, trm, ctm) was in the counted list (structural limit).
+ * - Missed re-send: classified N, actually R.
+ * The measured values are deterministic because of the fixed seed; if they change, identify the cause and fix it together with the document.
  */
 
 interface Row {
   failedPages: number[];
   falseResend: number;
   missedResend: number;
-  /** 실패 쪽 원인: R2(전달 순서 자체가 다름), 가짜 재전송 있음, 놓친 재전송만 있음, 그 밖. */
+  /** Cause of a failed page: R2 (the delivery sequence itself differs), has false re-sends, has only missed re-sends, other. */
   causes: { r2: number; falseResend: number; missedOnly: number; other: number };
 }
 
@@ -54,7 +54,7 @@ function measure(helper: HelperPolicy, policy: GlyphSeqPolicy): Row {
         step1FillStrokeOnly: helper === 'first-arrival-v2',
       });
     } catch {
-      continue; // MuPDF 페이지 해석 예외(R10)
+      continue; // MuPDF page interpretation exception (R10)
     }
     const trace: string[] = [];
     const map = buildSourceMapImpl(doc, 0, 8, policy, trace);
@@ -70,7 +70,7 @@ function measure(helper: HelperPolicy, policy: GlyphSeqPolicy): Row {
     const strip = (a: string[]) => a.map((x) => x.replace(/:[NR]+$/, '')).join(' ');
     if (strip(trace) !== strip(dev)) {
       if (failed) row.causes.r2++;
-      continue; // 전달 순서 자체가 다른 쪽(R2)은 글리프 비교 제외
+      continue; // page whose delivery sequence itself differs (R2) is excluded from the glyph comparison
     }
     let falses = 0;
     let missed = 0;
@@ -93,8 +93,8 @@ function measure(helper: HelperPolicy, policy: GlyphSeqPolicy): Row {
   return row;
 }
 
-describe('glyphSeq 정책 측정(퍼징)', () => {
-  it('정책별 실패 쪽·가짜/놓친 재전송', () => {
+describe('glyphSeq policy measurement (fuzzing)', () => {
+  it('failed pages and false/missed re-sends per policy', () => {
     const firstArrival = measure('first-arrival', 'first-arrival');
     const v2 = measure('first-arrival-v2', 'first-arrival');
     const noClip = measure('no-clip', 'no-clip');

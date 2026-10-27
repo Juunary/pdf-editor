@@ -1,7 +1,7 @@
 /**
- * 편집 어댑터: core 편집 세션이 부르는 pdf-ops·reflow 편집 함수의 내부 경계(docs/m3-core.md 3절).
- * 기본 구현은 계약 커밋에 고정된 시그니처를 그대로 부른다. S1(pdf-ops)·S2(reflow) 가 병합되기 전에는 그 함수들이
- * "M3 미구현" 예외를 내므로, core 단위 테스트는 가짜 어댑터를 `PdfSessionOptions.editAdapter` 로 넣어 돌린다.
+ * Edit adapter: internal boundary of the pdf-ops and reflow edit functions that the core edit session calls (docs/m3-core.md section 3).
+ * The default implementation calls the signatures fixed in the contract commit as is. Until S1 (pdf-ops) and S2 (reflow) are merged, those functions
+ * throw an "M3 not implemented" exception, so core unit tests run with a fake adapter injected via `PdfSessionOptions.editAdapter`.
  */
 import * as mupdf from 'mupdf';
 import {
@@ -32,19 +32,19 @@ export type {
 } from '@pdf-editor/pdf-ops';
 
 /**
- * 패스 쓰기 결과. pdf-ops 시그니처(`{ bbox, writeMs }`)에 쓰는 도중 정해지는 경고(`color-space-changed`·`path-clipped`·
- * `table-rule-removed`, 계약 4.2)를 실을 선택 필드를 더했다. 기본 어댑터는 pdf-ops `pathEditWarnings` 로 채운다.
- * 필드가 있으면(빈 배열 포함) core 근사 경고(`pathCoreWarnings`)를 쓰지 않는다. 없을 때만 근사한다.
+ * Result of a path write. Adds to the pdf-ops signature (`{ bbox, writeMs }`) an optional field carrying warnings determined during the write (`color-space-changed`, `path-clipped`,
+ * `table-rule-removed`; contract 4.2). The default adapter fills it from pdf-ops `pathEditWarnings`.
+ * If the field is present (even as an empty array), the core approximate warnings (`pathCoreWarnings`) are not used; they are approximated only when it is absent.
  */
 export type PathWriteResult = ReturnType<typeof writePathEdit> & { warnings?: EditWarning[] };
 
 export interface EditAdapter {
-  /** 문서당 하나. `fallback` 은 core 가 미리 await 한 폴백 폰트 바이트와, 저널을 켜기 직전에 임베딩한 객체(그 전에는 null)다. */
+  /** One per document. `fallback` is the fallback font bytes that core awaited in advance, plus the object embedded just before the journal is turned on (null before that). */
   createFonts(doc: mupdf.PDFDocument, fallback: FallbackFontSource): FontManager;
   planPageEditability: typeof planPageEditability;
   planParagraphEdit: typeof planParagraphEdit;
   prepareParagraphEdit: typeof prepareParagraphEdit;
-  /** M4 패스 판정·계획·준비·쓰기(docs/m4-contract.md 4.2–4.3). */
+  /** M4 path classification, planning, preparation and writing (docs/m4-contract.md 4.2–4.3). */
   planPathEditability: typeof planPathEditability;
   planPathEdit: typeof planPathEdit;
   preparePathEdit: typeof preparePathEdit;
@@ -52,17 +52,17 @@ export interface EditAdapter {
   writeEditBlock: typeof writeEditBlock;
   listEditBlocks: typeof listEditBlocks;
   recordEditMetadata: typeof recordEditMetadata;
-  /** 초안 하나(editId) 또는 문서 전체의 pdf-ops 초안 상태를 버린다(R-L3). 문서 내용은 바꾸지 않는다. */
+  /** Discards the pdf-ops draft state of one draft (editId) or of the whole document (R-L3). Does not change document content. */
   releaseEdit: typeof releaseEdit;
   layoutParagraph: typeof layoutParagraph;
   /**
-   * 세션 로그에 없는 편집 블록(다른 세션이 만든 파일)의 영역을 어림한다(페이지 공간). 모르면 null.
-   * 기본 구현은 블록 Form 의 /BBox(계약 D3: 사용자 공간으로 옮긴 areaLimit)를 쪽 변환으로 옮긴다.
+   * Estimates the area (page space) of an edit block absent from the session log (a file made by another session). null if unknown.
+   * The default implementation maps the block Form's /BBox (contract D3: areaLimit converted to user space) through the page transform.
    */
   blockBounds(doc: mupdf.PDFDocument, pageIndex: number, objectNumber: number): Rect | null;
 }
 
-/** 블록 Form 의 /BBox 를 쪽 변환(사용자 공간 → 페이지 공간)으로 옮긴다. */
+/** Maps a block Form's /BBox through the page transform (user space -> page space). */
 function formBoundsInPage(
   doc: mupdf.PDFDocument,
   pageIndex: number,
@@ -98,7 +98,7 @@ export const defaultEditAdapter: EditAdapter = {
   planPathEditability,
   planPathEdit,
   preparePathEdit,
-  // pdf-ops 는 쓰기 경고를 `pathEditWarnings` 로 따로 준다(docs/m4-pdf-ops.md 6절 #4). 여기서 반환에 싣는다.
+  // pdf-ops reports write warnings separately as `pathEditWarnings` (docs/m4-pdf-ops.md section 6 #4). Attach them to the return value here.
   writePathEdit: (ctx, prepared, edit) => ({
     ...writePathEdit(ctx, prepared, edit),
     warnings: pathEditWarnings(ctx, prepared),

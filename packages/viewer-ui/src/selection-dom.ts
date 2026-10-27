@@ -1,9 +1,9 @@
 /**
- * DOM Selection 과 읽기 순서 캐럿 구간 사이의 연결. 텍스트 층의 글자 span 은 DOM 순서가 읽기 순서이고,
- * `spans[k]` 가 ReadingOrder.items[k] 에 대응한다.
+ * The link between the DOM Selection and reading-order caret ranges. The character spans of the text layer are in DOM order = reading order,
+ * and `spans[k]` corresponds to ReadingOrder.items[k].
  */
 
-/** span 안 글자 텍스트 노드와 경계 오프셋. */
+/** Character text node inside a span and the boundary offset. */
 function endpoint(span: HTMLElement, atEnd: boolean): [Node, number] {
   const text = span.firstChild;
   if (!text) return [span, 0];
@@ -11,8 +11,8 @@ function endpoint(span: HTMLElement, atEnd: boolean): [Node, number] {
 }
 
 /**
- * 캐럿 구간 [from, to) 를 DOM 선택으로 만들고, 실제로 만든 구간(범위 보정 후)을 돌려준다.
- * 빈 구간이면 선택을 지우고 null.
+ * Makes the caret range [from, to) into a DOM selection and returns the range actually made (after range correction).
+ * Clears the selection and returns null if the range is empty.
  */
 export function selectInterval(
   selection: Selection,
@@ -32,7 +32,7 @@ export function selectInterval(
   return [lo, hi];
 }
 
-/** DOM 범위의 양 끝이 캐럿 구간 [lo, hi) 의 끝점과 정확히 같은지(O(1)). */
+/** Whether both ends of the DOM range exactly equal the endpoints of the caret range [lo, hi) (O(1)). */
 export function rangeMatchesInterval(
   range: Range,
   spans: readonly HTMLElement[],
@@ -53,13 +53,13 @@ export function rangeMatchesInterval(
 }
 
 /**
- * DOM 범위와 겹치는 글자를 캐럿 구간 [from, to) 로 바꾼다. 범위 경계가 글자의 끝(시작)에 걸친 글자는
- * 겹치지 않은 것으로 본다. 겹치는 글자가 없으면 null.
+ * Converts the characters overlapping a DOM range to a caret range [from, to). A character whose end (start) merely touches the range boundary
+ * is treated as not overlapping. null if no character overlaps.
  */
 export function rangeToCaretInterval(
   range: Range,
   spans: readonly HTMLElement[],
-  /** 직전에 이 층이 만든 구간. 범위가 그 구간과 정확히 같으면 글자를 훑지 않고 그대로 쓴다. */
+  /** The range this layer made last time. If the range is exactly the same, it is used as is without scanning characters. */
   hint?: readonly [number, number] | null,
 ): [number, number] | null {
   if (hint && rangeMatchesInterval(range, spans, hint[0], hint[1])) return [hint[0], hint[1]];

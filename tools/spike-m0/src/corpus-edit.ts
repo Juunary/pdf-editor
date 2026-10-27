@@ -1,4 +1,4 @@
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// core must be imported before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { openPdf, wasmHeapBytes } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import {
@@ -21,9 +21,9 @@ import { diffRasters, inkPixels, renderPage, type Raster } from './raster.js';
 import { captureMupdfLog, inspectFont, type FontObjectInfo } from './spike.js';
 
 /**
- * 코퍼스 문서 문단 교체(Day 1 스파이크 절차의 일반화, docs/m0-corpus-recheck.md 2절).
- * 선택 문단마다 redaction(텍스트 제거, 선화·이미지 보존) → 한글 폴백 폰트 임베딩 → 새 콘텐츠 스트림,
- * 문서당 한 번 전체 저장 → 재열기 검증. 좌표는 MuPDF 페이지 좌표(원점 좌상단).
+ * Paragraph replacement on corpus documents (generalizes the Day 1 spike procedure, docs/m0-corpus-recheck.md section 2).
+ * For each selected paragraph: redaction (remove text, keep line art and images) → embed Korean fallback font → new content stream;
+ * one full save per document → reopen and verify. Coordinates are MuPDF page coordinates (origin at top left).
  */
 
 const REPLACEMENT_POOL = [
@@ -34,10 +34,10 @@ const REPLACEMENT_POOL = [
 ];
 
 export const replacementPrefix = (k: number) => `교체 문단 ${k}:`;
-/** 재열기 검색어. 배치된 텍스트에 실제로 들어간 것만 판정한다. */
+/** Search terms after reopening. Only terms that actually appear in the placed text are checked. */
 export const searchTermsFor = (k: number) => [`교체 문단 ${k}`, '폴백 폰트로'];
 
-/** 원 문단 줄 수 안에 들어가는 가장 긴 교체 문장(어절 경계)을 고른다. */
+/** Picks the longest replacement sentence (at a word boundary) that fits within the original paragraph's line count. */
 export function fitReplacement(
   font: mupdf.Font,
   k: number,
@@ -73,9 +73,9 @@ export function fitReplacement(
 }
 
 export interface ParagraphContext extends ParagraphCandidate {
-  /** 문단 쪽의 Form 사용 위치 수(A1-1: 페이지 직접 redaction 시 모두 인스턴스화) */
+  /** Number of Form usage locations on the paragraph's page (A1-1: all are instantiated by direct page redaction) */
   formUsagesOnPage: number;
-  /** 문단 영역과 겹치는 텍스트 Form 과 제한 조건 */
+  /** Text Forms overlapping the paragraph area, and their restrictions */
   textFormsOverlapping: {
     objectNumber: number;
     usages: number;
@@ -85,10 +85,10 @@ export interface ParagraphContext extends ParagraphCandidate {
     L6ParseError: boolean;
     L7OptionalContent: boolean;
   }[];
-  /** 문단 쪽 콘텐츠의 MCID 수(태그 PDF 구조 연결) */
+  /** Number of MCIDs in the paragraph's page content (tagged PDF structure linkage) */
   mcidOnPage: number;
   tagged: boolean;
-  /** 문단 글꼴 중 문자 매핑 위험(ToUnicode 없는 비표준 인코딩·Type3) */
+  /** Character-mapping risk among the paragraph's fonts (non-standard encoding without ToUnicode, Type3) */
   fontMappingRisk: string[];
 }
 
@@ -105,7 +105,7 @@ export interface Restriction {
     | 'link-removed'
     | 'font-mapping'
     | 'unmapped-text';
-  /** v1 판정: 편집 제한(limit) 또는 경고(warn) */
+  /** v1 classification: edit restriction (limit) or warning (warn) */
   level: 'limit' | 'warn';
   detail: string;
 }
@@ -129,7 +129,7 @@ export interface ParagraphResult {
     targetLinesRemaining: number;
     neighborLinesTotal: number;
     neighborLinesLost: number;
-    /** 편집 영역 밖 다른 픽셀 수(엄격)·GLYPH_DELTA 초과 수(판정 기준)·최대 채널 차이 */
+    /** Number of other pixels outside the edit area (strict), number exceeding GLYPH_DELTA (classification criterion), maximum channel difference */
     outsidePx: number;
     outsideStrongPx: number;
     outsideMaxDelta: number;
@@ -144,9 +144,9 @@ export interface ParagraphResult {
     glyphs: number;
   } | null;
   preSave: {
-    /** 참조 렌더와 다른 픽셀 수(엄격) */
+    /** Number of pixels that differ from the reference render (strict) */
     vsReferencePx: number;
-    /** 그중 채널 차이가 GLYPH_DELTA 를 넘는 픽셀 수(판정 기준) */
+    /** Of those, number whose channel difference exceeds GLYPH_DELTA (classification criterion) */
     vsReferenceStrongPx: number;
     vsReferenceMaxDelta: number;
     referenceInkPx: number;
@@ -162,7 +162,7 @@ export interface ParagraphResult {
     outsidePx: number;
     outsideStrongPx: number;
   } | null;
-  /** Poppler 판정용(픽셀 변환은 호출자) */
+  /** For Poppler classification (pixel conversion is done by the caller) */
   exclusion: Rect;
   pageBounds: Rect;
   searchTerms: string[];
@@ -194,13 +194,13 @@ export interface CorpusEditResult {
 const squash = (s: string) => s.replace(/\s+/g, '');
 
 /**
- * 글리프 판정 임계값(채널 0–255). 같은 글리프도 원점이 1/4 px 양자화 경계를 걸치면 가장자리가 약 64단계
- * 바뀌고(실측: zen-ko-moon 1글자 최대 65단계), 투명도 그룹이 있는 쪽은 합성 반올림으로 1단계 차이가 난다
- * (zen-ko-kimtw 15,040 px 전부 1단계). 글리프 누락·대체(Day 1 CFF 실패)는 255단계라 이 값으로 구분된다.
+ * Glyph classification threshold (channel 0–255). Even for the same glyph, when the origin straddles a 1/4 px quantization boundary the edge changes by about 64 levels
+ * (measured: zen-ko-moon 1 character up to 65 levels), and pages with transparency groups differ by 1 level from compositing rounding
+ * (zen-ko-kimtw all 15,040 px by 1 level). Missing or substituted glyphs (Day 1 CFF failure) are 255 levels, so this value separates them.
  */
 export const GLYPH_DELTA = 96;
 
-/** 다른 픽셀 수·GLYPH_DELTA 초과 수·최대 채널 차이. exclude(픽셀 좌표) 안은 세지 않는다. */
+/** Number of differing pixels, number exceeding GLYPH_DELTA, maximum channel difference. Pixels inside exclude (pixel coordinates) are not counted. */
 function diffStats(
   a: Raster,
   b: Raster,
@@ -229,7 +229,7 @@ function diffStats(
 }
 const round3 = (n: number) => Number(formatNumber(n));
 
-/** 줄 원점을 직렬화와 같은 소수 셋째 자리로 맞추고, 그 줄 글리프를 같은 만큼 옮긴다. */
+/** Rounds the line origin to three decimal places like serialization, and shifts that line's glyphs by the same amount. */
 function snapLines(layout: ParagraphLayout): void {
   let g = 0;
   for (const line of layout.lines) {
@@ -249,8 +249,8 @@ const pageText = (page: mupdf.Page) => page.toStructuredText('preserve-whitespac
 const occurrences = (hay: string, needle: string) => hay.split(needle).length - 1;
 
 /**
- * 지운 문단 줄이 남은 수. 같은 쪽에 같은 문장이 또 있을 수 있으므로(공유 Form 의 다른 사용 위치 등)
- * 존재 여부가 아니라 등장 횟수가 문단 안 횟수만큼 줄었는지로 판정한다. 텍스트는 공백 제거 기준.
+ * Number of erased paragraph lines that remain. The same sentence may appear again on the same page (another usage location of a shared Form, etc.), so
+ * classify by whether the occurrence count dropped by the in-paragraph count, not by existence. Text is compared with whitespace removed.
  */
 function targetRemaining(lines: string[], target: string, before: string, after: string): number {
   return lines.filter(
@@ -258,7 +258,7 @@ function targetRemaining(lines: string[], target: string, before: string, after:
   ).length;
 }
 
-/** 다른 블록 줄 중 등장 횟수가 줄어든(함께 지워진) 수. */
+/** Number of other block lines whose occurrence count dropped (erased along with it). */
 function neighborsLost(lines: string[], target: string, before: string, after: string): number {
   return [...new Set(lines)].filter(
     (l) => occurrences(after, l) < occurrences(before, l) - occurrences(target, l),
@@ -272,7 +272,7 @@ function toPdfRect(page: mupdf.PDFPage, rect: Rect): Rect {
   return [r[0], r[1], r[2], r[3]];
 }
 
-/** 페이지 좌표 → 렌더 픽셀 좌표(여유 2px). renderPage 의 픽스맵 원점은 floor(bounds × scale). */
+/** Page coordinates → render pixel coordinates (2px margin). The renderPage pixmap origin is floor(bounds × scale). */
 function pixelRect(rect: Rect, bounds: Rect, scale: number): Rect {
   const ox = Math.floor(bounds[0] * scale);
   const oy = Math.floor(bounds[1] * scale);
@@ -287,7 +287,7 @@ function pixelRect(rect: Rect, bounds: Rect, scale: number): Rect {
 export const renderScale = (bounds: Rect) =>
   Math.min(2, 2000 / Math.max(bounds[2] - bounds[0], bounds[3] - bounds[1]));
 
-/** 문단 정보로 v1 편집 제한·경고 판정(PLAN.md 1.4·3.1·3.3·3.4). */
+/** Classifies v1 edit restrictions and warnings from paragraph info (PLAN.md 1.4·3.1·3.3·3.4). */
 export function judgeRestrictions(p: ParagraphContext): Restriction[] {
   const out: Restriction[] = [];
   for (const f of p.textFormsOverlapping) {
@@ -332,8 +332,8 @@ export interface CorpusEditInput {
   paragraphs: ParagraphContext[];
   fontBytes: Uint8Array;
   /**
-   * 저장 전 `doc.subsetFonts()` 호출(기본 true). MuPDF 1.28.1 은 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트의
-   * /Widths 를 정수로 반올림·미사용 글리프 0 으로 바꾼다(실측). 그 영향을 분리하는 대조 실행에서 false.
+   * Call `doc.subsetFonts()` before saving (default true). MuPDF 1.28.1 re-subsets all fonts in the document and rounds the original simple fonts'
+   * /Widths to integers and sets unused glyphs to 0 (measured). false in the control run that isolates that effect.
    */
   subsetFonts?: boolean;
   onPhase?: (phase: string) => void;
@@ -348,7 +348,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
     const afterOpen = doc.canBeSavedIncrementally();
     phase('open');
 
-    // 편집하지 않는 쪽(첫 쪽·마지막 쪽) 기준 렌더
+    // Render of unedited pages (first and last) as the reference
     const edited = new Set(input.paragraphs.map((p) => p.pageIndex));
     const others = [0, doc.countPages() - 1].filter(
       (p, i, a) => !edited.has(p) && a.indexOf(p) === i,
@@ -370,7 +370,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       exclusionPx: Rect;
       neighborLines: string[];
       targetLines: string[];
-      /** 공백 제거한 원 문단 텍스트·편집 전 쪽 텍스트 */
+      /** Original paragraph text and pre-edit page text, with whitespace removed */
       target: string;
       beforeText: string;
       text: string;
@@ -406,7 +406,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
           detail: `편집 영역 링크 ${impact.linksRemoved.length}개 제거`,
         });
 
-      // 배치 영역: 첫 기준선이 원 문단 첫 기준선과 같도록(ascent 0.88), 줄 수는 원 문단과 같게
+      // Placement area: so the first baseline equals the original paragraph's first baseline (ascent 0.88), and the line count equals the original paragraph's
       const b1 = para.lines[0]!.baseline;
       const bL = para.lines.at(-1)!.baseline;
       const x0 = Math.min(...para.lines.map((l) => l.x0));
@@ -462,7 +462,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         text: '',
       });
 
-      // 1. redaction(텍스트만)
+      // 1. redaction (text only)
       try {
         const tr = performance.now();
         redactRegions(page, [para.rect]);
@@ -496,10 +496,10 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       result.redaction.outsideBbox = outside.bbox;
       phase(`redact:${k}`);
 
-      // 2. 폴백 폰트(문서당 1회) + 배치
+      // 2. fallback font (once per document) + placement
       embedded ??= embedFont(doc, 'NotoSansKR', input.fontBytes);
       const box = toPdfRect(page, boxFz);
-      // 직렬화(Tf·Tm)는 소수 셋째 자리로 반올림하므로 참조 렌더도 같은 값으로 배치한다.
+      // Serialization (Tf·Tm) rounds to three decimal places, so the reference render is placed with the same values.
       const fontSize = round3(para.fontSize);
       const fit = fitReplacement(
         embedded.font,
@@ -520,7 +520,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         missing: missingCodepoints(embedded.font, fit.text),
         glyphs: fit.layout.glyphs.length,
       };
-      // 참조 렌더는 주석을 뺀 콘텐츠만 비교한다(기존 주석 외관이 새 텍스트 위에 그려지는 순서 차이 제외).
+      // The reference render compares only content without annotations (excludes the ordering difference where existing annotation appearances are drawn over the new text).
       const reference = renderPage(
         page,
         scale,
@@ -528,7 +528,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
         { contentsOnly: true },
       );
 
-      // 3. 새 콘텐츠 스트림
+      // 3. new content stream
       resourceName = addPageFontResource(doc, page, embedded.ref);
       appendPageContent(
         doc,
@@ -561,7 +561,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       phase(`content:${k}`);
     });
 
-    // 4. 서브셋 + 저장 방식 결정 + 전체 저장
+    // 4. subset + choose save method + full save
     const changes: ChangeKind[] = ['redaction', 'font-embed', 'content-stream'];
     const beforeSave = doc.canBeSavedIncrementally();
     const save: CorpusEditResult['save'] = {
@@ -608,7 +608,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
     }
     doc.destroy();
 
-    // 5. 재열기 검증
+    // 5. reopen verification
     let font: FontObjectInfo | null = null;
     const otherPages: CorpusEditResult['otherPages'] = [];
     if (savedBytes) {
@@ -653,7 +653,7 @@ export function runCorpusEdit(input: CorpusEditInput): CorpusEditResult {
       if (!r.redaction.ok) continue;
       if (r.redaction.targetLinesRemaining > 0) f.push('target-text-remains');
       if (r.redaction.neighborLinesLost > 0) f.push('neighbor-text-lost');
-      // 편집 영역 밖: 96단계 초과 차이만 실패(1/4 px 원점 양자화 수준 차이는 호출자가 관찰로 기록)
+      // Outside the edit area: only differences above 96 levels fail (differences at the 1/4 px origin quantization level are recorded by the caller as observations)
       if (r.redaction.outsideStrongPx !== 0) f.push('outside-diff-after-redaction');
       if (r.layout?.missing.length) f.push('glyph-missing');
       if (r.preSave && r.preSave.vsReferenceStrongPx !== 0) f.push('glyph-render-mismatch');

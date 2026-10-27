@@ -1,10 +1,10 @@
 /**
  * M1 viewer-ui e2e (docs/m1-viewer-ui.md).
  *
- * 1) 하니스 테스트: 합성 PageModel 과 가짜 호스트로 viewer-ui 빌드 산출물만 띄워 DOM 동작(텍스트 층 배치,
- *    드래그 선택·복사, Ctrl+F, 하이라이트, 디버그 오버레이, 기능 비활성화)을 실제 Chromium 에서 확인한다.
- * 2) 통합 시나리오(2026-10-19 m1 통합 후 활성화): 빌드된 확장에서 실제 core 추출·검색과 pdf-ops 매칭으로
- *    선택·복사(일반 뷰어·MIME handler 최상위·임베디드), Ctrl+F, 디버그 오버레이를 확인한다(docs/m1-integration.md).
+ * 1) Harness tests: serve only the viewer-ui build output with a synthetic PageModel and a fake host, and check DOM behavior (text layer placement,
+ *    drag selection and copy, Ctrl+F, highlight, debug overlay, feature disabling) in a real Chromium.
+ * 2) Integration scenarios (enabled after the 2026-10-19 m1 integration): in the built extension, check with the real core extraction and search and pdf-ops matching
+ *    selection and copy (plain viewer, MIME handler top-level, embedded), Ctrl+F and the debug overlay (docs/m1-integration.md).
  */
 import {
   chromium,
@@ -36,24 +36,24 @@ import {
 } from '../../../packages/viewer-ui/test/fixtures.js';
 import { E2E_LOCALE } from './locale.js';
 
-// ── 공통 ──────────────────────────────────────────────────────────────
+// ── Common ──────────────────────────────────────────────────────────────
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const UI_ROOT = fileURLToPath(new URL('../../../packages/viewer-ui/', import.meta.url));
 
-/** 포인터 좌표를 읽을 때 쓰는 허용 오차(CSS px). 서브픽셀 반올림·transform 반올림 여유. */
+/** Tolerance (CSS px) when reading pointer coordinates. Margin for subpixel rounding and transform rounding. */
 const PX = 0.75;
 
-// ══ 1. 하니스 ═════════════════════════════════════════════════════════
+// ══ 1. Harness ═════════════════════════════════════════════════════
 
 interface HarnessConfig {
   pages: PageModel[];
   maps?: SourceMap[];
   linkages?: PageLinkage[];
   layouts?: DocumentPageLayout[];
-  /** 호스트 호출이 던질 오류 메시지. */
+  /** Error message the host call throws. */
   failures?: { extract?: string; search?: string; link?: string; layout?: string };
-  /** pt → CSS px 고정 배율. */
+  /** Fixed pt → CSS px scale. */
   cssScale: number;
 }
 
@@ -87,7 +87,7 @@ const HARNESS_HTML = `<!doctype html>
 <script type="module" src="/harness.js"></script>
 </body></html>`;
 
-/** 페이지에서 실행되는 하니스 스크립트(순수 JS). 가짜 호스트로 viewer-ui 를 마운트한다. */
+/** Harness script run in the page (plain JS). Mounts viewer-ui with the fake host. */
 const HARNESS_JS = `
 import { ViewerController, mountViewer } from '/ui/index.js';
 const cfg = window.__cfg;
@@ -216,7 +216,7 @@ async function openHarness(page: Page, cfg: HarnessConfig): Promise<void> {
   await page.goto(`${harnessBase}/`);
   await page.waitForSelector('body[data-ready="1"]');
   await page.evaluate(() => {
-    // window 리스너는 document 리스너(텍스트 층의 copy 처리) 뒤에 실행되므로 최종 복사 텍스트를 읽는다.
+    // The window listener runs after the document listener (the text layer's copy handling), so it reads the final copied text.
     window.addEventListener('copy', (e) => {
       (window as Win).__copied = e.clipboardData?.getData('text/plain') ?? null;
     });
@@ -224,7 +224,7 @@ async function openHarness(page: Page, cfg: HarnessConfig): Promise<void> {
   expect(errors, '하니스 페이지 오류').toEqual([]);
 }
 
-/** 합성 페이지. 글자 10×14pt, 줄 간격 20pt, 왼쪽 20pt, 위쪽 20pt. */
+/** Synthetic page. Glyphs 10×14pt, line spacing 20pt, left 20pt, top 20pt. */
 const LINES = [
   { text: 'Hello World', block: 1 },
   { text: 'Second line here', block: 1 },
@@ -257,7 +257,7 @@ async function geo(page: Page): Promise<Geo> {
   return { x: box.x, y: box.y, scale: Number(await surface.getAttribute('data-css-scale')) };
 }
 
-/** 합성 페이지의 글자 위치(pt) → 화면 좌표. fx·fy 는 글자 상자 안 비율. */
+/** Glyph position (pt) on the synthetic page → screen coordinates. fx and fy are ratios inside the glyph box. */
 function charAt(g: Geo, line: number, col: number, fx = 0.5, fy = 0.5, x0 = 20) {
   return {
     x: g.x + (x0 + col * 10 + fx * 10) * g.scale,
@@ -296,8 +296,8 @@ interface DebugControllerLike {
 }
 
 /**
- * 원본 연결 디버그 오버레이 켜기·끄기. 툴바 버튼은 없앴다(사용자 요청 2026-10-22): 하니스는 `window.__controller`,
- * 확장 뷰어는 `?e2e` 이음매(`window.__pe.controller`)로 컨트롤러를 직접 부른다.
+ * Turning the linkage debug overlay on and off. The toolbar button was removed (user request 2026-10-22): the harness calls the controller directly via `window.__controller`,
+ * and the extension viewer via the `?e2e` seam (`window.__pe.controller`).
  */
 async function toggleDebug(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -329,11 +329,11 @@ function expectBox(
   }
 }
 
-test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
+test.describe('viewer-ui harness (synthetic PageModel, fake host)', () => {
   test.beforeAll(startHarnessServer);
   test.afterAll(() => harnessServer.close());
 
-  test('텍스트 층: 글자 span 이 quad × 배율 위치·크기에 놓이고 DOM 순서가 읽기 순서다', async ({
+  test('text layer: glyph spans sit at quad × scale position and size, and DOM order is reading order', async ({
     page,
   }) => {
     await openHarness(page, baseConfig());
@@ -341,10 +341,10 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     expect(g.scale).toBe(1.5);
     const spans = page.locator('#pe-text-layer span[data-i]');
     expect(await spans.count()).toBe(PAGE_0.chars.length);
-    // DOM 순서의 글자 = 읽기 순서의 글자
+    // Glyphs in DOM order = glyphs in reading order
     const domText = await spans.evaluateAll((els) => els.map((e) => e.textContent).join(''));
     expect(domText).toBe(LINES.map((l) => l.text).join(''));
-    // 모든 글자 상자가 quad 위치·크기와 일치(scaleX 로 폭을 맞춘다)
+    // Every glyph box matches the quad position and size (width is fitted with scaleX)
     for (const [idx, char] of PAGE_0.chars.entries()) {
       const [x0, y0, x1, , , y2] = char.quad;
       expectBox(
@@ -353,7 +353,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
         `글자 #${idx} "${char.text}"`,
       );
     }
-    // 글자는 투명
+    // Glyphs are transparent
     const color = await spans.first().evaluate((e) => getComputedStyle(e).color);
     expect(color).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
   });
@@ -361,11 +361,11 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
   test.describe('devicePixelRatio 2', () => {
     test.use({ deviceScaleFactor: 2 });
 
-    test('캔버스 비트맵은 dpr 배, 오버레이는 CSS px 그대로', async ({ page }) => {
+    test('canvas bitmap is dpr times, overlays stay in CSS px', async ({ page }) => {
       await openHarness(page, baseConfig());
       const canvas = page.locator('#page-canvas');
       const attrs = await canvas.evaluate((c: HTMLCanvasElement) => ({ w: c.width, h: c.height }));
-      // 페이지 600×800pt × 1.5(CSS 배율) × 2(dpr)
+      // Page 600×800pt × 1.5 (CSS scale) × 2 (dpr)
       expect(attrs).toEqual({ w: 1800, h: 2400 });
       expect(await page.evaluate(() => window.devicePixelRatio)).toBe(2);
       const box = await boxOf(page.locator('#pe-page'));
@@ -375,15 +375,15 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     });
   });
 
-  test('드래그 선택 → Ctrl+C: 줄 사이를 가로지르는 텍스트가 읽기 순서로 복사된다', async ({
+  test('drag selection → Ctrl+C: text spanning lines is copied in reading order', async ({
     page,
   }, testInfo) => {
     await openHarness(page, baseConfig());
     const g = await geo(page);
-    // 1줄 'W'(6번) 왼쪽 절반 → 2줄 'd'(5번) 오른쪽 절반
+    // Left half of 'W' (index 6) on line 1 → right half of 'd' (index 5) on line 2
     await drag(page, charAt(g, 0, 6, 0.2), charAt(g, 1, 5, 0.8));
     expect(await copied(page)).toBe('World\nSecond');
-    // 하이라이트: 줄마다 상자 하나, 선택된 글자 범위의 quad × 배율(줄바꿈 표식과 겹친 줄무늬 없음)
+    // Highlight: one box per line, the quad × scale of the selected glyph range (no stripe overlapping the line-break marker)
     const rects = page.locator('#pe-selection .pe-sel');
     await expect(rects).toHaveCount(2);
     expectBox(
@@ -397,41 +397,45 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
       '선택 2줄',
     );
     await page.screenshot({ path: testInfo.outputPath('selection.png') });
-    // 선택을 지우면 하이라이트도 사라진다
+    // Clearing the selection also removes the highlight
     await page.mouse.click(g.x + 5, g.y + 5);
     await expect(rects).toHaveCount(0);
   });
 
-  test('블록 경계를 넘으면 빈 줄이 들어간다', async ({ page }) => {
+  test('crossing a block boundary inserts an empty line', async ({ page }) => {
     await openHarness(page, baseConfig());
     const g = await geo(page);
     await drag(page, charAt(g, 1, 7, 0.2), charAt(g, 2, 1, 0.8)); // 'line here' … '한글'
     expect(await copied(page)).toBe('line here\n\n한글');
   });
 
-  test('줄 끝 바깥·줄 사이·텍스트 아래로 끌어도 선택이 튀지 않는다', async ({ page }) => {
+  test('dragging past the line end, between lines or below the text does not make the selection jump', async ({
+    page,
+  }) => {
     await openHarness(page, baseConfig());
     const g = await geo(page);
     const start = charAt(g, 0, 6, 0.2);
-    // 2줄 오른쪽 빈 곳(줄 끝 바깥)
+    // Empty area to the right of line 2 (outside the line end)
     await drag(page, start, { x: g.x + 580 * g.scale, y: charAt(g, 1, 0).y });
     expect(await copied(page)).toBe('World\nSecond line here');
-    // 1줄(20–34pt)과 2줄(40–54pt) 사이 빈 틈, 1줄 쪽에 가까운 y = 35pt 의 1줄 끝 글자 오른쪽 절반
+    // Gap between line 1 (20–34pt) and line 2 (40–54pt), closer to line 1: y = 35pt, the right half of the last glyph of line 1
     await drag(page, start, { x: charAt(g, 0, 10, 0.9).x, y: g.y + 35 * g.scale });
     expect(await copied(page)).toBe('World');
-    // 텍스트 전체 아래
+    // Below the entire text
     await drag(page, start, { x: g.x + 300 * g.scale, y: g.y + 700 * g.scale });
     expect(await copied(page)).toBe('World\nSecond line here\n\n한글 문단 하나');
   });
 
-  test('거꾸로(위쪽으로) 끌어도 같은 구간이 선택된다', async ({ page }) => {
+  test('dragging backwards (upwards) selects the same range', async ({ page }) => {
     await openHarness(page, baseConfig());
     const g = await geo(page);
     await drag(page, charAt(g, 1, 3, 0.2), charAt(g, 0, 2, 0.2));
     expect(await copied(page)).toBe('llo World\nSec');
   });
 
-  test('더블클릭 = 단어, 트리플클릭 = 줄, Ctrl+A = 전체, 클릭 = 선택 해제', async ({ page }) => {
+  test('double-click = word, triple-click = line, Ctrl+A = all, click = clear selection', async ({
+    page,
+  }) => {
     await openHarness(page, baseConfig());
     const g = await geo(page);
     const inWorld = charAt(g, 0, 8);
@@ -442,15 +446,15 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     expect(await copied(page)).toBe('Second line here');
     await page.keyboard.press('Control+A');
     expect(await copied(page)).toBe(FULL_TEXT);
-    // 한 번 클릭하면 선택이 사라진다
+    // A single click clears the selection
     await page.mouse.click(inWorld.x, inWorld.y);
     expect(await page.evaluate(() => document.getSelection()?.isCollapsed ?? true)).toBe(true);
   });
 
-  test('합성 공백(spaceAfter): 복사에 공백이 들어가고 DOM 줄 텍스트·단어 경계도 맞다', async ({
+  test('synthetic space (spaceAfter): copy contains the space, and DOM line text and word boundaries are correct', async ({
     page,
   }) => {
-    // TJ 간격으로 단어를 나눈 문서처럼 공백 글리프가 없고 구조화 텍스트의 합성 공백만 있는 줄
+    // A line like a document whose words are split by TJ gaps: no space glyph, only the structured text's synthetic space
     const latex = makePageModel([
       { text: 'foobarbaz', block: 1, spaceAfter: [2, 5] },
       { text: 'tail', block: 1 },
@@ -458,7 +462,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await openHarness(page, { pages: [latex], cssScale: 1.5 });
     const g = await geo(page);
 
-    // DOM: 합성 공백은 글자 span 과 구분되는 별도 요소이고, 줄 텍스트에 공백이 들어간다.
+    // DOM: the synthetic space is a separate element distinguished from the glyph spans, and the line text contains the space.
     await expect(page.locator('#pe-text-layer span[data-i]')).toHaveCount(13);
     await expect(page.locator('#pe-text-layer span[data-space]')).toHaveCount(2);
     expect(
@@ -467,19 +471,19 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
         .evaluateAll((lines) => lines.map((l) => l.textContent)),
     ).toEqual(['foo bar baz', 'tail']);
 
-    // 전체 선택: 줄 끝 공백 없이 "foo bar baz\ntail"
+    // Select all: "foo bar baz\ntail" without a trailing space on the line
     await page.keyboard.press('Control+A');
     expect(await copied(page)).toBe('foo bar baz\ntail');
-    // 드래그: 양옆 글자가 모두 선택에 든 공백만 들어간다
+    // Drag: only spaces whose neighboring glyphs are both in the selection are included
     await drag(page, charAt(g, 0, 1, 0.2), charAt(g, 0, 7, 0.8));
     expect(await copied(page)).toBe('oo bar ba');
     await drag(page, charAt(g, 0, 3, 0.2), charAt(g, 0, 5, 0.8));
     expect(await copied(page)).toBe('bar');
-    // 더블클릭: 합성 공백이 단어 경계
+    // Double-click: the synthetic space is a word boundary
     const inBar = charAt(g, 0, 4);
     await page.mouse.dblclick(inBar.x, inBar.y);
     expect(await copied(page)).toBe('bar');
-    // 하이라이트는 공백 자리를 포함해 이어진다(첫 줄 9자 = 90pt)
+    // The highlight continues including the space position (first line 9 characters = 90pt)
     await page.keyboard.press('Control+A');
     const rects = page.locator('#pe-selection .pe-sel');
     await expect(rects).toHaveCount(2);
@@ -490,7 +494,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     );
   });
 
-  test('선택 영역 밖(툴바)의 복사는 가로채지 않는다', async ({ page }) => {
+  test('copy outside the selection area (toolbar) is not intercepted', async ({ page }) => {
     await openHarness(page, baseConfig());
     await page.locator('#pe-page-input').fill('1');
     await page.locator('#pe-page-input').selectText();
@@ -498,11 +502,11 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
       (window as Win).__copied = null;
     });
     await page.keyboard.press('Control+C');
-    // 입력란 복사는 text/plain 을 우리가 채우지 않으므로 읽을 값이 없다.
+    // Copying in an input field gives nothing to read because we do not fill text/plain.
     expect(await page.evaluate(() => (window as Win).__copied ?? '')).toBe('');
   });
 
-  test('실제 클립보드에도 복사 텍스트가 들어간다', async ({ page, context }) => {
+  test('copy text also lands in the real clipboard', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await openHarness(page, baseConfig());
     const g = await geo(page);
@@ -513,7 +517,9 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
       .toBe('Hello');
   });
 
-  test('페이지 이동: 이전·다음·번호 입력, 잘못된 입력은 되돌린다', async ({ page }) => {
+  test('page navigation: previous, next, number input; invalid input is reverted', async ({
+    page,
+  }) => {
     await openHarness(page, baseConfig());
     const input = page.locator('#pe-page-input');
     await expect(input).toHaveValue('1');
@@ -523,7 +529,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(page.locator('body')).toHaveAttribute('data-painted', '1');
     await expect(input).toHaveValue('2');
     await expect(page.locator('#pe-next')).toBeDisabled();
-    await expect(page.locator('#pe-text-layer span[data-i="0"]')).toHaveText('A'); // 2페이지 텍스트
+    await expect(page.locator('#pe-text-layer span[data-i="0"]')).toHaveText('A'); // page 2 text
     await input.fill('1');
     await input.press('Enter');
     await expect(page.locator('body')).toHaveAttribute('data-painted', '0');
@@ -536,7 +542,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(input).toHaveValue('1');
   });
 
-  test('Ctrl+F: 검색창·결과 수·이전/다음·하이라이트 위치 = quad × 배율·페이지 이동', async ({
+  test('Ctrl+F: find bar, result count, previous/next, highlight position = quad × scale, page navigation', async ({
     page,
   }) => {
     await openHarness(page, baseConfig());
@@ -547,7 +553,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     const count = page.locator('#pe-find-count');
     await expect(count).toHaveText('1 / 3');
 
-    // 현재 페이지(0) 결과 1건, 위치가 quad × 배율과 일치
+    // Current page (0) has 1 result, and the position matches quad × scale
     const g = await geo(page);
     const highlights = page.locator('#pe-highlights .pe-hl');
     await expect(highlights).toHaveCount(1);
@@ -559,7 +565,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     );
     await expect(highlights.first()).toHaveAttribute('data-current', 'true');
 
-    // Enter: 다음 결과는 2페이지. 페이지가 이동하고 2페이지의 결과 2건이 칠해진다.
+    // Enter: the next result is on page 2. The page navigates and the 2 results of page 2 are painted.
     await find.press('Enter');
     await expect(count).toHaveText('2 / 3');
     await expect(page.locator('#pe-page-input')).toHaveValue('2');
@@ -567,28 +573,28 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(page.locator('#pe-highlights .pe-hl[data-current="true"]')).toHaveCount(1);
     await find.press('Enter');
     await expect(count).toHaveText('3 / 3');
-    // 순환: 3 → 1(1페이지)
+    // Wrap-around: 3 → 1 (page 1)
     await find.press('Enter');
     await expect(count).toHaveText('1 / 3');
     await expect(page.locator('#pe-page-input')).toHaveValue('1');
-    // Shift+Enter: 1 → 3(2페이지)
+    // Shift+Enter: 1 → 3 (page 2)
     await find.press('Shift+Enter');
     await expect(count).toHaveText('3 / 3');
     await expect(page.locator('#pe-page-input')).toHaveValue('2');
 
-    // 버튼
+    // Buttons
     await page.locator('#pe-find-prev').click();
     await expect(count).toHaveText('2 / 3');
     await page.locator('#pe-find-next').click();
     await expect(count).toHaveText('3 / 3');
 
-    // Esc: 닫기, 하이라이트 제거
+    // Esc: close, remove highlight
     await find.press('Escape');
     await expect(page.locator('#pe-find')).toHaveCount(0);
     await expect(page.locator('#pe-highlights')).toHaveCount(0);
   });
 
-  test('Ctrl+F: 현재 페이지부터 검색한다(2페이지에서 시작하면 2페이지 결과가 먼저)', async ({
+  test('Ctrl+F: searches from the current page (starting on page 2 gives page 2 results first)', async ({
     page,
   }) => {
     await openHarness(page, baseConfig());
@@ -598,14 +604,14 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await page.locator('#pe-find-input').fill('hello');
     await expect(page.locator('#pe-find-count')).toHaveText('1 / 3');
     await expect(page.locator('#pe-page-input')).toHaveValue('2');
-    // 2페이지 1줄 'Another page with Hello' 의 'Hello'(18–22번 글자)
+    // Line 1 of page 2 'Another page with Hello' has 'Hello' (glyphs 18–22)
     await expect(page.locator('#pe-highlights .pe-hl[data-current="true"]')).toHaveAttribute(
       'data-quad',
       '200,20,250,20,200,34,250,34',
     );
   });
 
-  test('Ctrl+F: 대소문자 구분·결과 없음·검색창 다시 열기', async ({ page }) => {
+  test('Ctrl+F: case sensitivity, no results, reopening the find bar', async ({ page }) => {
     await openHarness(page, baseConfig());
     await page.keyboard.press('Control+F');
     const find = page.locator('#pe-find-input');
@@ -617,7 +623,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(page.locator('#pe-find-count')).toHaveText('결과 없음');
     await expect(page.locator('#pe-highlights')).toHaveCount(0);
     await expect(page.locator('#pe-find-next')).toBeDisabled();
-    // Ctrl+F 를 다시 누르면 입력란에 포커스·전체 선택
+    // Pressing Ctrl+F again focuses the input and selects all
     await page.locator('#pe-page-input').focus();
     await page.keyboard.press('Control+F');
     await expect(find).toBeFocused();
@@ -626,7 +632,9 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     );
   });
 
-  test('Ctrl+F: 현재 결과가 화면 밖(스크롤 아래)이면 화면 안으로 스크롤한다', async ({ page }) => {
+  test('Ctrl+F: if the current result is off screen (below the scroll), scroll it into view', async ({
+    page,
+  }) => {
     const tall = makePageModel([
       { text: 'Top line', y: 20 },
       { text: 'Bottom target', y: 740 },
@@ -639,16 +647,16 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(current).toHaveCount(1);
     await expect(current).toBeInViewport();
     expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
-    // 첫 줄 결과로 돌아가면 위로 스크롤한다
+    // Returning to the first line result scrolls up
     await page.locator('#pe-find-input').fill('top');
     await expect(current).toBeInViewport();
     expect(await page.evaluate(() => window.scrollY)).toBeLessThan(100);
   });
 
-  test('디버그 오버레이: 매칭 여부 색 구분·요약·마우스 위치 글자의 SourceOp', async ({
+  test('debug overlay: color coding by match, summary, SourceOp of the glyph under the mouse', async ({
     page,
   }, testInfo) => {
-    // 글자 매칭: 1줄(11자) → 연산 0, 2줄 앞 3글자 → 실패(-1), 2줄 나머지 13자 → 연산 1(편집 제한), 3줄(8자) → 연산 2
+    // Glyph matching: line 1 (11 chars) → op 0, first 3 glyphs of line 2 → failure (-1), remaining 13 chars of line 2 → op 1 (edit restricted), line 3 (8 chars) → op 2
     const n = PAGE_0.chars.length;
     const charOp = PAGE_0.chars.map((_, i) => (i < 11 ? 0 : i < 14 ? -1 : i < 11 + 16 ? 1 : 2));
     expect(charOp.length).toBe(n);
@@ -671,7 +679,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
       }),
     );
     await expect(page.locator('#pe-debug-canvas')).toHaveCount(0);
-    // 툴바에는 디버그 버튼이 없다(사용자 요청 2026-10-22).
+    // The toolbar has no debug button (user request 2026-10-22).
     await expect(page.locator('#pe-debug-toggle')).toHaveCount(0);
     await toggleDebug(page);
     const canvas = page.locator('#pe-debug-canvas');
@@ -680,23 +688,23 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(canvas).toHaveAttribute('data-unmatched', '3');
     await expect(page.locator('#pe-debug-hud')).toContainText('글자 ');
 
-    // 색 확인: 매칭(초록 계열)과 실패(빨강 계열) 글자 중심 픽셀
+    // Color check: center pixels of matched (green-ish) and failed (red-ish) glyphs
     const pixel = (cssX: number, cssY: number) =>
       canvas.evaluate(
         (c: HTMLCanvasElement, [x, y]: [number, number]) => {
-          const k = c.width / c.getBoundingClientRect().width; // 비트맵 / CSS
+          const k = c.width / c.getBoundingClientRect().width; // bitmap-to-CSS ratio
           return Array.from(
             c.getContext('2d')!.getImageData(Math.round(x * k), Math.round(y * k), 1, 1).data,
           );
         },
         [cssX, cssY] as [number, number],
       );
-    const matchedPx = await pixel((20 + 5) * 1.5, (20 + 7) * 1.5); // 1줄 첫 글자(매칭)
-    const failedPx = await pixel((20 + 5) * 1.5, (40 + 7) * 1.5); // 2줄 첫 글자(실패)
+    const matchedPx = await pixel((20 + 5) * 1.5, (20 + 7) * 1.5); // first glyph of line 1 (matched)
+    const failedPx = await pixel((20 + 5) * 1.5, (40 + 7) * 1.5); // first glyph of line 2 (failed)
     expect(matchedPx[1]!).toBeGreaterThan(matchedPx[0]!);
     expect(failedPx[0]!).toBeGreaterThan(failedPx[1]!);
 
-    // 호버: 매칭 글자 → 연산 정보
+    // Hover: matched glyph → op info
     const g = await geo(page);
     const hoverMatched = charAt(g, 0, 2);
     await page.mouse.move(hoverMatched.x, hoverMatched.y);
@@ -705,32 +713,32 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(tip).toContainText('Contents[0] obj 8');
     await expect(tip).toContainText('범위 100–110');
     await expect(tip).toContainText('제한: 없음');
-    // 편집 제한 글자
+    // Edit-restricted glyph
     const hoverLimited = charAt(g, 1, 8);
     await page.mouse.move(hoverLimited.x, hoverLimited.y);
     await expect(tip).toContainText('연산 #1');
     await expect(tip).toContainText('제한: spans-stream-boundary');
-    // 매칭 실패 글자
+    // Match-failed glyph
     const hoverFailed = charAt(g, 1, 1);
     await page.mouse.move(hoverFailed.x, hoverFailed.y);
     await expect(tip).toContainText('원본 연결: 실패');
-    // 글자 밖으로 나가면 툴팁이 사라진다
+    // Moving off the glyph makes the tooltip disappear
     await page.mouse.move(g.x + 5, g.y + 5);
     await expect(tip).toHaveCount(0);
-    // 텍스트 선택은 디버그 중에도 동작한다
+    // Text selection works even during debugging
     await page.mouse.move(hoverLimited.x, hoverLimited.y);
     await page.screenshot({ path: testInfo.outputPath('debug-overlay.png') });
     await drag(page, charAt(g, 0, 0, 0.2), charAt(g, 0, 4, 0.8));
     expect(await copied(page)).toBe('Hello');
-    // 끄면 오버레이가 사라진다
+    // Turning it off makes the overlay disappear
     await toggleDebug(page);
     await expect(canvas).toHaveCount(0);
   });
 
-  test('조밀한 페이지(11,000자): 텍스트 층 준비·전체 선택 복사·드래그 선택이 허용 시간 안에 끝난다', async ({
+  test('dense page (11,000 chars): text layer preparation, select-all copy and drag selection finish within the allowed time', async ({
     page,
   }, testInfo) => {
-    // 5×6pt 글자 100자 × 110줄. 실제 문서의 조밀한 페이지(소형 활자)보다 많은 글자 수다.
+    // 100 chars of 5×6pt glyphs × 110 lines. More glyphs than a dense page of a real document (small type).
     const text = Array.from({ length: 100 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
     const dense = makePageModel(
       Array.from({ length: 110 }, () => ({ text, block: 1 })),
@@ -770,7 +778,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     expect(dragMs).toBeLessThan(5000);
   });
 
-  test('M1 미구현: 텍스트·검색·디버그만 비활성화되고 렌더·페이지 이동은 유지된다', async ({
+  test('M1 not implemented: only text, search and debug are disabled; rendering and page navigation are kept', async ({
     page,
   }) => {
     await openHarness(
@@ -785,25 +793,25 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(page.locator('#page-canvas')).toBeVisible();
     await expect(page.locator('#pe-text-layer')).toHaveCount(0);
     await expect(page.locator('#pe-notice')).toContainText('텍스트 선택');
-    // 디버그는 PageModel 이 없으면 켜지지 않는다.
+    // Debug does not turn on without a PageModel.
     await toggleDebug(page);
     expect((await debugState(page)).enabled).toBe(false);
     const events = () => page.evaluate(() => ((window as Win).__log ?? []).map((l) => l.event));
     expect((await events()).filter((e) => e === 'extract-unavailable')).toHaveLength(1);
 
-    // 페이지 이동은 계속 동작, 같은 로그를 반복하지 않는다.
+    // Page navigation keeps working, and the same log is not repeated.
     await page.locator('#pe-next').click();
     await expect(page.locator('body')).toHaveAttribute('data-painted', '1');
     await expect(page.locator('#pe-page-input')).toHaveValue('2');
     expect((await events()).filter((e) => e === 'extract-unavailable')).toHaveLength(1);
 
-    // 첫 Ctrl+F 는 검색창을 열지만 검색은 "사용할 수 없음"으로 끝나고,
+    // The first Ctrl+F opens the find bar but the search ends as "unavailable",
     await page.keyboard.press('Control+F');
     await page.locator('#pe-find-input').fill('a');
     await expect(page.locator('#pe-find-count')).toContainText('검색을 사용할 수 없습니다');
     expect(await events()).toContain('search-unavailable');
     await page.locator('#pe-find-input').press('Escape');
-    // 이후 Ctrl+F 는 가로채지 않는다(브라우저 기본 찾기에 맡김).
+    // Later Ctrl+F is not intercepted (left to the browser's default find).
     await expect(page.locator('#pe-find')).toHaveCount(0);
     await expect(page.locator('#pe-find-toggle')).toBeDisabled();
     await page.evaluate(() => {
@@ -820,7 +828,9 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     ).toEqual({ prevented: false });
   });
 
-  test('linkPage 만 미구현이면 디버그만 비활성화되고 텍스트 선택은 유지된다', async ({ page }) => {
+  test('when only linkPage is not implemented, only debug is disabled and text selection is kept', async ({
+    page,
+  }) => {
     await openHarness(page, baseConfig({ failures: { link: 'M1 미구현: pdf-ops linkPage' } }));
     await expect(page.locator('#pe-text-layer')).toHaveCount(1);
     await toggleDebug(page);
@@ -832,7 +842,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     expect(await copied(page)).toBe(FULL_TEXT);
   });
 
-  test('레이아웃 오버레이: 문단 상자·읽기 순서 번호, 쪽 이동, 오버레이 중 텍스트 선택', async ({
+  test('layout overlay: paragraph boxes, reading-order numbers, page navigation, text selection during the overlay', async ({
     page,
   }, testInfo) => {
     const layouts = [reconstructPage(PAGE_0), reconstructPage(PAGE_1)];
@@ -842,7 +852,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     const canvas = page.locator('#pe-layout-canvas');
     await expect(canvas).toHaveAttribute('data-paragraphs', String(layouts[0]!.paragraphs.length));
     await expect(canvas).toHaveAttribute('data-order', String(layouts[0]!.readingOrder.length));
-    // 첫 문단 상자 왼쪽 변 바로 안쪽 픽셀.
+    // Pixel just inside the left edge of the first paragraph box.
     const first = layouts[0]!.paragraphs[0]!.bbox;
     const px = await canvas.evaluate(
       (c: HTMLCanvasElement, [x, y]: [number, number]) => {
@@ -853,7 +863,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
       },
       [(first[0] + 0.3) * 1.5, ((first[1] + first[3]) / 2) * 1.5] as [number, number],
     );
-    // 역할과 무관하게: 문단 상자 안쪽 픽셀은 반투명 채움이 있다(빈 캔버스가 아니다).
+    // Regardless of role: a pixel inside the paragraph box has a translucent fill (not an empty canvas).
     expect(px[3]!).toBeGreaterThan(0);
     await page.screenshot({ path: testInfo.outputPath('layout-overlay.png') });
     await page.keyboard.press('Control+A');
@@ -864,7 +874,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(canvas).toHaveCount(0);
   });
 
-  test('getPageLayout 미구현이면 레이아웃만 비활성화되고 텍스트 선택은 유지된다', async ({
+  test('when getPageLayout is not implemented, only the layout is disabled and text selection is kept', async ({
     page,
   }) => {
     await openHarness(page, baseConfig({ failures: { layout: 'M2 미구현: core getPageLayout' } }));
@@ -877,7 +887,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
   });
 });
 
-// ══ 2. 확장 연동 ═════════════════════════════════════════════════════
+// ══ 2. Extension integration ═════════════════════════════════════════════════════
 
 function serveDiag(): Promise<{ server: Server; base: string }> {
   const server = createServer((req, res) => {
@@ -944,7 +954,7 @@ async function openViewer(env: ExtensionEnv, file: string): Promise<Page> {
   return page;
 }
 
-/** 추출 결과가 정해질 때까지 기다린다: 텍스트 층이 생겼는지, "미구현"으로 비활성화됐는지. */
+/** Waits until the extraction result is settled: whether the text layer appeared, or whether it was disabled as "미구현" (not implemented). */
 async function extractOutcome(page: Page): Promise<'text-layer' | 'unavailable'> {
   const found: { outcome: 'text-layer' | 'unavailable' | null } = { outcome: null };
   await expect
@@ -961,11 +971,11 @@ async function extractOutcome(page: Page): Promise<'text-layer' | 'unavailable'>
   return found.outcome ?? 'unavailable';
 }
 
-// ── 통합 시나리오(2026-10-19 m1 통합 후 활성화) ──────────────────────────────
-// 실제 core extractPage·searchText 와 pdf-ops linkPage·getSourceMap 을 쓴다.
-// 기준 문서: m0-sample.pdf(영문, 1쪽), m0-spike-saved.pdf(한글 포함).
+// ── Integration scenarios (enabled after the 2026-10-19 m1 integration) ──────────────────────────────
+// Uses the real core extractPage, searchText and pdf-ops linkPage, getSourceMap.
+// Reference documents: m0-sample.pdf (English, 1 page), m0-spike-saved.pdf (includes Korean).
 
-/** pdftotext 로 확인한 m0-sample.pdf 본문(줄바꿈·공백 차이는 비교 전에 접는다). */
+/** Body text of m0-sample.pdf confirmed with pdftotext (differences in line breaks and whitespace are folded before comparison). */
 const M0_SAMPLE_TEXT =
   'M0 Spike Sample: Paragraph Replacement This paragraph is the replacement target. It sits on a tinted panel ' +
   'with table rules crossing it. Redaction must remove only this text and keep the background, the rules, ' +
@@ -982,14 +992,14 @@ async function installCopyCapture(page: Page): Promise<void> {
   });
 }
 
-/** 줄 span 들의 텍스트(DOM 읽기 순서). */
+/** Text of the line spans (DOM reading order). */
 async function textLines(page: Page): Promise<string[]> {
   return page
     .locator('#pe-text-layer .pe-line')
     .evaluateAll((lines) => lines.map((l) => l.textContent ?? ''));
 }
 
-test(`[통합] 파일 선택으로 두 번째 문서를 열면 이전 뷰어를 열기 전에 정리하고 새 문서를 그린다`, async () => {
+test(`[integration] opening a second document by file selection cleans up the previous viewer before opening and draws the new document`, async () => {
   await withExtension(async (env) => {
     const page = await env.context.newPage();
     await page.goto(`chrome-extension://${env.extensionId}/viewer.html`);
@@ -1015,7 +1025,7 @@ test(`[통합] 파일 선택으로 두 번째 문서를 열면 이전 뷰어를 
         { timeout: 15_000 },
       )
       .toContain('검색과복사');
-    // 뷰어 DOM 은 하나만 남는다.
+    // Only one viewer DOM remains.
     await expect(page.locator('#pe-text-layer')).toHaveCount(1);
     const log = await diagOf(page.mainFrame());
     const events = log.map((e) => e.event);
@@ -1026,7 +1036,7 @@ test(`[통합] 파일 선택으로 두 번째 문서를 열면 이전 뷰어를 
   });
 });
 
-test(`[통합] 선택→복사: Ctrl+A 복사 결과가 m0-sample.pdf 추출 텍스트와 일치한다`, async () => {
+test(`[integration] select → copy: the Ctrl+A copy result matches the m0-sample.pdf extracted text`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -1036,7 +1046,7 @@ test(`[통합] 선택→복사: Ctrl+A 복사 결과가 m0-sample.pdf 추출 텍
   });
 });
 
-test(`[통합] 선택→복사: 드래그로 첫 두 줄을 선택하면 DOM 줄 순서대로 복사된다`, async () => {
+test(`[integration] select → copy: dragging over the first two lines copies them in DOM line order`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -1047,8 +1057,8 @@ test(`[통합] 선택→복사: 드래그로 첫 두 줄을 선택하면 DOM 줄
     const secondLine = page.locator('#pe-text-layer .pe-line').nth(1).locator('span');
     const from = await boxOf(firstLine.first());
     const to = await boxOf(secondLine.last());
-    // 끝점은 둘째 줄 끝 바깥(마지막 글자 포함). 줄 구분자는 계약 4절 읽기 텍스트 규칙:
-    // 같은 블록이면 "\n", 다른 블록이면 "\n\n"(m0-sample 은 제목과 본문이 다른 블록).
+    // The endpoint is outside the end of the second line (including the last glyph). The line separator follows the contract section 4 reading text rule:
+    // "\n" for the same block, "\n\n" for a different block (in m0-sample the title and body are different blocks).
     const blocks = await page
       .locator('#pe-text-layer .pe-line')
       .evaluateAll((ls) => ls.slice(0, 2).map((l) => l.getAttribute('data-block')));
@@ -1062,7 +1072,7 @@ test(`[통합] 선택→복사: 드래그로 첫 두 줄을 선택하면 DOM 줄
   });
 });
 
-test(`[통합] 선택→복사: MIME handler 최상위(열자마자 단축키)·임베디드(클릭 후) 문맥에서도 같은 복사 결과`, async () => {
+test(`[integration] select → copy: the same copy result in the MIME handler top-level (shortcut right after opening) and embedded (after a click) contexts`, async () => {
   await withExtension(async (env) => {
     const top = await env.context.newPage();
     await top.goto(`${env.base}/m0-sample.pdf`);
@@ -1078,17 +1088,17 @@ test(`[통합] 선택→복사: MIME handler 최상위(열자마자 단축키)·
         (window as Win).__copied = e.clipboardData?.getData('text/plain') ?? null;
       });
     });
-    // 최상위: 열자마자 뷰어가 포커스를 가져오므로 클릭 없이 단축키가 뷰어로 간다.
+    // Top level: the viewer takes focus right after opening, so the shortcut goes to the viewer without a click.
     await top.keyboard.press('Control+A');
     await top.keyboard.press('Control+C');
     await expect
       .poll(async () => fold(await frame.evaluate(() => (window as Win).__copied ?? null)))
       .toBe(M0_SAMPLE_TEXT);
 
-    // 임베디드(embed·iframe·object): 바깥 페이지 포커스를 빼앗지 않고, 텍스트를 클릭하면 단축키가 뷰어로 간다.
-    // 요소마다 새 페이지에서 확인한다(한 페이지의 여러 뷰어 사이 포커스 이동은 헤드리스에서 불안정해 범위 밖).
-    // frames() 순서는 iframe(0)·embed(1)·object(2)다. object 는 헤드리스 Chromium 156 에서 클릭 포커스가
-    // 간헐적으로 실패해(2026-10-19 실측 8회 중 3회) 자동 검증에서 빼고 Windows Chrome 수동 확인으로 둔다.
+    // Embedded (embed, iframe, object): does not steal focus from the outer page, and clicking the text sends the shortcut to the viewer.
+    // Check on a fresh page per element (focus movement between multiple viewers on one page is unstable in headless, so out of scope).
+    // The frames() order is iframe (0), embed (1), object (2). For object, click focus in headless Chromium 156 fails
+    // intermittently (3 of 8 runs measured on 2026-10-19), so it is excluded from automatic verification and left to manual Windows Chrome checks.
     for (const index of [0, 1]) {
       const host = await env.context.newPage();
       await host.goto(`${env.base}/embed-test.html`);
@@ -1097,7 +1107,7 @@ test(`[통합] 선택→복사: MIME handler 최상위(열자마자 단축키)·
         .toBe(3);
       const f = host.frames().filter((x) => x.url().startsWith(prefix))[index]!;
       const tag = `embedded#${index}`;
-      // 렌더 완료와 텍스트 층 생성을 기다린 뒤 짧게 안정화한다(렌더 마무리 중 클릭은 놓칠 수 있다).
+      // Wait for render completion and text layer creation, then settle briefly (a click while the render is finishing can be missed).
       await expect(f.locator('#status')).toHaveAttribute('data-state', 'rendered', {
         timeout: 20_000,
       });
@@ -1110,7 +1120,7 @@ test(`[통합] 선택→복사: MIME handler 최상위(열자마자 단축키)·
           (window as Win).__copied = e.clipboardData?.getData('text/plain') ?? null;
         });
       });
-      // 글자 span 은 투명하므로 force. 클릭이 그 뷰어에 포커스를 줬는지 확인한 뒤 단축키를 보낸다.
+      // The glyph span is transparent, so force. After confirming the click gave focus to that viewer, send the shortcut.
       await f.locator('#pe-text-layer span[data-i]').first().click({ force: true });
       await expect
         .poll(() => f.evaluate(() => document.hasFocus()), { message: `${tag}: 클릭 후 포커스` })
@@ -1127,7 +1137,7 @@ test(`[통합] 선택→복사: MIME handler 최상위(열자마자 단축키)·
   });
 });
 
-test(`[통합] Ctrl+F: 'paragraph' 5건, 하이라이트가 글자 위치와 일치하고 Enter 로 순환한다`, async () => {
+test(`[integration] Ctrl+F: 5 hits for 'paragraph', highlights match glyph positions, Enter cycles`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -1137,7 +1147,7 @@ test(`[통합] Ctrl+F: 'paragraph' 5건, 하이라이트가 글자 위치와 일
     const highlights = page.locator('#pe-highlights .pe-hl');
     await expect(highlights).toHaveCount(5);
 
-    // 하이라이트 상자 안에 중심이 드는 텍스트 층 글자를 모으면 검색어와 같아야 한다.
+    // Collecting the text-layer glyphs whose centers fall inside the highlight box should equal the search term.
     const spans = page.locator('#pe-text-layer span[data-i]');
     const spanBoxes = await spans.evaluateAll((els) =>
       els.map((e) => {
@@ -1164,7 +1174,7 @@ test(`[통합] Ctrl+F: 'paragraph' 5건, 하이라이트가 글자 위치와 일
   });
 });
 
-test(`[통합] Ctrl+F: 한글 검색어(m0-spike-saved.pdf '검색과 복사' 1건)`, async () => {
+test(`[integration] Ctrl+F: Korean search term (m0-spike-saved.pdf '검색과 복사' 1 hit)`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-spike-saved.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -1175,7 +1185,7 @@ test(`[통합] Ctrl+F: 한글 검색어(m0-spike-saved.pdf '검색과 복사' 1�
   });
 });
 
-test(`[통합] 레이아웃 오버레이: Worker getPageLayout 결과로 문단 상자와 읽기 순서를 그린다`, async () => {
+test(`[integration] layout overlay: draws paragraph boxes and reading order from the Worker getPageLayout result`, async () => {
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
@@ -1188,9 +1198,9 @@ test(`[통합] 레이아웃 오버레이: Worker getPageLayout 결과로 문단 
   });
 });
 
-test(`[통합] 디버그 오버레이: 글자 quad 색 구분과 마우스 위치 글자의 SourceOp 표시`, async () => {
+test(`[integration] debug overlay: glyph quad color coding and SourceOp display for the glyph under the mouse`, async () => {
   await withExtension(async (env) => {
-    // 디버그 오버레이는 툴바 버튼이 없어 `?e2e` 이음매로 켠다(사용자 요청 2026-10-22).
+    // The debug overlay has no toolbar button, so it is turned on through the `?e2e` seam (user request 2026-10-22).
     const page = await env.context.newPage();
     await page.goto(`chrome-extension://${env.extensionId}/viewer.html?e2e`);
     await page.locator('#open-file').setInputFiles(join(DIST, 'diag/m0-sample.pdf'));
@@ -1207,7 +1217,7 @@ test(`[통합] 디버그 오버레이: 글자 quad 색 구분과 마우스 위�
       limited: Number(c.getAttribute('data-limited')),
       unmatched: Number(c.getAttribute('data-unmatched')),
     }));
-    // 합성 문서(m0-sample)는 단순 Tj 콘텐츠이므로 매칭 실패가 없어야 한다(실측 후 기준을 조정한다).
+    // The synthetic document (m0-sample) is a simple Tj content, so there must be no match failures (adjust the baseline after measuring).
     expect(counts.matched + counts.limited).toBeGreaterThan(0);
     expect(counts.unmatched).toBe(0);
     const first = await boxOf(page.locator('#pe-text-layer span[data-i]').first());

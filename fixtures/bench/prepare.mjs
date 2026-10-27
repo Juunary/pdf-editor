@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// 벤치마크 문서를 준비하고 목록(JSON)을 출력한다.
+// Prepares the benchmark documents and prints the list (JSON).
 //   node fixtures/bench/prepare.mjs [--tier core,synthetic] [--corpus-dir DIR] [--ids a,b]
-// 코퍼스: <corpusDir>/<id>.pdf 가 있어야 한다(없으면 오류, 내려받기는 scripts/corpus/fetch-corpus.mjs).
-// --ids: 벤치 세트 밖의 코퍼스 문서도 id 로 더한다(Windows 수동 실행과 같은 문서로 서버에서 다시 잴 때). 벤치 세트에 있는
-// 문서면 그 항목(judgePages 등)을 쓴다.
-// 합성: <outDir>/<id>.pdf 가 없거나 해시가 다르면 생성기로 다시 만든다. 대용량 실제 문서 자리(url: null)는 건너뛴다.
+// Corpus: <corpusDir>/<id>.pdf must exist (error otherwise; download with scripts/corpus/fetch-corpus.mjs).
+// --ids: also adds corpus documents outside the bench set by id (to remeasure on the server with the same documents as a Windows manual run). For a document that is in the bench set,
+// uses that entry (judgePages, etc.).
+// Synthetic: regenerates with the generator if <outDir>/<id>.pdf is missing or its hash differs. Slots for large real documents (url: null) are skipped.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -65,7 +65,7 @@ for (const doc of manifest.documents) {
     }
     list.push({ id: doc.id, path, bytes: doc.bytes, pages: doc.pages, role: doc.role });
   } else if (doc.source === 'external') {
-    if (!doc.url) continue; // 자리만 있음
+    if (!doc.url) continue; // slot only
     const path = join(outDir, `${doc.id}.pdf`);
     if (!existsSync(path) || sha256(path) !== doc.sha256) {
       throw new Error(`${doc.id}: ${path} 없음(메인 세션 다운로드 스크립트로 받는다)`);

@@ -6,10 +6,10 @@ import type { Rect } from '@pdf-editor/shared-types';
 import { buildSourceMap, removeTextShowOps } from '../src/index.js';
 
 /**
- * A7-2 실제 문서 비교(docs/m1-decisions.md). 환경 변수가 없으면 건너뛴다.
- *   TEXT_REMOVE_CORPUS_DIR=<PDF 폴더> [TEXT_REMOVE_OUT=<json 경로>] [TEXT_REMOVE_PAGES=<파일:쪽,...>]
- * 쪽마다 여러 줄 구조화 텍스트 블록을 골라 (A) SourceMap 기반 제거, (B) MuPDF 주석 단위 redaction 으로 각각
- * 지운 뒤, 블록 밖(여백 2px) 렌더 차이 픽셀 수와 블록 안에 남은 글자 수를 잰다.
+ * A7-2 real-document comparison (docs/m1-decisions.md). Skipped when the environment variable is absent.
+ *   TEXT_REMOVE_CORPUS_DIR=<PDF folder> [TEXT_REMOVE_OUT=<json path>] [TEXT_REMOVE_PAGES=<file:page,...>]
+ * On each page, picks multi-line structured text blocks and erases them with (A) SourceMap-based removal and (B) MuPDF per-annotation redaction,
+ * then measures the number of differing render pixels outside the block (2px margin) and the number of characters remaining inside the block.
  */
 const dir = process.env.TEXT_REMOVE_CORPUS_DIR;
 const out = process.env.TEXT_REMOVE_OUT;
@@ -102,7 +102,7 @@ interface Row {
   redaction: { diffOutside: number; charsLeft: number; warnings: string[] };
 }
 
-/** 전체 저장 후 바이트를 복사하고 MuPDF 버퍼를 해제한다. */
+/** Copies the bytes after a full save and releases the MuPDF buffer. */
 function saveBytes(doc: Doc): Uint8Array {
   const buf = doc.saveToBuffer('garbage=yes,compress');
   try {
@@ -121,7 +121,7 @@ function evaluate(file: string, bytes: Uint8Array, p: number, block: { bbox: Rec
   try {
     const doc = keep(open(bytes));
     const map = buildSourceMap(doc, p);
-    // 블록 안 글리프만 가진 페이지 콘텐츠 텍스트 연산
+    // Page content text operations that hold only glyphs inside the block
     const ops = map.ops.filter(
       (o) =>
         o.kind === 'text-show' &&
@@ -167,15 +167,15 @@ function evaluate(file: string, bytes: Uint8Array, p: number, block: { bbox: Rec
   } finally {
     mupdf.setLog(null);
     for (const x of owned.reverse()) x.destroy();
-    // 문서마다 쌓이는 폰트·이미지 캐시를 비워 WASM 힙 고갈을 막는다.
+    // Empties the font/image caches that accumulate per document to prevent WASM heap exhaustion.
     mupdf.emptyStore();
   }
 }
 
 describe.skipIf(!dir)(
-  'A7-2 실제 문서: SourceMap 제거 vs MuPDF redaction(TEXT_REMOVE_CORPUS_DIR)',
+  'A7-2 real documents: SourceMap removal vs MuPDF redaction (TEXT_REMOVE_CORPUS_DIR)',
   () => {
-    it('블록 밖 렌더 차이·블록 안 남은 글자', () => {
+    it('render difference outside the block and characters remaining inside the block', () => {
       const pagesEnv = process.env.TEXT_REMOVE_PAGES;
       const plan: { file: string; pages: number[] }[] = pagesEnv
         ? pagesEnv.split(',').map((s) => {
@@ -193,7 +193,7 @@ describe.skipIf(!dir)(
         const count = probe.countPages();
         probe.destroy();
         for (const p of pages.filter((x) => x < count)) {
-          // 여러 줄 블록 우선. 줄마다 블록을 나누는 출력기(docs/m0-corpus-recheck.md C5)는 넓은 한 줄 블록을 쓴다.
+          // Prefer multi-line blocks. An output tool that splits blocks per line (docs/m0-corpus-recheck.md C5) uses a wide one-line block.
           const listing = open(bytes);
           const all = blocksOf(listing, p);
           listing.destroy();

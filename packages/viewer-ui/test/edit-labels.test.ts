@@ -22,8 +22,8 @@ const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힣]/;
 const en = VIEWER_STRINGS.en;
 const ko = VIEWER_STRINGS.ko;
 
-describe('편집 제한 사유 표(사용자 결정 2026-10-26)', () => {
-  it('한국어·영어 표가 사유 코드 30종 전부를 같은 키로 가진다', () => {
+describe('edit restriction reason table (user decision 2026-10-26)', () => {
+  it('the Korean and English tables have all 30 reason codes under the same keys', () => {
     const all = [
       ...new Set([...PARAGRAPH_LIMIT_REASONS, ...EDIT_LIMIT_REASONS, ...PATH_LIMIT_REASONS]),
     ].sort();
@@ -33,14 +33,14 @@ describe('편집 제한 사유 표(사용자 결정 2026-10-26)', () => {
     for (const v of Object.values(LIMIT_LABELS_EN)) expect(v).not.toMatch(HANGUL);
   });
 
-  it('limitLabel 은 화면 언어 표를 쓰고 모르는 코드는 코드를 적는다', () => {
+  it('limitLabel uses the display-language table and writes the code for an unknown code', () => {
     expect(limitLabel('type3-font')).toBe('Type3 글꼴은 편집할 수 없습니다.');
     expect(limitLabel('type3-font', en)).toBe('Type3 fonts cannot be edited.');
     expect(limitLabel('x-new', en)).toBe('Cannot be edited (x-new)');
     expect(limitLabel('x-new')).toBe('편집할 수 없습니다 (x-new)');
   });
 
-  it('limitItems: 한국어는 core 설명(detail), 영어는 사유 코드 문구, 중복 제거·빈 목록은 대체 문구', () => {
+  it('limitItems: Korean uses the core description (detail), English uses the reason-code text; duplicates are removed and an empty list gets a fallback text', () => {
     const limits = [
       { reason: 'clip-path', detail: '클립 경로(W·W*)를 겸하는 칠하기' },
       { reason: 'clip-path', detail: '클립 경로(W·W*)를 겸하는 칠하기' },
@@ -58,7 +58,7 @@ describe('편집 제한 사유 표(사용자 결정 2026-10-26)', () => {
   });
 });
 
-describe('편집 경고 문구', () => {
+describe('edit warning text', () => {
   const w = (partial: Partial<EditWarning>): EditWarning => ({
     kind: 'link-overlap',
     message: '편집 문단과 겹치는 링크 2개는 그대로 남습니다(영역을 다시 계산하지 않음).',
@@ -69,12 +69,12 @@ describe('편집 경고 문구', () => {
     ...partial,
   });
 
-  it('한국어·영어 표의 키가 같고 영어에는 한글이 없다', () => {
+  it('the Korean and English table keys are the same and English has no Hangul', () => {
     expect(Object.keys(WARNING_TEXTS_EN).sort()).toEqual(Object.keys(WARNING_TEXTS_KO).sort());
     for (const f of Object.values(WARNING_TEXTS_EN)) expect(f(3, 'xy')).not.toMatch(HANGUL);
   });
 
-  it('한국어는 core 문장 그대로, 영어는 종류·수치(count 없으면 rects 수)로 만든다', () => {
+  it('Korean uses the core sentence as is; English is built from the kind and numbers (the rects count if there is no count)', () => {
     expect(warningText(w({}), ko)).toBe(w({}).message);
     expect(warningText(w({}), en)).toBe(
       '2 link(s) overlapping the edited paragraph stay as they are (their areas are not recalculated).',
@@ -85,19 +85,19 @@ describe('편집 경고 문구', () => {
     expect(warningText(w({ kind: 'glyph-missing', chars: '☃' }), en)).toContain(': ☃');
   });
 
-  it('같은 종류의 경우(variant)를 구별한다', () => {
+  it('distinguishes cases (variant) of the same kind', () => {
     const base = { kind: 'tagged-structure-unlinked' as const };
     expect(warningText(w(base), en)).toContain('not linked to the tagged PDF structure');
     expect(warningText(w({ ...base, variant: 'form-clone' }), en)).toContain('/StructParents');
     expect(warningText(w({ ...base, variant: 'path-removed' }), en)).toContain(
       'Deletes a path inside tagged',
     );
-    // core 문장이 비어 있으면 한국어도 표로 만든다.
+    // If the core sentence is empty, Korean is also built from the table.
     expect(warningText(w({ message: '' }), ko)).toBe(WARNING_TEXTS_KO['link-overlap'](2, ''));
   });
 });
 
-describe('편집 가능 표시 툴팁', () => {
+describe('editability overlay tooltip', () => {
   const editability = {
     pageIndex: 0,
     revision: 1,
@@ -115,7 +115,7 @@ describe('편집 가능 표시 툴팁', () => {
     ms: 0,
   };
 
-  it('영어 표를 주면 종류·사유가 영어', () => {
+  it('given the English table, the kind and reason are in English', () => {
     const { marks } = buildMarks(editability, 10, en);
     expect(markTip(marks[0]!, en)).toBe(
       'Table cell · Restricted: The text is inside a tagged structure.',
@@ -130,8 +130,8 @@ describe('편집 가능 표시 툴팁', () => {
   });
 });
 
-describe('오류 상세(영어 화면)', () => {
-  it('오류 이름 → 문장', () => {
+describe('error details (English display)', () => {
+  it('error name → sentence', () => {
     const e = new Error('작업 모듈이 복구되어 초안 d1 이 사라졌습니다(commit)');
     e.name = 'WorkerRecoveredError';
     expect(errorDetailEn(e)).toBe('The worker stopped and the document was recovered.');
@@ -143,7 +143,7 @@ describe('오류 상세(영어 화면)', () => {
     );
   });
 
-  it('알려진 메시지 형태는 수치를 살려 옮긴다', () => {
+  it('known message shapes are translated keeping the numbers', () => {
     expect(errorDetailEn(new Error('PDF 요청 실패: HTTP 404'))).toBe(
       'PDF request failed: HTTP 404',
     );
@@ -160,7 +160,7 @@ describe('오류 상세(영어 화면)', () => {
     );
   });
 
-  it('한글이 없는 메시지는 그대로, 모르는 한국어 메시지는 일반 문장', () => {
+  it('a message without Hangul is passed through, and an unknown Korean message becomes a generic sentence', () => {
     expect(errorDetailEn(new Error('cannot open document'))).toBe('cannot open document');
     expect(errorDetailEn('NotAllowedError: The request is not allowed')).toBe(
       'NotAllowedError: The request is not allowed',
@@ -170,7 +170,7 @@ describe('오류 상세(영어 화면)', () => {
     );
   });
 
-  it('한국어 화면은 메시지 그대로', () => {
+  it('the Korean display passes the message through as is', () => {
     expect(ko.errorDetail(new Error('PDF 요청 실패: HTTP 404'))).toBe('PDF 요청 실패: HTTP 404');
     expect(ko.errorDetail('x')).toBe('x');
   });

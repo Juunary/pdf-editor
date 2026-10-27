@@ -1,6 +1,6 @@
 /**
- * 편집기 숨은 textarea 의 키 입력 → 편집 동작(순수). 조합 중에는 IME 가 키를 쓰므로 아무 동작도 하지 않는다
- * (계약 1.3 I4·I5·I8: 조합 중 화살표·단축키·Esc 는 무시).
+ * Key input of the editor's hidden textarea → edit action (pure). While composing, the IME consumes keys, so no action is taken
+ * (contract 1.3 I4·I5·I8: arrows, shortcuts and Esc are ignored while composing).
  */
 export interface EditKeyLike {
   key: string;
@@ -8,9 +8,9 @@ export interface EditKeyLike {
   metaKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
-  /** IME 조합 중(`KeyboardEvent.isComposing`). */
+  /** IME composition in progress (`KeyboardEvent.isComposing`). */
   isComposing?: boolean;
-  /** 조합 중 keydown 은 keyCode 229(브라우저별로 isComposing 이 false 일 수 있다). */
+  /** A keydown during composition has keyCode 229 (isComposing may be false in some browsers). */
   keyCode?: number;
 }
 
@@ -62,7 +62,7 @@ export function mapEditKey(e: EditKeyLike): EditKeyAction | null {
   }
 }
 
-/** 문서 undo/redo 단축키(편집 밖): Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y. */
+/** Document undo/redo shortcuts (outside editing): Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y. */
 export function docHistoryShortcut(e: EditKeyLike): 'undo' | 'redo' | null {
   const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey;
   if (!ctrl) return null;

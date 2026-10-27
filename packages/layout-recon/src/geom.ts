@@ -1,4 +1,4 @@
-/** 사각형·행렬 계산(페이지 공간). */
+/** Rectangle and matrix math (page space). */
 import type { Matrix, Point, Rect } from '@pdf-editor/shared-types';
 
 export const width = (r: Rect): number => r[2] - r[0];
@@ -26,7 +26,7 @@ export function intersect(a: Rect, b: Rect): Rect | null {
   return r[2] > r[0] && r[3] > r[1] ? r : null;
 }
 
-/** x 구간 겹침 길이(음수면 간격). */
+/** Overlap length of x ranges (negative means a gap). */
 export const overlapX = (a: Rect, b: Rect): number => Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
 export const overlapY = (a: Rect, b: Rect): number => Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
 
@@ -37,7 +37,7 @@ export function iou(a: Rect, b: Rect): number {
   return ia / (area(a) + area(b) - ia);
 }
 
-/** a 가 b 안에 있는지(tol 만큼 여유). */
+/** Whether a lies inside b (with tol slack). */
 export const containsRect = (outer: Rect, inner: Rect, tol = 0): boolean =>
   inner[0] >= outer[0] - tol &&
   inner[1] >= outer[1] - tol &&
@@ -56,7 +56,7 @@ export const transformPoint = (m: Matrix, p: Point): Point => [
   p[0] * m[1] + p[1] * m[3] + m[5],
 ];
 
-/** 행렬의 등방 배율(선 폭 환산용). */
+/** Isotropic scale of a matrix (for converting line widths). */
 export const matrixScale = (m: Matrix): number => Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
 
 export function median(xs: readonly number[]): number {
@@ -74,8 +74,8 @@ export function quantile(xs: readonly number[], q: number): number {
 }
 
 /**
- * 균일 격자 공간 색인(사각형). 질의 사각형과 같은 칸에 걸친 항목 번호를 돌려준다(겹침 여부는 호출자가 확인).
- * 많은 채움 사각형·경로가 있는 쪽에서 쌍별 비교(O(n²))를 피한다.
+ * Uniform grid spatial index (rectangles). Returns the indices of items that share a cell with the query rectangle (the caller checks actual overlap).
+ * Avoids pairwise comparison (O(n²)) on pages with many fill rectangles and paths.
  */
 export class GridIndex {
   readonly #cells = new Map<number, number[]>();
@@ -112,8 +112,8 @@ export class GridIndex {
   }
 
   /**
-   * 후보마다 fn 을 한 번 부른다(집합을 만들지 않는다). `stamp` 는 항목 수 이상 길이의 배열로, 호출마다
-   * 다른 `mark` 값을 넘긴다(같은 질의 안 중복 제거용).
+   * Calls fn once per candidate (no set is built). `stamp` is an array at least as long as the item count; each call
+   * passes a different `mark` value (to dedupe within one query).
    */
   forEach(r: Rect, stamp: Int32Array, mark: number, fn: (id: number) => void): void {
     this.#keys(r, (k) => {

@@ -1,16 +1,16 @@
-// 저장 힙 모델용 합성 PDF 생성기(docs/m5-heap.md 2절). WASM 을 거치지 않고 파일에 직접 써서 생성 자체가 힙을 쓰지 않는다.
-// 같은 인자면 같은 바이트가 나온다(시드 고정).
+// Synthetic PDF generator for the save-heap model (docs/m5-heap.md section 2). Writes directly to the file without WASM, so generation itself uses no heap.
+// The same arguments produce the same bytes (fixed seed).
 import { closeSync, openSync, writeSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
-/** 합성 문서 종류. 이름 → 생성 함수 인자. 매니페스트·결과 표의 id 로 쓴다. */
+/** Synthetic document kinds. Name → generator arguments. Used as the id in the manifest and result tables. */
 export const SYNTHETIC = {
   'synth-image-100': { kind: 'image', pages: 100 },
   'synth-image-300': { kind: 'image', pages: 300 },
   'synth-image-500': { kind: 'image', pages: 500 },
   'synth-image-700': { kind: 'image', pages: 700 },
   'synth-image-900': { kind: 'image', pages: 900 },
-  // 상한 경계(2 GiB) 확인용. 실패(over-limit 실제)도 판정 분모에 들어간다.
+  // For checking the limit boundary (2 GiB). Real failures (over-limit) also enter the classification denominator.
   'synth-image-800': { kind: 'image', pages: 800 },
   'synth-image-1000': { kind: 'image', pages: 1000 },
   'synth-image-1100': { kind: 'image', pages: 1100 },
@@ -18,23 +18,23 @@ export const SYNTHETIC = {
   'synth-object-500': { kind: 'object', pages: 500 },
   'synth-object-1000': { kind: 'object', pages: 1000 },
   'synth-object-2000': { kind: 'object', pages: 2000 },
-  // 계약 8절 대용량 문서 합성 대체(검증 전용, 적합에서 뺀다). 적합용과 다른 구성으로 만들어 외삽을 본다.
+  // Synthetic stand-in for large documents in contract section 8 (validation only, excluded from the fit). Built with a configuration different from the fit set to check extrapolation.
   'large-image-mixed': { kind: 'image-mixed', pages: 160 },
   'large-object-4000': { kind: 'object-annot', pages: 4000 },
-  // 객체 스트림 위주(M1 검증 전용): large-object-4000 과 같은 객체 배치를 객체 스트림(200개씩)과 xref 스트림으로 쓴다.
-  // 압축 객체가 대부분이고 객체 스트림은 객체 200개당 1개라 표본 통계가 놓치기 쉽다.
+  // Object-stream heavy (M1 validation only): writes the same object layout as large-object-4000 using object streams (200 each) and an xref stream.
+  // Most objects are compressed and there is one object stream per 200 objects, which sample statistics easily miss.
   'large-objstm-4000': { kind: 'objstm', pages: 4000 },
 };
 
-/** 적합에서 빼고 검증에만 쓰는 대용량 문서(계약 4.2). */
+/** Large documents excluded from the fit and used only for validation (contract 4.2). */
 export const HOLDOUT = new Set(['large-image-mixed', 'large-object-4000', 'large-objstm-4000']);
 
-/** 객체 스트림 하나에 넣는 객체 수. */
+/** Number of objects in one object stream. */
 export const OBJSTM_PER_STREAM = 200;
 
-/** 이미지 위주 시드(`tools/spike-m0/src/save-bench.ts` writeLargePdf 와 같은 값, 같은 바이트). */
+/** Image-heavy seed (same value and same bytes as `tools/spike-m0/src/save-bench.ts` writeLargePdf). */
 export const IMAGE_SEED = 0x12345678;
-/** 객체 위주 문서의 쪽당 구조 요소 수. 2,000쪽이면 객체 약 50.4만 개. */
+/** Structure elements per page for object-heavy documents. 2,000 pages give about 504,000 objects. */
 export const STRUCT_PER_PAGE = 248;
 
 function writer(path) {
@@ -68,8 +68,8 @@ function writer(path) {
 }
 
 /**
- * 이미지 위주: 쪽마다 압축 불가 잡음 이미지(512×512 RGB, FlateDecode 약 787 KB) + 텍스트 1줄.
- * `docs/m0-dod-xobject-redact-save.md` 3.2 대형 문서와 같은 생성 방식.
+ * Image-heavy: per page, an incompressible noise image (512×512 RGB, FlateDecode about 787 KB) + 1 text line.
+ * Same generation method as the large document in `docs/m0-dod-xobject-redact-save.md` 3.2.
  */
 export function writeImagePdf(path, pages) {
   const { write, obj, finish } = writer(path);
@@ -111,13 +111,13 @@ export function writeImagePdf(path, pages) {
 }
 
 /**
- * 객체 위주(태그 문서 모양): 쪽마다 텍스트 줄 `STRUCT_PER_PAGE` 개(각 줄 MCID) + 줄마다 /P 구조 요소 객체 1개.
- * 객체 = 카탈로그·쪽 트리·폰트·구조 루트·부모 트리 + 쪽마다(쪽 + 콘텐츠 + 구조 요소 248 + 쪽 구조 요소 1).
+ * Object-heavy (tagged-document shape): per page, `STRUCT_PER_PAGE` text lines (each with an MCID) + one /P structure element object per line.
+ * Objects = catalog, page tree, font, structure root, parent tree + per page (page + content + 248 structure elements + 1 page structure element).
  */
 export function writeObjectPdf(path, pages, annots = false) {
   const { write, obj, finish } = writer(path);
   const per = STRUCT_PER_PAGE;
-  // 쪽, 콘텐츠, 쪽 구조 요소(/Sect), 줄 구조 요소 + (annots) 링크 주석 2개·동작 2개
+  // page, content, page structure element (/Sect), line structure elements + (annots) 2 link annotations·2 actions
   const extra = annots ? 4 : 0;
   const perPage = 3 + per + extra;
   const first = 7;
@@ -130,7 +130,7 @@ export function writeObjectPdf(path, pages, annots = false) {
   );
   obj(3, '<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>');
   obj(4, `<</Type/StructTreeRoot/ParentTree 5 0 R/K 6 0 R>>`);
-  // 부모 트리: 쪽 i → 줄 구조 요소 배열. 숫자 트리 하나에 모두 둔다(MuPDF 는 열 때 읽지 않는다).
+  // Parent tree: page i → array of line structure elements. All put in a single number tree (MuPDF does not read it on open).
   const nums = [];
   for (let i = 0; i < pages; i++) {
     const p = pageNum(i);
@@ -180,12 +180,12 @@ export function writeObjectPdf(path, pages, annots = false) {
 }
 
 /**
- * 이미지 혼합: 쪽마다 잡음 이미지 1개(512×512, 압축 불가) + 압축이 잘 되는 그러데이션 이미지 1개(1024×1024 RGB, 원 스트림
- * 작음·디코드 3 MiB) + 텍스트 40줄. 원 스트림 /Length 와 디코드 크기가 크게 다른 문서다.
+ * Mixed images: per page, 1 noise image (512×512, incompressible) + 1 well-compressible gradient image (1024×1024 RGB, small raw
+ * stream, 3 MiB decoded) + 40 text lines. A document whose raw stream /Length and decoded size differ greatly.
  */
 export function writeImageMixedPdf(path, pages) {
   const { write, obj, finish } = writer(path);
-  const per = 5; // 쪽, 콘텐츠, 잡음 이미지, 그러데이션 이미지, (예비) 쪽마다 고유 폰트 사전
+  const per = 5; // page, content, noise image, gradient image, (spare) per-page unique font dictionary
   const pageNum = (i) => 4 + i * per;
   write('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
   obj(1, '<</Type/Catalog/Pages 2 0 R>>');
@@ -243,9 +243,9 @@ export function writeImageMixedPdf(path, pages) {
 }
 
 /**
- * 객체 스트림 위주: `writeObjectPdf` 와 같은 객체(쪽마다 콘텐츠 1개 + 구조 요소 249개 + 쪽 사전)를 쓰되 스트림이 아닌 객체는
- * 모두 객체 스트림(`OBJSTM_PER_STREAM` 개씩, FlateDecode)에 넣고 xref 스트림으로 끝낸다. 객체 스트림 번호는 일반 객체 뒤,
- * xref 스트림은 맨 끝 번호다.
+ * Object-stream heavy: uses the same objects as `writeObjectPdf` (1 content per page + 249 structure elements + page dictionary), but puts all non-stream objects
+ * into object streams (`OBJSTM_PER_STREAM` each, FlateDecode) and ends with an xref stream. Object-stream numbers follow the regular objects,
+ * and the xref stream has the last number.
  */
 export function writeObjStmPdf(path, pages) {
   const fd = openSync(path, 'w');
@@ -259,14 +259,14 @@ export function writeObjStmPdf(path, pages) {
   const perPage = 3 + per;
   const first = 7;
   const pageNum = (i) => first + i * perPage;
-  const regular = first + pages * perPage; // 일반 객체 번호 1..regular-1
-  const packedCount = first - 1 + pages * (perPage - 1); // 콘텐츠 스트림 빼고 전부
+  const regular = first + pages * perPage; // regular object numbers 1..regular-1
+  const packedCount = first - 1 + pages * (perPage - 1); // everything except content streams
   const objstmCount = Math.ceil(packedCount / OBJSTM_PER_STREAM);
   const xrefNum = regular + objstmCount;
   const size = xrefNum + 1;
   const type = new Uint8Array(size);
-  const f2 = new Uint32Array(size); // 유형 1: 오프셋, 유형 2: 객체 스트림 번호
-  const f3 = new Uint16Array(size); // 유형 2: 객체 스트림 안 순번
+  const f2 = new Uint32Array(size); // type 1: offset, type 2: object stream number
+  const f3 = new Uint16Array(size); // type 2: index within the object stream
   let nextStm = regular;
   let pending = [];
   const flush = () => {
@@ -346,7 +346,7 @@ export function writeObjStmPdf(path, pages) {
   flush();
   if (nextStm !== xrefNum)
     throw new Error(`객체 스트림 수 불일치: ${nextStm - regular}/${objstmCount}`);
-  // xref 스트림: W [1 4 2]. 0 번은 자유 목록 머리.
+  // xref stream: W [1 4 2]. Object 0 is the head of the free list.
   const xrefOffset = offset;
   const rows = Buffer.alloc(size * 7);
   for (let n = 0; n < size; n++) {
@@ -369,7 +369,7 @@ export function writeObjStmPdf(path, pages) {
   return offset;
 }
 
-/** id 의 합성 문서를 `path` 에 쓴다. 쓴 바이트 수. */
+/** Writes the synthetic document `id` to `path`. Returns the number of bytes written. */
 export function writeSynthetic(id, path) {
   const spec = SYNTHETIC[id];
   if (!spec) throw new Error(`알 수 없는 합성 문서: ${id}`);

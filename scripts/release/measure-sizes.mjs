@@ -1,4 +1,4 @@
-// 번들 자산(WASM·폰트·JS·CSS)의 크기를 원본·gzip·brotli 로 잰다(계약 4.3). brotli 는 Node zlib 로 계산한다.
+// Measure the size of bundled assets (WASM·fonts·JS·CSS) raw, gzip, and brotli (contract 4.3). brotli is computed with Node zlib.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
@@ -12,7 +12,7 @@ function walk(dir) {
   });
 }
 
-/** @returns {{ file: string, kind: string, raw: number, gzip: number, brotli: number }[]} 큰 순 */
+/** @returns {{ file: string, kind: string, raw: number, gzip: number, brotli: number }[]} sorted by size, largest first */
 export function measureAssets(dir) {
   const rows = [];
   for (const file of walk(dir)) {

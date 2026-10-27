@@ -1,10 +1,10 @@
 /**
- * 편집 제한 사유·편집 경고의 사용자 표시 문구 표(한국어·영어). 고르는 함수는 edit-labels.ts. 키는 계약 5.1 의 문단 사유·연산 사유·패스 사유 전부와
- * 편집 경고 종류 전부다. 화면 언어 표는 strings.ts(`ViewerStrings.limitLabels`·`warningTexts`)가 고른다.
+ * Table of user-visible texts for edit-limit reasons and edit warnings (Korean and English). The selection function is in edit-labels.ts. The keys are all paragraph reasons, operation reasons and path reasons of contract 5.1 and
+ * all edit warning kinds. The display-language table is chosen by strings.ts (`ViewerStrings.limitLabels`, `warningTexts`).
  *
- * core·pdf-ops 가 만드는 사유 설명(`ParagraphLimit.detail`·`PathLimit.detail`)과 경고 문장(`EditWarning.message`)은
- * 한국어다. 한국어 화면은 그 문장을 그대로 쓰고(더 구체적인 진단 정보 포함), 영어 화면은 사유 코드·경고 종류·수치로 이
- * 표에서 문장을 만든다(사용자 결정 2026-10-26).
+ * The reason descriptions (`ParagraphLimit.detail`, `PathLimit.detail`) and warning sentences (`EditWarning.message`) produced by core and pdf-ops
+ * are in Korean. The Korean UI uses those sentences as is (they carry more specific diagnostic information); the English UI builds sentences from
+ * this table using reason codes, warning kinds and numbers (user decision 2026-10-26).
  */
 import type {
   EditLimitReason,
@@ -16,7 +16,7 @@ import type {
 export type LimitReason = ParagraphLimitReason | EditLimitReason | PathLimitReason;
 
 export const LIMIT_LABELS: Record<LimitReason, string> = {
-  // M4 부터 판정이 붙이지 않는다(도형 라벨·표 셀 모두 편집 가능). 이전 판정 결과 표시용으로 남긴다.
+  // Since M4, classification no longer attaches this (shape labels and table cells are both editable). Kept to display older classification results.
   'not-flow-paragraph': '본문 흐름 밖의 글자는 이 버전에서 편집할 수 없습니다.',
   'vertical-or-rotated': '세로쓰기·회전된 글자는 편집할 수 없습니다.',
   'remove-skipped': '원본 글자를 안전하게 지울 수 없는 연산이 있어 편집할 수 없습니다.',
@@ -87,13 +87,13 @@ export const LIMIT_LABELS_EN: Record<LimitReason, string> = {
   'inline-image': 'It is mixed with an inline image.',
 };
 
-/** 경고 종류(+ 경우)별 문구 키. */
+/** Text key per warning kind (+ case). */
 export type WarningTextKey =
   | EditWarningKind
   | 'tagged-structure-unlinked:form-clone'
   | 'tagged-structure-unlinked:path-removed';
 
-/** 경고 문구 함수: count 는 개수(없으면 rects 수), chars 는 해당 글자. */
+/** Warning text function: count is the number (or the number of rects if absent), chars is the relevant characters. */
 export type WarningText = (count: number, chars: string) => string;
 
 const withChars = (chars: string) => (chars ? `: ${chars}` : '');
@@ -163,17 +163,17 @@ export const WARNING_TEXTS_EN: Record<WarningTextKey, WarningText> = {
   'table-rule-removed': () => 'Deletes a path used as a table rule. Table detection may change.',
 };
 
-/** 태그 PDF 편집 차단 설정이 켜져 있을 때의 사유. */
+/** Reason when the tagged-PDF edit blocking setting is on. */
 export const TAGGED_BLOCKED_LABEL =
   '설정에서 태그 PDF 편집 막기가 켜져 있어 이 문단은 편집하지 않습니다.';
 
-/** 태그 쪽 편집 안내(계약 D1). */
+/** Tagged-page editing notice (contract D1). */
 export const TAGGED_NOTICE = '태그된 PDF 입니다. 구조(읽기 순서·태그)는 갱신하지 않습니다.';
 
-/** 편집한 쪽 번호가 파일에 남는다는 안내(계약 5.6). */
+/** Notice that the edited page numbers remain in the file (contract 5.6). */
 export const EDIT_PAGES_NOTICE =
   '저장하면 편집한 쪽 번호가 파일 정보(PdfEditorEdits)에 기록됩니다.';
 
-/** 되돌린 뒤 새 편집을 시작할 때 보이는 안내(core 가 다시 실행 단계를 버린다, 계약 D9). */
+/** Notice shown when starting a new edit after undoing (core discards the redo stage, contract D9). */
 export const REDO_DISCARDED_NOTICE =
   '새 편집을 시작해 다시 실행(redo) 기록이 사라졌습니다. 이 편집을 취소해도 돌아오지 않습니다.';

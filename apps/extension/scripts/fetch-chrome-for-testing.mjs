@@ -1,10 +1,10 @@
-// Chrome for Testing(공식 배포) 구버전을 저장소 밖 캐시에 내려받는다. Chrome 128–150 DNR 폴백 경로 실측용
-// (docs/m0-corpus-recheck.md 4절, e2e/dnr-legacy.spec.ts).
+// Downloads old Chrome for Testing (official distribution) versions into a cache outside the repository. For measuring the Chrome 128–150 DNR fallback path
+// (docs/m0-corpus-recheck.md section 4, e2e/dnr-legacy.spec.ts).
 //
 //   node apps/extension/scripts/fetch-chrome-for-testing.mjs 128 140 150
 //
-// 주 버전마다 known-good-versions 목록의 마지막 linux64 빌드를 고른다. 출력: 각 실행 파일 경로(JSON).
-// 캐시 위치: $PDF_EDITOR_CFT_DIR 또는 ~/.cache/pdf-editor/chrome-for-testing/<버전>/
+// For each major version, picks the last linux64 build in the known-good-versions list. Output: the path of each executable (JSON).
+// Cache location: $PDF_EDITOR_CFT_DIR or ~/.cache/pdf-editor/chrome-for-testing/<version>/
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';

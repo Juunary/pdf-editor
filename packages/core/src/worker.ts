@@ -1,13 +1,13 @@
-// Worker 쪽 진입점. 뷰어 메인 스레드에서 import 하지 않는다.
+// Entry point on the Worker side. Not imported from the viewer main thread.
 //
-// module Worker 는 top-level await(MuPDF wasm 로드) 중에 도착한 메시지를 리스너가 없으면
-// 잃는다. 그래서 Comlink 리스너를 먼저 동기 등록하고, MuPDF 는 동적 import 로 불러온다.
+// A module Worker loses messages that arrive during top-level await (MuPDF wasm load) if there is no listener.
+// So the Comlink listener is registered synchronously first, and MuPDF is loaded with a dynamic import.
 import * as Comlink from 'comlink';
 import type { PdfWorkerApi } from '@pdf-editor/shared-types';
 import type { PdfSessionOptions } from './session.js';
 
 /**
- * `extra` 는 같은 Comlink 객체에 더할 RPC(확장 dev 빌드의 벤치 전용 `benchProbeHeap` 등). 스토어 빌드는 넘기지 않는다.
+ * `extra` is an RPC to add to the same Comlink object (such as the bench-only `benchProbeHeap` of the extension dev build). Store builds do not pass it.
  */
 export function exposePdfWorker(
   endpoint: Comlink.Endpoint,

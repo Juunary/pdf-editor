@@ -1,5 +1,5 @@
 /**
- * 문단 객체 만들기(계약 2.2–2.4): 텍스트, 상자, 줄 간격, 들여쓰기, 정렬, 모양 구간.
+ * Builds paragraph objects (contract 2.2–2.4): text, box, line spacing, indent, alignment, shape runs.
  */
 import type { LayoutParagraph, PageModel, RGB, Rect, StyleRun } from '@pdf-editor/shared-types';
 import { median } from './geom.js';
@@ -88,7 +88,7 @@ export function buildParagraph(model: PageModel, units: readonly Unit[]): Paragr
   const firstLineIndent =
     units.length > 1 ? round2(units[0]!.bbox[0] - median(units.slice(1).map((u) => u.bbox[0]))) : 0;
   return {
-    // 추출 캐시(PageModel)와 배열을 공유하지 않도록 복사한다.
+    // Copied so the array is not shared with the extraction cache (PageModel).
     bbox: bbox ? [bbox[0], bbox[1], bbox[2], bbox[3]] : [0, 0, 0, 0],
     lines,
     chars,

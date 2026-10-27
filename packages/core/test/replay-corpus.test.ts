@@ -1,11 +1,11 @@
 /**
- * 재적용 회귀(R4, docs/m5-followup.md): 코퍼스 쪽에서 서로 다른 문단을 차례로 고친 뒤(다 쓰면 편집 블록을 차례로 다시 고침)
- * 같은 로그를 새 세션에 재적용해 끝까지 성공하고 쪽 텍스트가 원래 편집 결과와 같은지 본다.
- * `tools/bench/journal-child.mjs <pdf> <쪽> <N> distinct` 와 같은 편집 열이다.
+ * Reapply regression (R4, docs/m5-followup.md): after editing different paragraphs of a corpus page in turn (once exhausted, re-editing the edit blocks in turn),
+ * reapply the same log to a new session and check that it succeeds to the end and the page text equals the original edit result.
+ * It is the same edit sequence as `tools/bench/journal-child.mjs <pdf> <page> <N> distinct`.
  *
- * 환경 변수가 없으면 건너뛴다.
- *   REPLAY_CORPUS_DIR=<PDF 폴더> pnpm --filter @pdf-editor/core exec vitest run test/replay-corpus.test.ts
- *   REPLAY_CORPUS_LONG=1 을 더하면 kogl-mods-cpi-202609 9쪽 100건(약 8분)도 돈다.
+ * Skipped when the environment variable is not set.
+ *   REPLAY_CORPUS_DIR=<PDF folder> pnpm --filter @pdf-editor/core exec vitest run test/replay-corpus.test.ts
+ *   Adding REPLAY_CORPUS_LONG=1 also runs kogl-mods-cpi-202609 page 9 with 100 edits (about 8 minutes).
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -63,10 +63,10 @@ const cases = [
   { file: 'kogl-mods-cpi-202609.pdf', page: 8, n: 100, long: true },
 ];
 
-describe.skipIf(!dir)('코퍼스 재적용 회귀(R4)', () => {
+describe.skipIf(!dir)('corpus reapply regression (R4)', () => {
   for (const c of cases) {
     it.skipIf(c.long && !long)(
-      `${c.file} ${c.page + 1}쪽 서로 다른 문단 ${c.n}건 재적용`,
+      `${c.file} page ${c.page + 1}: reapply ${c.n} edits to different paragraphs`,
       async () => {
         const path = join(dir!, c.file);
         if (!existsSync(path)) throw new Error(`코퍼스 파일 없음: ${path}`);

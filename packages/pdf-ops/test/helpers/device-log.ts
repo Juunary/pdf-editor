@@ -1,6 +1,6 @@
 /**
- * 테스트 전용: `runPageContents`(항등 행렬) Device 콜백을 순서대로 기록한다. 패키지에서 내보내지 않는다.
- * 텍스트 콜백은 글리프 유니코드를 이어 붙인 문자열과 텍스트 객체 포인터를 남긴다.
+ * Test only: records the `runPageContents` (identity matrix) Device callbacks in order. Not exported from the package.
+ * Text callbacks keep the string of concatenated glyph Unicode and the text object pointer.
  */
 import * as mupdf from 'mupdf';
 import { releaseBorrowedShade } from '../../src/mupdf-util.js';
@@ -13,11 +13,11 @@ import {
 
 export interface DeviceEvent {
   kind: string;
-  /** 텍스트 콜백만: 글리프 유니코드 연결. */
+  /** Text callbacks only: concatenated glyph Unicode. */
   text?: string;
-  /** 텍스트 콜백만: fz_text 포인터. */
+  /** Text callbacks only: fz_text pointer. */
   pointer?: number;
-  /** 텍스트 콜백만: 글리프별 [gid, trm 6값]. */
+  /** Text callbacks only: [gid, 6 trm values] per glyph. */
   glyphs?: number[][];
 }
 
@@ -34,7 +34,7 @@ const OTHER = [
 
 export function recordDevice(page: mupdf.Page): DeviceEvent[] {
   const events: DeviceEvent[] = [];
-  // 콜백 인자로 받은 Text 를 붙잡아 두어 포인터가 재사용되지 않게 한다.
+  // Hold on to the Text received as a callback argument so that the pointer is not reused.
   const held: mupdf.Text[] = [];
   const text = (kind: string) => (t: mupdf.Text) => {
     held.push(t);
@@ -81,13 +81,13 @@ export function recordDevice(page: mupdf.Page): DeviceEvent[] {
   });
   page.runPageContents(device, mupdf.Matrix.identity);
   device.close();
-  // 동기 루프에서는 FinalizationRegistry 정리가 돌지 않으므로 직접 해제한다(장치 표의 콜백 클로저·텍스트 참조).
+  // FinalizationRegistry cleanup does not run in a synchronous loop, so release directly (callback closures and text references of the device table).
   device.destroy();
   for (const t of held) t.destroy();
   return events;
 }
 
-/** 비교용 짧은 표기: 텍스트는 "fill:Ab", 같은 포인터 연속은 "stroke=:Ab", 그 밖은 콜백 이름. */
+/** Short notation for comparison: text is "fill:Ab", consecutive same pointers "stroke=:Ab", anything else is the callback name. */
 export function brief(events: readonly DeviceEvent[], skip: readonly string[] = OTHER): string[] {
   const out: string[] = [];
   let last: number | undefined;
@@ -105,9 +105,9 @@ export function brief(events: readonly DeviceEvent[], skip: readonly string[] = 
 }
 
 /**
- * 계약 계수 대상 콜백만의 전달 순서(인터프리터 trace 와 비교용).
- * 텍스트는 `종류:글리프 수`(gid −1 보조 글리프 제외, fill 다음 같은 포인터 stroke 는 fill+stroke),
- * 칠하기는 `P`. beginMask~endMask 구간은 빼고, beginTile 은 1(캐시됨)을 돌려준다.
+ * Delivery sequence of only the callbacks that the contract counts (for comparison with the interpreter trace).
+ * Text is `kind:glyph count` (excluding gid -1 auxiliary glyphs; a stroke with the same pointer after fill is fill+stroke),
+ * paints are `P`. The beginMask~endMask section is omitted, and beginTile returns 1 (cached).
  */
 export function deliveryTrace(
   page: mupdf.Page,
@@ -115,7 +115,7 @@ export function deliveryTrace(
   judgeOptions: JudgeOptions = {},
 ): string[] {
   const out: string[] = [];
-  // flags: 계약 3.1 core 판정으로 글리프마다 N(새 글리프)·R(재전송)을 붙인다(콜백을 건너뛰면 전부 R).
+  // flags: attach N (new glyph) / R (re-send) to each glyph by the contract 3.1 core classification (all R if the callback is skipped).
   const judge = new FirstArrivalJudge(judgeOptions);
   const held: mupdf.Text[] = [];
   let mask = 0;
@@ -151,7 +151,7 @@ export function deliveryTrace(
         last.kind === 'fill' &&
         last.index === out.length - 1
       ) {
-        // 직전 fill 항목의 플래그를 그대로 쓴다(같은 객체의 두 번째 콜백).
+        // Use the flag of the previous fill entry as is (the second callback of the same object).
         out[out.length - 1] = out[out.length - 1]!.replace(/^fill:/, 'fill+stroke:');
         last = null;
         return;
@@ -186,7 +186,7 @@ export function deliveryTrace(
   });
   page.runPageContents(device, mupdf.Matrix.identity);
   device.close();
-  // 동기 루프에서는 FinalizationRegistry 정리가 돌지 않으므로 직접 해제한다(장치 표의 콜백 클로저·텍스트 참조).
+  // FinalizationRegistry cleanup does not run in a synchronous loop, so release directly (callback closures and text references of the device table).
   device.destroy();
   for (const t of held) t.destroy();
   return out;

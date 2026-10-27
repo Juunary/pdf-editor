@@ -44,22 +44,22 @@ async function start(
   return { host, session, views, clock };
 }
 
-describe('EditSession 시작', () => {
-  it('시작 프레임은 begin 결과이고 캐럿은 지정한 위치(없으면 끝)', async () => {
+describe('EditSession start', () => {
+  it('the start frame is the begin result and the caret is at the given position (the end if none)', async () => {
     const { session } = await start({ caret: 3 });
     const v = session.view();
     expect(v.editor.text).toBe('ab cd efgh');
     expect(v.editor.caret).toBe(3);
     expect(v.shown.text).toBe('ab cd efgh');
-    // R-L1: begin.first.region 을 첫 영역으로 쓴다(seq 0).
+    // R-L1: use begin.first.region as the first region (seq 0).
     expect(v.region?.seq).toBe(0);
     expect(v.dirty).toBe(false);
     expect((await start()).session.view().editor.caret).toBe(10);
   });
 });
 
-describe('시작 영역(R-L1)', () => {
-  it('begin 에 넘긴 배율의 첫 영역을 쓰고 시작 갱신 RPC 를 보내지 않는다', async () => {
+describe('start region (R-L1)', () => {
+  it('uses the first region at the scale passed to begin and does not send a start-update RPC', async () => {
     const { session, host } = await start({ caret: 3 });
     session.start();
     await session.settle();
@@ -72,12 +72,12 @@ describe('시작 영역(R-L1)', () => {
   });
 });
 
-describe('입력 전송(마지막 입력만)', () => {
-  it('입력은 모델에 즉시 반영되고, 처리된 프레임은 입력 시점 텍스트와 함께 보관된다', async () => {
+describe('input sending (last input only)', () => {
+  it('input is applied to the model immediately, and the processed frame is kept together with the text at input time', async () => {
     const { session, host } = await start({ caret: 10 });
     session.typeText('X');
     expect(session.view().editor.text).toBe('ab cd efghX');
-    expect(session.view().shown.text).toBe('ab cd efgh'); // 아직 이전 프레임
+    expect(session.view().shown.text).toBe('ab cd efgh'); // still the previous frame
     expect(session.view().updating).toBe(true);
     await session.settle();
     const v = session.view();
@@ -91,12 +91,12 @@ describe('입력 전송(마지막 입력만)', () => {
     expect(sent.composition).toBeNull();
   });
 
-  it('처리 중이면 마지막 입력 하나만 보낸다(중간 입력은 합친다)', async () => {
+  it('while processing, only the last input is sent (intermediate inputs are merged)', async () => {
     const { session, host } = await start({ caret: 10 });
     const release = host.hold('updateParagraphDraft');
-    session.typeText('1'); // 전송(보류됨)
-    session.typeText('2'); // 대기
-    session.typeText('3'); // 대기를 덮어씀
+    session.typeText('1'); // sent (held)
+    session.typeText('2'); // waiting
+    session.typeText('3'); // overwrites the waiting one
     session.typeText('4');
     expect(host.count('updateParagraphDraft')).toBe(1);
     release();
@@ -109,7 +109,7 @@ describe('입력 전송(마지막 입력만)', () => {
     expect(session.view().shown.text).toBe('ab cd efgh1234');
   });
 
-  it('IME 조합: 조합 구간을 보내고 확정하면 composition 이 사라진다(I1)', async () => {
+  it('IME composition: sends the composition range and, on commit, composition disappears (I1)', async () => {
     const { session, host } = await start({ caret: 2 });
     session.compositionStart();
     session.compositionUpdate('ㅎ');
@@ -124,9 +124,9 @@ describe('입력 전송(마지막 입력만)', () => {
     expect(session.view().shown.text).toBe('ab한 cd efgh');
   });
 
-  it('줄 끝에서 조합 글자가 다음 줄로 넘어가도 프레임의 캐럿·조합이 따라간다(I3)', async () => {
+  it('even when a composing character moves to the next line at a line end, the frame caret and composition follow (I3)', async () => {
     const { session } = await start({ caret: 5 });
-    // 폭 50 = 5글자. "ab cd" 뒤에 조합 문자열을 넣으면 'ab cd' 다음 줄로 넘어간다.
+    // Width 50 = 5 characters. Putting a composition string after "ab cd" moves it to the line after 'ab cd'.
     session.compositionStart();
     session.compositionUpdate('가나');
     await session.settle();
@@ -137,7 +137,7 @@ describe('입력 전송(마지막 입력만)', () => {
     expect(v.shown.reflow.glyphs.filter((g) => g.offset >= 5 && g.offset < 7)).toHaveLength(2);
   });
 
-  it('갱신 오류는 error 로 남기고 다음 입력에서 다시 시도한다', async () => {
+  it('an update error is kept as error and retried on the next input', async () => {
     const { session, host } = await start({ caret: 10 });
     host.failNext('updateParagraphDraft', new Error('boom'));
     session.typeText('a');
@@ -149,7 +149,7 @@ describe('입력 전송(마지막 입력만)', () => {
     expect(session.view().shown.text).toBe('ab cd efghab');
   });
 
-  it('붙여넣기·Backspace·되돌리기가 입력으로 전송된다', async () => {
+  it('paste, Backspace and undo are sent as input', async () => {
     const { session, host } = await start({ caret: 10 });
     session.paste('XY\r\nZ');
     await session.settle();
@@ -171,10 +171,10 @@ describe('입력 전송(마지막 입력만)', () => {
   });
 });
 
-describe('캐럿 이동·포인터', () => {
-  it('위·아래 이동은 앞선 입력이 처리된 뒤 리플로우 줄 기준으로 계산한다', async () => {
+describe('caret movement and pointer', () => {
+  it('up/down movement is computed on reflow lines after the preceding input has been processed', async () => {
     const { session } = await start({ caret: 3 });
-    session.typeText('Z'); // 줄이 바뀔 수 있는 입력 직후
+    session.typeText('Z'); // input right after which the line may change
     session.moveVerticalKey(1, false);
     await session.idle();
     const s = session.view().editor;
@@ -183,11 +183,11 @@ describe('캐럿 이동·포인터', () => {
     expect(s.caret).toBeGreaterThan(lines[0]!.end - 1);
   });
 
-  it('Home/End 는 줄 기준, Ctrl 이면 문단 기준, Shift 이면 선택', async () => {
+  it('Home/End are line-based, paragraph-based with Ctrl, and select with Shift', async () => {
     const { session } = await start({ caret: 8 });
     session.moveLineBoundary('home', false, false);
     await session.idle();
-    expect(session.view().editor.caret).toBe(6); // 둘째 줄 처음
+    expect(session.view().editor.caret).toBe(6); // start of the second line
     session.moveLineBoundary('end', true, false);
     await session.idle();
     expect(session.view().editor.caret).toBe(10);
@@ -197,7 +197,7 @@ describe('캐럿 이동·포인터', () => {
     expect(session.view().editor.caret).toBe(0);
   });
 
-  it('좌우 이동: 선택이 있으면 접는다, Shift 는 확장, Ctrl 은 단어', async () => {
+  it('left/right movement: collapses a selection if present, Shift extends, Ctrl is by word', async () => {
     const { session } = await start({ caret: 4 });
     session.moveHorizontal(1, true, false);
     session.moveHorizontal(1, true, false);
@@ -208,9 +208,9 @@ describe('캐럿 이동·포인터', () => {
     expect(session.view().editor.caret).toBe(6);
   });
 
-  it('포인터: 클릭은 캐럿, 드래그는 선택, 더블클릭은 단어, 트리플클릭은 전체', async () => {
+  it('pointer: click is a caret, drag is a selection, double-click is a word, triple-click is all', async () => {
     const { session } = await start({ caret: 0 });
-    // 첫 줄 기준선 62, 글자 폭 10, 왼쪽 100: x=124 → 오프셋 2 와 3 의 경계 근처
+    // First line baseline 62, character width 10, left 100: x=124 → near the boundary between offsets 2 and 3
     session.pointerDown([123, 58], 1, false);
     await session.idle();
     expect(session.view().editor.caret).toBe(2);
@@ -227,8 +227,8 @@ describe('캐럿 이동·포인터', () => {
   });
 });
 
-describe('영역·초과', () => {
-  it('넘치면 영역 아래 변이 자동으로 내려간다(선택 없음, 사용자 영역은 그대로)', async () => {
+describe('region and overflow', () => {
+  it('on overflow, the region bottom edge is lowered automatically (no selection; the user region is unchanged)', async () => {
     const { session, host } = await start({
       paragraph: { id: 3, bbox: [100, 50, 150, 70], text: 'ab cd efgh ij kl mn' },
       caret: 19,
@@ -243,7 +243,7 @@ describe('영역·초과', () => {
     expect(host.inputs.at(-1)!.format).not.toHaveProperty('overflow');
   });
 
-  it('핸들로 영역을 글 높이보다 줄여도 글 높이까지 다시 늘어난다', async () => {
+  it('even if a handle shrinks the region below the text height, it grows back to the text height', async () => {
     const { session } = await start({
       paragraph: { id: 3, bbox: [100, 50, 150, 70], text: 'ab cd efgh ij kl mn' },
     });
@@ -255,7 +255,7 @@ describe('영역·초과', () => {
     expect(r.overflow).toBe(false);
   });
 
-  it('영역 상한에 막히면 초과 표시와 overflow-clipped 경고가 남는다', async () => {
+  it('if blocked by the region limit, the overflow indicator and the overflow-clipped warning remain', async () => {
     const { session } = await start({
       paragraph: { id: 3, bbox: [100, 50, 150, 70], text: 'ab cd efgh ij kl mn' },
       areaLimit: [0, 0, 612, 80],
@@ -266,7 +266,7 @@ describe('영역·초과', () => {
     expect(session.view().warnings.map((w) => w.kind)).toContain('overflow-clipped');
   });
 
-  it('영역을 바꾸면 format 에 반영되어 dirty 가 된다', async () => {
+  it('changing the region is reflected in format and makes it dirty', async () => {
     const { session, host } = await start();
     session.setFormat({ area: [100, 50, 200, 90] });
     await session.settle();
@@ -275,8 +275,8 @@ describe('영역·초과', () => {
   });
 });
 
-describe('종료', () => {
-  it('변경이 없으면 커밋은 취소와 같다', async () => {
+describe('finish', () => {
+  it('with no changes, commit is the same as cancel', async () => {
     const { session, host } = await start();
     const out = await session.commit();
     expect(out.kind).toBe('cancelled');
@@ -284,7 +284,7 @@ describe('종료', () => {
     expect(host.count('commitParagraphEdit')).toBe(0);
   });
 
-  it('변경이 있으면 처리 중인 입력까지 마친 뒤 커밋한다', async () => {
+  it('with changes, commits after finishing the input in progress', async () => {
     const { session, host } = await start({ caret: 10 });
     const release = host.hold('updateParagraphDraft');
     session.typeText('q');
@@ -304,7 +304,7 @@ describe('종료', () => {
     }
   });
 
-  it('조합 중 커밋하면 조합을 확정한 뒤 커밋한다(I8)', async () => {
+  it('committing during composition finalizes the composition and then commits (I8)', async () => {
     const { session, host } = await start({ caret: 10 });
     session.compositionStart();
     session.compositionUpdate('한');
@@ -319,7 +319,7 @@ describe('종료', () => {
     ).toBe('ab cd efgh한');
   });
 
-  it('마지막 갱신이 실패했으면 커밋 전에 현재 상태를 다시 보내고, 성공한 뒤 커밋한다(리뷰 M2)', async () => {
+  it('if the last update failed, resends the current state before commit and commits after it succeeds (review M2)', async () => {
     const { session, host } = await start({ caret: 10 });
     session.typeText('a');
     await session.settle();
@@ -336,7 +336,7 @@ describe('종료', () => {
     }
   });
 
-  it('다시 보내기도 실패하면 커밋하지 않고 편집기를 열어 둔 채 오류를 표시한다(리뷰 M2)', async () => {
+  it('if the resend also fails, does not commit and shows the error with the editor kept open (review M2)', async () => {
     const { session, host } = await start({ caret: 10 });
     session.typeText('a');
     await session.settle();
@@ -350,7 +350,7 @@ describe('종료', () => {
     expect(session.view().error).toBe('again');
     expect(session.view().committing).toBe(false);
     expect(session.view().editor.text).toBe('ab cd efghab');
-    // 편집기는 열려 있어 입력·커밋을 계속할 수 있다.
+    // The editor is open, so input and commit can continue.
     session.typeText('c');
     const second = await session.commit();
     expect(second.kind).toBe('committed');
@@ -361,7 +361,7 @@ describe('종료', () => {
     }
   });
 
-  it('커밋 RPC 처리 중 입력은 받지 않고 committing 으로 표시한다(리뷰 M2)', async () => {
+  it('input is not accepted while the commit RPC is in progress, and committing is shown (review M2)', async () => {
     const { session, host, views } = await start({ caret: 10 });
     session.typeText('a');
     await session.settle();
@@ -390,7 +390,7 @@ describe('종료', () => {
     expect(host.count('updateParagraphDraft')).toBe(1);
   });
 
-  it('취소는 대기 입력을 버리고 취소 RPC 를 보낸다', async () => {
+  it('cancel discards pending input and sends the cancel RPC', async () => {
     const { session, host } = await start({ caret: 10 });
     session.typeText('x');
     await session.cancel();
@@ -399,8 +399,8 @@ describe('종료', () => {
   });
 });
 
-describe('복구(D6)', () => {
-  it('갱신 중 Worker 가 복구되면 같은 문단 초안을 편집기 모델로 다시 시작한다', async () => {
+describe('recovery (D6)', () => {
+  it('if the Worker is recovered during an update, restarts the same paragraph draft with the editor model', async () => {
     const { session, host } = await start({ caret: 10 });
     session.typeText('가');
     await session.settle();
@@ -421,7 +421,7 @@ describe('복구(D6)', () => {
     ).toBe('ab cd efgh가나');
   });
 
-  it('커밋 중 복구되면 초안을 다시 시작하고 편집 모드를 유지한다', async () => {
+  it('if recovered during commit, restarts the draft and stays in edit mode', async () => {
     const { session, host } = await start({ caret: 10 });
     session.typeText('x');
     await session.settle();
@@ -430,14 +430,14 @@ describe('복구(D6)', () => {
     const out = await session.commit();
     expect(out.kind).toBe('restarted');
     expect(session.view().notice).toContain('복구');
-    // 다시 커밋하면 성공한다.
+    // Committing again succeeds.
     const second = await session.commit();
     expect(second.kind).toBe('committed');
   });
 });
 
-describe('반응 시간 기록', () => {
-  it('합성 직후 reportPainted 가 입력 → 합성 시간을 기록한다', async () => {
+describe('response time recording', () => {
+  it('reportPainted right after compositing records the input → composite time', async () => {
     const { session, clock } = await start({ caret: 10 });
     clock.t = 1000;
     session.typeText('a');

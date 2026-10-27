@@ -1,11 +1,11 @@
 /**
- * Type3 글리프 준비(MuPDF 1.28 fz_prepare_t3_glyph·pdf_load_type3_font 에뮬레이션).
+ * Type3 glyph preparation (emulates MuPDF 1.28 fz_prepare_t3_glyph and pdf_load_type3_font).
  *
- * MuPDF 는 Type3 폰트를 읽을 때 글리프 프로시저마다 장치 플래그를 계산한다. 시작 플래그는 채움·선 색과 선 상태
- * (끝 모양·연결·마이터·폭·대시)가 "정의되지 않음" 이다. d0 은 COLOR, d1 은 MASK 를 켜고 색 미정을 푼다. 색 연산은
- * 해당 색 미정을, w·j·J·M·d(와 gs 의 LW·LJ·LC·ML·D)는 해당 선 상태 미정을 푼다. 칠하기에서 미정 상태를 쓰면
- * (pdf_show_path) UNCACHEABLE 이 되고, 그 글리프는 표시할 때 글리프 프로시저를 장치로 직접 실행한 뒤 텍스트는
- * 보이지 않게(Tr 3) 보낸다(pdf_show_char render_direct). 인터프리터는 이 플래그로 직접 실행 여부를 정한다.
+ * When loading a Type3 font, MuPDF computes device flags for each glyph procedure. The initial flags have fill/stroke color and line state
+ * (cap, join, miter, width, dash) as "undefined". d0 turns on COLOR, d1 turns on MASK and clears color-undefined. Color operations
+ * clear the corresponding color-undefined, and w, j, J, M, d (and LW, LJ, LC, ML, D in gs) clear the corresponding line-state-undefined. If painting uses an undefined state
+ * (pdf_show_path) it becomes UNCACHEABLE, and when that glyph is shown the glyph procedure is executed directly on the device and the text is then
+ * sent invisible (Tr 3) (pdf_show_char render_direct). The interpreter uses these flags to decide on direct execution.
  */
 import type * as mupdf from 'mupdf';
 import type { Matrix } from '@pdf-editor/shared-types';
@@ -25,17 +25,17 @@ const LINEWIDTH_U = 1 << 8;
 const DASH_U = 1 << 9;
 
 export interface Type3Glyph {
-  /** 디코드한 글리프 프로시저. */
+  /** Decoded glyph procedure. */
   bytes: Uint8Array;
   flags: number;
 }
 
 export interface Type3Font {
-  /** MuPDF t3matrix(/FontMatrix, 없으면 항등). */
+  /** MuPDF t3matrix (/FontMatrix, identity if absent). */
   matrix: Matrix;
-  /** 글리프 프로시저 리소스(폰트 /Resources, 없으면 폰트를 읽은 콘텐츠의 리소스). */
+  /** Glyph procedure resources (the font's /Resources, or if absent the resources of the content that loaded the font). */
   resources: mupdf.PDFObject | null;
-  /** 코드(= MuPDF gid) → 글리프. 프로시저가 없으면 undefined. */
+  /** Code (= MuPDF gid) → glyph. undefined if there is no procedure. */
   glyphs: Map<number, Type3Glyph>;
 }
 
@@ -45,7 +45,7 @@ function nums(tokens: readonly Token[]): number[] {
   return tokens.filter((t) => t.kind === 'number').map((t) => t.value as number);
 }
 
-/** 글리프 프로시저의 장치 플래그(fz_prepare_t3_glyph 의 리스트 장치 실행 결과). */
+/** Device flags of a glyph procedure (result of running fz_prepare_t3_glyph on the list device). */
 export function type3GlyphFlags(bytes: Uint8Array, resources: mupdf.PDFObject | null): number {
   let flags =
     FILLCOLOR_U | STROKECOLOR_U | CAPS_U | LINEJOIN_U | MITERLIMIT_U | LINEWIDTH_U | DASH_U;
@@ -181,7 +181,7 @@ function encodingNames(dict: mupdf.PDFObject): (string | null)[] {
   return names;
 }
 
-/** Type3 폰트 사전 → 글리프 준비 결과. fallbackResources = 폰트를 읽은 콘텐츠의 안쪽 리소스. */
+/** Type3 font dictionary → glyph preparation result. fallbackResources = inner resources of the content that loaded the font. */
 export function loadType3(
   dict: mupdf.PDFObject,
   fallbackResources: mupdf.PDFObject | null,

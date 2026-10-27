@@ -1,6 +1,6 @@
 /**
- * 편집 중 캐럿·선택·조합 밑줄·표시 상자 계산(순수). 모두 `ReflowSummary`(페이지 공간 pt)로 그린다(계약 D7).
- * 가정: 가로쓰기 왼쪽 → 오른쪽. `PlacedLine` 의 [start, end) 가 강제 줄바꿈 `\n` 을 포함하든 빼든 같은 결과가 나오게 한다.
+ * Computation of the caret, selection, composition underline and display box during editing (pure). Everything is drawn from `ReflowSummary` (page-space pt) (contract D7).
+ * Assumption: horizontal writing, left → right. Gives the same result whether the [start, end) of a `PlacedLine` includes the forced line break `\n` or not.
  */
 import type {
   PageModel,
@@ -13,9 +13,9 @@ import type {
 import type { Affinity } from './edit-model.js';
 
 export interface CaretBox {
-  /** 캐럿 x(페이지 공간). */
+  /** Caret x (page space). */
   x: number;
-  /** 줄 위쪽·아래쪽(baseline − ascent, baseline + descent). */
+  /** Top and bottom of the line (baseline − ascent, baseline + descent). */
   top: number;
   bottom: number;
   line: number;
@@ -23,7 +23,7 @@ export interface CaretBox {
 
 const isSpace = (s: string): boolean => /^\s*$/.test(s);
 
-/** 줄이 보여 주는 텍스트 끝(강제 줄바꿈 글자는 뺀다). */
+/** End of the text the line shows (the forced line-break character is excluded). */
 export function lineVisibleEnd(line: PlacedLine, text: string): number {
   if (line.hardBreak && line.end > line.start && text[line.end - 1] === '\n') return line.end - 1;
   return Math.min(line.end, text.length);
@@ -35,13 +35,13 @@ function glyphsOf(reflow: ReflowSummary, line: PlacedLine): PlacedGlyph[] {
     .sort((a, b) => a.offset - b.offset);
 }
 
-/** 줄이 소프트 줄바꿈(다음 줄로 이어짐)으로 끝나는지. */
+/** Whether the line ends with a soft line break (continues onto the next line). */
 function isSoftWrapped(reflow: ReflowSummary, index: number): boolean {
   const line = reflow.lines[index];
   return line !== undefined && !line.hardBreak && index < reflow.lines.length - 1;
 }
 
-/** offset 이 속한 줄 번호. 소프트 줄바꿈 경계는 affinity 로 정한다. */
+/** Line number that offset belongs to. A soft line-break boundary is decided by affinity. */
 export function lineIndexOf(
   reflow: ReflowSummary,
   text: string,
@@ -58,7 +58,7 @@ export function lineIndexOf(
   return affinity === 'upstream' ? hits[0]! : hits[hits.length - 1]!;
 }
 
-/** 줄 안 offset 의 x. 소프트 줄바꿈 줄 끝의 공백 구간은 줄 오른쪽 끝(x1)에 둔다. */
+/** x of an offset within a line. The whitespace run at the end of a soft-wrapped line is placed at the right end of the line (x1). */
 function xInLine(reflow: ReflowSummary, text: string, index: number, offset: number): number {
   const line = reflow.lines[index]!;
   const glyphs = glyphsOf(reflow, line);
@@ -79,7 +79,7 @@ function xInLine(reflow: ReflowSummary, text: string, index: number, offset: num
   return offset < prev.offset + prev.length ? prev.x : prev.x + prev.advance;
 }
 
-/** offset 의 캐럿 상자. */
+/** Caret box of an offset. */
 export function caretBox(
   reflow: ReflowSummary,
   text: string,
@@ -102,7 +102,7 @@ export interface OffsetHit {
   affinity: Affinity;
 }
 
-/** 줄 안에서 x 에 가장 가까운 캐럿 위치. */
+/** Caret position closest to x within a line. */
 export function offsetAtX(
   reflow: ReflowSummary,
   text: string,
@@ -118,7 +118,7 @@ export function offsetAtX(
     x: g.x,
   }));
   const last = glyphs.at(-1);
-  // 소프트 줄바꿈 줄은 끝 공백 앞(마지막 보이는 글자 뒤)까지만 후보로 둔다. 공백 구간은 줄 끝 x1 로 접힌다.
+  // For a soft-wrapped line, only positions up to before the trailing whitespace (after the last visible character) are candidates. The whitespace run collapses to the line-end x1.
   let visibleEnd = end;
   if (isSoftWrapped(reflow, index)) {
     visibleEnd = line.start;
@@ -136,7 +136,7 @@ export function offsetAtX(
   return { offset: best.offset, affinity: wrapBoundary ? 'upstream' : 'downstream' };
 }
 
-/** 페이지 공간 점 → 캐럿 위치. 가장 가까운 줄을 고른 뒤 x 로 정한다. */
+/** Page-space point → caret position. Picks the nearest line, then decides by x. */
 export function offsetAtPoint(reflow: ReflowSummary, text: string, point: Point): OffsetHit {
   if (reflow.lines.length === 0) return { offset: 0, affinity: 'downstream' };
   let best = 0;
@@ -153,7 +153,7 @@ export function offsetAtPoint(reflow: ReflowSummary, text: string, point: Point)
   return offsetAtX(reflow, text, best, point[0]);
 }
 
-/** 위(-1)·아래(+1) 줄로 이동. goalX 는 연속 이동 동안 유지하는 x. 첫 줄 위는 처음, 마지막 줄 아래는 끝. */
+/** Move to the line above (-1) or below (+1). goalX is the x kept during consecutive moves. Above the first line goes to the start; below the last line goes to the end. */
 export function moveVertical(
   reflow: ReflowSummary,
   text: string,
@@ -172,7 +172,7 @@ export function moveVertical(
   return { ...offsetAtX(reflow, text, target, x), goalX: x };
 }
 
-/** Home / End: 리플로우 줄 기준. */
+/** Home / End: by reflow line. */
 export function lineBoundary(
   reflow: ReflowSummary,
   text: string,
@@ -188,7 +188,7 @@ export function lineBoundary(
   return { offset: end, affinity: isSoftWrapped(reflow, index) ? 'upstream' : 'downstream' };
 }
 
-/** [a, b) 선택 구간의 줄별 상자(페이지 공간 [x0, top, x1, bottom]). */
+/** Per-line boxes of the selection range [a, b) (page space [x0, top, x1, bottom]). */
 export function rangeRects(reflow: ReflowSummary, text: string, a: number, b: number): Rect[] {
   const lo = Math.min(a, b);
   const hi = Math.max(a, b);
@@ -204,14 +204,14 @@ export function rangeRects(reflow: ReflowSummary, text: string, a: number, b: nu
     if (s > e || (s === e && !spansBreak)) return;
     const x0 = xInLine(reflow, text, i, s);
     let x1 = xInLine(reflow, text, i, e);
-    // 줄바꿈을 지나는 선택은 줄 끝에 작은 여백을 둬 줄바꿈이 선택됐음을 보여 준다.
+    // A selection that crosses a line break gets a small margin at the line end to show that the line break is selected.
     if (spansBreak && line.hardBreak) x1 += 3;
     if (x1 > x0) rects.push([x0, top, x1, bottom]);
   });
   return rects;
 }
 
-/** 조건을 만족하는 글리프의 줄별 이어진 구간(페이지 공간 [x0, baseline, x1, baseline + descent]). */
+/** Per-line contiguous ranges of glyphs that satisfy a condition (page space [x0, baseline, x1, baseline + descent]). */
 function glyphSegments(reflow: ReflowSummary, pick: (g: PlacedGlyph) => boolean): Rect[] {
   const out: Rect[] = [];
   for (const line of reflow.lines) {
@@ -236,7 +236,7 @@ function glyphSegments(reflow: ReflowSummary, pick: (g: PlacedGlyph) => boolean)
   return out;
 }
 
-/** 폴백 폰트로 쓴 글자 구간(점선 밑줄 표시용). */
+/** Character ranges written with the fallback font (for the dotted underline). */
 export function fallbackSegments(reflow: ReflowSummary): Rect[] {
   return glyphSegments(reflow, (g) => g.font.kind === 'fallback');
 }
@@ -245,12 +245,12 @@ export interface MissingMark {
   x: number;
   top: number;
   bottom: number;
-  /** 쓰지 않은 글자(텍스트 위치 구간). */
+  /** Characters not written (text position range). */
   offset: number;
   length: number;
 }
 
-/** 원본·폴백 모두 글리프가 없어 쓰지 않은 글자의 표시 위치. */
+/** Display positions of characters not written because neither the original nor the fallback font has a glyph. */
 export function missingMarks(reflow: ReflowSummary): MissingMark[] {
   const out: MissingMark[] = [];
   reflow.glyphs.forEach((g) => {
@@ -269,7 +269,7 @@ export function missingMarks(reflow: ReflowSummary): MissingMark[] {
   return out;
 }
 
-/** 조합 밑줄: [s, e) 구간의 줄별 밑줄(페이지 공간 [x0, y, x1, y]). */
+/** Composition underline: per-line underlines of the range [s, e) (page space [x0, y, x1, y]). */
 export function compositionUnderlines(
   reflow: ReflowSummary,
   text: string,
@@ -283,12 +283,12 @@ export function compositionUnderlines(
   ]);
 }
 
-// ── 시작 캐럿(원 문서 글자 → 텍스트 위치) ───────────────────────────────
+// ── Start caret (original document character → text position) ─────────
 
 /**
- * 더블클릭한 페이지 점에서 가장 가까운 원 문서 글자(`PageModel.chars`)를 찾아 편집 텍스트 위치로 바꾼다
- * (계획의 `charIndexOfOffset`, 계약 5.3). 글자 가운데보다 오른쪽이면 그 글자 뒤. 합성 공백(-1)은 건너뛴다.
- * 매핑이 비어 있으면 null.
+ * Finds the original document character (`PageModel.chars`) nearest the double-clicked page point and converts it to an edit text position
+ * (the plan's `charIndexOfOffset`, contract 5.3). If the point is right of the character's center, the position is after it. Synthetic spaces (-1) are skipped.
+ * null if the mapping is empty.
  */
 export function offsetAtPagePoint(
   model: PageModel,
@@ -316,7 +316,7 @@ export function offsetAtPagePoint(
     const y1 = Math.max(...ys);
     const dx = point[0] < x0 ? x0 - point[0] : point[0] > x1 ? point[0] - x1 : 0;
     const dy = point[1] < y0 ? y0 - point[1] : point[1] > y1 ? point[1] - y1 : 0;
-    // 줄 방향(가로)보다 줄 사이 거리를 무겁게 본다.
+    // Weigh the distance between lines more heavily than the distance along the line (horizontal).
     const dist = Math.hypot(dx, dy * 2);
     if (dist < bestDist) {
       bestDist = dist;
@@ -328,7 +328,7 @@ export function offsetAtPagePoint(
   return point[0] > bestCenter ? last.get(bestChar)! + 1 : first.get(bestChar)!;
 }
 
-/** 점이 놓인 가장 안쪽(면적이 가장 작은) 문단. 없으면 null. */
+/** Innermost (smallest-area) paragraph containing the point. null if none. */
 export function paragraphAt<T extends { bbox: Rect }>(paragraphs: T[], point: Point): T | null {
   let best: T | null = null;
   let bestArea = Infinity;
@@ -346,7 +346,7 @@ export function paragraphAt<T extends { bbox: Rect }>(paragraphs: T[], point: Po
 
 export type HandleName = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
-/** 영역 핸들 드래그: 변·모서리를 (dx, dy)pt 만큼 움직인 영역. 상한(limit) 안으로 자르고 최소 크기를 보장한다. */
+/** Region handle drag: the region with an edge or corner moved by (dx, dy) pt. Clipped to the limit and guaranteed a minimum size. */
 export function resizeArea(
   area: Rect,
   handle: HandleName,

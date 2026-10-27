@@ -1,7 +1,7 @@
 /**
- * V1 전반(docs/m3-contract.md 6.1, docs/m3-core.md 2절): MuPDF 저널이 편집 블록 Form 추가·스트림 교체·리소스 추가·
- * 폰트 추가를 undo/redo 로 되돌리는지, 폴백을 넣은 초안 취소·undo 뒤 새 편집, D9 저장 순서 뒤 undo/redo.
- * MuPDF 만 쓴다(pdf-ops·reflow 무관). 2026-10-19 서버 Node 22, mupdf 1.28.1 에서 확인한 동작을 고정한다.
+ * All of V1 (docs/m3-contract.md 6.1, docs/m3-core.md section 2): whether the MuPDF journal undoes/redoes edit block Form addition, stream replacement, resource addition and
+ * font addition, a new edit after cancelling a draft that inserted the fallback or after undo, and undo/redo after the D9 save sequence.
+ * Uses MuPDF only (independent of pdf-ops and reflow). Pins the behavior verified on 2026-10-19 with server Node 22 and mupdf 1.28.1.
  */
 import '../src/wasm-module.js';
 import { readFileSync } from 'node:fs';
@@ -17,10 +17,10 @@ const FONT = new Uint8Array(
   ),
 );
 const SAVE = 'garbage=yes,compress,objstms';
-/** 폴백 폰트로 쓰는 "가" 한 글자(Identity-H 2바이트 gid, 잉크가 있는 글리프). */
+/** A single character "가" used with the fallback font (Identity-H 2-byte gid, a glyph with ink). */
 const GA = `<${new mupdf.Font('NotoSansKR', FONT).encodeCharacter('가'.codePointAt(0)!).toString(16).padStart(4, '0')}>`;
 
-/** 라틴 문장 하나가 있는 쪽. 세션과 같은 Stream 입력으로 다시 연다. */
+/** A page with one Latin sentence. Reopened with the same Stream input as the session. */
 function openPlain(): mupdf.PDFDocument {
   const doc = new mupdf.PDFDocument();
   const f1 = doc.addSimpleFont(new mupdf.Font('Helvetica'));
@@ -68,7 +68,7 @@ function pageText(doc: mupdf.PDFDocument): string {
   }
 }
 
-/** 편집 블록: Form 추가 + 쪽 Resources 등록 + 쪽 콘텐츠에 호출 추가. 작업 안에서 부른다. */
+/** Edit block: add a Form + register it in the page Resources + add a call to the page content. Called inside an operation. */
 function addBlock(
   doc: mupdf.PDFDocument,
   body: string,
@@ -98,7 +98,7 @@ function addBlock(
   return form;
 }
 
-/** 폴백 폰트 추가(Type0, Identity-H). 저널을 켜기 전에 한 번 부르는 것이 계약(D4 수정 1)이다. */
+/** Adds the fallback font (Type0, Identity-H). The contract (D4 amendment 1) is to call it once before enabling the journal. */
 function embedFallback(doc: mupdf.PDFDocument): mupdf.PDFObject {
   const ref = doc.addFont(new mupdf.Font('NotoSansKR', FONT));
   ref.put('PdfEditorFallback', doc.newBoolean(true));
@@ -107,8 +107,8 @@ function embedFallback(doc: mupdf.PDFDocument): mupdf.PDFObject {
 
 const fontLive = (ref: mupdf.PDFObject): boolean => ref.resolve().isDictionary();
 
-describe('V1: 저널이 편집 블록 변경을 되돌린다', () => {
-  it('블록 Form 추가·쪽 콘텐츠 교체·리소스 추가를 undo/redo 하고, 작업 밖 변경은 예외', () => {
+describe('V1: the journal reverts edit block changes', () => {
+  it('undoes/redoes block Form addition, page content replacement and resource addition, and a change outside an operation throws', () => {
     const doc = openPlain();
     doc.enableJournal();
     const base = ink(doc);
@@ -140,7 +140,7 @@ describe('V1: 저널이 편집 블록 변경을 되돌린다', () => {
     expect(doc.newIndirect(num).isStream()).toBe(true);
   });
 
-  it('같은 블록 스트림을 한 작업 안에서 여러 번 고쳐도 한 단계이고 undo 는 작업 전 내용으로', () => {
+  it('editing the same block stream several times inside one operation is one step, and undo returns to the pre-operation content', () => {
     const doc = openPlain();
     doc.enableJournal();
     doc.beginOperation('edit');
@@ -161,7 +161,7 @@ describe('V1: 저널이 편집 블록 변경을 되돌린다', () => {
     expect(pageText(doc)).toContain('V20');
   });
 
-  it('렌더·구조화 텍스트·페이지 로드는 저널 단계를 만들지 않는다', () => {
+  it('render, structured text and page load create no journal step', () => {
     const doc = openPlain();
     doc.enableJournal();
     ink(doc);
@@ -171,8 +171,8 @@ describe('V1: 저널이 편집 블록 변경을 되돌린다', () => {
   });
 });
 
-describe('V1: 폴백 폰트 수명', () => {
-  it('저널이 되돌린 폰트를 같은 바이트로 다시 넣으면 끊긴 참조가 돌아온다(MuPDF 1.28.1 폰트 리소스 표)', () => {
+describe('V1: fallback font lifetime', () => {
+  it('re-inserting a font the journal reverted with the same bytes restores the broken reference (MuPDF 1.28.1 font resource table)', () => {
     const doc = openPlain();
     doc.enableJournal();
     doc.beginOperation('draft');
@@ -184,14 +184,14 @@ describe('V1: 폴백 폰트 수명', () => {
 
     doc.beginOperation('again');
     const naive = doc.addFont(new mupdf.Font('NotoSansKR', FONT));
-    // 폰트 바이트 다이제스트로 기존 항목을 찾아 같은 객체 번호를 돌려주지만 객체는 이미 없다.
+    // It finds the existing entry via the font byte digest and returns the same object number, but the object no longer exists.
     expect(naive.asIndirect()).toBe(num);
     expect(fontLive(naive)).toBe(false);
     expect(() => naive.put('X', doc.newInteger(1))).toThrow(/not a dict/);
     doc.abandonOperation();
   });
 
-  it('저널을 켜기 전에 넣은 폰트는 초안 취소·undo 로 사라지지 않는다', () => {
+  it('a font inserted before enabling the journal does not disappear on draft cancel or undo', () => {
     const doc = openPlain();
     const font = embedFallback(doc);
     ensureInfoDictionary(doc);
@@ -209,7 +209,7 @@ describe('V1: 폴백 폰트 수명', () => {
     expect(fontLive(font)).toBe(true);
   });
 
-  it('작업 밖에서 만든 객체(Info)는 그 작업을 버려도 남고, 작업 안에서 만든 Info 는 trailer 가 끊긴다', () => {
+  it('an object created outside an operation (Info) survives discarding that operation, while an Info created inside an operation leaves the trailer broken', () => {
     const inside = openPlain();
     ensureNothing(inside);
     inside.enableJournal();
@@ -217,7 +217,7 @@ describe('V1: 폴백 폰트 수명', () => {
     const info = inside.addObject(inside.newDictionary());
     inside.getTrailer().put('Info', info);
     inside.abandonOperation();
-    // trailer 변경은 저널에 기록되지 않아 /Info 가 사라진 객체를 가리킨다.
+    // The trailer change is not recorded in the journal, so /Info points to an object that is gone.
     expect(inside.getTrailer().get('Info').isIndirect()).toBe(true);
     expect(inside.getTrailer().get('Info').resolve().isNull()).toBe(true);
 
@@ -231,7 +231,7 @@ describe('V1: 폴백 폰트 수명', () => {
     expect(outside.getTrailer().get('Info').get('X').isNull()).toBe(true);
   });
 
-  it('getTrailer() 를 객체 추가보다 먼저 받아 두면 그 trailer 에 넣은 값이 현재 trailer 에 없다', () => {
+  it('if getTrailer() is obtained before adding the object, the value put into that trailer is missing from the current trailer', () => {
     const doc = openPlain();
     const stale = doc.getTrailer();
     const info = doc.addObject(doc.newDictionary());
@@ -246,8 +246,8 @@ function ensureNothing(doc: mupdf.PDFDocument): void {
   expect(doc.getTrailer().get('Info').isNull()).toBe(true);
 }
 
-describe('V1: undo 뒤 redo 단계 보존', () => {
-  /** 작업 둘을 커밋하고 하나를 undo 한 문서(redo 가능). */
+describe('V1: redo step preservation after undo', () => {
+  /** A document with two operations committed and one undone (redo possible). */
   function undone(): { doc: mupdf.PDFDocument; pageObj: mupdf.PDFObject } {
     const doc = openPlain();
     ensureInfoDictionary(doc);
@@ -265,7 +265,7 @@ describe('V1: undo 뒤 redo 단계 보존', () => {
   }
   const redoable = (doc: mupdf.PDFDocument): boolean => doc.canRedo();
 
-  it('변경 없는 작업(판정 probe)을 열고 버리거나 닫아도 redo 가 남는다', () => {
+  it('opening and discarding or closing an operation without changes (classification probe) leaves redo intact', () => {
     const { doc } = undone();
     expect(redoable(doc)).toBe(true);
     doc.beginOperation('probe');
@@ -277,7 +277,7 @@ describe('V1: undo 뒤 redo 단계 보존', () => {
     expect(doc.getJournal().steps).toEqual(['edit-A', 'edit-B']);
   });
 
-  it('작업 안에서 객체를 처음 바꾸면 redo 단계가 사라지고 abandon 해도 돌아오지 않는다', () => {
+  it('the first object change inside an operation removes the redo steps and they do not come back even after abandon', () => {
     const { doc, pageObj } = undone();
     doc.beginOperation('draft');
     pageObj.put('C', doc.newInteger(1));
@@ -286,7 +286,7 @@ describe('V1: undo 뒤 redo 단계 보존', () => {
     expect(doc.getJournal()).toEqual({ position: 1, steps: ['edit-A'] });
   });
 
-  it('저장 작업 안에서 Info 를 바꾸면(계약 D9 순서) undo 직후 저장이 redo 를 잃는다', () => {
+  it('changing Info inside a save operation (contract D9 order) makes a save right after undo lose redo', () => {
     const wrapped = (change: boolean): boolean => {
       const { doc } = undone();
       doc.beginOperation('save');
@@ -300,8 +300,8 @@ describe('V1: undo 뒤 redo 단계 보존', () => {
   });
 });
 
-describe('V1: 계약 시나리오', () => {
-  /** 세션의 첫 `beginParagraphEdit` 준비 순서: 폴백 폰트·Info 를 만든 뒤 저널을 켠다. */
+describe('V1: contract scenarios', () => {
+  /** Preparation order of the first `beginParagraphEdit` of a session: create the fallback font and Info, then enable the journal. */
   function prepared(): { doc: mupdf.PDFDocument; font: mupdf.PDFObject } {
     const doc = openPlain();
     const font = embedFallback(doc);
@@ -310,7 +310,7 @@ describe('V1: 계약 시나리오', () => {
     return { doc, font };
   }
 
-  it('폴백을 넣은 초안 취소 뒤 새 편집', () => {
+  it('a new edit after cancelling a draft that inserted the fallback', () => {
     const { doc, font } = prepared();
     doc.beginOperation('draft');
     addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
@@ -327,7 +327,7 @@ describe('V1: 계약 시나리오', () => {
     expect(ink(out)).toBeGreaterThan(ink(openPlain()));
   });
 
-  it('폴백을 넣은 편집 undo 뒤 새 편집 → 저장', () => {
+  it('a new edit after undoing an edit that inserted the fallback → save', () => {
     const { doc, font } = prepared();
     doc.beginOperation('edit1');
     addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
@@ -345,19 +345,19 @@ describe('V1: 계약 시나리오', () => {
     expect(ink(out)).toBe(base);
   });
 
-  it('D9 저장 순서 뒤 undo/redo: 저장은 저널 단계를 만들지 않고 첫 undo 가 유효하다', () => {
+  it('undo/redo after the D9 save sequence: the save creates no journal step and the first undo is valid', () => {
     const { doc, font } = prepared();
     doc.beginOperation('edit');
     addBlock(doc, `BT /FB 14 Tf 10 100 Td ${GA} Tj ET`, font);
     doc.endOperation();
     const edited = ink(doc);
 
-    // 감싼 저장(D9): 작업 안에서 Info 기록·서브셋 교체 → 저장 → 작업 버림.
+    // Wrapped save (D9): Info record and subset replacement inside an operation → save → discard the operation.
     const wrappedSave = (): Uint8Array => {
       doc.beginOperation('save');
       doc.getTrailer().get('Info').put('PdfEditorEdits', doc.newString('pages=1'));
       const file = font.get('DescendantFonts').get(0).get('FontDescriptor').get('FontFile2');
-      file.writeStream(FONT.subarray(0, 1000)); // 서브셋 교체 흉내
+      file.writeStream(FONT.subarray(0, 1000)); // imitates the subset replacement
       const buffer = doc.saveToBuffer(SAVE);
       const bytes = buffer.asUint8Array().slice();
       buffer.destroy();
@@ -391,7 +391,7 @@ describe('V1: 계약 시나리오', () => {
     expect(fontLive(font)).toBe(true);
   });
 
-  it('감싸지 않은 objstms 저장은 저널 단계를 만든다(D9 가 필요한 이유)', () => {
+  it('an unwrapped objstms save creates a journal step (why D9 is needed)', () => {
     const doc = openPlain();
     ensureInfoDictionary(doc);
     doc.enableJournal();
@@ -401,7 +401,7 @@ describe('V1: 계약 시나리오', () => {
     doc.saveToBuffer(SAVE).destroy();
     expect(doc.getJournal().steps).toEqual(['edit', 'Save document']);
     doc.undo();
-    // 저장 단계를 되돌린 것이라 화면이 그대로다(첫 undo 가 무효).
+    // It reverted the save step, so the screen is unchanged (the first undo is ineffective).
     expect(pageText(doc)).toContain('BLOCK');
   });
 });

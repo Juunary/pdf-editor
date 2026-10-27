@@ -1,17 +1,17 @@
-// A3-7: 전체 저장 옵션에 `objstms` 를 더할지 검증(docs/m0-dod-xobject-redact-save.md 3.3·3.6). cli.ts 에서 호출한다.
+// A3-7: verify whether to add `objstms` to the full-save options (docs/m0-dod-xobject-redact-save.md 3.3·3.6). Called from cli.ts.
 //
 //   node scripts/corpus/fetch-corpus.mjs                 # fixtures/corpus/*.pdf
 //   pnpm --filter @pdf-editor/spike-m0 spike:objstms     # → out/m0-dod/objstms/objstms-result.json, summary.md
-//     (-- --tmp <dir>: Poppler 쪽 이미지 임시 폴더, 기본 os.tmpdir(). -- --only <id,…>: 입력 id·edit-m0 만)
+//     (-- --tmp <dir>: temp folder for Poppler page images, default os.tmpdir(). -- --only <id,…>: only input ids and edit-m0)
 //
-// 같은 문서 상태를 BASE(`garbage=yes,compress`)·OBJSTMS(`garbage=yes,compress,objstms`)로 저장해 비교한다.
-// 1. 원본 저장: 코퍼스·fixtures/m0·세대 번호 합성 문서·암호화 변형. 옵션마다 별도 Node 프로세스(저장 시간·힙)
-// 2. 편집 후 저장: 코퍼스 문단 교체·M0 Day 1·공유 Form·기존 Redact·암호화 문서. 편집 흐름이 부르는
-//    `saveToBuffer(FULL_SAVE_OPTIONS)` 를 가로채 같은 문서 상태에서 두 옵션 출력을 함께 만든다(withDualSave)
-// 3. 두 출력 비교: MuPDF 객체 단위(번호·사전·스트림)·쪽 수·쪽별 렌더·텍스트, Poppler·pdf.js 쪽별 렌더·텍스트
-// 4. F3 상호작용: 이미지·Form XObject 를 모두 resolve() 한 뒤 저장 → 그냥 저장한 출력과 객체 단위 비교
-// 5. 증분 저장: 원본·BASE·OBJSTMS 출력에 주석을 더해 decideSaveMethod 결과로 저장 → 세 엔진 재열기
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// Saves the same document state as BASE (`garbage=yes,compress`) and OBJSTMS (`garbage=yes,compress,objstms`) and compares them.
+// 1. Original save: corpus, fixtures/m0, generation-number synthetic documents, encrypted variants. A separate Node process per option (save time·heap)
+// 2. Save after edit: corpus paragraph replacement, M0 Day 1, shared Form, existing Redact, encrypted documents. Intercepts the
+//    `saveToBuffer(FULL_SAVE_OPTIONS)` call made by the edit flow and produces both option outputs from the same document state (withDualSave)
+// 3. Compare the two outputs: MuPDF per object (number·dictionary·stream), page count, per-page render, text; Poppler·pdf.js per-page render, text
+// 4. F3 interaction: resolve() all images and Form XObjects, then save → compare per object with the plain-saved output
+// 5. Incremental save: add an annotation to the original, BASE and OBJSTMS outputs and save using the decideSaveMethod result → reopen in three engines
+// core must be imported before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { openPdf, wasmHeapBytes } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import {
@@ -65,13 +65,13 @@ const readBytes = (p: string) => new Uint8Array(readFileSync(p));
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 const mupdfScale = (b: Rect) => Math.min(1.5, 2000 / Math.max(b[2] - b[0], b[3] - b[1]));
 
-// ───────────────────────── 저장 가로채기 ─────────────────────────
+// ───────────────────────── save interception ─────────────────────────
 
 const ID_PATTERN = /(\/ID\s*\[\s*<[0-9A-Fa-f]*>\s*<)([0-9A-Fa-f]*)(>\s*\])/;
 
 /**
- * MuPDF 는 저장할 때마다 트레일러 /ID 두 번째 원소(인스턴스 ID)를 새로 만든다(첫 원소는 유지, 실측).
- * 같은 내용인지 바이트로 볼 때는 이 값을 0 으로 바꾼다(같은 길이).
+ * MuPDF creates a new second element of the trailer /ID (instance ID) on every save (the first element is kept, measured).
+ * When comparing bytes for sameness, this value is set to 0 (same length).
  */
 export function normalizeId(bytes: Uint8Array): Uint8Array {
   const text = Buffer.from(bytes).toString('latin1');
@@ -83,9 +83,9 @@ export function normalizeId(bytes: Uint8Array): Uint8Array {
 }
 
 /**
- * 두 저장 출력의 내용이 같은지: /ID 두 번째 원소를 뺀 바이트가 같으면 같다. 다르면 객체 단위로 본다.
- * 바이트가 달라지는 경우(실측): AES 암호화(문자열·스트림마다 임의 IV), 같은 문서의 objstms 저장 뒤 재저장
- * (컨테이너 번호가 새로 붙고 이전 번호는 xref 의 빈 항목으로 남음).
+ * Whether the contents of two save outputs are the same: they are the same if the bytes without the second /ID element are equal. Otherwise compare per object.
+ * Cases where bytes differ (measured): AES encryption (random IV per string·stream), re-saving the same document after an objstms save
+ * (container numbers are newly assigned and the old numbers remain as empty xref entries).
  */
 export function sameOutput(x: Uint8Array, y: Uint8Array, password?: string): boolean {
   if (sameBytes(normalizeId(x), normalizeId(y))) return true;
@@ -101,14 +101,14 @@ export function sameOutput(x: Uint8Array, y: Uint8Array, password?: string): boo
 export interface DualSave {
   base: Uint8Array;
   objstms: Uint8Array;
-  /** 같은 문서 상태에서 다시 저장해도 같은 출력(sameOutput, 저장이 문서 상태를 바꾸지 않음) */
+  /** Re-saving from the same document state gives the same output (sameOutput; saving does not change the document state) */
   repeatable: boolean;
 }
 
 /**
- * `fn` 안에서 `saveToBuffer(FULL_SAVE_OPTIONS)` 호출을 가로채 같은 문서 상태를 두 옵션으로 저장한다.
- * 저장 순서는 first → 다른 옵션 → 두 옵션 다시(반복 확인)이며, 호출자에게는 first 옵션 출력을 돌려준다.
- * 따라서 편집 흐름 자체의 재열기 검증은 first 옵션 출력에 대해 실행된다.
+ * Inside `fn`, intercepts `saveToBuffer(FULL_SAVE_OPTIONS)` calls and saves the same document state with both options.
+ * The save order is first → the other option → both options again (repeat check), and the first option's output is returned to the caller.
+ * So the edit flow's own reopen verification runs against the first option's output.
  */
 export function withDualSave<T>(
   first: Variant,
@@ -145,14 +145,14 @@ export function withDualSave<T>(
   }
 }
 
-// ───────────────────────── 파일 구조 ─────────────────────────
+// ───────────────────────── file structure ─────────────────────────
 
 export interface FileShape {
   bytes: number;
   header: string;
-  /** 마지막 startxref 가 가리키는 구간: xref 표 또는 xref 스트림 */
+  /** The section the last startxref points to: xref table or xref stream */
   lastXref: 'table' | 'stream' | 'unknown';
-  /** %%EOF 수(증분 구간 수 + 1) */
+  /** Number of %%EOF (incremental sections + 1) */
   eofMarkers: number;
 }
 
@@ -187,7 +187,7 @@ function open(bytes: Uint8Array, password?: string, inputMode: 'buffer' | 'strea
   return doc;
 }
 
-// ───────────────────────── 객체 단위 비교 ─────────────────────────
+// ───────────────────────── per-object comparison ─────────────────────────
 
 interface ObjectInfo {
   type: string;
@@ -207,7 +207,7 @@ function objectInfo(doc: mupdf.PDFDocument, num: number, decode: boolean): Objec
       buf.destroy();
     }
     const t = obj.isDictionary() ? obj.get('Type') : null;
-    // XRef 스트림 사전의 /ID 두 번째 원소는 저장마다 바뀐다(normalizeId)
+    // The second element of the XRef stream dictionary's /ID changes on every save (normalizeId)
     const dict = obj.toString().replace(ID_PATTERN, '$1…$3');
     return { type: t?.isName() ? t.asName() : '', dict, stream };
   } finally {
@@ -216,30 +216,30 @@ function objectInfo(doc: mupdf.PDFDocument, num: number, decode: boolean): Objec
   }
 }
 
-/** 저장 구조용 컨테이너(객체 스트림·xref 스트림). 저장마다 새 번호를 받으므로 내용 비교에서 뺀다. */
+/** Containers for the save structure (object streams·xref streams). They get new numbers on every save, so they are excluded from content comparison. */
 const CONTAINER_TYPES: ReadonlySet<string> = new Set(['ObjStm', 'XRef']);
 
 export interface GraphCompare {
-  /** 사용 중 객체 수(컨테이너 제외) */
+  /** Number of objects in use (excluding containers) */
   objects: Record<Variant, number>;
-  /** 컨테이너(ObjStm·XRef) 수 */
+  /** Number of containers (ObjStm·XRef) */
   containers: Record<Variant, number>;
-  /** 두 출력에 모두 있고 사전 또는 스트림이 다른 객체 수(판정: 0) */
+  /** Number of objects present in both outputs whose dictionary or stream differs (check: 0) */
   differing: number;
-  /** BASE 에만 있는 객체 수(판정: 0) */
+  /** Number of objects only in BASE (check: 0) */
   missingInObjstms: number;
-  /** OBJSTMS 에만 있는 객체의 /Type 별 수(판정: 없음) */
+  /** Per-/Type counts of objects only in OBJSTMS (check: none) */
   onlyInObjstms: Record<string, number>;
-  /** 트레일러 /Root·/Info·/ID 첫 원소·/Encrypt 동일 */
+  /** Trailer /Root·/Info·/ID first element·/Encrypt are the same */
   trailer: Record<'root' | 'info' | 'id' | 'encrypt', boolean>;
-  /** 암호화 문서: /Encrypt 사전이 객체 스트림 밖(트레일러 직접 사전 또는 최상위 간접 객체)에 있음 */
+  /** Encrypted document: the /Encrypt dictionary is outside object streams (direct trailer dictionary or top-level indirect object) */
   encryptTopLevel: boolean | null;
   samples: string[];
 }
 
 /**
- * 같은 객체 번호끼리 사전 문자열과 스트림(원시 바이트, 암호화 문서는 복호 내용) 해시를 비교한다.
- * 컨테이너(ObjStm·XRef)는 따로 센다. 두 인자는 BASE·OBJSTMS 외에 같은 옵션의 두 출력이어도 된다.
+ * Compares dictionary strings and stream hashes (raw bytes; decrypted content for encrypted documents) for the same object numbers.
+ * Containers (ObjStm·XRef) are counted separately. The two arguments may also be two outputs of the same option, besides BASE·OBJSTMS.
  */
 export function compareObjectGraphs(
   base: Uint8Array,
@@ -313,18 +313,18 @@ export function compareObjectGraphs(
   }
 }
 
-// ───────────────────────── 엔진별 쪽 비교 ─────────────────────────
+// ───────────────────────── per-engine page comparison ─────────────────────────
 
 export interface EngineCompare {
   pages: Partial<Record<'orig' | Variant, number>>;
-  /** BASE·OBJSTMS 렌더가 다른 쪽 수(판정: 0)와 최대 다른 픽셀 수 */
+  /** Number of pages whose BASE·OBJSTMS render differs (check: 0) and the maximum number of differing pixels */
   renderDiffPages: number;
   renderDiffMaxPx: number;
-  /** BASE·OBJSTMS 텍스트가 다른 쪽 수(판정: 0) */
+  /** Number of pages whose BASE·OBJSTMS text differs (check: 0) */
   textDiffPages: number;
-  /** 관찰: 원본 대비 렌더가 다른 쪽 수(원본이 있을 때) */
+  /** Observation: number of pages whose render differs from the original (when the original exists) */
   origDiffPages: Partial<Record<Variant, number>>;
-  /** 엔진 경고·오류 줄 수 */
+  /** Number of engine warning·error lines */
   messages: Partial<Record<'orig' | Variant, number>>;
   error?: string;
 }
@@ -412,7 +412,7 @@ function popplerInfo(pdf: string, password?: string): { pages: number; stderr: s
   return { pages: Number(r.stdout.match(/^Pages:\s+(\d+)/m)?.[1] ?? -1), stderr: r.stderr };
 }
 
-/** 쪽 범위 렌더 → 쪽 번호별 PPM 파일 경로. */
+/** Render a page range → PPM file path per page number. */
 function popplerChunk(
   pdf: string,
   first: number,
@@ -561,7 +561,7 @@ async function pdfjsCompare(
   const warnings: Record<string, number> = { base: 0, objstms: 0 };
   let current: Variant = 'base';
   const log = console.log;
-  // pdf.js 경고는 console.log("Warning: …") 로 나온다.
+  // pdf.js warnings come out as console.log("Warning: …").
   console.log = (...args: unknown[]) => {
     if (/^Warning:/.test(args.map(String).join(' ')))
       warnings[current] = (warnings[current] ?? 0) + 1;
@@ -606,7 +606,7 @@ async function pdfjsCompare(
   return r;
 }
 
-// ───────────────────────── 자식 작업 ─────────────────────────
+// ───────────────────────── child task ─────────────────────────
 
 interface SaveSpec {
   input: string;
@@ -618,9 +618,9 @@ interface SaveSpec {
 export interface SaveOutput {
   variant: Variant;
   options: string;
-  /** 3회(매번 새로 열기) 저장 시간 ms */
+  /** Save time ms over 3 runs (opened fresh each time) */
   saveMs: number[];
-  /** 첫 저장 직후 WASM 선형 메모리(프로세스 피크) */
+  /** WASM linear memory right after the first save (process peak) */
   wasmHeapBytes: number | null;
   shape: FileShape;
   pages: number;
@@ -635,7 +635,7 @@ function runSaveTask(spec: SaveSpec): SaveOutput {
   let out: Uint8Array | null = null;
   let heap: number | null = null;
   for (let i = 0; i < 3; i++) {
-    // 제품 열기 경로(PdfSession.open 기본 = Stream 입력)
+    // Product open path (PdfSession.open default = Stream input)
     const doc = open(input, spec.password, 'stream');
     const t0 = performance.now();
     const buf = doc.saveToBuffer(OPTIONS[spec.variant]);
@@ -715,17 +715,17 @@ interface ResolveSpec {
 }
 
 export interface ResolveOutput {
-  /** resolve() 한 이미지·Form XObject 수 */
+  /** Number of image·Form XObjects that were resolve()d */
   resolved: { images: number; forms: number };
-  /** resolve() 후 OBJSTMS 저장 vs 그냥 OBJSTMS 저장: 객체 단위 비교 */
+  /** OBJSTMS save after resolve() vs plain OBJSTMS save: per-object comparison */
   vsPlain: GraphCompare | { error: string };
-  /** resolve() 후 저장 출력에서 스트림이 아닌 이미지 XObject 수(판정: 0) */
+  /** Number of image XObjects that are not streams in the save output after resolve() (check: 0) */
   lostImages: number;
-  /** 대조: 같은 resolve() 후 `garbage=compact,compress` 저장에서 스트림이 아닌 이미지 XObject 수 */
+  /** Control: number of image XObjects that are not streams in a `garbage=compact,compress` save after the same resolve() */
   compactLostImages: number;
 }
 
-/** 쪽 Resources(상속 포함)의 XObject 와 Form 안 XObject 를 한 단계 더 resolve() 한다. 래퍼는 저장까지 유지. */
+/** resolve() one more level of the XObjects in the page Resources (including inherited) and the XObjects inside Forms. Wrappers are kept until save. */
 function resolveXObjects(doc: mupdf.PDFDocument, keep: mupdf.PDFObject[]) {
   const count = { images: 0, forms: 0 };
   const seen = new Set<number>();
@@ -805,9 +805,9 @@ interface IncrementalSpec {
 }
 
 /**
- * 증분 저장 사례. orig·base·objstms = 그 파일을 열어 주석 추가 후 저장.
- * session-base·session-objstms = 원본을 열어 그 옵션으로 전체 저장한 뒤(결과는 버림) 같은 문서에 주석을 더해
- * 저장(제품 PdfSession 은 저장 후에도 같은 문서를 계속 쓴다).
+ * Incremental save cases. orig·base·objstms = open that file, add an annotation, and save.
+ * session-base·session-objstms = open the original, do a full save with that option (result discarded), then add an annotation to the same document and
+ * save (the product PdfSession keeps using the same document after saving).
  */
 export type IncrementalKey = 'orig' | Variant | 'session-base' | 'session-objstms';
 
@@ -817,10 +817,10 @@ export interface IncrementalCase {
   options: string;
   error?: string;
   appendedBytes: number;
-  /** 증분 저장이면 원래 바이트가 그대로 앞에 남음 */
+  /** For an incremental save the original bytes remain unchanged at the front */
   prefixKept: boolean;
   shape: FileShape | null;
-  /** 덧붙인 구간의 객체 번호 */
+  /** Object numbers of the appended section */
   appendedObjects: number[];
   reopen: {
     mupdf: { pages: number; versions: number; notes: number; messages: number } | null;
@@ -831,11 +831,11 @@ export interface IncrementalCase {
 
 export interface IncrementalOutput {
   cases: Partial<Record<IncrementalKey, IncrementalCase>>;
-  /** 원본에 `incremental,objstms` 로 저장: 성공 여부·`incremental` 출력과 같은지(sameOutput) */
+  /** Save the original with `incremental,objstms`: whether it succeeded, and whether it equals the `incremental` output (sameOutput) */
   incrementalObjstms: { ok: boolean; error?: string; sameAsIncremental: boolean | null };
-  /** 1쪽 MuPDF 렌더 다른 픽셀 수: base vs objstms, session-base vs session-objstms */
+  /** Number of differing pixels in the MuPDF render of page 1: base vs objstms, session-base vs session-objstms */
   page1DiffPx: { files: number | null; session: number | null };
-  /** 원본 파일의 Poppler 경고·오류 줄 수(pdfinfo + 1쪽 렌더). 재열기 판정 기준선 */
+  /** Number of Poppler warning·error lines for the original file (pdfinfo + page 1 render). Baseline for the reopen check */
   popplerBaselineErrors: number | null;
 }
 
@@ -867,7 +867,7 @@ function addNoteAndSave(
   });
 }
 
-/** Poppler: 쪽 수와 pdfinfo·1쪽 렌더의 경고·오류 줄 수. */
+/** Poppler: page count and the number of warning·error lines from pdfinfo and the page 1 render. */
 function reopenPoppler(file: string, c: IncrementalCase, password?: string): void {
   const info = popplerInfo(file, password);
   const ppm = spawnSync('pdftoppm', ['-r', '36', '-f', '1', '-l', '1', ...pwArgs(password), file], {
@@ -1004,9 +1004,9 @@ async function runIncrementalTask(spec: IncrementalSpec): Promise<IncrementalOut
   return result;
 }
 
-// ── 편집 후 저장 ──
+// ── save after edit ──
 
-/** 결과 객체에서 옵션·시간·바이트 수처럼 저장 옵션에 따라 달라지는 값을 뺀다(두 실행 판정 비교용). */
+/** Removes values from the result object that vary with save options, such as option·time·byte count (for comparing the two runs' checks). */
 function stripVolatile(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(stripVolatile);
   if (v instanceof Uint8Array) return undefined;
@@ -1023,15 +1023,15 @@ function stripVolatile(v: unknown): unknown {
 
 export interface EditCaseOutput {
   name: string;
-  /** 저장 호출 수(두 실행 각각) */
+  /** Number of save calls (for each of the two runs) */
   saves: [number, number];
-  /** 같은 문서 상태 재저장 바이트 동일(두 실행 모두) */
+  /** Re-saved bytes of the same document state are identical (in both runs) */
   repeatable: boolean;
-  /** 실행 1(BASE 먼저)·실행 2(OBJSTMS 먼저)의 같은 옵션 출력 동일(sameOutput): 편집 결정적 + 저장 순서 무관 */
+  /** Same-option outputs of run 1 (BASE first) and run 2 (OBJSTMS first) are identical (sameOutput): edit is deterministic + save order does not matter */
   crossRunSame: boolean;
-  /** 편집 흐름의 재열기 판정(옵션·시간·바이트 제외)이 BASE 출력·OBJSTMS 출력에서 같음 */
+  /** The edit flow's reopen check (excluding option·time·bytes) is the same for the BASE output and the OBJSTMS output */
   verdictSame: boolean;
-  /** 편집 흐름이 OBJSTMS 출력에서 낸 판정 요약 */
+  /** Summary of the check the edit flow produced on the OBJSTMS output */
   objstmsVerdict: unknown;
   files: Record<Variant, string> | null;
   error?: string;
@@ -1098,7 +1098,7 @@ interface EditSpec {
   ttf: string;
 }
 
-/** 사용자 비밀번호 문서: 인증 후 1쪽 첫 텍스트 블록(20자 이상)을 redaction 으로 지우고 전체 저장. */
+/** User-password document: after authentication, erase the first text block (20 or more characters) on page 1 with redaction and do a full save. */
 function userPasswordEdit(input: Uint8Array, password: string) {
   const doc = open(input, password);
   const page = doc.loadPage(0) as mupdf.PDFPage;
@@ -1224,7 +1224,7 @@ interface PdfjsSpec {
   password?: string;
 }
 
-/** 자식 프로세스 진입점(`--child objstms-<작업> --spec <json>`). 결과는 spec.result 에 쓴다. */
+/** Child process entry point (`--child objstms-<task> --spec <json>`). The result is written to spec.result. */
 export async function runObjstmsChild(task: string, specFile: string): Promise<void> {
   const spec = JSON.parse(readFileSync(specFile, 'utf8')) as { result: string } & Record<
     string,
@@ -1251,18 +1251,18 @@ export async function runObjstmsChild(task: string, specFile: string): Promise<v
   writeFileSync(spec.result, JSON.stringify(result, null, 2));
 }
 
-// ───────────────────────── 실행기 ─────────────────────────
+// ───────────────────────── runner ─────────────────────────
 
 interface InputDoc {
   id: string;
   group: 'corpus' | 'm0' | 'synthetic' | 'encrypted';
   path: string;
   password?: string;
-  /** 코퍼스 문서: 편집 단계 대상 */
+  /** Corpus document: target of the edit stage */
   edit?: boolean;
 }
 
-/** 세대 번호가 0 이 아닌 객체(콘텐츠 5 1 R, 폰트 6 2 R)를 가진 PDF-1.4 xref 표 문서. */
+/** A PDF-1.4 xref-table document with objects whose generation number is not 0 (content 5 1 R, font 6 2 R). */
 export function buildGenerationPdf(): Uint8Array {
   const content = 'BT /F1 24 Tf 20 40 Td (Generation test) Tj ET';
   const objs: [number, number, string][] = [
@@ -1294,7 +1294,7 @@ export function buildGenerationPdf(): Uint8Array {
   return new TextEncoder().encode(s);
 }
 
-/** 암호화 변형: 원본을 MuPDF 로 암호화해 저장(입력 형식 objstms 여부 선택). */
+/** Encrypted variant: encrypt the original with MuPDF and save (choose whether the input format uses objstms). */
 function encryptPdf(src: Uint8Array, method: string, user: boolean, objstms: boolean): Uint8Array {
   const doc = openPdf(src);
   const options = [
@@ -1330,7 +1330,7 @@ function collectInputs(root: string, inputsDir: string): { docs: InputDoc[]; ski
   writeFileSync(gen, buildGenerationPdf());
   docs.push({ id: 'synthetic-generation', group: 'synthetic', path: gen });
   const variants: [string, string, string, boolean, boolean][] = [
-    // [원본 id, 원본 경로, 방식, 사용자 비밀번호, 입력 objstms]
+    // [original id, original path, method, user password, input objstms]
     ['m0-shared-xobject', join(m0, 'm0-shared-xobject.pdf'), 'aes-256', false, false],
     ['m0-shared-xobject', join(m0, 'm0-shared-xobject.pdf'), 'aes-256', true, false],
     ['m0-shared-xobject', join(m0, 'm0-shared-xobject.pdf'), 'aes-128', false, false],
@@ -1368,7 +1368,7 @@ function collectInputs(root: string, inputsDir: string): { docs: InputDoc[]; ski
       group: 'encrypted',
       path,
       ...(user ? { password: USER_PASSWORD } : {}),
-      // 소유자 비밀번호만 있는 코퍼스 변형은 제품처럼 비밀번호 없이 열리므로 코퍼스 편집도 돌린다
+      // Corpus variants with only an owner password open without a password like the product, so corpus editing is run too
       edit: srcId.startsWith('zen-') && !user,
     });
   }
@@ -1429,7 +1429,7 @@ export async function runObjstmsCli(opts: {
   out: string;
   ttf: string;
   tmp: string;
-  /** 이 id(입력 문서 id, 'edit-m0')만 실행 */
+  /** Run only this id (input document id, 'edit-m0') */
   only: string[] | null;
 }) {
   const { root, out, ttf, tmp } = opts;
@@ -1450,7 +1450,7 @@ export async function runObjstmsCli(opts: {
   const results = new Map<string, ObjstmsDocResult>();
   const spec = (name: string) => join(dirs.specs, `${name}.json`);
 
-  // 1. 원본 저장: 시간 측정이므로 하나씩
+  // 1. Original save: this measures time, so one at a time
   for (const d of docs) {
     const input = readBytes(d.path);
     const r: ObjstmsDocResult = {
@@ -1488,7 +1488,7 @@ export async function runObjstmsCli(opts: {
     );
   }
 
-  // 2. 편집 후 저장(두 옵션 출력)
+  // 2. Save after edit (both option outputs)
   const editSpecs: EditSpec[] = [
     ...docs
       .filter((d) => d.edit)
@@ -1524,7 +1524,7 @@ export async function runObjstmsCli(opts: {
   const passwordOf = (name: string) =>
     docs.find((d) => d.password && name === `edit-${d.id}`)?.password;
 
-  // 3. 비교(MuPDF·Poppler / pdf.js), 4. resolve(), 5. 증분 저장
+  // 3. Comparison (MuPDF·Poppler / pdf.js), 4. resolve(), 5. incremental save
   type Job = {
     name: string;
     task: string;
@@ -1621,7 +1621,7 @@ export async function runObjstmsCli(opts: {
   console.log(`\n결과: ${relative(root, join(out, 'objstms-result.json'))}`);
 }
 
-// ───────────────────────── 요약 ─────────────────────────
+// ───────────────────────── summary ─────────────────────────
 
 const engineOk = (e: EngineCompare | null | undefined) =>
   !!e &&

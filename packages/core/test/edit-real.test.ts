@@ -1,7 +1,7 @@
 /**
- * M3 통합(docs/m3-contract.md 7절): 실제 pdf-ops·reflow 어댑터(defaultEditAdapter)로 core 편집 흐름을 돈다.
- * 가짜 어댑터 시험(edit-engine·edit-save-replay)의 저널·로그 단언과 별개로, 실제 제거·삽입·폰트·배치·쓰기를 거친
- * 결과(텍스트·순서·폴백·저장·재열기·재편집·재적용 결정성)를 확인한다.
+ * M3 integration (docs/m3-contract.md section 7): runs the core edit flow with the real pdf-ops and reflow adapter (defaultEditAdapter).
+ * Separately from the journal and log assertions of the fake adapter tests (edit-engine, edit-save-replay), it checks the result that went through real removal, insertion, fonts, placement and writing
+ * (text, order, fallback, save, reopen, re-edit, reapply determinism).
  */
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
@@ -25,7 +25,7 @@ function session(bytes: Uint8Array): PdfSession {
 
 const source = (): Uint8Array => buildPdf([{ content: PAGE, mediabox: MEDIABOX }]);
 
-/** MuPDF 구조화 텍스트(콘텐츠 순서). */
+/** MuPDF structured text (content order). */
 function stext(bytesOrSession: Uint8Array | PdfSession, pageIndex = 0): string {
   if (bytesOrSession instanceof PdfSession) {
     return bytesOrSession
@@ -70,8 +70,8 @@ async function edit(s: PdfSession, startsWith: string, text: string) {
 
 const NEW_TEXT = 'Edited paragraph 한글 문장 漢字 with fallback glyphs and more words to wrap.';
 
-describe('실제 어댑터 편집 흐름(M3 통합)', () => {
-  it('판정 → 시작 → 갱신 → 커밋: 새 텍스트가 원래 자리(제목과 둘째 문단 사이)에 있고 폴백 경고가 난다', async () => {
+describe('real adapter edit flow (M3 integration)', () => {
+  it('classification → begin → update → commit: the new text is at the original position (between the title and the second paragraph) and a fallback warning is raised', async () => {
     const s = session(source());
     const editability = await s.getPageEditability(0);
     expect(editability.paragraphs.filter((p) => p.editable).length).toBeGreaterThanOrEqual(3);
@@ -85,7 +85,7 @@ describe('실제 어댑터 편집 흐름(M3 통합)', () => {
     const t = squash(stext(s));
     expect(t).toContain(squash(NEW_TEXT));
     expect(t).not.toContain('firstparagraphlineone');
-    // A9: 콘텐츠 순서상 제목 < 새 문단 < 둘째 문단.
+    // A9: in content order, title < new paragraph < second paragraph.
     const iTitle = t.indexOf('TitleHeading');
     const iNew = t.indexOf(squash(NEW_TEXT));
     const iSecond = t.indexOf('Secondparagraph');
@@ -95,7 +95,7 @@ describe('실제 어댑터 편집 흐름(M3 통합)', () => {
     s.close();
   });
 
-  it('undo·redo 로 원문과 편집본을 오가고, 폴백 초안 취소 뒤 새 편집 → 저장이 된다(V1)', async () => {
+  it('undo and redo move between the original and the edited text, and after cancelling a fallback draft, a new edit → save works (V1)', async () => {
     const s = session(source());
     await edit(s, 'first paragraph', NEW_TEXT);
     await s.undo();
@@ -103,7 +103,7 @@ describe('실제 어댑터 편집 흐름(M3 통합)', () => {
     await s.redo();
     expect(squash(stext(s))).toContain(squash(NEW_TEXT));
 
-    // 폴백을 쓰는 초안을 취소한 뒤 다른 문단을 편집한다.
+    // Edit another paragraph after cancelling a draft that uses the fallback.
     const id = await paragraphId(s, 'Second');
     const plan = await s.planParagraphEdit(0, id);
     const started = await s.beginParagraphEdit(0, id, plan.revision);
@@ -120,15 +120,15 @@ describe('실제 어댑터 편집 흐름(M3 통합)', () => {
     s.close();
   });
 
-  it('저장 파일: 폴백 폰트는 서브셋, Info /PdfEditorEdits 기록, 재열기 새 세션에서 같은 블록을 다시 쓴다', async () => {
+  it('saved file: the fallback font is a subset, Info /PdfEditorEdits is recorded, and the same block is rewritten in a new session after reopening', async () => {
     const s = session(source());
     await edit(s, 'first paragraph', NEW_TEXT);
     const saved = s.save({ changes: [] });
     s.close();
     const doc = mupdf.Document.openDocument(saved.bytes, 'application/pdf').asPDF()!;
     expect(doc.getTrailer().get('Info').get('PdfEditorEdits').asString()).toContain('pages=1');
-    // 폴백 폰트(표지 /PdfEditorFallback)는 하나이고 FontFile2 는 쓴 글리프만 남긴 서브셋이다(A7-1).
-    // 픽스처의 F2 는 같은 폰트 전체를 담고 있어 파일 크기로는 판정하지 않는다.
+    // There is one fallback font (marker /PdfEditorFallback), and FontFile2 is a subset holding only the glyphs used (A7-1).
+    // The fixture's F2 contains the whole of the same font, so this is not decided by file size.
     const fallback = fallbackFonts(doc);
     expect(fallback.length).toBe(1);
     const descendant = fallback[0]!.get('DescendantFonts').get(0);
@@ -152,7 +152,7 @@ describe('실제 어댑터 편집 흐름(M3 통합)', () => {
     s2.close();
   });
 
-  it('재적용(D6): 같은 로그를 새 문서에 두 번 적용하면 원래 편집과 같은 텍스트, 저장 파일 렌더·텍스트도 같다', async () => {
+  it('reapply (D6): applying the same log twice to a new document gives the same text as the original edit, and the render and text of the saved file are the same too', async () => {
     const live = session(source());
     const ops: EditOp[] = [];
     ops.push((await edit(live, 'first paragraph', NEW_TEXT)).commit.op);
@@ -165,7 +165,7 @@ describe('실제 어댑터 편집 흐름(M3 통합)', () => {
     await b.replayEdits(structuredClone(ops));
     expect(stext(a)).toBe(expectedText);
     expect(stext(b)).toBe(expectedText);
-    // 저장 바이트는 Info /ModDate(커밋 시각)가 달라 비교하지 않는다. 저장 파일의 렌더 픽셀·텍스트를 비교한다.
+    // Saved bytes are not compared because Info /ModDate (commit time) differs. The render pixels and text of the saved file are compared.
     const pixels = (bytes: Uint8Array) => {
       const doc = mupdf.Document.openDocument(bytes, 'application/pdf');
       const page = doc.loadPage(0);
@@ -186,7 +186,7 @@ describe('실제 어댑터 편집 흐름(M3 통합)', () => {
   });
 });
 
-/** F1(Helvetica) 하나를 쓰는 문서. tweak 으로 폰트 사전을 바꾼다(ToUnicode·Encoding). */
+/** A document using only F1 (Helvetica). tweak modifies the font dictionary (ToUnicode, Encoding). */
 function helveticaPdf(
   pages: string[],
   tweak: (doc: mupdf.PDFDocument, f1: mupdf.PDFObject) => void,
@@ -222,7 +222,7 @@ async function editAt(s: PdfSession, pageIndex: number, startsWith: string, text
   return { plan, update, commit };
 }
 
-/** 쪽의 편집 블록(/PdfEditorEdit Form) 콘텐츠. */
+/** Content of the page's edit blocks (/PdfEditorEdit Form). */
 function blockContents(s: PdfSession, pageIndex: number): string[] {
   const doc = mupdf.Document.openDocument(s.save({ changes: [] }).bytes, 'application/pdf');
   const pdf = doc.asPDF()!;
@@ -238,9 +238,9 @@ function blockContents(s: PdfSession, pageIndex: number): string[] {
   return out;
 }
 
-describe('마일스톤 리뷰 반영(docs/m3-integration.md 8절)', () => {
-  it('H1: ToUnicode 가 분해형(NFD)인 원문도 같은 텍스트 커밋에서 글자를 잃지 않는다', async () => {
-    // 코드 E9 → "e" + U+0301(분해형). 나머지 ASCII 는 그대로.
+describe('milestone review fixes (docs/m3-integration.md section 8)', () => {
+  it('H1: original text whose ToUnicode is decomposed (NFD) does not lose characters on a same-text commit either', async () => {
+    // Code E9 → "e" + U+0301 (decomposed). The rest of ASCII is unchanged.
     const bytes = helveticaPdf(
       [
         'BT /F1 12 Tf 50 250 Td (Le caf\\351 et le th\\351 du matin.) Tj ET\n' +
@@ -258,13 +258,13 @@ describe('마일스톤 리뷰 반영(docs/m3-integration.md 8절)', () => {
     const s = session(bytes);
     const layout = s.getPageLayout(0);
     const target = layout.paragraphs.find((p) => p.text.startsWith('Le caf'))!;
-    expect(target.text).toContain('é'); // 추출은 ToUnicode 그대로(분해형)
+    expect(target.text).toContain('é'); // extraction keeps ToUnicode as is (decomposed)
     const plan = await s.planParagraphEdit(0, target.id);
     const text = plan.runs.map((r) => r.text).join('');
     expect(text).toBe(text.normalize('NFC'));
     expect(text.normalize('NFC')).toBe(target.text.normalize('NFC'));
     expect(plan.charIndexOfOffset).toHaveLength(text.length);
-    // 'é'(NFC 한 위치)는 원래 클러스터의 첫 글자를 가리킨다.
+    // 'é' (one NFC position) points to the first character of the original cluster.
     const at = text.indexOf('é');
     expect(layout.paragraphs).toBeDefined();
     expect(plan.charIndexOfOffset[at]).toBeGreaterThanOrEqual(0);
@@ -285,9 +285,9 @@ describe('마일스톤 리뷰 반영(docs/m3-integration.md 8절)', () => {
     s.close();
   });
 
-  it('H1: 결합 문자만 두 폰트에 없으면 기본 글자는 남기고 그 결합 문자만 glyph-missing', async () => {
+  it('H1: when only the combining character is absent from both fonts, the base character is kept and only that combining character is glyph-missing', async () => {
     const s = session(source());
-    // q + U+0301: 미리 합친 글자가 없고 Helvetica(WinAnsi)·폴백 모두 U+0301 이 없다.
+    // q + U+0301: there is no precomposed character, and neither Helvetica (WinAnsi) nor the fallback has U+0301.
     const { update } = await edit(s, 'first paragraph', 'Aq́z end.');
     const missing = update.warnings.find((w) => w.kind === 'glyph-missing');
     expect(missing?.message).toContain('́');
@@ -296,8 +296,8 @@ describe('마일스톤 리뷰 반영(docs/m3-integration.md 8절)', () => {
     s.close();
   });
 
-  it('M1: 공백만 폴백으로 가도 저장 폴백 폰트는 서브셋이고 변경 종류에 font-embed 가 있다', async () => {
-    // ToUnicode 에 U+0020 이 없어 공백은 원본 폰트로 쓸 수 없다(폴백으로 감, font-fallback 경고 없음).
+  it('M1: even when only spaces go to the fallback, the saved fallback font is a subset and the change kinds include font-embed', async () => {
+    // ToUnicode lacks U+0020, so spaces cannot be written with the original font (they go to the fallback, with no font-fallback warning).
     const bytes = helveticaPdf(
       [
         'BT /F1 12 Tf 50 250 Td (Hello world first paragraph here.) Tj ET\n' +
@@ -326,8 +326,8 @@ describe('마일스톤 리뷰 반영(docs/m3-integration.md 8절)', () => {
     doc.destroy();
   });
 
-  it('M3: 같은 편집은 세션 이력과 관계없이 같은 코드로 쓴다(같은 유니코드의 코드가 여럿)', async () => {
-    // 'A' = 코드 65(WinAnsi)와 200(Differences). 0쪽은 200, 1쪽은 65 를 쓴다.
+  it('M3: the same edit is written with the same code regardless of session history (several codes for the same Unicode)', async () => {
+    // 'A' = code 65 (WinAnsi) and 200 (Differences). Page 0 uses 200 and page 1 uses 65.
     const bytes = helveticaPdf(
       [
         'BT /F1 12 Tf 50 250 Td (Used \\310 code on page one.) Tj ET\n' +
@@ -346,29 +346,29 @@ describe('마일스톤 리뷰 반영(docs/m3-integration.md 8절)', () => {
         f1.put('Encoding', enc);
       },
     );
-    // 세션 1: 1쪽을 먼저 편집(폰트를 1쪽 상태로 처음 만듦)한 뒤 0쪽 편집.
+    // Session 1: edit page 1 first (creating the font from the page 1 state), then edit page 0.
     const s1 = session(bytes);
     await editAt(s1, 1, 'Plain', 'Page two edited.');
     await editAt(s1, 0, 'Used', 'AAA new');
-    // 세션 2: 0쪽만 편집.
+    // Session 2: edit page 0 only.
     const s2 = session(bytes);
     await editAt(s2, 0, 'Used', 'AAA new');
     const b1 = blockContents(s1, 0);
     const b2 = blockContents(s2, 0);
     expect(b1).toHaveLength(1);
     expect(b1).toEqual(b2);
-    // 0쪽 상태에서 쓰인 코드(200 = C8)를 고른다.
+    // Pick the code used in the page 0 state (200 = C8).
     expect(b1[0]!.toLowerCase()).toContain('[<c8> <c8> <c8> <20>');
     s1.close();
     s2.close();
   });
 });
 
-describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
-  it('B1: 커밋한 편집 블록을 레이아웃이 여러 문단으로 나눠도 편집 판정은 블록 하나(상자 = 블록 글자 상자)', async () => {
+describe('fixes after user confirmation (docs/m3-integration.md section 9)', () => {
+  it('B1: even if the layout splits a committed edit block into several paragraphs, the edit classification is one block (box = block glyph box)', async () => {
     const s = session(source());
     const { commit } = await edit(s, 'first paragraph', 'Short line one.\nShort line two.');
-    // M2 규칙만으로는 강제 줄바꿈 뒤 짧은 줄이 다른 문단이지만, 편집 블록 힌트(9.6)로 레이아웃 문단 하나다.
+    // By the M2 rules alone, a short line after a forced line break is a different paragraph, but with the edit block hint (9.6) it is one layout paragraph.
     const layout = s.getPageLayout(0);
     expect(
       validateLayout(s.extractPage({ pageIndex: 0, includePathSegments: true }), layout),
@@ -387,18 +387,18 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
       expect(p.bbox[2]).toBeLessThanOrEqual(x1 + 1);
       expect(p.bbox[3]).toBeLessThanOrEqual(y1 + 1);
     }
-    // 그 항목으로 다시 편집하면 대상은 블록 전체다.
+    // Editing again with that item targets the whole block.
     const plan = await s.planParagraphEdit(0, own[0]!.paragraphId);
     expect(plan.target.editedBlock).toBe(commit.op.id);
     expect(plan.runs.map((r) => r.text).join('')).toBe('Short line one.\nShort line two.');
     s.close();
   });
 
-  it('자동 확장(계약 5.4 변경): 넘치면 같은 편집 단위 안에서 아래 변이 내려가고, undo·redo·재적용이 같은 결과', async () => {
+  it('automatic expansion (contract 5.4 change): on overflow the bottom edge moves down within the same edit unit, and undo, redo and reapply give the same result', async () => {
     const live = session(source());
     const long = 'Auto expand keeps every line inside the area. '.repeat(6).trim();
     const { plan, update, commit } = await edit(live, 'first paragraph', long);
-    // 사용자 영역(op.format.area)은 그대로, 실제로 쓴 영역(reflow.area)만 글 높이까지 내려간다.
+    // The user area (op.format.area) stays as is; only the area actually written (reflow.area) is lowered to the text height.
     expect(update.reflow.overflow).toBe(false);
     expect(update.reflow.area[3]).toBeGreaterThan(plan.format.area[3] + 1);
     expect(update.reflow.area[3]).toBeCloseTo(update.reflow.contentBox[3], 6);
@@ -407,12 +407,12 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     const area = (s: PdfSession) => s.getPageEdits(0).then((e) => e.blocks[0]?.area);
     expect(await area(live)).toEqual(update.reflow.area);
     const edited = stext(live);
-    // 편집 하나 = undo 한 번(자동 확장이 따로 단계를 만들지 않는다).
+    // One edit = one undo (the automatic expansion creates no separate step).
     await live.undo();
     expect(squash(stext(live))).toContain('firstparagraphlineone');
     await live.redo();
     expect(stext(live)).toBe(edited);
-    // 재적용은 같은 영역·같은 텍스트.
+    // Reapply gives the same area and the same text.
     const replayed = session(source());
     await replayed.replayEdits([structuredClone(commit.op)]);
     expect(stext(replayed)).toBe(edited);
@@ -421,7 +421,7 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     replayed.close();
   });
 
-  it('이전 빌드의 EditOp(format.overflow shrink·fontScale 0.85)도 재적용되고, 축소 없이 자동 확장 결과와 같다', async () => {
+  it('an EditOp from an earlier build (format.overflow shrink, fontScale 0.85) is also reapplied, and equals the automatic expansion result without shrinking', async () => {
     const live = session(source());
     const long = 'Legacy shrink op is replayed without shrinking. '.repeat(5).trim();
     const op = (await edit(live, 'first paragraph', long)).commit.op;
@@ -437,7 +437,7 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     const blockA = (await a.getPageEdits(0)).blocks[0]!;
     const blockB = (await b.getPageEdits(0)).blocks[0]!;
     expect(blockA).toMatchObject({ area: blockB.area, contentBox: blockB.contentBox });
-    // 다시 쓴 블록의 /PdfEditorFormat 에 이전 필드가 남지 않는다.
+    // The old fields do not remain in /PdfEditorFormat of the rewritten block.
     const saved = a.save({ changes: [] }).bytes;
     const doc = mupdf.Document.openDocument(saved, 'application/pdf') as mupdf.PDFDocument;
     let formats = 0;
@@ -454,16 +454,16 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     for (const x of [live, a, b]) x.close();
   });
 
-  it('B1: 블록이 이웃 문단과 한 레이아웃 문단으로 합쳐져도 판정 상자는 블록 글자만 덮는다', async () => {
+  it('B1: even when the block merges with a neighboring paragraph into one layout paragraph, the classification box covers only the block glyphs', async () => {
     const s = session(source());
     const long = 'Short line one. Next starts. '.repeat(8).trim();
     const { commit } = await edit(s, 'first paragraph', long);
     const e = await s.getPageEditability(0);
     const own = e.paragraphs.filter((p) => p.editedBlock === commit.op.id);
     expect(own).toHaveLength(1);
-    // 둘째 문단(기준선 y = 792 − 640 = 152) 줄은 상자 밖이다.
+    // The line of the second paragraph (baseline y = 792 − 640 = 152) is outside the box.
     expect(own[0]!.bbox[3]).toBeLessThan(150);
-    // 레이아웃(9.6): 블록 줄은 문단 하나, 둘째 문단은 따로 남는다.
+    // Layout (9.6): the block lines form one paragraph, and the second paragraph remains separate.
     const layout = s.getPageLayout(0);
     const block = layout.paragraphs.filter((p) => p.text.includes('Short line one'));
     expect(block).toHaveLength(1);
@@ -473,7 +473,7 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     s.close();
   });
 
-  it('9.6 레이아웃: 두 단 쪽에서 강제 줄바꿈·긴 글로 고친 문단이 레이아웃 문단 하나이고, undo·redo 뒤 다시 계산된다', async () => {
+  it('9.6 layout: in a two-column page, a paragraph edited with forced line breaks and long text is one layout paragraph, and is recomputed after undo and redo', async () => {
     const col = (x: number, y: number, lines: string[]) =>
       `BT /F1 10 Tf ${x} ${y} Td 12 TL ` + lines.map((l) => `(${l}) '`).join(' ') + ' ET';
     const fill = 'words that fill the narrow column well';
@@ -508,7 +508,7 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
       expect(blockParas[0]!.column).toBe(
         layout.paragraphs.find((p) => p.text.startsWith('words that fill'))!.column,
       );
-      // 이웃 문단은 따로(왼쪽 아래 문단·오른쪽 단 두 문단).
+      // Neighbor paragraphs are separate (the lower-left paragraph and the two paragraphs of the right column).
       expect(layout.paragraphs.filter((p) => p.text.startsWith('Below paragraph'))).toHaveLength(1);
       expect(
         layout.paragraphs.filter((p) => p.text.startsWith('Right')).map((p) => p.text),
@@ -519,13 +519,13 @@ describe('사용자 확인 후 수정(docs/m3-integration.md 9절)', () => {
     const e = await s.getPageEditability(0);
     expect(e.paragraphs.filter((p) => p.editedBlock === commit.op.id)).toHaveLength(1);
     expect(e.paragraphs.find((p) => p.editedBlock === commit.op.id)!.paragraphId).toBe(para.id);
-    // undo: 원 문단으로 돌아온다(힌트 없음), redo: 다시 한 문단.
+    // undo: returns to the original paragraphs (no hint), redo: one paragraph again.
     await s.undo();
     const undone = s.getPageLayout(0);
     expect(undone.paragraphs.map((p) => p.text)).toContain(target.text);
     await s.redo();
     check();
-    // 저장 → 재열기 뒤에도 같다(블록은 /PdfEditorEdit 로 다시 찾는다).
+    // The same after save → reopen (blocks are found again via /PdfEditorEdit).
     const saved = s.save({ changes: [] }).bytes;
     s.close();
     const r = session(saved);

@@ -1,10 +1,10 @@
 /**
- * V7(docs/m3-contract.md 6.1): Playwright 번들 Chromium 에서 CDP `Input.imeSetComposition`·`Input.insertText` 로
- * composition 이벤트가 재현되는지 확인한다. 편집기(viewer-ui) 없이 일반 textarea 에서 이벤트 순서만 기록한다.
- * 실제 편집기 IME 시나리오(I1–I8)는 edit-ui.spec.ts 가 같은 CDP 호출로 확인한다.
+ * V7 (docs/m3-contract.md 6.1): checks that CDP `Input.imeSetComposition` and `Input.insertText` reproduce
+ * composition events in the Playwright bundled Chromium. Records only the event order on a plain textarea, without the editor (viewer-ui).
+ * The real editor IME scenarios (I1–I8) are checked by edit-ui.spec.ts with the same CDP calls.
  *
- * 한계: CDP 합성 입력은 실제 IME 가 보내는 `keydown`(key=Process, keyCode 229)을 만들지 않는다. 그 경로는
- * Windows 사용자 확인(계약 7절 5번)으로 확인한다.
+ * Limitation: CDP synthesized input does not produce the `keydown` (key=Process, keyCode 229) that a real IME sends. That path is
+ * checked by the Windows user check (contract section 7, item 5).
  */
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
 
@@ -33,7 +33,7 @@ async function setup(page: Page): Promise<CDPSession> {
   return page.context().newCDPSession(page);
 }
 
-/** 쌓인 이벤트를 꺼내 `type:inputType` 문자열 목록으로 돌려준다. */
+/** Drains the accumulated events and returns them as a list of `type:inputType` strings. */
 async function drain(page: Page): Promise<Ev[]> {
   return page.evaluate(() => {
     const w = window as unknown as { __ev: Ev[] };
@@ -46,8 +46,8 @@ async function drain(page: Page): Promise<Ev[]> {
 const names = (events: Ev[]) =>
   events.map((e) => (e.inputType ? `${e.type}:${e.inputType}` : e.type));
 
-test.describe('V7: CDP IME 재현', () => {
-  test('imeSetComposition: 조합 시작·갱신, 같은 문자열을 반복해도 갱신 이벤트', async ({
+test.describe('V7: CDP IME reproduction', () => {
+  test('imeSetComposition: composition start and update, update event even when the same string is repeated', async ({
     page,
   }) => {
     const cdp = await setup(page);
@@ -68,11 +68,13 @@ test.describe('V7: CDP IME 재현', () => {
       'beforeinput:insertCompositionText',
       'input:insertCompositionText',
     ]);
-    // 조합 문자열은 textarea 값 안에서 교체된다(앞 조합 'ㅎ' 이 '한' 으로 바뀜).
+    // The composition string is replaced inside the textarea value (the earlier composition 'ㅎ' becomes '한').
     expect(second.at(-1)).toMatchObject({ data: '한', value: '한' });
   });
 
-  test('insertText: 조합 중이면 확정(compositionend), 아니면 일반 insertText', async ({ page }) => {
+  test('insertText: commits (compositionend) while composing, otherwise plain insertText', async ({
+    page,
+  }) => {
     const cdp = await setup(page);
     await cdp.send('Input.imeSetComposition', { text: '한', selectionStart: 1, selectionEnd: 1 });
     await drain(page);
@@ -84,7 +86,7 @@ test.describe('V7: CDP IME 재현', () => {
       'input:insertCompositionText',
       'compositionend',
     ]);
-    // 확정 직전 input 도 isComposing=true, compositionend 가 뒤따른다. compositionend.data = 확정 문자열.
+    // The input just before commit also has isComposing=true, and compositionend follows. compositionend.data = the committed string.
     expect(commit.at(-1)).toMatchObject({ type: 'compositionend', data: '한', value: '한' });
 
     await cdp.send('Input.insertText', { text: 'abc' });
@@ -94,7 +96,7 @@ test.describe('V7: CDP IME 재현', () => {
     expect(await page.inputValue('#t')).toBe('한abc');
   });
 
-  test('조합 중 blur 는 compositionend 로 확정(추가 input 없음)', async ({ page }) => {
+  test('blur during composition commits via compositionend (no extra input)', async ({ page }) => {
     const cdp = await setup(page);
     await cdp.send('Input.imeSetComposition', { text: '글', selectionStart: 1, selectionEnd: 1 });
     await drain(page);
@@ -104,7 +106,9 @@ test.describe('V7: CDP IME 재현', () => {
     expect(events[0]).toMatchObject({ data: '글', value: '글' });
   });
 
-  test('조합 문자열을 비우면 compositionend(input.data = null)', async ({ page }) => {
+  test('clearing the composition string gives compositionend (input.data = null)', async ({
+    page,
+  }) => {
     const cdp = await setup(page);
     await cdp.send('Input.imeSetComposition', { text: 'ㄱ', selectionStart: 1, selectionEnd: 1 });
     await drain(page);
@@ -119,7 +123,7 @@ test.describe('V7: CDP IME 재현', () => {
     expect(events[2]).toMatchObject({ data: null, value: '' });
   });
 
-  test('keyboard.press 는 keydown → beforeinput(deleteContentBackward)', async ({ page }) => {
+  test('keyboard.press gives keydown → beforeinput(deleteContentBackward)', async ({ page }) => {
     const cdp = await setup(page);
     await cdp.send('Input.insertText', { text: 'ab' });
     await drain(page);

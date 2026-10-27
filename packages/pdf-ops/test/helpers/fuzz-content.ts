@@ -1,8 +1,8 @@
 /**
- * 테스트 도구: 고정 시드 무작위 콘텐츠 1쪽 문서 생성기(docs/m1-pdf-ops.md 4·5.3절).
- * 텍스트 Tr 0–7, 셰이딩·타일링 패턴, 꺼진·켜진 /OC, MCID, Form(텍스트 포함), 이미지, 인라인 이미지, sh,
- * q/Q·cm·W·gs 를 섞는다. 같은 시드는 항상 같은 문서를 만든다(LCG). 통합 단계에서 core extractPage 로
- * 같은 퍼징을 돌릴 수 있게 pdf-ops 에 의존하지 않는다.
+ * Test tool: fixed-seed random content 1-page document generator (docs/m1-pdf-ops.md 4 and 5.3).
+ * Mixes text Tr 0-7, shading and tiling patterns, disabled and enabled /OC, MCID, Form (with text), images, inline images, sh,
+ * q/Q, cm, W, gs. The same seed always makes the same document (LCG). It does not depend on pdf-ops so that the same fuzzing
+ * can be run with core extractPage in the integration stage.
  */
 import * as mupdf from 'mupdf';
 

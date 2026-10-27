@@ -1,14 +1,14 @@
 /**
- * M4 코퍼스 측정(docs/m4-contract.md 4.2 판정 시간·5.1 V1–V4·6.1 표본). 결과는 docs/m4-pdf-ops.md.
- * 환경 변수가 없으면 건너뛴다. 결과 JSON 은 git 밖에 둔다.
+ * M4 corpus measurement (docs/m4-contract.md 4.2 classification time, 5.1 V1-V4, 6.1 sample). Results go to docs/m4-pdf-ops.md.
+ * Skipped when the environment variable is absent. The result JSON is kept outside git.
  *
- *   M4_CORPUS_DIR=<PDF 폴더> [M4_CORPUS_OUT=<json 접두>] [M4_CORPUS_MODE=scan|render|all]
+ *   M4_CORPUS_DIR=<PDF folder> [M4_CORPUS_OUT=<json prefix>] [M4_CORPUS_MODE=scan|render|all]
  *   [M4_CORPUS_FILES=a.pdf,b.pdf] [M4_CORPUS_ENGINES=mupdf,pdfjs,poppler]
  *
- * scan: 모든 쪽의 패스 판정(개수·편집 가능·사유·판정 시간), 끼인 연산(V1), 표 셀 판정(셀 편집 가능 비율·사유).
- * render: 6.1 표본 쪽에서 V2(q/Q 감싸기)·V3(피연산자 9자리 다시 쓰기) 쪽 전체 렌더 비교, 패스 편집 3종
- *   (채움 색·선 두께 ×2·10pt 이동)과 셀 편집 3종(같은 텍스트·숫자 자릿수 +1·한글 덧붙이기)의 변경 허용 영역 밖 렌더
- *   차이, 셀 커밋 뒤 표 감지 유지(V4).
+ * scan: path classification of every page (count, editable, reason, classification time), interleaved operations (V1), table cell classification (cell editable ratio, reason).
+ * render: on the 6.1 sample pages, full-page render comparison for V2 (q/Q wrapping) and V3 (operand 9-digit rewrite), render
+ *   differences outside the allowed change region for 3 path edits (fill color, line width x2, 10pt move) and 3 cell edits (same text,
+ *   digit count +1, appended Hangul), and table detection persistence after a cell commit (V4).
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -87,7 +87,7 @@ interface PageScan {
   editablePaths: number;
   pathReasons: Record<string, number>;
   pathMs: number;
-  /** V1: 대상 칠하기 중 구성 ~ 칠하기 사이에 다른 연산이 낀 칠하기 수와 끼인 연산 이름별 수. */
+  /** V1: number of paints with other operations interleaved between construction and paint during target painting, and counts per interleaved operation name. */
   interleavedPaints: number;
   interleavedOps: Record<string, number>;
   spansStreams: number;
@@ -173,7 +173,7 @@ const NONE: PathEdit = {
   delete: false,
 };
 
-/** 편집 가능 패스마다 replace(구성 연산, 칠하기) 로 스트림을 고친다(Form 은 그 객체를 직접). */
+/** For each editable path, fixes the stream with replace(construction operation, paint) (a Form directly on that object). */
 function rewriteAll(
   doc: mupdf.PDFDocument,
   ctx: ParagraphEditContext,
@@ -238,7 +238,7 @@ interface EditSample {
   shift?: number;
   warnings?: string[];
   v4?: { tableKept: boolean; cellParagraphs: number; cellTable: boolean };
-  /** 셀: 시작 정렬·상한에 막힌 초과·시작 텍스트. */
+  /** Cell: overflow blocked by start alignment and limit, start text. */
   align?: string;
   overflow?: boolean;
   start?: string;
@@ -446,7 +446,7 @@ const TABLE_DOCS = [
   'kogl-mods-cpi-202609.pdf',
 ];
 
-/** 문서의 상위 2쪽(점수 큰 순). */
+/** Top 2 pages of the document (by descending score). */
 function topPages(doc: mupdf.PDFDocument, score: (c: ParagraphEditContext) => number): number[] {
   const n = doc.countPages();
   const scored: [number, number][] = [];
@@ -454,7 +454,7 @@ function topPages(doc: mupdf.PDFDocument, score: (c: ParagraphEditContext) => nu
     try {
       scored.push([p, score(ctxOf(doc, p))]);
     } catch {
-      // 쪽 오류는 건너뛴다.
+      // Page errors are skipped.
     }
   }
   return scored
@@ -464,9 +464,9 @@ function topPages(doc: mupdf.PDFDocument, score: (c: ParagraphEditContext) => nu
     .map((x) => x[0]);
 }
 
-describe.skipIf(!dir)('M4 코퍼스 측정', () => {
+describe.skipIf(!dir)('M4 corpus measurement', () => {
   it.runIf(mode === 'scan' || mode === 'all')(
-    'scan: 패스·셀 판정, V1',
+    'scan: path and cell classification, V1',
     async () => {
       await loadModules();
       const pages: PageScan[] = [];
@@ -494,7 +494,7 @@ describe.skipIf(!dir)('M4 코퍼스 측정', () => {
   );
 
   it.runIf(mode === 'render' || mode === 'all')(
-    'render: V2·V3·패스 편집·셀 편집·V4',
+    'render: V2, V3, path edit, cell edit, V4',
     async () => {
       await loadModules();
       const result: Record<string, unknown>[] = [];

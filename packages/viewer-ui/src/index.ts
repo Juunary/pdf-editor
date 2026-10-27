@@ -1,10 +1,10 @@
 /**
- * 뷰어 UI(PLAN.md 4절): Preact + 오버레이.
+ * Viewer UI (PLAN.md section 4): Preact + overlays.
  *
- * M1 범위(docs/m1-contract.md 5.3): 페이지 이동·텍스트 선택 층·Ctrl+F 검색 UI·디버그 오버레이.
- * M3 범위(docs/m3-contract.md 5.9): 문단 편집기(편집 모델·세션·코디네이터·편집 층).
- * M4 범위(docs/m4-contract.md 4.5): 셀·벡터 패스 편집, 편집 가능 표시, 표 격자(병합 셀), 입력 버퍼.
- * 이 파일은 순수 함수(배치·읽기 순서·검색/페이지 탐색·디버그 표시·편집 모델·기하)와 컨트롤러를 내보낸다.
+ * M1 scope (docs/m1-contract.md 5.3): page navigation, text selection layer, Ctrl+F search UI, debug overlay.
+ * M3 scope (docs/m3-contract.md 5.9): paragraph editor (edit model, session, coordinator, edit layer).
+ * M4 scope (docs/m4-contract.md 4.5): cell and vector path editing, editability overlay, table grid (merged cells), input buffer.
+ * This file exports the pure functions (layout, reading order, search/page navigation, debug display, edit model, geometry) and the controller.
  */
 export * from './layout.js';
 export * from './text-layout.js';

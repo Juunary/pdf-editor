@@ -1,6 +1,6 @@
 {
   "schema": "m5-bench-baseline/1",
-  "description": "서버(Playwright 번들 Chromium, headless) 기준 p95(ms). bench-run.spec.ts 가 직전 기록 대비 +20% 초과 지표를 회귀로 표시할 때 읽는다. Windows 기준 PC 결과는 포함하지 않는다.",
+  "description": "Server (Playwright bundled Chromium, headless) baseline p95 (ms). Read by bench-run.spec.ts when it flags metrics exceeding +20% over the previous record as regressions. Windows reference PC results are not included.",
   "recordedAt": "2026-10-21T00:59:57.165Z",
   "runs": [
     "out/m5-bench/server-core-final.json (tier core,judge-stress)",

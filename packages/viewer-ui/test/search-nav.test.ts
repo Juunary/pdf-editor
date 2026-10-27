@@ -21,8 +21,8 @@ function result(pages: number[], truncated = false): SearchResult {
   };
 }
 
-describe('검색 탐색 상태', () => {
-  it('결과를 반영하면 0번 결과가 현재 결과', () => {
+describe('search navigation state', () => {
+  it('after applying results, result 0 is the current result', () => {
     const s = applySearchResult(initialFindState(), result([3, 3, 7, 0]), 3);
     expect(s.status).toBe('done');
     expect(s.current).toBe(0);
@@ -30,7 +30,7 @@ describe('검색 탐색 상태', () => {
     expect(currentHit(s)?.pageIndex).toBe(3);
   });
 
-  it('결과 없음: current -1, 라벨 "결과 없음", 이동은 제자리', () => {
+  it('no results: current -1, label "결과 없음", navigation stays in place', () => {
     const s = applySearchResult(initialFindState(), result([]), 0);
     expect(s.current).toBe(-1);
     expect(findLabel(s)).toBe('결과 없음');
@@ -38,7 +38,7 @@ describe('검색 탐색 상태', () => {
     expect(currentHit(s)).toBeNull();
   });
 
-  it('다음·이전은 순환한다', () => {
+  it('next and previous wrap around', () => {
     let s = applySearchResult(initialFindState(), result([0, 1, 2]), 0);
     s = stepHit(s, 1);
     expect(s.current).toBe(1);
@@ -48,13 +48,13 @@ describe('검색 탐색 상태', () => {
     expect(s.current).toBe(2); // 0 → 2
   });
 
-  it('현재 결과가 없는 상태(-1)에서도 다음은 0번, 이전은 마지막', () => {
+  it('even with no current result (-1), next goes to 0 and previous to the last', () => {
     const base = { ...applySearchResult(initialFindState(), result([0, 1, 2]), 0), current: -1 };
     expect(stepHit(base, 1).current).toBe(0);
     expect(stepHit(base, -1).current).toBe(2);
   });
 
-  it('hitsOnPage 는 전체 인덱스와 현재 여부를 돌려준다', () => {
+  it('hitsOnPage returns the global index and whether it is current', () => {
     let s = applySearchResult(initialFindState(), result([3, 3, 7]), 3);
     s = stepHit(s, 1);
     const onThree = hitsOnPage(s, 3);
@@ -66,7 +66,7 @@ describe('검색 탐색 상태', () => {
     expect(hitsOnPage(s, 9)).toEqual([]);
   });
 
-  it('라벨: 위치/총수, 잘렸으면 +', () => {
+  it('label: position/total, + if truncated', () => {
     let s = applySearchResult(initialFindState(), result([0, 1, 2]), 0);
     expect(findLabel(s)).toBe('1 / 3');
     s = stepHit(s, -1);
@@ -75,7 +75,7 @@ describe('검색 탐색 상태', () => {
     expect(findLabel(s)).toBe('1 / 2+');
   });
 
-  it('상태별 라벨', () => {
+  it('labels per status', () => {
     const base = initialFindState();
     expect(findLabel(base)).toBe('');
     expect(findLabel({ ...base, status: 'searching' })).toBe('검색 중');
@@ -83,7 +83,7 @@ describe('검색 탐색 상태', () => {
     expect(findLabel({ ...base, status: 'error', message: null })).toBe('검색 실패');
   });
 
-  it('clearResults 는 질의·옵션·열림 상태를 유지한다', () => {
+  it('clearResults keeps the query, options and open state', () => {
     const open = {
       ...applySearchResult(initialFindState(), result([1]), 0),
       open: true,

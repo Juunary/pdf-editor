@@ -1,12 +1,12 @@
-// Chrome 128–150 DNR 폴백 경로 실측(PLAN.md 5.1, docs/m0-day1-log.md A5, docs/m0-corpus-recheck.md 4절).
+// Measurement of the Chrome 128–150 DNR fallback path (PLAN.md 5.1, docs/m0-day1-log.md A5, docs/m0-corpus-recheck.md section 4).
 //
-// 기본 실행에서는 건너뛴다. Chrome for Testing 구버전을 받은 뒤 실행 파일 경로를 넘긴다.
+// Skipped in the default run. Download old Chrome for Testing versions, then pass the executable paths.
 //   node apps/extension/scripts/fetch-chrome-for-testing.mjs 128 140 150
-//   PDF_EDITOR_LEGACY_CHROME=<경로1>,<경로2> pnpm --filter @pdf-editor/extension exec playwright test dnr-legacy
-// 결과 JSON: out/m0-corpus/dnr/<버전>.json (git 제외)
+//   PDF_EDITOR_LEGACY_CHROME=<path1>,<path2> pnpm --filter @pdf-editor/extension exec playwright test dnr-legacy
+// Result JSON: out/m0-corpus/dnr/<version>.json (excluded from git)
 //
-// 측정 위주라 단언은 최소(서비스 워커 기동, mimeHandler 부재 시 동적 규칙 2개 등록)로 두고, 나머지 동작은
-// 그대로 기록한다.
+// This is measurement-oriented, so assertions are minimal (service worker starts, 2 dynamic rules registered when the mimeHandler is absent); the rest of the behavior is
+// recorded as is.
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -19,10 +19,10 @@ const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
 const REPORT_DIR = fileURLToPath(new URL('../../../out/m0-corpus/dnr', import.meta.url));
 const LEGACY = (process.env.PDF_EDITOR_LEGACY_CHROME ?? '').split(',').filter(Boolean);
-/** Chrome 기본 PDF 뷰어(내장 확장) */
+/** Chrome's default PDF viewer (built-in extension) */
 const BUILTIN_PDF_VIEWER = 'mhjfbmdgcfjbbpaeojofohoefgiehjai';
 
-/** dist/diag 제공 + 요청 기록. attachment·POST 변형 경로를 더한다. */
+/** Serves dist/diag + records requests. Adds the attachment and POST variant paths. */
 function serve(): Promise<{ server: Server; base: string; log: string[] }> {
   const log: string[] = [];
   const pdf = readFileSync(SAMPLE);
@@ -78,7 +78,7 @@ interface FrameState {
   source: unknown;
 }
 
-/** 페이지의 확장 뷰어 프레임과 Chrome 기본 PDF 뷰어 프레임을 모은다. */
+/** Collects the page's extension viewer frame and Chrome's default PDF viewer frame. */
 async function inspectFrames(page: Page, extensionId: string, waitMs: number) {
   const viewerPrefix = `chrome-extension://${extensionId}/viewer.html`;
   await page.waitForTimeout(waitMs);
@@ -114,12 +114,12 @@ async function gotoLoose(page: Page, url: string): Promise<string | null> {
     await page.goto(url, { timeout: 15_000 });
     return null;
   } catch (e) {
-    // DNR 리다이렉트·다운로드 전환 시 goto 가 ERR_ABORTED 로 끝날 수 있다. 결과는 프레임 상태로 판정한다.
+    // goto may end with ERR_ABORTED on a DNR redirect or a switch to download. The result is judged from the frame state.
     return String(e).split('\n')[0] ?? String(e);
   }
 }
 
-/** chrome://extensions 페이지 문맥의 `chrome.developerPrivate`(확장 관리 화면 내부 API) 일부. */
+/** Part of `chrome.developerPrivate` (internal API of the extensions management page) in the chrome://extensions page context. */
 interface DeveloperPrivate {
   getExtensionInfo(id: string, cb: (info: Record<string, unknown>) => void): void;
   updateExtensionConfiguration(
@@ -144,7 +144,7 @@ async function onExtensionsPage<T>(
   }
 }
 
-/** 설치 경고(manifest 키 무시 등)·오류·파일 URL 접근 설정. */
+/** Install warnings (ignored manifest keys etc.), errors and the file URL access setting. */
 function extensionInfo(context: BrowserContext, extensionId: string) {
   return onExtensionsPage(
     context,
@@ -166,8 +166,8 @@ function extensionInfo(context: BrowserContext, extensionId: string) {
 }
 
 /**
- * 개발자 모드를 켠다. 실제 사용자는 압축해제 확장을 개발자 모드에서 로드하며, Chrome 140·150 은 개발자 모드가
- * 꺼진 프로필에서 압축해제 확장이 다시 로드되면 `unsupportedDeveloperExtension` 으로 비활성화한다(실측).
+ * Turns on developer mode. Real users load unpacked extensions in developer mode, and Chrome 140·150 disable an unpacked extension with `unsupportedDeveloperExtension`
+ * when it is reloaded in a profile where developer mode is off (measured).
  */
 function enableDeveloperMode(context: BrowserContext) {
   return onExtensionsPage(context, async () => {
@@ -180,7 +180,7 @@ function enableDeveloperMode(context: BrowserContext) {
   }, ['', true]);
 }
 
-/** "파일 URL에 대한 액세스 허용" 설정(확장이 다시 로드된다). */
+/** The "파일 URL에 대한 액세스 허용" (Allow access to file URLs) setting (the extension is reloaded). */
 function setFileAccess(context: BrowserContext, extensionId: string, allow: boolean) {
   return onExtensionsPage(
     context,
@@ -202,7 +202,7 @@ async function serviceWorkerInfo(context: BrowserContext, extensionId: string) {
       predicate: (w) => w.url().startsWith(prefix),
       timeout: 15_000,
     }));
-  // onInstalled 의 비동기 등록을 기다린다.
+  // Wait for the asynchronous registration in onInstalled.
   await expect
     .poll(
       () =>
@@ -224,11 +224,11 @@ async function serviceWorkerInfo(context: BrowserContext, extensionId: string) {
 }
 
 /**
- * 확장 페이지에서 본 상태. MV3 서비스 워커는 유휴 시 종료되므로 시작 직후가 아니면 확장 페이지에서 조회한다.
+ * State as seen from the extension page. The MV3 service worker is terminated when idle, so unless it is right after startup, query from an extension page.
  */
 async function extensionPageInfo(context: BrowserContext, extensionId: string) {
   let lastError = '';
-  // 파일 URL 접근 설정을 바꾸면 확장이 다시 로드되며, 그동안 확장 페이지 이동은 ERR_BLOCKED_BY_CLIENT 로 막힌다.
+  // Changing the file URL access setting reloads the extension, and navigating an extension page in the meantime is blocked with ERR_BLOCKED_BY_CLIENT.
   for (let attempt = 1; attempt <= 10; attempt++) {
     const page = await context.newPage();
     try {
@@ -268,18 +268,18 @@ async function measureFile(context: BrowserContext, extensionId: string, label: 
 }
 
 if (LEGACY.length === 0) {
-  test('Chrome 128–150 DNR 폴백 실측', () => {
+  test('Chrome 128–150 DNR fallback measurement', () => {
     test.skip(true, 'PDF_EDITOR_LEGACY_CHROME 미지정(scripts/fetch-chrome-for-testing.mjs 참고)');
   });
 }
 
 for (const executablePath of LEGACY) {
-  test(`Chrome 128–150 DNR 폴백 실측: ${executablePath}`, async () => {
+  test(`Chrome 128–150 DNR fallback measurement: ${executablePath}`, async () => {
     test.setTimeout(240_000);
     const { server, base, log } = await serve();
     const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-editor-dnr-'));
-    // Playwright 의 headless 는 `--headless` 를 넘기는데, Chrome 131 이하에서는 확장을 지원하지 않는
-    // 구 headless 를 뜻할 수 있다. 버전과 무관하게 새 headless 를 쓰도록 직접 지정한다.
+    // Playwright's headless passes `--headless`, which in Chrome 131 and below may mean the old headless
+    // that does not support extensions. Specify the new headless explicitly regardless of version.
     const context = await chromium.launchPersistentContext(userDataDir, {
       executablePath,
       headless: false,
@@ -296,17 +296,17 @@ for (const executablePath of LEGACY) {
       report.serviceWorker = sw;
       report.extension = await extensionInfo(context, extensionId);
       report.developerMode = await enableDeveloperMode(context);
-      // onInstalled 의 비동기 등록이 늦을 수 있어(128 에서 시작 직후 0개 관찰) 확장 페이지에서 다시 조회한다.
+      // The asynchronous registration in onInstalled may be late (0 observed right after startup on 128), so query again from the extension page.
       report.extensionPage = await extensionPageInfo(context, extensionId);
 
-      // 1) http 최상위 GET PDF
+      // 1) http top-level GET PDF
       const p1 = await context.newPage();
       log.length = 0;
       const e1 = await gotoLoose(p1, `${base}/m0-sample.pdf`);
       report.httpTop = { gotoError: e1, ...(await inspectFrames(p1, extensionId, 1000)) };
       (report.httpTop as Record<string, unknown>).serverRequests = [...log];
 
-      // 2) content-type 매개변수(`application/pdf; qs=…`) — 규칙 값 `application/pdf;*`
+      // 2) content-type parameter (`application/pdf; qs=…`) — rule value `application/pdf;*`
       const p2 = await context.newPage();
       log.length = 0;
       const e2 = await gotoLoose(p2, `${base}/ct-params.pdf`);
@@ -316,7 +316,7 @@ for (const executablePath of LEGACY) {
         serverRequests: [...log],
       };
 
-      // 3) content-disposition: attachment → 가로채지 않음(다운로드) 기대
+      // 3) content-disposition: attachment -> expected not to be intercepted (download)
       const p3 = await context.newPage();
       const download = p3.waitForEvent('download', { timeout: 8000 }).catch(() => null);
       const e3 = await gotoLoose(p3, `${base}/attachment.pdf`);
@@ -327,7 +327,7 @@ for (const executablePath of LEGACY) {
         ...(await inspectFrames(p3, extensionId, 500)),
       };
 
-      // 4) POST 로 생성된 PDF → GET 전용 규칙이라 가로채지 않음 기대
+      // 4) PDF generated by POST -> expected not to be intercepted because the rule is GET-only
       const p4 = await context.newPage();
       await p4.goto(`${base}/post-form.html`);
       log.length = 0;
@@ -340,12 +340,12 @@ for (const executablePath of LEGACY) {
         serverRequests: [...log],
       };
 
-      // 5) 임베드: <embed>·<iframe>·<object>
+      // 5) embedding: <embed>, <iframe>, <object>
       const p5 = await context.newPage();
       await gotoLoose(p5, `${base}/embed-test.html`);
       report.httpEmbedded = await inspectFrames(p5, extensionId, 4000);
 
-      // 6) file:// — 파일 URL 접근 기본값 → 반대값 순서로 측정
+      // 6) file:// — measured in the order default file URL access value -> opposite value
       const initial = sw.isAllowedFileSchemeAccess;
       const files: unknown[] = [];
       report.file = files;

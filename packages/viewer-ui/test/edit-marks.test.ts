@@ -40,8 +40,8 @@ const page = (paths: PathEditability[]): PageEditability => ({
   ms: 1,
 });
 
-describe('편집 가능 표시 계산', () => {
-  it('문단·셀·패스를 종류별로 담고 제한은 사유 문구를 단다', () => {
+describe('editability overlay computation', () => {
+  it('collects paragraphs, cells and paths by kind, and attaches a reason text to restrictions', () => {
     const { marks } = buildMarks(
       page([path(7, [10, 10, 60, 40], { editable: false, reasons: ['clip-path'] })]),
     );
@@ -54,7 +54,7 @@ describe('편집 가능 표시 계산', () => {
     expect(marks[2]!.reasons[0]).toContain('클립');
   });
 
-  it('작은 패스(짧은 변 < 1pt 이고 긴 변 < 4pt)는 그리지 않는다. 긴 괘선은 그린다', () => {
+  it('small paths (short side < 1pt and long side < 4pt) are not drawn. Long rules are drawn', () => {
     expect(isSmallPath([0, 0, 0.5, 3])).toBe(true);
     expect(isSmallPath([0, 0, 0.5, 40])).toBe(false);
     expect(isSmallPath([0, 0, 3, 3])).toBe(false);
@@ -63,7 +63,7 @@ describe('편집 가능 표시 계산', () => {
     expect(r.pathsSkipped).toBe(1);
   });
 
-  it('2,000 개를 넘으면 큰 순서로 2,000 개만 남긴다', () => {
+  it('above 2,000 items, only the 2,000 largest are kept', () => {
     const many = Array.from({ length: 2500 }, (_, i) => path(i, [0, 0, 5 + i, 5]));
     const r = buildMarks(page(many));
     const shown = r.marks.filter((m) => m.kind === 'path');
@@ -73,7 +73,7 @@ describe('편집 가능 표시 계산', () => {
     expect(shown.some((m) => m.id === 0)).toBe(false);
   });
 
-  it('마우스 아래에서 가장 작은 표시를 찾고 툴팁 문구를 만든다', () => {
+  it('finds the smallest mark under the mouse and builds the tooltip text', () => {
     const { marks } = buildMarks(page([path(7, [10, 2, 30, 12])]));
     expect(markAt(marks, [15, 5])?.kind).toBe('path');
     expect(markAt(marks, [90, 5])?.kind).toBe('paragraph');
@@ -82,14 +82,14 @@ describe('편집 가능 표시 계산', () => {
     expect(markTip(marks[0]!)).toBe('문단 · 편집 가능');
   });
 
-  it('레이아웃과 함께 그릴 때: 문단은 바깥, 셀은 안쪽으로 떼고 패스·작은 셀은 그대로', () => {
+  it('when drawn together with the layout: paragraphs go outward, cells inward, and paths and small cells stay as they are', () => {
     const { marks } = buildMarks(page([path(7, [10, 2, 30, 2.5])]));
     const [para, cell, line] = marks;
     expect(markFrame(para!, 2)).toEqual([-2, -2, 102, 22]);
     expect(markFrame(cell!, 2)).toEqual([2, 32, 48, 48]);
     expect(markFrame(line!, 2)).toEqual([10, 2, 30, 2.5]);
     expect(markFrame(para!, 0)).toEqual(para!.bbox);
-    // 안쪽으로 줄이면 뒤집히는 작은 셀은 원래 상자
+    // A small cell that would flip when shrunk inward keeps its original box
     expect(markFrame({ ...cell!, bbox: [0, 0, 3, 30] }, 2)).toEqual([0, 0, 3, 30]);
   });
 });

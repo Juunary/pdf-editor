@@ -1,6 +1,6 @@
 /**
- * M3 문단 편집 테스트용 쪽 상태(ParagraphEditContext). core 추출(extractPageModel)과 layout-recon
- * (reconstructPage) 원본을 vitest 별칭으로 불러 실제 흐름과 같은 PageModel·PageLayout 을 만든다.
+ * Page state for M3 paragraph edit tests (ParagraphEditContext). Loads the original core extraction (extractPageModel) and layout-recon
+ * (reconstructPage) through vitest aliases to build the same PageModel and PageLayout as the real flow.
  */
 import * as mupdf from 'mupdf';
 import type { PageLayout, PageModel } from '@pdf-editor/shared-types';
@@ -35,8 +35,8 @@ export async function loadModules(): Promise<{ core: CoreExtract; layout: Layout
 }
 
 /**
- * 쪽 상태를 만든다(loadModules 를 먼저 await). segments: PathInfo.segments 까지 추출(M4 점 편집·괘선 표 감지).
- * fixedGroups: core getPageLayout 처럼 편집 블록 줄 묶음을 레이아웃 힌트로 넘긴다(docs/m3-integration.md 9.6).
+ * Builds the page state (await loadModules first). segments: also extracts PathInfo.segments (M4 point editing, ruled table detection).
+ * fixedGroups: passes edit block line groups as layout hints, as core getPageLayout does (docs/m3-integration.md 9.6).
  */
 export function pageContext(
   doc: mupdf.PDFDocument,
@@ -73,7 +73,7 @@ export function reopen(src: mupdf.PDFDocument, options = ''): mupdf.PDFDocument 
   ) as mupdf.PDFDocument;
 }
 
-/** 문단 텍스트로 문단 찾기(공백 무시 포함 비교). */
+/** Finds a paragraph by paragraph text (comparison that also ignores whitespace). */
 export function findParagraph(ctx: ParagraphEditContext, needle: string) {
   const squash = (s: string) => s.replace(/\s+/g, '');
   const p = ctx.layout.paragraphs.find((q) => squash(q.text).includes(squash(needle)));

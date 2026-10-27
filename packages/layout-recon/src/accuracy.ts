@@ -1,5 +1,5 @@
 /**
- * 정확도 채점(docs/m2-contract.md 4.2). 정답 라벨(4.1)과 PageLayout 을 비교한다.
+ * Accuracy scoring (docs/m2-contract.md 4.2). Compares the ground-truth labels (4.1) with the PageLayout.
  */
 import type { PageLayout, ParagraphRole, Rect } from '@pdf-editor/shared-types';
 import { iou } from './geom.js';
@@ -38,7 +38,7 @@ export type LabelItem = LabelParagraph | LabelTable | LabelFigure;
 export interface PageLabel {
   doc: string;
   pageIndex: number;
-  /** dev: 조정용, test: 1차 보류(1회 측정), test2: 2차 보류(보강 라운드, docs/m2-contract.md 4.4). */
+  /** dev: for tuning, test: first holdout (measured once), test2: second holdout (reinforcement round, docs/m2-contract.md 4.4). */
   split: 'dev' | 'test' | 'test2';
   extract: { lineCount: number; linesSha256: string };
   status: 'draft' | 'reviewed' | 'confirmed';
@@ -52,13 +52,13 @@ export interface Counts {
   fn: number;
 }
 
-/** 역할 혼동표 열·행 이름. 라벨 행 `none`: 라벨과 짝이 없는 예측 문단. 예측 열 `none`: 짝이 없는 라벨 문단. */
+/** Role confusion matrix column and row names. Label row `none`: predicted paragraphs with no label counterpart. Predicted column `none`: label paragraphs with no counterpart. */
 export const ROLE_NONE = 'none';
-/** 예측 열 `container`: 짝이 표·도형 안 문단. */
+/** Predicted column `container`: the counterpart is a paragraph inside a table or figure. */
 export const ROLE_CONTAINER = 'container';
-/** 역할 채점 짝짓기 하한: 라벨 문단 줄 집합과 예측 문단 줄 집합의 Jaccard. */
+/** Lower bound for role scoring pairing: Jaccard of the label paragraph line set and the predicted paragraph line set. */
 export const ROLE_PAIR_MIN_JACCARD = 0.5;
-/** 역할 채점 대상(혼동표 순서). */
+/** Roles scored (confusion matrix order). */
 export const ROLES: readonly ParagraphRole[] = [
   'body',
   'heading',
@@ -70,33 +70,33 @@ export const ROLES: readonly ParagraphRole[] = [
   'other',
 ];
 
-/** 혼동표: matrix[라벨 역할 | 'none'][예측 역할 | 'container' | 'none'] = 쌍 수. 0 인 칸은 없다. */
+/** Confusion matrix: matrix[label role | 'none'][predicted role | 'container' | 'none'] = pair count. Zero cells are omitted. */
 export type RoleMatrix = Record<string, Record<string, number>>;
 
 export interface PageScore {
-  /** 흐름 문단 완전 일치: tp = 일치, fp = 예측 − 일치, fn = 라벨 − 일치. */
+  /** Exact flow paragraph match: tp = matches, fp = predictions − matches, fn = labels − matches. */
   paragraphs: Counts;
-  /** 같은 문단 줄 쌍. */
+  /** Line pairs in the same paragraph. */
   pairs: Counts;
-  /** 읽기 순서 Kendall τ(머리·꼬리 제외). 항목 2개 미만이면 null. */
+  /** Reading order Kendall τ (excluding headers/footers). null if fewer than 2 items. */
   tau: number | null;
-  /** 기준선 τ: 복원 없이 PageModel 줄 순서(MuPDF 구조화 텍스트 순서)만 쓴 값(같은 항목 대응). */
+  /** Baseline τ: value using only the PageModel line order (MuPDF structured text order) without reconstruction (same item correspondence). */
   tauBaseline: number | null;
-  /** τ 에서 뺀 라벨 항목 수(예측 순위가 없는 항목: 줄 없는 도형이 매칭되지 않은 경우 등). */
+  /** Number of label items excluded from τ (items with no predicted rank: e.g. a figure without lines that was not matched). */
   tauExcluded: number;
   tables: Counts;
-  /** 매칭된 표 중 행·열 수가 모두 맞은 수 / 매칭 수. */
+  /** Number of matched tables with both row and column counts correct / number of matches. */
   tableShape: { exact: number; matched: number };
-  /** 셀 라벨이 있는 표의 셀 줄 (행, 열) 일치. */
+  /** Cell line (row, column) matches for tables with cell labels. */
   cellLines: { correct: number; total: number };
   figures: Counts;
-  /** 머리·꼬리 줄. */
+  /** Header/footer lines. */
   margin: Counts;
-  /** 역할 혼동표(라벨 문단과 예측 문단을 줄 Jaccard 0.5 이상으로 일대일 짝지은 쌍 기준). */
+  /** Role confusion matrix (based on one-to-one pairs of label and predicted paragraphs with line Jaccard of at least 0.5). */
   roles: RoleMatrix;
-  /** 짝지은 쌍 중 역할이 다른 것(분석용): `라벨역할[줄] → 예측역할 P<id>[줄]`. */
+  /** Paired entries whose roles differ (for analysis): `labelRole[lines] → predictedRole P<id>[lines]`. */
   roleMisses: string[];
-  /** 실패 사례(분석용): 일치하지 않은 라벨 문단과 그 줄을 담은 예측 문단. */
+  /** Failure cases (for analysis): label paragraphs that did not match, and the predicted paragraphs containing their lines. */
   misses: string[];
 }
 
@@ -123,7 +123,7 @@ function greedyMatch(a: Rect[], b: Rect[], min: number): [number, number][] {
   return out;
 }
 
-/** 순서쌍 일치율 τ = (일치 − 불일치) / (일치 + 불일치). 예측 순위가 같은 쌍은 세지 않는다. */
+/** Pairwise concordance τ = (concordant − discordant) / (concordant + discordant). Pairs with equal predicted rank are not counted. */
 export function kendallTau(ranks: readonly number[]): number | null {
   let c = 0;
   let d = 0;
@@ -142,9 +142,9 @@ const median = (xs: number[]): number => {
 };
 
 /**
- * 역할 채점(W4-1). 라벨 문단과 예측 문단을 줄 집합 Jaccard 내림차순으로 일대일 짝지어(하한 `ROLE_PAIR_MIN_JACCARD`)
- * 역할 혼동표를 만든다. 문단 경계가 틀려 짝이 없는 라벨 문단은 예측 열 `none`, 짝이 없는 예측 흐름 문단은 라벨 행 `none`
- * 에 센다. 라벨 문단 줄이 하나도 없는 예측 문단(표·도형 검출 문제)은 세지 않는다.
+ * Role scoring (W4-1). Pairs label and predicted paragraphs one-to-one in descending line-set Jaccard order (lower bound `ROLE_PAIR_MIN_JACCARD`)
+ * to build the role confusion matrix. Label paragraphs with no counterpart because of wrong paragraph boundaries count in predicted column `none`, and predicted flow paragraphs with no counterpart count in label row `none`.
+ * Predicted paragraphs with none of a label paragraph's lines (table/figure detection problems) are not counted.
  */
 function scoreRoles(
   labelParas: readonly LabelParagraph[],
@@ -210,7 +210,7 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
   const labelFigures = label.items.filter((i): i is LabelFigure => i.type === 'figure');
   const flowPred = layout.paragraphs.filter((p) => p.table === null && p.figure === null);
 
-  // 문단 완전 일치.
+  // Exact paragraph match.
   const labelKeys = new Map(labelParas.map((p) => [key(clean(p.lines)), p]));
   const predKeys = new Set(flowPred.map((p) => key(clean(p.lines))).filter((k) => k !== ''));
   let matched = 0;
@@ -240,7 +240,7 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
   const nLabel = [...labelKeys.keys()].filter((k) => k !== '').length;
   const paragraphs = { tp: matched, fp: predKeys.size - matched, fn: nLabel - matched };
 
-  // 줄 쌍(라벨 흐름 문단의 줄만).
+  // Line pairs (lines of label flow paragraphs only).
   const flowLines = new Set(labelParas.flatMap((p) => clean(p.lines)));
   const pairSet = (groups: number[][]): Set<string> => {
     const s = new Set<string>();
@@ -257,7 +257,7 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
   for (const x of pp) if (lp.has(x)) ptp++;
   const pairs = { tp: ptp, fp: pp.size - ptp, fn: lp.size - ptp };
 
-  // 읽기 순서: 예측 최상위 항목 위치 + 항목 안 줄 순서로 줄 순위를 만든다.
+  // Reading order: builds line ranks from the predicted top-level item position + line order within the item.
   const rank = new Map<number, number>();
   const figurePos = new Map<number, number>();
   layout.readingOrder.forEach((ref, pos) => {
@@ -298,7 +298,7 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
   const tau = ranks.length >= 2 ? kendallTau(ranks) : null;
   const tauBaseline = baseRanks.length >= 2 ? kendallTau(baseRanks) : null;
 
-  // 표.
+  // Tables.
   const tm = greedyMatch(
     labelTables.map((t) => t.bbox),
     layout.tables.map((t) => t.bbox),
@@ -311,7 +311,7 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
   };
   let exact = 0;
   const cellLines = { correct: 0, total: 0 };
-  // 셀 줄: 셀 라벨이 있는 모든 라벨 표의 줄을 센다. 매칭되지 않은 표의 줄은 틀린 것으로 센다.
+  // Cell lines: counts the lines of all label tables that have cell labels. Lines of unmatched tables count as wrong.
   const matchOf = new Map(tm);
   for (const [i, j] of tm) {
     const lt = labelTables[i]!;
@@ -332,14 +332,14 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
       }
   });
 
-  // 도형.
+  // Figures.
   const figures = {
     tp: figMatch.size,
     fp: layout.figures.length - figMatch.size,
     fn: labelFigures.length - figMatch.size,
   };
 
-  // 머리·꼬리 줄.
+  // Header/footer lines.
   const lm = new Set(
     labelParas
       .filter((p) => p.role === 'header' || p.role === 'footer')
@@ -374,11 +374,11 @@ export function scoreLayout(label: PageLabel, layout: PageLayout): PageScore {
 }
 
 export interface RoleMetrics {
-  /** 라벨 문단 수(짝이 없는 것 포함). */
+  /** Number of label paragraphs (including unpaired ones). */
   support: number;
-  /** 예측 문단 수(짝이 없는 흐름 문단 포함). */
+  /** Number of predicted paragraphs (including unpaired flow paragraphs). */
   predicted: number;
-  /** 라벨·예측 역할이 같은 쌍. */
+  /** Pairs whose label and predicted roles match. */
   tp: number;
   precision: number | null;
   recall: number | null;
@@ -392,7 +392,7 @@ export interface ScoreSummary {
   paragraphR: number;
   pairF1: number;
   tauMean: number | null;
-  /** 기준선 τ 쪽 평균(PageModel 줄 순서). */
+  /** Page average of baseline τ (PageModel line order). */
   tauBaselineMean: number | null;
   tableP: number | null;
   tableR: number | null;
@@ -401,11 +401,11 @@ export interface ScoreSummary {
   figureP: number | null;
   figureR: number | null;
   marginF1: number | null;
-  /** 역할별 정밀도·재현율(혼동표 합산 기준, `ROLES` 순서). */
+  /** Per-role precision and recall (based on summed confusion matrices, `ROLES` order). */
   roles: Record<string, RoleMetrics>;
-  /** 역할 혼동표 합산. */
+  /** Summed role confusion matrix. */
   roleMatrix: RoleMatrix;
-  /** 라벨 문단 수 / 줄 Jaccard 0.5 이상으로 짝지은 수 / 짝 중 역할이 같은 수. */
+  /** Number of label paragraphs / number paired with line Jaccard of at least 0.5 / number of pairs with the same role. */
   rolePairs: { labeled: number; paired: number; match: number };
 }
 
@@ -419,7 +419,7 @@ const rec = (c: Counts): number | null => (c.tp + c.fn ? c.tp / (c.tp + c.fn) : 
 const f1 = (c: Counts): number | null =>
   2 * c.tp + c.fp + c.fn ? (2 * c.tp) / (2 * c.tp + c.fp + c.fn) : null;
 
-/** 쪽별 혼동표를 합산하고 역할별 지표를 낸다. */
+/** Sums per-page confusion matrices and computes per-role metrics. */
 function summarizeRoles(scores: readonly PageScore[]): {
   roles: Record<string, RoleMetrics>;
   roleMatrix: RoleMatrix;
@@ -461,7 +461,7 @@ function summarizeRoles(scores: readonly PageScore[]): {
   return { roles, roleMatrix, rolePairs: { labeled, paired, match } };
 }
 
-/** 전체 합산(계약 4.3: 쪽 평균이 아닌 합산, τ 만 쪽 평균). */
+/** Overall sum (contract 4.3: summed, not page-averaged; only τ is page-averaged). */
 export function summarizeScores(scores: readonly PageScore[]): ScoreSummary {
   const z: Counts = { tp: 0, fp: 0, fn: 0 };
   const para = scores.reduce((s, x) => add(s, x.paragraphs), z);

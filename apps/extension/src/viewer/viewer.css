@@ -2,11 +2,11 @@
   color-scheme: light dark;
   font-family: system-ui, 'Malgun Gothic', sans-serif;
   font-size: 13px;
-  /* 머리 영역 확대 보정(header-zoom.ts): 브라우저 확대 배율 f 의 역수. 머리 영역은 화면상 100% 때 크기로 보인다. */
+  /* Header zoom compensation (header-zoom.ts): the inverse of the browser zoom factor f. The header appears at its 100% size on screen. */
   --pe-header-zoom: 1;
 }
-/* 창 전체를 세로 flex 로 쓴다: 툴바·알림 줄은 창 폭 그대로 맨 위에 고정되고, 문서 영역(#page-container)만
-   가로·세로로 스크롤한다. 브라우저 확대·축소와 좁은 창에서도 툴바가 밀려나지 않는다. */
+/* Lay out the whole window as a vertical flex: the toolbar and notice row stay pinned to the top at full window width, and only the document area (#page-container)
+   scrolls horizontally and vertically. The toolbar is not pushed out by browser zoom in/out or narrow windows. */
 html,
 body {
   height: 100%;
@@ -18,14 +18,14 @@ body {
   overflow: hidden;
   background: #525659;
 }
-/* 머리 영역(툴바·알림 줄, 툴바 안의 검색창·저장 메뉴 포함)은 브라우저 확대를 역보정한다. 문서 영역은 그대로 확대된다. */
+/* The header area (toolbar and notice row, including the search box and save menu inside the toolbar) inverts the browser zoom. The document area zooms as usual. */
 #toolbar,
 #notice-bar {
   zoom: var(--pe-header-zoom);
 }
 #toolbar {
   flex: none;
-  /* 페이지 오버레이(position: relative)와 검색창이 툴바 위에 그려지지 않게 한다. */
+  /* Keep the page overlay (position: relative) and the search box from being drawn over the toolbar. */
   z-index: 20;
   display: flex;
   flex-wrap: wrap;
@@ -39,7 +39,7 @@ body {
   min-width: 0;
 }
 #viewer-controls {
-  /* 쪽 이동·되돌리기·다시 실행이 들어 있는 컨트롤 묶음: 앞쪽에 두고 자체 줄바꿈 */
+  /* Control group holding page navigation, undo and redo: placed first and wraps on its own */
   flex: 0 1 auto;
 }
 #toolbar .pe-controls {
@@ -55,7 +55,7 @@ body {
   color: #ff8a80;
 }
 #page-container {
-  /* 문서 영역: 이 상자만 스크롤한다. 창보다 넓은 쪽도 왼쪽이 잘리지 않게 safe center. */
+  /* Document area: only this box scrolls. safe center keeps the left edge of pages wider than the window from being clipped. */
   flex: 1 1 0;
   min-height: 0;
   overflow: auto;
@@ -86,7 +86,7 @@ body.embedded #diag {
   display: none;
 }
 
-/* 알림 줄: 열기 시 보고(Redact·file:// 안내)·복구 안내. */
+/* Notice row: reports on open (Redact, file:// guidance) and recovery guidance. */
 #notice-bar {
   flex: none;
   z-index: 19;
@@ -143,14 +143,14 @@ body.embedded #diag {
   margin-top: 12px;
 }
 
-/* Web Store 빌드: 진단 패널은 DOM 에 남기고 CSS 로만 숨긴다(계약 D6). 벤치 버튼은 진단 패널 안에 있다.
-   downloads 저장 메뉴 항목은 스토어 빌드 viewer.html 에서 빠진다(vite.config.ts, 사용자 요청 2026-10-22). */
+/* Web Store build: the diagnostics panel stays in the DOM and is hidden by CSS only (contract D6). The bench button is inside the diagnostics panel.
+   The downloads save menu item is dropped from the store build viewer.html (vite.config.ts, user request 2026-10-22). */
 html[data-build='store'] #diag {
   display: none;
 }
-/* 개발 표시(사용자 요청 2026-10-23): 진단 패널(벤치 링크·전체 저장 측정 포함)·downloads 저장 메뉴 항목·렌더 경과 상태 줄은
-   개발 빌드에서도 기본으로 숨긴다. `?diag` 또는 Ctrl+Alt+Shift+D 로 html[data-diag] 를 켜면 보인다(main.ts). 진단 기록은
-   숨겨져 있어도 #diag-log 에 쌓인다(e2e 는 textContent 로 읽는다). */
+/* Dev indicators (user request 2026-10-23): the diagnostics panel (including the bench link and full-save measurement), the downloads save menu item and the render-elapsed status line
+   are hidden by default even in dev builds. They appear when `?diag` or Ctrl+Alt+Shift+D turns on html[data-diag] (main.ts). Diagnostic records
+   keep accumulating in #diag-log even while hidden (e2e reads them via textContent). */
 html:not([data-diag]) #diag,
 html:not([data-diag]) .dev-only,
 html:not([data-diag]) #toolbar #save-menu .dev-only[role='menuitem'] {
@@ -164,8 +164,8 @@ html:not([data-diag]) #status[data-dev] {
   color: #8ab4f8;
 }
 
-/* 저장 메뉴(프린터 아이콘, 사용자 요청 2026-10-22): 저장 / 다른 이름으로 저장 / (개발 빌드만) downloads 저장.
-   위치는 save-menu.ts 가 화면 안에 들어오게 맞춘다. */
+/* Save menu (printer icon, user request 2026-10-22): "저장" (Save) / "다른 이름으로 저장" (Save As) / (dev builds only) downloads save.
+   save-menu.ts adjusts its position to stay on screen. */
 .menu-wrap {
   position: relative;
   display: inline-flex;
@@ -227,8 +227,8 @@ html:not([data-diag]) #status[data-dev] {
   font-size: 11px;
 }
 
-/* 좁은 창(분할 화면 포함, 100% 환산 폭 600px 이하): 글자·여백을 줄이고 개발 전용 메뉴 항목을 숨기며 상태 줄은 자기 줄을
-   쓴다. 브라우저 확대로는 켜지지 않도록 미디어 쿼리 대신 header-zoom.ts 가 innerWidth × f 로 판정해 data-narrow 를 켠다. */
+/* Narrow window (including split screen, width at most 600px converted to 100%): shrinks text and spacing, hides dev-only menu items and gives the status line
+   its own row. So that browser zoom does not trigger it, header-zoom.ts decides via innerWidth × f and sets data-narrow instead of using a media query. */
 html[data-narrow] #toolbar {
   padding: 4px 6px;
   font-size: 12px;
@@ -246,8 +246,8 @@ html[data-narrow] #status {
   flex-basis: 100%;
   order: 10;
 }
-/* 좁은 배치에서 상태 줄이 개발 표시(렌더 경과)뿐이면 자기 줄을 차지하지 않는다. 넓은 배치에서는 빈 칸(visibility)으로 남아
-   정보 버튼을 오른쪽 끝에 둔다. */
+/* In the narrow layout, the status line does not take its own row when it holds only the dev indicator (render elapsed). In the wide layout it stays as an empty slot (visibility)
+   to keep the About button at the right edge. */
 html[data-narrow]:not([data-diag]) #status[data-dev] {
   display: none;
 }

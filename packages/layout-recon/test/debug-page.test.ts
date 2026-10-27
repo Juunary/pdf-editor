@@ -1,4 +1,4 @@
-/** 디버그(환경 변수 LAYOUT_DEBUG_MODEL 이 있을 때만): 한 쪽의 단위·영역·문단을 파일로 쓴다. */
+/** Debug (only when the environment variable LAYOUT_DEBUG_MODEL is set): writes the units, regions and paragraphs of one page to a file. */
 import fs from 'node:fs';
 import { describe, it } from 'vitest';
 import type { PageModel } from '@pdf-editor/shared-types';
@@ -10,8 +10,8 @@ import { buildUnits, inlineImages } from '../src/units.js';
 const FILE = process.env.LAYOUT_DEBUG_MODEL;
 const OUT = process.env.LAYOUT_DEBUG_OUT ?? '/dev/null';
 
-describe.skipIf(!FILE)('디버그', () => {
-  it('쪽 덤프', () => {
+describe.skipIf(!FILE)('debug', () => {
+  it('page dump', () => {
     const model = JSON.parse(fs.readFileSync(FILE!, 'utf8')) as PageModel;
     const feats = lineFeatures(model).filter((f) => f.text.trim() !== '' && f.horizontal);
     const units = buildUnits(model, feats, inlineImages(model, 10));

@@ -8,13 +8,13 @@ export interface RgbaImage {
 }
 
 export interface RgbaRegion extends RgbaImage {
-  /** 실제로 렌더한 영역(페이지 공간). 픽셀 격자(정수 장치 좌표)에 맞춘 값이라 요청한 clip 보다 넓을 수 있다. */
+  /** Area actually rendered (page space). It is aligned to the pixel grid (integer device coordinates), so it may be wider than the requested clip. */
   clip: Rect;
 }
 
 /**
- * 페이지를 불투명 흰 배경 RGBA 로 렌더한다. `scale` 1 = 72dpi.
- * 알파 픽스맵을 255 로 채운 뒤 그려 premultiplied 알파 변환 없이 ImageData 로 바로 쓸 수 있게 한다.
+ * Renders the page with an opaque white background as RGBA. `scale` 1 = 72dpi.
+ * Fills the alpha pixmap with 255 before drawing so it can be used directly as ImageData without premultiplied alpha conversion.
  */
 export function renderPageRgba(page: mupdf.Page, scale: number): RgbaImage {
   const bbox = mupdf.Rect.transform(page.getBounds(), mupdf.Matrix.scale(scale, scale));
@@ -27,9 +27,9 @@ export function renderPageRgba(page: mupdf.Page, scale: number): RgbaImage {
 }
 
 /**
- * 페이지 공간의 `clip` 영역만 렌더한다(M3 편집 미리보기, docs/m3-contract.md D7). 장치 좌표는 쪽 전체 렌더와
- * 같은 변환(`scale`)을 쓰므로 영역의 픽셀은 쪽 전체 렌더의 같은 위치 픽셀과 같고, 뷰어는 `clip * scale` 위치에
- * 덧그리면 된다. 영역을 쪽 경계로 자르고 바깥 정수 장치 좌표로 넓힌다. 쪽 경계와 겹치지 않으면 `RangeError`.
+ * Renders only the `clip` area in page space (M3 edit preview, docs/m3-contract.md D7). Device coordinates use the same transform (`scale`) as a full-page render,
+ * so the area's pixels equal the pixels at the same position in a full-page render, and the viewer only has to draw it over at the `clip * scale` position.
+ * The area is cut at the page bounds and widened to outer integer device coordinates. `RangeError` if it does not overlap the page bounds.
  */
 export function renderPageRegionRgba(page: mupdf.Page, scale: number, clip: Rect): RgbaRegion {
   const matrix = mupdf.Matrix.scale(scale, scale);
@@ -51,7 +51,7 @@ export function renderPageRegionRgba(page: mupdf.Page, scale: number, clip: Rect
   };
 }
 
-/** 정수 장치 좌표 사각형 `rect` 를 `scale` 변환으로 렌더한다. */
+/** Renders the integer device coordinate rectangle `rect` with the `scale` transform. */
 function renderDeviceRect(page: mupdf.Page, scale: number, rect: mupdf.Rect): RgbaImage {
   const matrix = mupdf.Matrix.scale(scale, scale);
   const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, rect, true);

@@ -1,8 +1,8 @@
 /**
- * 편집 가능 판정과 제거·삽입 분석(docs/m3-contract.md 5.1·D1·D2·D3). 문서를 바꾸지 않는다.
+ * Editability classification and removal/insertion analysis (docs/m3-contract.md 5.1, D1, D2, D3). Does not change the document.
  *
- * 분석 결과(EditAnalysis)는 판정(planParagraphEdit·planPageEditability)과 적용(prepareParagraphEdit) 이 함께 쓴다.
- * 같은 문서·같은 SourceMap 이면 같은 결과다(적용은 판정을 다시 계산해 쓴다).
+ * The analysis result (EditAnalysis) is shared by classification (planParagraphEdit, planPageEditability) and apply (prepareParagraphEdit).
+ * The same document and the same SourceMap give the same result (apply recomputes the classification).
  */
 import type * as mupdf from 'mupdf';
 import type {
@@ -52,7 +52,7 @@ import {
   type SkipInfo,
 } from './show-ops.js';
 
-/** 블록 스트림 사전의 /PdfEditorFormat(계약 D3·5.3). */
+/** /PdfEditorFormat in the block stream dictionary (contract D3, 5.3). */
 export interface BlockFormat {
   v: 1;
   format: ParagraphFormat;
@@ -62,17 +62,17 @@ export interface BlockFormat {
     bold: boolean;
     italic: boolean;
     color: [number, number, number] | null;
-    /** RunStyle.charSpacing(pt). 0 이면 쓰지 않는다. */
+    /** RunStyle.charSpacing (pt). Not written if 0. */
     charSpacing?: number;
-    /** RunStyle.horizontalScale. 1 이면 쓰지 않는다. */
+    /** RunStyle.horizontalScale. Not written if 1. */
     horizontalScale?: number;
-    /** 원 폰트 이름(BaseFont). 폴백이면 폴백 폰트 이름. */
+    /** Original font name (BaseFont). The fallback font name for the fallback. */
     font: string;
     synthetic: { bold: boolean; italic: boolean };
   }[];
-  /** 쓴 글리프마다 텍스트 위치(스트림 순서). 재열기 뒤 sourceChar·캐럿 위치 복원에 쓴다. */
+  /** Text position per written glyph (stream order). Used to restore sourceChar and caret positions after reopening. */
   glyphOffsets: number[];
-  /** 쓰지 않은 글자(glyph-missing) 텍스트 위치. */
+  /** Text positions of characters not written (glyph-missing). */
   missing: number[];
   insertion: InsertionInfo;
   areaLimit: Rect;
@@ -80,7 +80,7 @@ export interface BlockFormat {
 
 export interface OpRemoval {
   op: SourceOp;
-  /** text.glyphs 인덱스별 지움 여부. */
+  /** Whether each text.glyphs index is erased. */
   remove: boolean[];
   partial: boolean;
   analysis: ShowAnalysis;
@@ -88,46 +88,46 @@ export interface OpRemoval {
 
 export interface InsertionPoint {
   mode: 'before-bt' | 'split-bt';
-  /** 삽입할 스트림과 바이트 위치(그 위치 앞에 넣는다). splitOp 가 있으면 그 연산 안(다시 쓴 TJ 사이). */
+  /** Stream and byte position to insert at (inserted before that position). If splitOp is present, inside that operation (between the rewritten TJs). */
   stream: ContentStreamRef;
   offset: number;
   splitOp: number | null;
   splitGlyph: number | null;
-  /** split-bt 에서 편집 블록 호출 뒤 이어 쓸 텍스트(`BT <Tlm> Tm [n] TJ`). before-bt 는 빈 문자열. */
+  /** Text to continue after the edit block call for split-bt (`BT <Tlm> Tm [n] TJ`). Empty string for before-bt. */
   resume: string;
-  /** 삽입점의 그래픽 상태를 가진 연산. */
+  /** Operation that has the graphics state of the insertion point. */
   stateOp: SourceOp;
-  /** 삽입점 CTM(그 스트림 콘텐츠 공간 → 사용자 공간). */
+  /** Insertion-point CTM (that stream's content space → user space). */
   ctm: Matrix;
   mcidKept: boolean | null;
-  /** 규칙 3 으로 marked content 바깥으로 옮김. */
+  /** Moved outside marked content by rule 3. */
   moved: boolean;
 }
 
 export interface EditAnalysis {
   paragraph: LayoutParagraph;
-  /** 대상 글자(PageModel.chars 인덱스, 문단 순서. 편집 블록이면 블록 글자 glyphSeq 순). */
+  /** Target characters (PageModel.chars indices, paragraph order. For an edit block, block characters in glyphSeq order). */
   chars: number[];
-  /** 대상이 편집 블록이면 그 블록. */
+  /** The block, if the target is an edit block. */
   block: EditBlockRef | null;
   blockStep: FormStep | null;
   blockFormat: BlockFormat | null;
   limits: ParagraphLimit[];
   warnings: EditWarning[];
   removals: OpRemoval[];
-  /** 새 텍스트(편집 블록 호출)를 넣을 콘텐츠의 Form 사용 경로. 쪽 콘텐츠면 빈 배열. */
+  /** Form usage path of the content into which the new text (edit block call) goes. Empty array for page content. */
   formPath: FormStep[];
   insertion: InsertionPoint | null;
   areaLimit: Rect;
-  /** ActualText 를 뺄 BDC 연산 id. */
+  /** BDC operation ids from which to remove ActualText. */
   actualTextClears: number[];
-  /** 복제할 Form 이 /StructParents 를 가져 복제본에서 지운다. */
+  /** The Form to duplicate has /StructParents, which is removed from the copy. */
   structParentsRemoved: boolean;
-  /** 표 셀 대상(M4 D1). paragraph 는 셀 문단을 이은 문단이다. */
+  /** Table cell target (M4 D1). paragraph is the paragraph that joins the cell paragraphs. */
   cell: CellTarget | null;
 }
 
-/** 한 번의 판정(쪽 하나) 안에서 공유하는 상태. */
+/** State shared within a single classification (one page). */
 export interface AnalyzeEnv {
   ctx: ParagraphEditContext;
   fonts: FontCache;
@@ -136,13 +136,13 @@ export interface AnalyzeEnv {
   links: Rect[];
   redacts: Rect[];
   formats: Map<number, BlockFormat | null>;
-  /** (Form 경로, 폰트 리소스 이름) → 폰트 리소스 값. */
+  /** (Form path, font resource name) → font resource value. */
   fontRefs: Map<string, mupdf.PDFObject | null>;
-  /** gs 연산 id → 그 사전의 /SMask(키가 없으면 undefined). */
+  /** gs operation id → /SMask of that dictionary (undefined if the key is absent). */
   gsSMask: Map<number, mupdf.PDFObject | undefined>;
-  /** 색 연산 id → 패턴 채움 여부. */
+  /** Color operation id → whether it is a pattern fill. */
   patternOps: Map<number, boolean>;
-  /** glyphSeq → PageModel 글자, 글자 → 문단 id(ActualText 판정, 처음 쓸 때 만든다). */
+  /** glyphSeq → PageModel character, character → paragraph id (ActualText classification, built on first use). */
   charOfSeq: Map<number, number> | null;
   paraOfChar: Map<number, number> | null;
 }
@@ -167,9 +167,9 @@ const ROTATION_TOLERANCE = (0.5 * Math.PI) / 180;
 const ALIGNS: ReadonlySet<string> = new Set(['left', 'right', 'center', 'justify']);
 
 /**
- * 형식의 현재 필드만 꺼낸다(/PdfEditorFormat 읽기·쓰기). 이전 빌드가 쓴 `overflow`('expand'·'shrink'·'keep')·
- * `fontScale` 은 버린다: 초과는 이제 선택이 아니라 영역 자동 확장이고 글자 축소는 없다(2026-10-20 사용자 결정).
- * 영역이 숫자 4개가 아니거나 첫 기준선 위치가 숫자가 아니면 null(호출자는 추출 텍스트 + 블록 상자로 시작한다).
+ * Takes out only the current fields of the format (reading and writing /PdfEditorFormat). `overflow` ('expand', 'shrink', 'keep') and
+ * `fontScale` written by earlier builds are discarded: overflow is now automatic area expansion rather than a choice, and there is no text shrinking (2026-10-20 user decision).
+ * null if the area is not four numbers or the first baseline position is not a number (the caller starts from the extracted text + block box).
  */
 export function cleanParagraphFormat(raw: unknown): ParagraphFormat | null {
   if (typeof raw !== 'object' || raw === null) return null;
@@ -185,7 +185,7 @@ export function cleanParagraphFormat(raw: unknown): ParagraphFormat | null {
     align:
       typeof f.align === 'string' && ALIGNS.has(f.align) ? (f.align as ParagraphAlign) : 'left',
     firstLineIndent: num(f.firstLineIndent, 0),
-    // 0 이하이면 리플로우가 글자 크기 × 1.2 로 정한다(계약 5.4).
+    // If 0 or less, reflow sets it to font size × 1.2 (contract 5.4).
     lineHeight: lineHeight > 0 ? lineHeight : 0,
     firstBaselineOffset: f.firstBaselineOffset,
   };
@@ -201,7 +201,7 @@ function readJson(obj: mupdf.PDFObject): BlockFormat | null {
   }
 }
 
-/** 편집 블록의 /PdfEditorFormat. 없거나 읽을 수 없으면 null. */
+/** /PdfEditorFormat of an edit block. null if absent or unreadable. */
 export function readBlockFormat(doc: mupdf.PDFDocument, objectNumber: number): BlockFormat | null {
   return readJson(doc.newIndirect(objectNumber).get('PdfEditorFormat'));
 }
@@ -258,7 +258,7 @@ function keyOf(path: readonly FormStep[]): string {
   return k;
 }
 
-/** 글리프가 보이는가(번호를 받았고 Tr 3·7 이 아님). */
+/** Whether the glyph is visible (received a number and is not Tr 3 or 7). */
 const visibleGlyph = (op: SourceOp, g: number) =>
   op.text !== undefined &&
   op.text.glyphs[g]?.seq !== null &&
@@ -276,7 +276,7 @@ function opFont(env: AnalyzeEnv, op: SourceOp): mupdf.PDFObject | null {
   return v;
 }
 
-/** 연산을 명세 폭으로 분석한다(폰트 찾기 포함). */
+/** Analyzes an operation by spec widths (including font lookup). */
 function analyzeOp(env: AnalyzeEnv, op: SourceOp): ShowAnalysis | SkipInfo {
   if (!op.text || op.kind !== 'text-show') {
     return { code: 'not-text-show', detail: '텍스트 표시 연산 아님' };
@@ -287,13 +287,13 @@ function analyzeOp(env: AnalyzeEnv, op: SourceOp): ShowAnalysis | SkipInfo {
   return analyzeShow(op, env.streams.opBytes(op), env.fonts.load(font));
 }
 
-/** 편집 블록 사용 단계(글자 연산의 Form 경로에서 편집 블록인 단계). */
+/** Edit block usage level (the level in a character operation's Form path that is an edit block). */
 function blockStepOf(env: AnalyzeEnv, op: SourceOp): FormStep | null {
   for (const s of op.formPath) if (env.blockNums.has(s.objectNumber)) return s;
   return null;
 }
 
-/** 문단 분석. */
+/** Paragraph analysis. */
 export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnalysis {
   const { ctx } = env;
   const paragraph = ctx.layout.paragraphs.find((p) => p.id === paragraphId);
@@ -301,10 +301,10 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
   const limits = new Limits();
   const warnings: EditWarning[] = [];
 
-  // 도형 라벨 문단은 막지 않는다(2026-10-21 사용자 보고, main #6): 도형 검출은 배경 그림·상자·쪽 전체를 도형으로 잡는
-  // 일이 잦아(코퍼스 1·4쪽 흐름 밖 문단 778 중 221 이 도형 라벨, 쪽 면적 54–100% 도형 포함), 일반 글자가 편집되지 않았다.
-  // 표 셀은 M4 D1 에 따라 셀 문단 전부가 대상이다(main 의 "표 셀만 not-flow-paragraph" 규칙은 M4 셀 편집으로 대체).
-  // 셀을 찾지 못한 표 문단은 흐름 문단처럼 다룬다. 그래서 not-flow-paragraph 는 붙지 않는다.
+  // Shape label paragraphs are not blocked (2026-10-21 user report, main #6): shape detection often picks up background images, boxes and the whole page as shapes
+  // (of 778 out-of-flow paragraphs on corpus pages 1 and 4, 221 were shape labels, with shapes covering 54–100% of the page area), and ordinary text was not editable.
+  // For table cells, per M4 D1 all paragraphs of the cell are the target (main's "only table cells get not-flow-paragraph" rule is replaced by M4 cell editing).
+  // A table paragraph whose cell is not found is treated like a flow paragraph. So not-flow-paragraph is not attached.
   let target = paragraph;
   let cell: CellTarget | null = null;
   if (paragraph.table !== null) {
@@ -313,7 +313,7 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
   }
   const withCell = (a: EditAnalysis): EditAnalysis => {
     a.cell = cell;
-    // 편집 블록은 만들 때의 상한(블록 BBox)을 그대로 쓴다(커밋 뒤 셀 상자는 새 글로 다시 계산된다).
+    // An edit block uses the limit from when it was created (block BBox) as is (after commit the cell box is recomputed from the new text).
     if (cell && !a.block) a.areaLimit = intersect(a.areaLimit, cell.limit);
     return a;
   };
@@ -326,7 +326,7 @@ export function analyzeParagraph(env: AnalyzeEnv, paragraphId: number): EditAnal
     }
   }
 
-  // 편집 블록 글자를 포함하면 대상은 블록 전체(계약 D3).
+  // If it contains edit block characters, the target is the whole block (contract D3).
   for (const c of target.chars) {
     const opId = ctx.linkage.charOp[c] ?? -1;
     const op = opId >= 0 ? ctx.map.ops[opId] : undefined;
@@ -365,7 +365,7 @@ function analyzeChars(
     cell: null,
   };
 
-  // 연산 연결·연산 제한.
+  // Operation linkage and operation limits.
   const byOp = new Map<number, number[]>();
   for (const c of chars) {
     const opId = ctx.linkage.charOp[c] ?? -1;
@@ -396,7 +396,7 @@ function analyzeChars(
   }
   if (touched.length === 0) return base;
 
-  // 출처 섞임: 쪽 콘텐츠와 Form, 서로 다른 Form 사용 경로.
+  // Mixed sources: page content and a Form, or different Form usage paths.
   const keys = new Set(touched.map((o) => keyOf(o.formPath)));
   if (keys.size > 1) {
     limits.add(
@@ -409,9 +409,9 @@ function analyzeChars(
   const formPath = touched[0]!.formPath;
   base.formPath = formPath;
 
-  // ActualText(D1): 지울 글리프가 /ActualText MC 안이면 그 MC 의 글리프를 모두 지운다. MuPDF 구조화 텍스트는
-  // ActualText 로 글자를 바꾸므로 MC 의 일부 글리프는 어느 문단에도 들어가지 않는다(그런 글리프는 함께 지운다).
-  // 다른 문단에 속한 글리프가 있으면 일부만 지우는 것이므로 편집 제한.
+  // ActualText (D1): if a glyph to erase is inside an /ActualText MC, all glyphs of that MC are erased. MuPDF structured text
+  // replaces characters with ActualText, so some glyphs of the MC belong to no paragraph (such glyphs are erased together).
+  // If a glyph belongs to another paragraph, only part would be erased, so the edit is restricted.
   const targetSeqs = new Set(chars.map((c) => ctx.model.chars[c]!.glyphSeq));
   const atOps = new Set<number>();
   for (const op of touched) {
@@ -478,7 +478,7 @@ function analyzeChars(
     });
   }
 
-  // 지울 글리프와 연산 분석(D2).
+  // Glyphs to erase and operation analysis (D2).
   const removals: OpRemoval[] = [];
   for (const op of touched) {
     const a = analyzeOp(env, op);
@@ -497,7 +497,7 @@ function analyzeChars(
   base.removals = removals;
   if (removals.length !== touched.length) return base;
 
-  // Form 복제본의 /StructParents(D1).
+  // /StructParents of the Form copy (D1).
   for (const s of formPath) {
     const f = ctx.doc.newIndirect(s.objectNumber);
     if (!f.get('StructParents').isNull() || !f.get('StructParent').isNull()) {
@@ -505,7 +505,7 @@ function analyzeChars(
     }
   }
 
-  // 삽입점(D3).
+  // Insertion point (D3).
   const ins = findInsertion(env, base, limits);
   if (ins) {
     base.insertion = ins;
@@ -515,7 +515,7 @@ function analyzeChars(
   return base;
 }
 
-/** 삽입점 판정(계약 D3 규칙 1–3). 나눌 수 없으면 제한을 더하고 null. */
+/** Insertion point classification (contract D3 rules 1–3). Adds a limit and returns null if it cannot be split. */
 function findInsertion(env: AnalyzeEnv, a: EditAnalysis, limits: Limits): InsertionPoint | null {
   const ops = env.ctx.map.ops;
   const first = a.removals.find((r) => r.remove.some((x) => x));
@@ -562,7 +562,7 @@ function findInsertion(env: AnalyzeEnv, a: EditAnalysis, limits: Limits): Insert
   const refMc = [...(ref.markedContent ?? [])].reverse().find((m) => m.mcid !== null) ?? null;
   const mcidKeptAt = (stateOp: SourceOp): boolean | null => {
     if (!refMc) return null;
-    // 복제할 Form 안에서 열린 MCID 는 /StructParents 를 지우면 구조와 끊긴다.
+    // An MCID opened inside a Form to be duplicated is cut off from the structure if /StructParents is removed.
     const mcOp = ops[refMc.opId];
     if (a.structParentsRemoved && mcOp && mcOp.formPath.length > 0) return false;
     return (stateOp.markedContent ?? []).some((m) => m.opId === refMc.opId);
@@ -580,10 +580,10 @@ function findInsertion(env: AnalyzeEnv, a: EditAnalysis, limits: Limits): Insert
     moved: false,
   });
 
-  // 규칙 1.
+  // Rule 1.
   if (!keptBefore(ref.id) && !keptVisible(ref, refGlyph)) return beforeBt();
 
-  // 규칙 3: BT 안에서 열린 marked content 가 열려 있으면 가장 바깥 것 앞으로 옮기고 규칙 1·2 를 다시 적용한다.
+  // Rule 3: if marked content opened inside the BT is still open, move before the outermost one and reapply rules 1 and 2.
   const openInside = (ref.markedContent ?? []).find(
     (m) => m.insideText && m.opId > bt && m.opId < ref.id && same(ops[m.opId]!),
   );
@@ -607,7 +607,7 @@ function findInsertion(env: AnalyzeEnv, a: EditAnalysis, limits: Limits): Insert
     target = { op: ref, glyph: inside ? refGlyph : null };
   }
 
-  // 규칙 2 의 나누기 제한.
+  // Split restriction of rule 2.
   const unsupported = (detail: string) => {
     limits.add('bt-split-unsupported', detail, a.chars);
     return null;
@@ -644,14 +644,14 @@ function readingOrderWarning(a: EditAnalysis): EditWarning {
 }
 
 /**
- * BT 시작부터 나누는 지점까지 텍스트 줄 행렬과 변위를 따라가 편집 블록 호출 뒤 이어 쓸 `BT … [n] TJ` 를 만든다
- * (계약 D3 규칙 2). 나누는 지점: target.glyph 가 null 이면 target.op 바로 앞, 아니면 그 연산의 target.glyph 글리프 앞.
+ * From the BT start to the split point, follows the text line matrix and displacement to build the `BT … [n] TJ` to continue after the edit block call
+ * (contract D3 rule 2). Split point: just before target.op if target.glyph is null, otherwise before the target.glyph glyph of that operation.
  *
- * 줄 행렬(Tlm)은 계산값 하나(`<Tlm> Tm`)로 쓰지 않고, 마지막 Tm(없으면 BT)부터의 줄 설정 연산을 원 피연산자 그대로
- * 같은 순서로 다시 실행한다: Tm·Td 는 원 바이트, TD 는 `tx ty Td`(TL 부수 효과 없음), T*·'·" 의 줄 이동은
- * `0 -TL Td`(TL 을 알면) 또는 `T*`. 같은 연산을 같은 순서로 실행해야 엔진별 부동소수 누적까지 원래와 같아진다
- * (실측: pdf.js 는 `<Tlm> Tm` 이면 뒤 줄 글리프의 안티에일리어싱이 달라짐, Poppler 는 합친 Td 하나면 달라짐).
- * 계산할 수 없으면 사유.
+ * The line matrix (Tlm) is not written as a single computed value (`<Tlm> Tm`); the line-setting operations from the last Tm (or the BT) on are re-executed
+ * with the original operands in the same order: Tm and Td as the original bytes, TD as `tx ty Td` (no TL side effect), and the line moves of T*, ' and " as
+ * `0 -TL Td` (if TL is known) or `T*`. The same operations must run in the same order for even per-engine floating-point accumulation to match the original
+ * (measured: pdf.js changes the antialiasing of later-line glyphs with `<Tlm> Tm`, and Poppler changes it with a single merged Td).
+ * A reason if it cannot be computed.
  */
 function simulateLine(
   env: AnalyzeEnv,
@@ -671,10 +671,10 @@ function simulateLine(
     return p ? p.operands.filter((t) => t.kind === 'number').map((t) => t.value as number) : [];
   };
   const upto = btOps.filter((o) => o.id <= target.op.id);
-  /** o 다음, 나누는 지점 전까지 TL 을 바꾸는 연산이 있는가. */
+  /** Whether there is an operation that changes TL after o and before the split point. */
   const tlChangesAfter = (o: SourceOp) =>
     upto.some((x) => x.id > o.id && x.id < target.op.id && (x.op === 'TL' || x.op === 'TD'));
-  /** o 다음 텍스트 표시 연산의 TL(그사이 TL 변경이 없을 때). */
+  /** TL of the text-showing operation after o (when TL does not change in between). */
   const leadingAhead = (o: SourceOp): number | null => {
     for (const x of btOps) {
       if (x.id <= o.id) continue;
@@ -743,7 +743,7 @@ function simulateLine(
           shows = [];
         }
         tl = o.text.leading;
-        // 변위는 마지막 줄 설정 연산 뒤의 표시 연산만 필요하다(아래에서 한 번에 계산).
+        // Only the displacement of the show operations after the last line-setting operation is needed (computed at once below).
         shows.push(o);
     }
     if (isTarget) break;
@@ -762,7 +762,7 @@ function simulateLine(
   return { resume: ['BT', ...replay].join(' ') + tj };
 }
 
-/** 삽입점 그래픽 상태 판정(D3): 특이 CTM, 클립, 패턴 채움, SMask. 영역 상한도 정한다. */
+/** Insertion-point graphics state classification (D3): singular CTM, clip, pattern fill, SMask. Also decides the area limit. */
 function checkInsertionState(
   env: AnalyzeEnv,
   a: EditAnalysis,
@@ -782,7 +782,7 @@ function checkInsertionState(
     );
   } else {
     a.areaLimit = intersect(ctx.model.bounds, clip as Rect);
-    // 직사각형 클립이라도 원 문단 글자를 다 덮지 않으면(다른 클립 아래 그린 글자가 섞임) 새 텍스트가 잘린다.
+    // Even a rectangular clip clips the new text if it does not cover all original paragraph characters (characters drawn under another clip are mixed in).
     const r = a.areaLimit;
     const out = a.chars.filter((c) => {
       const o = ctx.model.chars[c]!.origin;
@@ -796,7 +796,7 @@ function checkInsertionState(
       );
     }
   }
-  // 판정에는 효력 있는 SMask 만 필요하다(gs 연산별로 한 번 읽는다. 쪽 끝까지 누적되는 gs 목록을 매번 합치지 않는다).
+  // Classification only needs the effective SMask (read once per gs operation; the gs list accumulated to the end of the page is not merged each time).
   const smaskOf = (ids: readonly number[]): mupdf.PDFObject | undefined => {
     let v: mupdf.PDFObject | undefined;
     for (const id of ids) {
@@ -879,7 +879,7 @@ function addPlacementWarnings(env: AnalyzeEnv, a: EditAnalysis): void {
   }
 }
 
-/** 편집 블록 재편집(rewrite-block): 원 연산 제거 없이 블록 스트림만 다시 쓴다. */
+/** Edit block re-edit (rewrite-block): rewrites only the block stream without removing the original operations. */
 function analyzeBlock(
   env: AnalyzeEnv,
   paragraph: LayoutParagraph,
@@ -949,7 +949,7 @@ function analyzeBlock(
 
 const concatAll = (list: Matrix[]): Matrix => list.reduce((acc, m) => concat(acc, m));
 
-// ---------------------------------------------------------------- 시작 상태(5.3)
+// ---------------------------------------------------------------- Start state (5.3)
 
 export interface StartState {
   runs: TextRun[];
@@ -960,9 +960,9 @@ export interface StartState {
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /**
- * 시작 상태 텍스트를 NFC 로 맞춘다(편집기·역매핑 키가 NFC 다. ToUnicode 가 분해형(NFD)인 원문도 같은 텍스트 커밋에서
- * 글자를 잃지 않게). 클러스터 단위로 정규화하고, 정규화한 클러스터의 모든 위치는 원래 클러스터의 첫 원본 글자
- * (없으면 -1)를 가리킨다.
+ * Normalizes the start-state text to NFC (the editor and reverse-mapping keys are NFC. So that original text whose ToUnicode is decomposed (NFD) does not lose
+ * characters on a same-text commit). Normalizes per cluster, and every position of a normalized cluster points to the first original character
+ * of the original cluster (-1 if none).
  */
 export function normalizeStartState(state: StartState): StartState {
   const src = state.charIndexOfOffset;
@@ -983,11 +983,11 @@ export function normalizeStartState(state: StartState): StartState {
   return { ...state, runs, charIndexOfOffset: map };
 }
 
-/** 결정성: 로그·블록 JSON 에 남는 값이라 유효숫자를 고정한다. */
+/** Determinism: the value is logged and goes into block JSON, so significant digits are fixed. */
 const round6 = (v: number): number => Number(v.toPrecision(6));
 
 /**
- * 원본 글자 연산의 글자 공간 → 페이지 공간 가로·세로 배율(Tm × CTM × userToPage). 연산을 찾지 못하면 null.
+ * Horizontal and vertical scale from character space to page space for an original character operation (Tm × CTM × userToPage). null if the operation is not found.
  */
 function textScales(
   ctx: ParagraphEditContext,
@@ -999,15 +999,15 @@ function textScales(
   if (!op || !text) return null;
   const m = concat(concat(text.tm, op.ctm), ctx.map.userToPage);
   const sx = Math.hypot(m[0], m[1]);
-  // 세로 배율은 기준선에 수직인 높이(|det| / sx). y 축 길이를 쓰면 기울인 글자(Tm 비틀기)를 가로 축소로 잘못 본다.
+  // The vertical scale is the height perpendicular to the baseline (|det| / sx). Using the y-axis length would misread slanted text (Tm skew) as horizontal shrinking.
   const sy = Math.abs(m[0] * m[3] - m[1] * m[2]) / sx;
   if (!(sx > 1e-9) || !(sy > 1e-9) || !Number.isFinite(sx) || !Number.isFinite(sy)) return null;
   return { sx, sy, tc: text.charSpacing, th: text.horizontalScale };
 }
 
 /**
- * 원본 글자 연산의 자간(Tc)을 페이지 공간 pt 로(글리프마다 더하는 전진). Tc 는 크기를 곱하지 않은 글자 공간 값이라
- * 가로 비율(Tz)과 글자 공간 → 페이지 공간 가로 배율을 곱한다. 찾지 못하거나 0 이면 0.
+ * Letter spacing (Tc) of an original character operation in page-space pt (advance added per glyph). Tc is a character-space value not multiplied by size, so
+ * it is multiplied by the horizontal scale (Tz) and the character-space → page-space horizontal scale. 0 if not found or 0.
  */
 export function charSpacingOf(ctx: ParagraphEditContext, sourceChar: number): number {
   const t = textScales(ctx, sourceChar);
@@ -1017,8 +1017,8 @@ export function charSpacingOf(ctx: ParagraphEditContext, sourceChar: number): nu
 }
 
 /**
- * 원본 글자의 가로 비율(장평): Tz/100 × (글자 공간 가로 배율 / 세로 배율). Tz 뿐 아니라 Tm·CTM 으로 가로만 줄인
- * 글자(HWP 계열 PDF)도 같은 값으로 나타낸다. 0.1% 안이면 1.
+ * Horizontal scale of an original character (character width ratio): Tz/100 × (character-space horizontal scale / vertical scale). Text narrowed horizontally only via Tm or CTM
+ * (HWP-family PDFs) is expressed with the same value, not just Tz. 1 if within 0.1%.
  */
 export function horizontalScaleOf(ctx: ParagraphEditContext, sourceChar: number): number {
   const t = textScales(ctx, sourceChar);
@@ -1028,8 +1028,8 @@ export function horizontalScaleOf(ctx: ParagraphEditContext, sourceChar: number)
 }
 
 /**
- * 같은 줄의 두 원본 글자 사이에 합성 공백(원본 글자 없음, 추출이 넓은 간격에 넣은 것)이 있는 모양 구간 번호. 줄 사이
- * 잇기 공백은 세지 않는다.
+ * Index of the style span where a synthetic space (no original character, inserted by extraction into a wide gap) lies between two original characters on the same line. The space
+ * that joins lines is not counted.
  */
 function letterSpacedRuns(
   ctx: ParagraphEditContext,
@@ -1081,7 +1081,7 @@ export function originalStartState(
   const styleOf = (ri: number): RunStyle => {
     const r = paragraph.styleRuns[ri];
     const sc = r ? (paragraph.chars[r.start] ?? paragraph.chars[0]!) : paragraph.chars[0]!;
-    // 넓은 자간(자간 띄어쓰기)은 추출이 글자 사이에 합성 공백을 넣어 이미 간격을 나타낸다. 자간까지 더하면 두 번 벌어진다.
+    // Wide letter spacing (spaced-out text) already has its gap expressed by extraction inserting synthetic spaces between characters. Adding the letter spacing too would widen it twice.
     const raw = charSpacingOf(ctx, sc);
     const charSpacing = raw > 0 && gapRuns.has(ri) ? 0 : raw;
     const horizontalScale = horizontalScaleOf(ctx, sc);
@@ -1127,12 +1127,12 @@ export function originalStartState(
   };
 }
 
-/** 편집 블록의 시작 상태(5.3): /PdfEditorFormat, 추출 텍스트와 다르면 추출 텍스트 + 블록 상자. */
+/** Start state of an edit block (5.3): /PdfEditorFormat, or extracted text + block box if it differs from the extracted text. */
 export function blockStartState(ctx: ParagraphEditContext, a: EditAnalysis): StartState {
   const fmt = a.blockFormat;
   const chars = a.chars;
   const extracted = chars.map((c) => ctx.model.chars[c]!.text).join('');
-  // 쓴 텍스트는 NFC, 추출 텍스트는 ToUnicode 그대로(NFD 일 수 있음)라 NFC 로 비교한다.
+  // Written text is NFC and extracted text is left as ToUnicode gave it (possibly NFD), so compare in NFC.
   const strip = (s: string) => s.replace(/\s+/gu, '').normalize('NFC');
   const first = chars[0] ?? 0;
   const ch0 = ctx.model.chars[first];
@@ -1172,7 +1172,7 @@ export function blockStartState(ctx: ParagraphEditContext, a: EditAnalysis): Sta
   fmt.glyphOffsets.forEach((o, k) => {
     if (o >= 0 && o < map.length && map[o] === -1) map[o] = chars[k]!;
   });
-  // 클러스터 나머지 UTF-16 위치도 같은 글자로 채운다.
+  // Also fill the remaining UTF-16 positions of the cluster with the same character.
   for (let o = 1; o < map.length; o++) {
     if (map[o] === -1 && map[o - 1]! >= 0 && /[\uDC00-\uDFFF]|\p{M}/u.test(text[o]!)) {
       map[o] = map[o - 1]!;

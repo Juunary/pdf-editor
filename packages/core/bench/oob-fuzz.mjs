@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// MuPDF WASM "memory access out of bounds" 간헐 중단 감시(M5 계약 1.2·4.1).
-// 코퍼스 문서를 열고 쪽을 무작위로 골라 렌더·추출·원본 연결·레이아웃·편집 판정을 섞어 부르고, 중간중간 GC 를 강제한 뒤 전체 저장한다.
-// 한 번(run)은 독립 Node 프로세스 하나다(WASM 힙·GC 상태가 매번 새로 시작). 실행마다 시드가 다르고 같은 시드면 같은 순서다.
+// Watches for intermittent MuPDF WASM "memory access out of bounds" aborts (M5 contract 1.2 and 4.1).
+// Opens corpus documents, picks pages at random, mixes render, extraction, source link, layout and edit classification calls, forces GC now and then, and does a full save.
+// One run is one independent Node process (WASM heap and GC state start fresh each time). The seed differs per run, and the same seed gives the same order.
 //
 //   pnpm --filter @pdf-editor/core build
 //   node packages/core/bench/oob-fuzz.mjs --runs 200 --corpus-dir /mnt/nas4/kjune/pdf-editor/fixtures/corpus --jobs 4
 //
-// 결과: out/m5-oob/<label>.json (실행별 시드·결과, 실패 시 문서·쪽·단계·메시지·스택). OOB 가 1회라도 있으면 종료 코드 1.
+// Result: out/m5-oob/<label>.json (seed and result per run; on failure the document, page, step, message and stack). Exit code 1 if there is even one OOB.
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -156,7 +156,7 @@ function runChild(seed) {
       try {
         parsed = line ? JSON.parse(line) : null;
       } catch {
-        // 아래에서 비정상 종료로 기록한다.
+        // Recorded below as an abnormal exit.
       }
       if (parsed) return done({ ...parsed, code });
       done({

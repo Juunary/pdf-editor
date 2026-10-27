@@ -17,20 +17,20 @@ interface Props {
 }
 
 /**
- * 페이지 이동 · 찾기 · 레이아웃 · 편집 버튼. 툴바에 마운트한다.
- * 원본 연결 디버그 오버레이는 툴바에 두지 않는다(사용자 요청 2026-10-22). 시험·진단은 `controller.toggleDebug()` 로 켠다.
+ * Page navigation, find, layout and edit buttons. Mounted in the toolbar.
+ * The source-link debug overlay is not placed in the toolbar (user request 2026-10-22). Turn it on for tests and diagnostics with `controller.toggleDebug()`.
  */
 export function Controls({ controller }: Props) {
   const state = useViewerState(controller);
   const t = controller.strings;
   const [draft, setDraft] = useState<string | null>(null);
-  /** Esc 로 취소할 때 뒤따르는 blur 가 입력을 확정하지 않게 한다. */
+  /** Keeps the blur that follows a cancel with Esc from committing the input. */
   const cancelled = useRef(false);
   const shown = draft ?? String(state.pageIndex + 1);
   const session = state.edit.session;
 
-  // Ctrl+F 가로채기. 검색이 비활성화되면 브라우저 기본 찾기에 맡긴다.
-  // 편집 밖 Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y 는 문서 되돌리기·다시 실행이다(편집 중에는 편집기 textarea 가 처리한다).
+  // Intercepts Ctrl+F. If search is disabled, leaves it to the browser's default find.
+  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y outside editing are document undo/redo (during editing the editor textarea handles them).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isFindShortcut(e) && controller.shouldInterceptFind()) {
@@ -57,7 +57,7 @@ export function Controls({ controller }: Props) {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [controller]);
 
-  /** 입력 확정. 유효하지 않으면 이동하지 않고 현재 페이지 번호로 되돌린다. */
+  /** Commit the input. If invalid, does not navigate and restores the current page number. */
   const commit = () => {
     if (cancelled.current) {
       cancelled.current = false;
@@ -135,7 +135,7 @@ export function Controls({ controller }: Props) {
       >
         {t.find}
       </button>
-      {/* 레이아웃 오버레이 + 편집 가능 표시(사용자 요청 2026-10-22). 편집 중이면 바깥 클릭처럼 편집을 끝내고 켠다. */}
+      {/* Layout overlay + editability overlay (user request 2026-10-22). If editing, ends the edit as an outside click would, then turns on. */}
       <button
         id="pe-overlay-toggle"
         type="button"

@@ -1,18 +1,18 @@
 /**
- * 테스트 전용: 계약 3.1 core 판정("첫 등장 계수", 확정 2026-10-19, 수정 4 키 규칙·수정 6 1단계)을 그대로 구현한다.
+ * Test only: implements the contract 3.1 core classification ("first-arrival counting", fixed 2026-10-19, amendment 4 key rule, amendment 6 step 1) as is.
  *
- * 0) gid −1 보조 글리프는 대상 아님(호출자가 거른다).
- * 1) 직전 텍스트 콜백과 포인터가 같은 텍스트 콜백은 종류와 무관하게 통째로 건너뛴다(수정 6).
- * 2) fillText·strokeText: 글리프마다 센다. 키(폰트, gid, trm 6값, 콜백 ctm 6값)를 센 목록에 넣는다(항목 목록).
- * 3) clipText·clipStrokeText·ignoreText: 키가 센 목록의 미소비 항목과 같으면 항목 하나를 소비하고 세지 않는다.
- *    아니면 센다. clipText·clipStrokeText 에서 새로 센 글리프는 센 목록에 넣는다(콜백 처리 후).
- * 4) 1개 이상 소비한 콜백이 끝나면 센 목록을 비운다.
- * 5) beginMask~endMask 사이 콜백은 호출하지 않는다(호출자 책임).
+ * 0) gid -1 auxiliary glyphs are not targets (the caller filters them).
+ * 1) A text callback with the same pointer as the previous text callback is skipped entirely regardless of kind (amendment 6).
+ * 2) fillText, strokeText: counted per glyph. The key (font, gid, 6 trm values, 6 callback ctm values) is put into the counted list (entry list).
+ * 3) clipText, clipStrokeText, ignoreText: if the key equals an unconsumed entry of the counted list, one entry is consumed and not counted.
+ *    Otherwise it is counted. Glyphs newly counted in clipText and clipStrokeText are put into the counted list (after callback processing).
+ * 4) When a callback that consumed one or more ends, the counted list is emptied.
+ * 5) Callbacks between beginMask and endMask are not called (the caller's responsibility).
  */
 export type TextCallbackKind = 'fill' | 'stroke' | 'clip' | 'clip-stroke' | 'ignore';
 
 export interface JudgeOptions {
-  /** 비교용: 계약 수정 2–5 의 1단계(fillText·strokeText 만 건너뜀). 수정 6 이전 규칙의 회귀 재현에만 쓴다. */
+  /** For comparison: step 1 of contract amendments 2-5 (skips only fillText and strokeText). Used only to reproduce the regression of the pre-amendment-6 rule. */
   step1FillStrokeOnly?: boolean;
 }
 
@@ -22,7 +22,7 @@ export class FirstArrivalJudge {
 
   constructor(private readonly options: JudgeOptions = {}) {}
 
-  /** 콜백 1개의 글리프별 판정. null = 콜백 전체 건너뜀(1단계). true = 새 글리프(센다), false = 재전송. */
+  /** Per-glyph classification of one callback. null = the whole callback is skipped (step 1). true = new glyph (counted), false = re-send. */
   judge(kind: TextCallbackKind, pointer: number, keys: readonly string[]): boolean[] | null {
     const same = pointer === this.lastPointer;
     this.lastPointer = pointer;

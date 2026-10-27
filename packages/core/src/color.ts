@@ -2,18 +2,18 @@ import * as mupdf from 'mupdf';
 import type { PaintColor, RGB } from '@pdf-editor/shared-types';
 
 /**
- * Device 콜백이 주는 (색공간, 성분) 을 원래 색공간 값과 sRGB 근사로 바꾼다.
+ * Converts the (color space, components) given by the Device callback into the original color space value and an sRGB approximation.
  *
- * sRGB 근사는 DeviceGray·DeviceRGB 만 직접 계산하고, 나머지(CMYK·ICC·Cal·Lab·Separation·DeviceN·
- * Indexed)는 1×1 픽스맵을 그 색공간으로 만든 뒤 MuPDF 의 DeviceRGB 변환을 쓴다. 렌더러와 같은 변환이라
- * 화면에 보이는 색과 일치한다(서버 실측: CMYK·Separation·Indexed 렌더 결과와 동일, Lab 은 ±1).
+ * The sRGB approximation is computed directly only for DeviceGray and DeviceRGB; for the rest (CMYK, ICC, Cal, Lab, Separation, DeviceN,
+ * Indexed) a 1x1 pixmap is created in that color space and MuPDF's DeviceRGB conversion is used. It is the same conversion as the renderer,
+ * so it matches the color seen on screen (server measurement: identical to CMYK, Separation and Indexed render results; Lab within ±1).
  */
 export class ColorConverter {
   #cache = new Map<string, PaintColor>();
-  /** 변환에 실패해 rgb 를 null 로 둔 횟수(캐시 적중 제외). */
+  /** Number of times conversion failed and rgb was left null (cache hits excluded). */
   failures = 0;
 
-  /** 호출자가 `cs` 를 destroy 한다. */
+  /** The caller destroys `cs`. */
   paint(cs: mupdf.ColorSpace, values: readonly number[]): PaintColor {
     const space = cs.getName();
     const key = `${space}|${values.join(',')}`;
@@ -22,7 +22,7 @@ export class ColorConverter {
     const type = cs.getType();
     const color: PaintColor = {
       space,
-      // Indexed 의 콜백 값은 인덱스 ÷ 255 다. 원래 색공간 값(인덱스)으로 돌려 둔다.
+      // The callback value for Indexed is index ÷ 255. Convert it back to the original color space value (the index).
       values: type === 'Indexed' ? values.map((v) => Math.round(v * 255)) : [...values],
       rgb: this.#toRgb(cs, space, type, values),
     };
@@ -45,7 +45,7 @@ export class ColorConverter {
       pixmap = new mupdf.Pixmap(cs, [0, 0, 1, 1], false);
       const pixel = pixmap.getPixels();
       values.forEach((v, i) => {
-        // 8비트 픽스맵 인코딩: Lab 은 L 0–100 → 0–255, a·b −128..127 → 0–255, 그 외 0–1 → 0–255.
+        // 8-bit pixmap encoding: Lab is L 0–100 -> 0–255, a and b −128..127 -> 0–255, everything else 0–1 -> 0–255.
         pixel[i] = type === 'Lab' ? (i === 0 ? (v / 100) * 255 : v + 128) : Math.round(v * 255);
       });
       converted = pixmap.convertToColorSpace(mupdf.ColorSpace.DeviceRGB, false);

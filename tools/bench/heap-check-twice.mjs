@@ -1,6 +1,6 @@
-// 같은 세션 저장 2회 판정(docs/m5-heap.md 4.4). heap-run.mjs --variants full2,none2 결과를 읽어 두 번째 저장의 예상을
-// 이전 식(현재 힙을 사용 중으로 봄)과 새 식(직전 저장 뒤 사용 추정, `usedHeapAfterSave`)으로 다시 계산해 미탐·과탐을 센다.
-// 사용: node tools/bench/heap-check-twice.mjs out/m5-heap/twice.jsonl [...]   (HEAP_CHECK_ROWS=1 이면 표본별 줄)
+// Classification of two saves in the same session (docs/m5-heap.md 4.4). Reads the heap-run.mjs --variants full2,none2 results and recomputes the estimate for the second save
+// with the old formula (treats the current heap as in use) and the new formula (post-previous-save usage estimate, `usedHeapAfterSave`), counting misses and false alarms.
+// Usage: node tools/bench/heap-check-twice.mjs out/m5-heap/twice.jsonl [...]   (HEAP_CHECK_ROWS=1 prints one line per sample)
 import { readFileSync } from 'node:fs';
 import {
   estimateSaveHeapModel,
@@ -23,7 +23,7 @@ const rows = process.argv
 
 const group = (r) =>
   HOLDOUT.has(r.id) ? 'holdout' : r.group === 'synthetic' ? 'synthetic' : (r.group ?? 'corpus');
-/** 두 번째 저장 실측 피크. 두 번째 저장에서 실패했으면 상한. */
+/** Measured peak of the second save. If the second save failed, the limit. */
 const peak2 = (r) => (r.ok ? r.peak2 : LIMIT);
 const docMax = new Map();
 for (const r of rows) {

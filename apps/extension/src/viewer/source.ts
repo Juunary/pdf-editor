@@ -1,17 +1,17 @@
 import { extractFileParam } from '../interception.js';
 
 /**
- * 뷰어가 열린 문맥. FSA 가용성 검증(PLAN.md 5.3)을 이 구분으로 기록한다.
- * - mime-handler-top / mime-handler-embedded: Chrome 150+ MIME handler 가 띄운 경우
- * - url-param: DNR 폴백 리다이렉트 또는 `viewer.html?file=` 직접 접근
- * - viewer-page: 확장 페이지로 직접 연 경우(로컬 파일 선택)
+ * The context in which the viewer was opened. FSA availability verification (PLAN.md 5.3) is recorded by this distinction.
+ * - mime-handler-top / mime-handler-embedded: launched by the Chrome 150+ MIME handler
+ * - url-param: DNR fallback redirect or direct access to `viewer.html?file=`
+ * - viewer-page: opened directly as an extension page (local file selection)
  */
 export type ViewerContextKind =
   'mime-handler-top' | 'mime-handler-embedded' | 'url-param' | 'viewer-page';
 
 export interface ViewerSource {
   kind: ViewerContextKind;
-  /** 표시용 URL. MIME handler 에서는 originalUrl(재요청 금지). */
+  /** URL for display. For the MIME handler this is originalUrl (do not re-request). */
   displayUrl: string | null;
   bytes: ArrayBuffer | null;
   streamInfo: chrome.mimeHandler.StreamInfo | null;
@@ -23,11 +23,11 @@ export interface SourceEnv {
   mimeHandler: Pick<typeof chrome.mimeHandler, 'getStreamInfo'> | undefined;
   fetch: typeof fetch;
   now: () => number;
-  /** 문맥을 정한 직후(PDF 바이트를 받기 전) 부른다. 머리 영역 확대 보정이 문서 수신을 기다리지 않게 한다. */
+  /** Called right after the context is decided (before the PDF bytes arrive). Keeps header zoom compensation from waiting for the document. */
   onContext?(kind: ViewerContextKind, streamInfo: chrome.mimeHandler.StreamInfo | null): void;
 }
 
-/** PDF 요청 실패(HTTP 상태). 화면 문장은 이름·상태로 만든다(viewer-ui error-text.ts, 사용자 결정 2026-10-26). */
+/** PDF request failure (HTTP status). The on-screen sentence is built from the name and status (viewer-ui error-text.ts, user decision 2026-10-26). */
 export class PdfRequestError extends Error {
   constructor(readonly status: number) {
     super(`PDF 요청 실패: HTTP ${status}`);
@@ -42,9 +42,9 @@ async function readAll(env: SourceEnv, url: string, init?: RequestInit): Promise
 }
 
 /**
- * 문맥을 판정하고 PDF 바이트를 받는다.
- * MIME handler 문맥에서는 `streamUrl` 을 정확히 한 번 fetch 해 전체를 읽고, `originalUrl` 은
- * 다시 요청하지 않는다(PLAN.md 5.1).
+ * Decides the context and fetches the PDF bytes.
+ * In the MIME handler context, fetches `streamUrl` exactly once and reads it entirely, and does
+ * not request `originalUrl` again (PLAN.md 5.1).
  */
 export async function resolveViewerSource(env: SourceEnv): Promise<ViewerSource> {
   if (env.mimeHandler) {
@@ -52,7 +52,7 @@ export async function resolveViewerSource(env: SourceEnv): Promise<ViewerSource>
     try {
       info = await env.mimeHandler.getStreamInfo();
     } catch {
-      // MIME handler 가 띄운 페이지가 아니면 실패한다 → 다른 문맥으로 판정.
+      // Fails unless the page was launched by the MIME handler → classify as another context.
     }
     if (info) {
       const kind = info.embedded ? 'mime-handler-embedded' : 'mime-handler-top';

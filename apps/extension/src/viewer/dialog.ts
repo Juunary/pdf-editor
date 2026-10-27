@@ -1,6 +1,6 @@
 /**
- * 뷰어 안 모달 대화상자(저장 전 확인·중단 안내). 네이티브 `window.confirm` 은 임베디드 문맥(`<embed>`·`<iframe>`)에서
- * 막힐 수 있어 `<dialog>` 를 쓴다. 호출은 Promise 로 선택한 버튼 id 를 돌려준다(Esc·바깥은 'cancel').
+ * In-viewer modal dialog (pre-save confirmation, abort notice). The native `window.confirm` can be blocked in embedded contexts (`<embed>`, `<iframe>`),
+ * so `<dialog>` is used. The call returns the id of the chosen button as a Promise (Esc or clicking outside gives 'cancel').
  */
 export interface DialogButton {
   id: string;
@@ -15,9 +15,9 @@ export interface DialogLink {
 
 export interface DialogOptions {
   title: string;
-  /** 본문 단락(각각 `<p>`). */
+  /** Body paragraphs (each a `<p>`). */
   lines: string[];
-  /** 본문 뒤에 나열하는 링크(새 탭에서 연다). */
+  /** Links listed after the body (opened in a new tab). */
   links?: DialogLink[];
   buttons: DialogButton[];
 }
@@ -77,7 +77,7 @@ export function openDialog(dialog: HTMLDialogElement, options: DialogOptions): P
   });
 }
 
-/** 확인 창. 확인을 누르면 true. */
+/** Confirmation dialog. Resolves true when confirmed. */
 export async function confirmDialog(
   dialog: HTMLDialogElement,
   title: string,
@@ -96,7 +96,7 @@ export async function confirmDialog(
   return id === 'ok';
 }
 
-/** 안내 창(확인 버튼 하나). */
+/** Notice dialog (a single OK button). */
 export async function alertDialog(
   dialog: HTMLDialogElement,
   title: string,

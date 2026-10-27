@@ -1,7 +1,7 @@
 /**
- * M4 통합 e2e(실제 core 패스 RPC·pdf-ops 쓰기, docs/m4-viewer-ui.md 4절 목록, docs/m4-integration.md).
- * 가짜 호스트 시험(`path-ui.spec.ts`)과 같은 DOM 식별자(`#pe-path-*`)와 `?e2e` 이음매(`window.__pe`)를 쓴다.
- * 문서는 시험에서 만드는 1쪽 PDF(채움 사각형 + 선 + 글자 한 줄)다.
+ * M4 integration e2e (real core path RPC and pdf-ops writing, list in docs/m4-viewer-ui.md section 4, docs/m4-integration.md).
+ * Uses the same DOM identifiers (`#pe-path-*`) and `?e2e` seam (`window.__pe`) as the fake-host test (`path-ui.spec.ts`).
+ * The document is a 1-page PDF built in the test (a filled rectangle + a line + one line of text).
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,7 +13,7 @@ import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
-/** 채움 사각형(100,600,200×100) + 선(100,500→300,500) + 글자 한 줄이 있는 1쪽 PDF. */
+/** 1-page PDF with a filled rectangle (100,600,200×100) + a line (100,500→300,500) + one line of text. */
 function vectorPdf(): Buffer {
   const content =
     '1 0 0 rg 100 600 200 100 re f\n0 0 1 RG 2 w 100 500 m 300 500 l S\n' +
@@ -52,7 +52,7 @@ interface PathSummary {
   lineWidth: number | null;
 }
 
-test.describe('통합(실제 core 패스 RPC 필요)', () => {
+test.describe('integration (requires real core path RPC)', () => {
   let context: BrowserContext;
   let userDataDir: string;
   let extensionId: string;
@@ -112,7 +112,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
       }));
     });
 
-  /** 화면 좌표(페이지 공간 pt → 화면). */
+  /** Screen coordinates (page-space pt → screen). */
   const at = (page: Page, x: number, y: number) =>
     page.evaluate(
       ([px, py]) => {
@@ -124,11 +124,11 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     );
 
   /**
-   * Alt+클릭으로 패스를 고른다. 열린 직후에는 쪽 판정·패스 모델이 다시 불러와지며 첫 클릭이 선택 없이 끝날 수 있어
-   * (모델 갱신과 겹침) 선택 상자가 보일 때까지 다시 누른다.
+   * Selects a path with Alt+click. Right after opening, the page classification and path model are reloaded and the first click can end without a selection
+   * (overlapping the model refresh), so click again until the selection box is visible.
    *
-   * 편집 커밋 직후 재판정(settling) 동안의 클릭은 뷰어가 보류했다가 판정 뒤 처리하고 이전 선택 상자는 숨기므로
-   * (M5 리뷰 M8) 재판정이 끝나기를 따로 기다리지 않는다.
+   * A click during reclassification (settling) right after an edit commit is deferred by the viewer, handled after the classification, and the previous selection box is hidden, so
+   * (M5 review M8) there is no separate wait for reclassification to finish.
    */
   async function altSelect(page: Page, x: number, y: number) {
     await expect(async () => {
@@ -157,7 +157,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     });
 
   async function selectFill(page: Page) {
-    await altSelect(page, 200, 142); // 채움 사각형(페이지 공간 y 는 위에서부터: 792−650)
+    await altSelect(page, 200, 142); // filled rectangle (page-space y counts from the top: 792−650)
     await expect(page.locator('#pe-path-fill')).toBeEnabled();
   }
 
@@ -169,7 +169,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     return download.path();
   }
 
-  test('DoD: 채움 색 변경 → 저장 → 재열기: 색만 바뀌고 글자·다른 패스는 그대로', async () => {
+  test('DoD: change fill color → save → reopen: only the color changes, text and other paths stay the same', async () => {
     const page = await open(sample);
     const before = await paths(page);
     await selectFill(page);
@@ -188,7 +188,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     expect(readFileSync(await save(reopened)).byteLength).toBeGreaterThan(0);
   });
 
-  test('이동 끌기 → 저장 → 재열기: 상자가 끌어 놓은 만큼 이동', async () => {
+  test('move drag → save → reopen: the box moved by the dragged amount', async () => {
     const page = await open(sample);
     const before = (await paths(page)).find((p) => p.op === 'fill')!;
     await selectFill(page);
@@ -206,9 +206,9 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     expect(after.bbox[2]! - after.bbox[0]!).toBeCloseTo(before.bbox[2]! - before.bbox[0]!, 1);
   });
 
-  test('점 편집·삭제·선 두께 후 저장 → 재열기', async () => {
+  test('after point edit, delete and line width change, save → reopen', async () => {
     const page = await open(sample);
-    await altSelect(page, 200, 292); // 선(792−500)
+    await altSelect(page, 200, 292); // line (792−500)
     const width = page.locator('#pe-path-width');
     await width.fill('6');
     await width.dispatchEvent('change');
@@ -221,12 +221,12 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     expect(after.find((p) => p.op === 'stroke')!.w).toBeCloseTo(6, 3);
   });
 
-  test('커밋 직후 재판정 중의 Alt+클릭은 한 번으로 판정 뒤 반영되고, 그동안 이전 선택 상자는 숨긴다(M5 리뷰 M8)', async () => {
+  test('a single Alt+click during reclassification right after commit is applied after the classification, and the previous selection box is hidden meanwhile (M5 review M8)', async () => {
     const page = await open(sample);
-    await altSelect(page, 200, 292); // 선
+    await altSelect(page, 200, 292); // line
     await expect(page.locator('#pe-path-width')).toBeEnabled();
     const lineSeqs = (await pathState(page)).seqs;
-    // 커밋 뒤 쪽 판정을 400 ms 늦춰 재판정 구간을 넓힌다(실제는 약 100 ms).
+    // Delay the page classification after the commit by 400 ms to widen the reclassification window (about 100 ms in reality).
     await page.evaluate(() => {
       const pdf = (window as unknown as PeWindow).__pe.pdf;
       const real = pdf.getPageEditability!.bind(pdf);
@@ -241,7 +241,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     await expect(page.locator('#pe-doc-undo')).toBeEnabled();
     expect((await pathState(page)).settling).toBe(true);
     await expect(page.locator('#pe-path-box')).toHaveCount(0);
-    // 다시 누르지 않는다: 이 한 번이 판정 뒤 채움 사각형 선택으로 반영되어야 한다.
+    // Do not click again: this single click must be applied as the filled rectangle selection after the classification.
     const p = await at(page, 200, 142);
     await page.keyboard.down('Alt');
     await page.mouse.click(p.x, p.y);
@@ -255,7 +255,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     await page.close();
   });
 
-  test('패스 끌기 반응 시간(V5): 갱신 → 영역 합성 p95 ≤ 100 ms(잠정)', async () => {
+  test('path drag response time (V5): update → region compositing p95 ≤ 100 ms (provisional)', async () => {
     const page = await open(sample);
     await selectFill(page);
     const box = (await page.locator('#pe-path-box').boundingBox())!;
@@ -267,7 +267,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     for (let i = 1; i <= 50; i++) {
       const t0 = Date.now();
       await page.mouse.move(sx + i, sy + i / 2);
-      await page.waitForTimeout(220); // 200 ms 정지 뒤 갱신
+      await page.waitForTimeout(220); // update after the 200 ms idle
       times.push(Date.now() - t0 - 220);
     }
     await page.mouse.up();
@@ -278,7 +278,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     expect(times[Math.floor(times.length * 0.95)]!).toBeLessThanOrEqual(100);
   });
 
-  test('Worker 치명 오류 → 복구 → EditPathOp 재적용 결과 = 복구 전 화면', async () => {
+  test('Worker fatal error → recovery → EditPathOp reapply result = screen before recovery', async () => {
     const page = await open(sample);
     const canvas = () =>
       page.evaluate(() =>
@@ -300,7 +300,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
     const afterFirst = await canvas();
     await setFill('#00ff00');
     await expect.poll(canvas).not.toBe(afterFirst);
-    // 다음 renderPage 가 wasm 트랩(RuntimeError)을 내도록 지금 Worker 핸들을 감싼다(M3 edit-integration 과 같은 방식).
+    // Wrap the current Worker handle so that the next renderPage raises a wasm trap (RuntimeError) (same approach as M3 edit-integration).
     await page.evaluate(() => {
       const handle = (window as unknown as { __pe: { pdf: { current: { api: unknown } } } }).__pe
         .pdf.current;
@@ -323,7 +323,7 @@ test.describe('통합(실제 core 패스 RPC 필요)', () => {
         },
       );
     });
-    // undo 뒤 렌더가 실패 → 새 Worker 에서 남은 로그(첫 EditPathOp)를 replayEdits 로 재적용한다.
+    // After undo the render fails → reapply the remaining log (the first EditPathOp) in the new Worker with replayEdits.
     await page.click('#pe-doc-undo');
     await expect(page.locator('#notice-bar [data-notice="recovered"]')).toBeVisible({
       timeout: 30_000,

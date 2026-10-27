@@ -13,15 +13,15 @@ export interface TextOverlay {
   font: mupdf.Font;
   fontSize: number;
   glyphs: PlacedGlyph[];
-  /** 글리프 좌표 공간 → PDF 사용자 공간(Form 공간에 배치한 글리프). 기본 단위 행렬 */
+  /** Glyph coordinate space → PDF user space (glyphs placed in Form space). Default identity matrix */
   matrix?: mupdf.Matrix;
 }
 
 /**
- * 페이지를 RGB 로 렌더한다. overlay 가 있으면 같은 장치에 fz Text 로 글리프를 직접 그린다.
- * overlay 는 PDF 를 거치지 않고 폰트 파일에서 바로 그린 "참조 렌더" 를 만드는 데 쓴다.
- * `contentsOnly` 면 주석·위젯을 빼고 페이지 콘텐츠만 그린다(주석 외관이 새 텍스트 위에 겹치는 문서에서
- * 참조 렌더와 비교할 때).
+ * Renders a page as RGB. If overlay is given, draws glyphs directly with fz Text on the same device.
+ * overlay is used to build a "reference render" drawn straight from the font file without going through a PDF.
+ * With `contentsOnly`, annotations and widgets are left out and only page content is drawn (for comparing against
+ * the reference render in documents where an annotation appearance overlaps the new text).
  */
 export function renderPage(
   page: mupdf.Page,
@@ -68,13 +68,13 @@ export function renderPage(
 }
 
 export interface DiffResult {
-  /** 채널 값이 하나라도 다른 픽셀 수 */
+  /** Number of pixels where any channel value differs */
   differing: number;
-  /** 차이 픽셀의 외접 사각형(픽셀 좌표) */
+  /** Bounding rectangle of the differing pixels (pixel coordinates) */
   bbox: [number, number, number, number] | null;
 }
 
-/** `exclude`(픽셀 좌표) 안의 픽셀은 세지 않는다. */
+/** Pixels inside `exclude` (pixel coordinates) are not counted. */
 export function diffRasters(a: Raster, b: Raster, exclude?: Rect): DiffResult {
   if (a.width !== b.width || a.height !== b.height) throw new Error('크기 불일치');
   let differing = 0;
@@ -99,7 +99,7 @@ export function diffRasters(a: Raster, b: Raster, exclude?: Rect): DiffResult {
   return { differing, bbox };
 }
 
-/** 렌더 결과에서 흰색이 아닌 픽셀 수(참조 텍스트 잉크량 비교용). */
+/** Number of non-white pixels in a render result (for comparing the ink amount of the reference text). */
 export function inkPixels(r: Raster, region?: Rect): number {
   let n = 0;
   const [x0, y0, x1, y1] = region ?? [0, 0, r.width, r.height];

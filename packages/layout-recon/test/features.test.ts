@@ -4,7 +4,7 @@ import { summarizePaths } from '../src/paths.js';
 import { buildModel, gridPaths, lineSegments, rectSegments } from './helpers/model-builder.js';
 
 describe('lineFeatures', () => {
-  it('줄 텍스트·크기·굵기·단어 상자', () => {
+  it('line text, size, weight and word boxes', () => {
     const model = buildModel({
       lines: [
         { x: 72, y: 100, text: 'Hello world', size: 10 },
@@ -22,7 +22,7 @@ describe('lineFeatures', () => {
     expect(fingerprintText(model)).toBe('Hello world\nBold');
   });
 
-  it('spaceAfter 합성 공백을 텍스트·단어 경계에 반영', () => {
+  it('applies spaceAfter synthetic spaces to text and word boundaries', () => {
     const model = buildModel({ lines: [{ x: 0, y: 50, text: 'ab' }] });
     model.lines[0]!.spaceAfter = [0];
     const [f] = lineFeatures(model);
@@ -32,7 +32,7 @@ describe('lineFeatures', () => {
 });
 
 describe('summarizePaths', () => {
-  it('선분·사각형 테두리·얇은 채움을 괘선으로, 큰 채움을 배경 상자로', () => {
+  it('segments, rectangle borders and thin fills become rules; large fills become background boxes', () => {
     const model = buildModel({
       paths: [
         ...gridPaths([50, 150, 250], [100, 120]),
@@ -52,7 +52,7 @@ describe('summarizePaths', () => {
     const s = summarizePaths(model);
     const h = s.rules.filter((r) => r.orient === 'h');
     const v = s.rules.filter((r) => r.orient === 'v');
-    // 격자 가로 2 + 얇은 채움 1 + 테두리 위·아래 2, 세로 3 + 테두리 좌·우 2.
+    // Grid horizontals 2 + thin fill 1 + border top/bottom 2; verticals 3 + border left/right 2.
     expect(h).toHaveLength(5);
     expect(v).toHaveLength(5);
     expect(h.find((r) => r.fromBox)!.y0).toBeCloseTo(200.5);

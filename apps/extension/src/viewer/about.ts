@@ -1,4 +1,4 @@
-/** "정보" 대화상자 내용(순수): 버전·라이선스·소스 링크·지원 범위·되돌리기 기록 안내. */
+/** Content of the "정보" (About) dialog (pure): version, license, source link, supported scope, and undo history notice. */
 import { SUPPORTED_INPUT_BYTES } from '@pdf-editor/core/client';
 import type { SaveHeapEstimate } from '@pdf-editor/shared-types';
 import type { DialogLink } from './dialog.js';
@@ -6,13 +6,13 @@ import { APP_STRINGS, type AppStrings } from './strings.js';
 
 export interface AboutInput {
   version: string;
-  /** AGPL 소스 링크(`/tree/v<version>`). */
+  /** AGPL source link (`/tree/v<version>`). */
   sourceUrl: string;
-  /** THIRD_PARTY_NOTICES.txt 의 확장 내부 URL. 개발 빌드에는 파일이 없어 null. */
+  /** In-extension URL of THIRD_PARTY_NOTICES.txt. null in dev builds, which have no such file. */
   noticesUrl: string | null;
-  /** 지금 문서의 최근 저장 전 판정 힙(없으면 문서 없음·판정 전). */
+  /** Heap from the current document's latest pre-save check (none if there is no document or no check yet). */
   heap: SaveHeapEstimate | null;
-  /** 지원 문서 크기 상한(byte). 기본은 core `SUPPORTED_INPUT_BYTES`. */
+  /** Upper limit of supported document size (bytes). Defaults to core `SUPPORTED_INPUT_BYTES`. */
   supportedBytes?: number;
 }
 

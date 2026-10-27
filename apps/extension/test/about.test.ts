@@ -27,10 +27,10 @@ const heap = (
   ...extra,
 });
 
-describe('정보 대화상자', () => {
+describe('About dialog', () => {
   const base = { version: '1.0.0', sourceUrl: sourceUrl('1.0.0'), noticesUrl: null, heap: null };
 
-  it('버전·라이선스·버전 태그 소스 링크를 담는다', () => {
+  it('contains the version, license and version-tagged source link', () => {
     const c = aboutContent(base);
     expect(c.lines[0]).toBe('버전 1.0.0');
     expect(c.lines.join('\n')).toContain('AGPL-3.0-or-later');
@@ -40,7 +40,7 @@ describe('정보 대화상자', () => {
     });
   });
 
-  it('고지 링크는 URL 이 있을 때만, 문서 크기 줄은 판정이 있을 때만 보인다', () => {
+  it('shows the notices link only when a URL exists, and the document size line only when a check exists', () => {
     expect(aboutContent(base).links).toHaveLength(1);
     const c = aboutContent({
       ...base,
@@ -51,7 +51,7 @@ describe('정보 대화상자', () => {
     expect(c.lines.at(-1)).toContain('1600 MiB / 한계 2048 MiB');
   });
 
-  it('지원 크기·편집 기록·되돌리기 소실 안내를 담는다', () => {
+  it('contains the supported size, edit history and undo-loss notices', () => {
     const text = aboutContent(base).lines.join('\n');
     expect(text).toContain('지원 문서 크기');
     expect(text).toContain('편집 기록');
@@ -60,8 +60,8 @@ describe('정보 대화상자', () => {
   });
 });
 
-describe('지원 크기 안내', () => {
-  it('ok 는 알림이 없고 warn·over-limit 은 수치와 결과를 알린다', () => {
+describe('supported size notice', () => {
+  it('ok gives no notice; warn and over-limit report the figures and the outcome', () => {
     expect(sizeLimitNotice(heap('ok'))).toBeNull();
     expect(sizeLimitNotice(null)).toBeNull();
     expect(sizeLimitNotice(heap('warn'))).toContain('편집·저장이 실패할 수 있습니다');
@@ -71,7 +71,7 @@ describe('지원 크기 안내', () => {
   });
 });
 
-describe('저널 상한 안내', () => {
+describe('journal limit notice', () => {
   const plan = (h: SaveHeapEstimate) => ({
     method: 'full' as const,
     options: 'x',
@@ -88,7 +88,7 @@ describe('저널 상한 안내', () => {
     thresholdBytes: 1536 * MIB,
   });
 
-  it('core 저널 판정이 advised 이면 저장할 수 있을 때 저장 후 다시 열기를 권하고, 중단 문구에는 편집 기록 크기만 붙인다(M2)', () => {
+  it('when the core journal check is advised, recommends save and reopen if saving is possible, and the abort text gets only the edit history size appended (M2)', () => {
     expect(decideSave(plan(heap('warn')), advice(true)).infos).toContain(JOURNAL_REOPEN_ADVICE);
     const blocked = decideSave(plan(heap('over-limit')), advice(true)).block!;
     expect(blocked).not.toContain(JOURNAL_REOPEN_ADVICE);
@@ -97,7 +97,7 @@ describe('저널 상한 안내', () => {
     expect(decideSave(plan(heap('ok')), advice(true)).infos).toContain(JOURNAL_REOPEN_ADVICE);
   });
 
-  it('힙 판정 문구와 저널 권고가 같은 문구를 두 번 붙이지 않는다(M2)', () => {
+  it('the heap check text and the journal recommendation do not append the same text twice (M2)', () => {
     const d = decideSave(
       plan(heap('warn', { message: '예상 피크 WASM 힙 1600 MiB' })),
       advice(true),
@@ -106,7 +106,7 @@ describe('저널 상한 안내', () => {
     expect(all.split('다시 열').length - 1).toBe(1);
   });
 
-  it('advised 가 아니거나 판정을 받지 못했으면 힙 수준·journalBytes 와 무관하게 붙이지 않는다', () => {
+  it('does not append anything when not advised or when no check was received, regardless of heap level and journalBytes', () => {
     expect(
       decideSave(plan(heap('warn', { journalBytes: 300 * MIB })), advice(false)).infos,
     ).toEqual([]);
@@ -114,7 +114,7 @@ describe('저널 상한 안내', () => {
     expect(decideSave(plan(heap('over-limit')), null).block).not.toContain(JOURNAL_REOPEN_ADVICE);
   });
 
-  it('커밋 뒤 알림 문구: advised 일 때만 저널 크기·경고선을 보인다', () => {
+  it('post-commit notice text: shows the journal size and warning line only when advised', () => {
     expect(journalNotice(null)).toBeNull();
     expect(journalNotice(advice(false))).toBeNull();
     const text = journalNotice(advice(true))!;
@@ -124,8 +124,8 @@ describe('저널 상한 안내', () => {
   });
 });
 
-describe('지원 문서 크기 상한(SUPPORTED_INPUT_BYTES)', () => {
-  it('core 값(790 MiB)을 쓰고, 넘을 때만 알린다', () => {
+describe('supported document size limit (SUPPORTED_INPUT_BYTES)', () => {
+  it('uses the core value (790 MiB) and notifies only when exceeded', () => {
     expect(Math.round(SUPPORTED_INPUT_BYTES / MIB)).toBe(790);
     expect(supportedSizeNotice(SUPPORTED_INPUT_BYTES)).toBeNull();
     expect(supportedSizeNotice(10 * MIB)).toBeNull();
@@ -135,7 +135,7 @@ describe('지원 문서 크기 상한(SUPPORTED_INPUT_BYTES)', () => {
     expect(supportedSizeNotice(50 * MIB, 40 * MIB)).toContain('지원 크기 40 MiB');
   });
 
-  it('크기 알림 통합(I3): 각 문구에 상한 값은 한 번만 나온다', () => {
+  it('size notice integration (I3): the limit value appears only once in each text', () => {
     const count = (text: string, needle: string) => text.split(needle).length - 1;
     expect(count(supportedSizeNotice(800 * MIB)!, '790 MiB')).toBe(1);
     const warn = sizeLimitNotice(heap('warn'))!;
@@ -143,7 +143,7 @@ describe('지원 문서 크기 상한(SUPPORTED_INPUT_BYTES)', () => {
     for (const text of [warn, over]) expect(count(text, '한계')).toBe(1);
   });
 
-  it('정보 대화상자의 지원 크기 줄이 같은 값을 보인다', () => {
+  it('the supported size line in the About dialog shows the same value', () => {
     const base = { version: '1.0.0', sourceUrl: sourceUrl('1.0.0'), noticesUrl: null, heap: null };
     expect(aboutContent(base).lines.join('\n')).toContain('약 790 MiB 까지');
     expect(aboutContent({ ...base, supportedBytes: 100 * MIB }).lines.join('\n')).toContain(
@@ -152,8 +152,8 @@ describe('지원 문서 크기 상한(SUPPORTED_INPUT_BYTES)', () => {
   });
 });
 
-describe('저장 뒤 되돌리기 안내', () => {
-  it('되돌리기는 유지되고 다시 실행이 사라질 수 있는 조건을 말한다', () => {
+describe('undo notice after saving', () => {
+  it('states the condition under which undo is kept but redo may be lost', () => {
     expect(HISTORY_AFTER_SAVE_NOTICE).toContain('되돌리기');
     expect(HISTORY_AFTER_SAVE_NOTICE).toContain('다시 실행');
   });

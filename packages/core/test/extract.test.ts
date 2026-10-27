@@ -25,12 +25,12 @@ const text = (m: PageModel) => m.chars.map((c) => c.text).join('');
 const seqs = (m: PageModel) => m.chars.map((c) => c.glyphSeq);
 const show = (tr: number, body: string) => `BT /F1 12 Tf ${tr} Tr 10 150 Td ${body} ET`;
 
-describe('extractPage: 글자·좌표·읽기 순서', () => {
+describe('extractPage: characters, coordinates, reading order', () => {
   const model = extract(
     `BT /F1 12 Tf 10 150 Td (Hello) Tj ET BT /F2 14 Tf 10 100 Td ${hexGlyphs('한글')} Tj ET`,
   );
 
-  it('글리프 번호는 0부터 연속이고 글자·gid·폰트·크기를 담는다', () => {
+  it('glyph numbers are consecutive from 0 and hold the character, gid, font and size', () => {
     expect(seqs(model)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(text(model)).toBe('Hello한글');
     expect(model.glyphCount).toBe(7);
@@ -43,7 +43,7 @@ describe('extractPage: 글자·좌표·읽기 순서', () => {
     expect(model.chars.every((c) => c.render === 'fill' && !c.clip && c.wmode === 0)).toBe(true);
   });
 
-  it('원점은 페이지 공간(좌상단 원점, y 아래)이고 quad 가 기준선을 둘러싼다', () => {
+  it('the origin is in page space (top-left origin, y down) and the quad surrounds the baseline', () => {
     expect(model.bounds).toEqual([0, 0, 300, 200]);
     expect(model.userToPage).toEqual([1, 0, 0, -1, 0, 200]);
     const h = model.chars[0]!;
@@ -57,11 +57,11 @@ describe('extractPage: 글자·좌표·읽기 순서', () => {
     expect(lly).toBeGreaterThan(50);
     expect(ury).toBeCloseTo(uly, 3);
     expect(lry).toBeCloseTo(lly, 3);
-    // 다음 글자의 원점이 앞 글자 오른쪽 변이다.
+    // The origin of the next character is the right edge of the previous character.
     expect(model.chars[1]!.origin[0]).toBeCloseTo(urx, 2);
   });
 
-  it('줄·블록은 읽기 순서이고 글자를 한 번씩 가리킨다', () => {
+  it('lines and blocks are in reading order and each refers to every character once', () => {
     expect(model.lines.map((l) => l.chars)).toEqual([
       [0, 1, 2, 3, 4],
       [5, 6],
@@ -73,12 +73,12 @@ describe('extractPage: 글자·좌표·읽기 순서', () => {
     expect(model.lines[0]!.wmode).toBe(0);
   });
 
-  it('경고·계측: 근사 없음, extractMs 기록', () => {
+  it('warnings and metrics: no approximation, extractMs recorded', () => {
     expect(model.warnings).toEqual([]);
     expect(model.extractMs).toBeGreaterThan(0);
   });
 
-  it('/Rotate 90 쪽: 경계·변환·회전 반영, 원점은 변환된 페이지 공간', () => {
+  it('/Rotate 90 page: bounds, transform and rotation are reflected, and the origin is in the transformed page space', () => {
     const m = extract({ content: 'BT /F1 12 Tf 10 150 Td (A) Tj ET', rotate: 90 });
     expect(m.bounds).toEqual([0, 0, 200, 300]);
     expect(m.userToPage).toEqual([0, 1, 1, 0, 0, 0]);
@@ -88,7 +88,7 @@ describe('extractPage: 글자·좌표·읽기 순서', () => {
     expect(m.lines[0]!.dir[1]).toBeCloseTo(1, 5);
   });
 
-  it('MediaBox 가 원점이 아니어도 페이지 공간은 좌상단 원점', () => {
+  it('even when the MediaBox is not at the origin, page space has a top-left origin', () => {
     const m = extract({
       content: 'BT /F1 12 Tf 110 250 Td (A) Tj ET',
       mediabox: [100, 100, 400, 300],
@@ -98,7 +98,7 @@ describe('extractPage: 글자·좌표·읽기 순서', () => {
   });
 });
 
-describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)', () => {
+describe('extractPage: glyphSeq rules (Tr 0–7, contract 3.1 first-arrival counting)', () => {
   const cases: Array<[number, string, boolean, string]> = [
     [0, 'fill', false, 'AB'],
     [1, 'stroke', false, 'AB'],
@@ -110,7 +110,7 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
     [7, 'invisible', true, 'AB'],
   ];
   for (const [tr, render, clip, expected] of cases) {
-    it(`Tr ${tr}: 글리프를 정확히 한 번 센다(render ${render}, clip ${clip})`, () => {
+    it(`Tr ${tr}: counts the glyph exactly once (render ${render}, clip ${clip})`, () => {
       const m = extract(show(tr, '(AB) Tj'));
       expect(text(m)).toBe(expected);
       expect(seqs(m)).toEqual([0, 1]);
@@ -123,13 +123,13 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
     });
   }
 
-  it('Tr 3(invisible)은 센다. 색은 null', () => {
+  it('Tr 3 (invisible) is counted. The color is null', () => {
     const m = extract(show(3, '(AB) Tj'));
     expect(m.chars.map((c) => c.color)).toEqual([null, null]);
     expect(m.chars.every((c) => c.line === 0)).toBe(true);
   });
 
-  it('Tr 7: 클립 콜백에서 처음 센다(invisible, clip true, 색 null). 구조화 텍스트와 결합된다', () => {
+  it('Tr 7: counted first in the clip callback (invisible, clip true, color null). It is combined with the structured text', () => {
     const s = open([show(7, '(AB) Tj')]);
     const page = s.document.loadPage(0);
     const { model, stats } = extractPageDetailed(page, { pageIndex: 0 });
@@ -144,7 +144,7 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
     s.close();
   });
 
-  it('Tr 4–6: ET 재전송을 소비해 세지 않고 stats 에 남긴다', () => {
+  it('Tr 4–6: consume the ET resend without counting it and record it in stats', () => {
     const s = open([show(6, '(AB) Tj')]);
     const page = s.document.loadPage(0);
     const { stats } = extractPageDetailed(page, { pageIndex: 0 });
@@ -153,12 +153,12 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
     s.close();
   });
 
-  it('Tr 6 에서 색이 바뀌어 fill 이 나뉘어도(clip 은 하나로 합쳐 옴) 글리프는 한 번씩', () => {
+  it('in Tr 6, even if a color change splits the fill (the clip arrives merged into one), each glyph is counted once', () => {
     const m = extract(show(6, '1 0 0 rg (AB) Tj 0 1 0 rg (CD) Tj'));
     expect(text(m)).toBe('ABCD');
     expect(seqs(m)).toEqual([0, 1, 2, 3]);
     expect(m.chars.every((c) => c.render === 'fill-stroke' && c.clip)).toBe(true);
-    // fill 색(첫 두 글자 빨강, 뒤 두 글자 초록)
+    // fill color (first two characters red, last two green)
     expect(m.chars.map((c) => c.color)).toEqual([
       [1, 0, 0],
       [1, 0, 0],
@@ -167,7 +167,7 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
     ]);
   });
 
-  it('Tr 4 두 BT: 각 BT 의 clip 이 자기 글리프에만 표시된다', () => {
+  it('two Tr 4 BTs: the clip of each BT is marked only on its own glyphs', () => {
     const m = extract(
       `BT /F1 12 Tf 4 Tr 10 150 Td (AB) Tj ET BT /F1 12 Tf 0 Tr 10 100 Td (CD) Tj ET BT /F1 12 Tf 4 Tr 10 50 Td (EF) Tj ET`,
     );
@@ -175,26 +175,26 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
     expect(m.chars.map((c) => c.clip)).toEqual([true, true, false, false, true, true]);
   });
 
-  it('Tr 0·7 이 섞이면 Tr 7 글리프만 빠지고 번호는 연속', () => {
+  it('when Tr 0 and 7 are mixed, only the Tr 7 glyphs drop out and the numbers stay consecutive', () => {
     const m = extract(`BT /F1 12 Tf 10 150 Td (AB) Tj 7 Tr (CD) Tj 0 Tr (EF) Tj ET`);
     expect(text(m)).toBe('ABEF');
     expect(seqs(m)).toEqual([0, 1, 2, 3]);
   });
 
-  it('Tr 4 의 구조화 텍스트 중복 줄은 줄·블록에 들어가지 않는다', () => {
+  it('a duplicate structured-text line from Tr 4 does not enter lines or blocks', () => {
     const m = extract(show(4, '(AB) Tj'));
     expect(m.lines).toHaveLength(1);
     expect(m.lines[0]!.chars).toEqual([0, 1]);
     expect(m.blocks).toHaveLength(1);
   });
 
-  it('같은 위치에 겹쳐 그린 글리프(가짜 굵게)는 각각 센다', () => {
+  it('glyphs drawn on top of each other at the same position (fake bold) are each counted', () => {
     const m = extract(`BT /F1 12 Tf 10 150 Td (AB) Tj ET BT /F1 12 Tf 10 150 Td (AB) Tj ET`);
     expect(text(m)).toBe('ABAB');
     expect(seqs(m)).toEqual([0, 1, 2, 3]);
   });
 
-  it('Form XObject 안 글리프는 Do 위치의 실행 순서로 센다', () => {
+  it('glyphs inside a Form XObject are counted in execution order at the Do position', () => {
     const m = extract({
       content:
         'BT /F1 12 Tf 10 150 Td (A) Tj ET q 1 0 0 1 50 50 cm /Fm1 Do Q BT /F1 12 Tf 10 20 Td (Z) Tj ET',
@@ -212,14 +212,14 @@ describe('extractPage: glyphSeq 규칙(Tr 0–7, 계약 3.1 첫 등장 계수)',
     });
     expect(text(m)).toBe('AXYZ');
     expect(seqs(m)).toEqual([0, 1, 2, 3]);
-    // Form 의 BBox 클립은 paintSeq 를 1 쓴다.
+    // The BBox clip of the Form uses 1 paintSeq.
     expect(m.paths.map((p) => [p.paintSeq, p.op])).toEqual([[0, 'clip']]);
     expect(m.chars[1]!.origin).toEqual([55, 145]);
   });
 });
 
-describe('extractPage: 세로쓰기(wmode 1) 구조화 텍스트 결합', () => {
-  /** F2 와 같은 한글 폰트를 Identity-V 로 둔 /FV. */
+describe('extractPage: vertical writing (wmode 1) structured text combination', () => {
+  /** /FV: the same Hangul font as F2 with Identity-V. */
   const vertical = (content: string): PageSpec => ({
     content,
     mediabox: [0, 0, 300, 300],
@@ -233,32 +233,35 @@ describe('extractPage: 세로쓰기(wmode 1) 구조화 텍스트 결합', () => 
   it.each([
     ['기본', 'BT /FV 20 Tf 150 280 Td GLYPHS Tj ET'],
     ['회전·Tc', 'BT /FV 10 Tf 3 Tc 0.7071 0.7071 -0.7071 0.7071 150 280 Tm GLYPHS Tj ET'],
-  ])('%s: 글자마다 자기 글리프의 quad 를 받는다(앞 글리프 quad 아님), 근사 없음', (_, body) => {
-    const word = '한글세로쓰기';
-    const s = open([vertical(body.replace('GLYPHS', hexGlyphs(word)))]);
-    const page = s.document.loadPage(0);
-    const { model, stats } = extractPageDetailed(page, { pageIndex: 0 });
-    // 구조화 텍스트 글자(같은 순서로 나온다)의 quad.
-    const stext: { c: string; quad: number[] }[] = [];
-    const st = page.toStructuredText('');
-    st.walk({ onChar: (c, _o, _f, _s, quad) => stext.push({ c, quad: [...quad] }) });
-    st.destroy();
-    page.destroy();
-    s.close();
-    expect(text(model)).toBe(word);
-    expect(stext.map((x) => x.c).join('')).toBe(word);
-    expect(model.chars.every((c) => c.wmode === 1)).toBe(true);
-    expect(stats.approximated).toBe(0);
-    expect(model.chars.every((c) => c.line >= 0)).toBe(true);
-    // 글자 i 는 구조화 텍스트 글자 i 의 quad 를 받는다(이전 결함: 앞 글리프의 quad, 첫 글자는 근사).
-    model.chars.forEach((c, i) => {
-      c.quad.forEach((v, k) => expect(v, `${i}.${k}`).toBeCloseTo(stext[i]!.quad[k]!, 3));
-    });
-  });
+  ])(
+    '%s: each character gets the quad of its own glyph (not the quad of the previous glyph), no approximation',
+    (_, body) => {
+      const word = '한글세로쓰기';
+      const s = open([vertical(body.replace('GLYPHS', hexGlyphs(word)))]);
+      const page = s.document.loadPage(0);
+      const { model, stats } = extractPageDetailed(page, { pageIndex: 0 });
+      // Quads of the structured text characters (they come in the same order).
+      const stext: { c: string; quad: number[] }[] = [];
+      const st = page.toStructuredText('');
+      st.walk({ onChar: (c, _o, _f, _s, quad) => stext.push({ c, quad: [...quad] }) });
+      st.destroy();
+      page.destroy();
+      s.close();
+      expect(text(model)).toBe(word);
+      expect(stext.map((x) => x.c).join('')).toBe(word);
+      expect(model.chars.every((c) => c.wmode === 1)).toBe(true);
+      expect(stats.approximated).toBe(0);
+      expect(model.chars.every((c) => c.line >= 0)).toBe(true);
+      // Character i gets the quad of structured text character i (earlier defect: the quad of the previous glyph, with the first character approximated).
+      model.chars.forEach((c, i) => {
+        c.quad.forEach((v, k) => expect(v, `${i}.${k}`).toBeCloseTo(stext[i]!.quad[k]!, 3));
+      });
+    },
+  );
 });
 
-describe('extractPage: 구조화 텍스트에 없는 글자(quad 근사)', () => {
-  it('페이지 밖 글자는 quad 를 근사하고 line -1, 경고', () => {
+describe('extractPage: characters absent from the structured text (quad approximation)', () => {
+  it('characters outside the page get an approximated quad, line -1, and a warning', () => {
     const s = open(['BT /F1 12 Tf 10 150 Td (AB) Tj ET BT /F1 12 Tf 350 150 Td (XY) Tj ET']);
     const page = s.document.loadPage(0);
     const { model, stats } = extractPageDetailed(page, { pageIndex: 0 });
@@ -274,7 +277,7 @@ describe('extractPage: 구조화 텍스트에 없는 글자(quad 근사)', () =>
     const [ulx, uly, urx, ury, llx, lly, lrx, lry] = x.quad;
     expect(ulx).toBeCloseTo(350, 3);
     expect(llx).toBeCloseTo(350, 3);
-    // advance 만큼 오른쪽, 위·아래로 글자 크기에 비례
+    // to the right by advance, above and below proportional to the glyph size
     expect(urx).toBeGreaterThan(350);
     expect(lrx).toBeCloseTo(urx, 3);
     expect(uly).toBeLessThan(50);
@@ -283,12 +286,12 @@ describe('extractPage: 구조화 텍스트에 없는 글자(quad 근사)', () =>
     expect(lry).toBeCloseTo(lly, 3);
     expect(uly).toBeCloseTo(50 - 0.95 * 12, 3);
     expect(lly).toBeCloseTo(50 + 0.25 * 12, 3);
-    // 근사 글자는 줄에 들어가지 않는다.
+    // Approximated characters do not enter lines.
     expect(model.lines.flatMap((l) => l.chars)).toEqual([0, 1]);
     s.close();
   });
 
-  it('합성 공백은 짝이 없는 구조화 텍스트 글자로 센다(글자·줄에 넣지 않음)', () => {
+  it('a synthetic space is counted as an unpaired structured text character (not put into characters or lines)', () => {
     const s = open(['BT /F1 12 Tf 10 150 Td [(A) -300 (B)] TJ ET']);
     const page = s.document.loadPage(0);
     const { model, stats } = extractPageDetailed(page, { pageIndex: 0 });
@@ -301,7 +304,7 @@ describe('extractPage: 구조화 텍스트에 없는 글자(quad 근사)', () =>
   });
 });
 
-/** 타일링 패턴 P1(셀에 사각형과 글자 't') 리소스. */
+/** Tiling pattern P1 resource (a rectangle and the character 't' in the cell). */
 function patternResources(doc: mupdf.PDFDocument, res: Record<string, unknown>): void {
   const font = (res.Font as Record<string, unknown>).F1;
   res.Pattern = {
@@ -318,7 +321,7 @@ function patternResources(doc: mupdf.PDFDocument, res: Record<string, unknown>):
   };
 }
 
-/** 소프트 마스크 GsM(마스크 그룹에 사각형과 글자 'M') 리소스. */
+/** Soft mask GsM resource (a rectangle and the character 'M' in the mask group). */
 function softMaskResources(doc: mupdf.PDFDocument, res: Record<string, unknown>): void {
   const font = (res.Font as Record<string, unknown>).F1;
   const group = doc.addStream('0.5 g 0 0 100 100 re f BT /F1 10 Tf 5 5 Td (M) Tj ET', {
@@ -331,8 +334,8 @@ function softMaskResources(doc: mupdf.PDFDocument, res: Record<string, unknown>)
   res.ExtGState = { GsM: { SMask: { Type: 'Mask', S: 'Luminosity', G: group } } };
 }
 
-describe('extractPage: 쪽 콘텐츠 밖 콜백 제외(패턴 셀·소프트 마스크)', () => {
-  it('타일링 패턴 셀 내용은 세지 않는다(패턴으로 칠한 도형은 클립 1개)', () => {
+describe('extractPage: exclude callbacks outside the page content (pattern cell, soft mask)', () => {
+  it('tiling pattern cell content is not counted (a shape painted with the pattern is 1 clip)', () => {
     const m = extract({
       content: '/Pattern cs /P1 scn 120 120 60 60 re f',
       resources: patternResources,
@@ -342,7 +345,7 @@ describe('extractPage: 쪽 콘텐츠 밖 콜백 제외(패턴 셀·소프트 마
     expect(m.paintCount).toBe(1);
   });
 
-  it('소프트 마스크 그룹 안의 도형·글자는 세지 않는다', () => {
+  it('shapes and characters inside a soft mask group are not counted', () => {
     const m = extract({
       content: 'q /GsM gs 0 0 1 rg 0 0 100 100 re f Q BT /F1 12 Tf 10 150 Td (after) Tj ET',
       resources: softMaskResources,
@@ -354,7 +357,7 @@ describe('extractPage: 쪽 콘텐츠 밖 콜백 제외(패턴 셀·소프트 마
   });
 });
 
-describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)', () => {
+describe('extractPage: clip text first-arrival counting (contract 3.1 notation table)', () => {
   const run = (content: string | PageSpec) => {
     const s = open([content]);
     const page = s.document.loadPage(0);
@@ -375,7 +378,7 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     res.Pattern = { P2: { PatternType: 2, Shading: shading } };
   };
 
-  it('타일링 패턴 색 텍스트: 클립 콜백에서 처음 세고 beginTile 이 오면 fill·clip false·색 null', () => {
+  it('tiling pattern color text: counted first in the clip callback, and when beginTile arrives: fill, clip false, color null', () => {
     const { model, stats } = run({
       content: '/Pattern cs /P1 scn BT /F1 12 Tf 10 150 Td (after) Tj ET',
       resources: patternResources,
@@ -388,7 +391,7 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     expect(model.paintCount).toBe(0);
   });
 
-  it('셰이딩 패턴 색 텍스트: fillShade 가 오면 fill·clip false, 셰이드는 paintSeq 0', () => {
+  it('shading pattern color text: when fillShade arrives: fill, clip false, and the shade has paintSeq 0', () => {
     const { model } = run({
       content: '/Pattern cs /P2 scn BT /F1 12 Tf 10 150 Td (grad) Tj ET',
       resources: shadingResources,
@@ -398,7 +401,7 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     expect(model.shades.map((x) => x.paintSeq)).toEqual([0]);
   });
 
-  it('Tr 7 로 클립한 뒤 sh: 같은 클립의 popClip 전에 셰이드가 오므로 패턴 색 텍스트로 본다', () => {
+  it('sh after clipping with Tr 7: the shade arrives before the popClip of the same clip, so it is treated as pattern color text', () => {
     const { model } = run({
       content: 'q BT /F1 24 Tf 7 Tr 10 100 Td (AB) Tj ET /Sh1 sh Q',
       resources: shadingResources,
@@ -408,23 +411,23 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     expect(model.shades).toHaveLength(1);
   });
 
-  // 계약 수정 6: 포인터가 같은 텍스트 콜백은 종류와 무관하게 건너뛴다(pdf-ops 재현).
-  it('채움·선 모두 패턴 색 Tr 6: clip→clipStroke 의 같은 객체를 건너뛰어 ET 재전송을 소비한다', () => {
+  // Contract amendment 6: text callbacks with the same pointer are skipped regardless of kind (reproduces pdf-ops).
+  it('Tr 6 with both fill and stroke in pattern color: skips the same object of clip→clipStroke and consumes the ET resend', () => {
     const { model, stats } = run({
       content:
         '/Pattern cs /P2 scn /Pattern CS /P2 SCN BT /F1 20 Tf 50 150 Td 6 Tr (Ef) Tj ET 0 Tr ' +
         '0 g /Pattern CS /P2 SCN BT /F1 20 Tf 50 100 Td 6 Tr (Gh) Tj ET 0 Tr',
       resources: shadingResources,
     });
-    // 표시 글리프 4개. 건너뛰지 않으면 clipStroke 가 목록을 비워 ET 재전송 4개를 더 센다(8).
+    // 4 shown glyphs. Without skipping, clipStroke would empty the list and count 4 more ET resends (8).
     expect(text(model)).toBe('EfGh');
     expect(seqs(model)).toEqual([0, 1, 2, 3]);
     expect(stats).toMatchObject({ clipCounted: 2, retransmitted: 4, clipDepth: 0 });
-    // 셰이딩 패턴 칠하기: Ef 는 채움·선 두 번, Gh 는 선만
+    // Shading pattern painting: Ef is fill and stroke twice, Gh is stroke only
     expect(model.shades).toHaveLength(3);
   });
 
-  it('채움 색 + 선 패턴 Tr 6: fill→clipStroke 의 같은 객체를 건너뛴다', () => {
+  it('fill color + stroke pattern Tr 6: skips the same object of fill→clipStroke', () => {
     const { model, stats } = run({
       content: '0 g /Pattern CS /P2 SCN BT /F1 20 Tf 50 150 Td 6 Tr (Ab) Tj ET 0 Tr',
       resources: shadingResources,
@@ -437,7 +440,7 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     ]);
   });
 
-  it('건너뛴 클립 콜백도 클립 스택에 올라 popClip 짝이 맞는다(균형)', () => {
+  it('a skipped clip callback is also pushed on the clip stack so that popClip pairs up (balanced)', () => {
     const { stats } = run({
       content:
         '/Pattern cs /P2 scn /Pattern CS /P2 SCN BT /F1 20 Tf 50 150 Td 6 Tr (Ef) Tj ET 0 Tr ' +
@@ -447,7 +450,7 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     expect(stats.clipDepth).toBe(0);
   });
 
-  it('Tr 4 와 Tr 7 이 한 BT 에 섞이면 Tr 7 글리프만 새로 센다(번호는 표시 순서)', () => {
+  it('when Tr 4 and Tr 7 are mixed in one BT, only the Tr 7 glyphs are newly counted (numbers follow display order)', () => {
     const { model, stats } = run(show(4, '(AB) Tj 7 Tr (CD) Tj'));
     expect(text(model)).toBe('ABCD');
     expect(seqs(model)).toEqual([0, 1, 2, 3]);
@@ -460,40 +463,40 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     expect(stats).toMatchObject({ retransmitted: 2, clipCounted: 2 });
   });
 
-  // pdf-ops `docs/m1-pdf-ops.md` 3.1 실측 표의 사례(첫 등장 순서로 번호를 받는다).
-  it('pdf-ops 표: `7 Tr (A) 4 Tr (B)` → B 가 먼저(표시 시점), A 는 ET 재전송에서 새로 센다', () => {
+  // Cases from the measured table in pdf-ops `docs/m1-pdf-ops.md` 3.1 (numbers are assigned in first-arrival order).
+  it('pdf-ops table: `7 Tr (A) 4 Tr (B)` → B first (display time), A is newly counted in the ET resend', () => {
     const { model } = run(show(7, '(A) Tj 4 Tr (B) Tj'));
     expect(text(model)).toBe('BA');
     expect(seqs(model)).toEqual([0, 1]);
     expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
-      ['fill', true], // B: Tr 4, 재전송을 소비
-      ['invisible', true], // A: Tr 7, 클립 콜백에서 처음 센다
+      ['fill', true], // B: Tr 4, consumes the resend
+      ['invisible', true], // A: Tr 7, counted first in the clip callback
     ]);
   });
 
-  it('pdf-ops 표: `4 Tr (Ab) 0 Tr (Xy) 7 Tr (Cd) 3 Tr (In)` → 8개, Ab·Xy·In·Cd 순', () => {
+  it('pdf-ops table: `4 Tr (Ab) 0 Tr (Xy) 7 Tr (Cd) 3 Tr (In)` → 8 glyphs, in the order Ab, Xy, In, Cd', () => {
     const { model, stats } = run(show(4, '(Ab) Tj 0 Tr (Xy) Tj 7 Tr (Cd) Tj 3 Tr (In) Tj'));
     expect(text(model)).toBe('AbXyInCd');
     expect(seqs(model)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
     expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
       ['fill', true],
-      ['fill', true], // Ab: Tr 4, ignoreText 재전송을 소비
+      ['fill', true], // Ab: Tr 4, consumes the ignoreText resend
       ['fill', false],
       ['fill', false], // Xy: Tr 0
       ['invisible', false],
-      ['invisible', false], // In: Tr 3, ignoreText 에서 처음 센다
+      ['invisible', false], // In: Tr 3, counted first in ignoreText
       ['invisible', false],
-      ['invisible', false], // Cd: Tr 7 이 ignoreText 형태의 재전송에서 처음 센다(Tr 3 과 구분 못함)
+      ['invisible', false], // Cd: Tr 7 is counted first in a resend of the ignoreText form (indistinguishable from Tr 3)
     ]);
     expect(stats).toMatchObject({ retransmitted: 2, clipCounted: 0 });
   });
 
-  it('pdf-ops 표: `7 Tr (A) 0 Tr (B)` → B 만(A 는 Device 에 오지 않는다)', () => {
+  it('pdf-ops table: `7 Tr (A) 0 Tr (B)` → B only (A never reaches the Device)', () => {
     const { model } = run(show(7, '(A) Tj 0 Tr (B) Tj'));
     expect(text(model)).toBe('B');
   });
 
-  it('pdf-ops 표: `4 Tr (A) 1 Tr (B)` → A·B 각 1(A 의 클립은 없다)', () => {
+  it('pdf-ops table: `4 Tr (A) 1 Tr (B)` → A and B 1 each (A has no clip)', () => {
     const { model } = run(show(4, '(A) Tj 1 Tr (B) Tj'));
     expect(text(model)).toBe('AB');
     expect(model.chars.map((c) => [c.render, c.clip])).toEqual([
@@ -502,19 +505,19 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     ]);
   });
 
-  it('BT 마지막 글리프가 Tr 0 이면 앞의 Tr 7 글리프는 Device 에 오지 않는다', () => {
+  it('when the last glyph of a BT is Tr 0, the preceding Tr 7 glyphs never reach the Device', () => {
     const { model } = run(show(0, '(AB) Tj 7 Tr (CD) Tj 0 Tr (EF) Tj'));
     expect(text(model)).toBe('ABEF');
   });
 
-  it('알려진 한계: 같은 위치에 일반 글자를 그린 뒤 다른 BT 의 Tr 7 로 같은 글자를 쓰면 재전송으로 오판', () => {
+  it('known limitation: drawing a normal character at the same position and then the same character with Tr 7 in another BT is misjudged as a resend', () => {
     const { model, stats } = run(`${show(0, '(AB) Tj')} 0 0 5 5 re f ${show(7, '(AB) Tj')}`);
     expect(text(model)).toBe('AB');
     expect(stats.retransmitted).toBe(2);
     expect(model.chars.every((c) => c.clip)).toBe(true);
   });
 
-  // 같은 Form 을 두 위치에 그리면 글리프 trm 은 같고 콜백 ctm 만 다르다(계약 수정 4).
+  // Drawing the same Form at two positions gives the same glyph trm and only a different callback ctm (contract amendment 4).
   const formA: Pick<PageSpec, 'resources'> = {
     resources: (doc, res) => {
       const font = (res.Font as Record<string, unknown>).F1;
@@ -530,7 +533,7 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
   };
   const twoForms = 'q 1 0 0 1 10 10 cm /Fm1 Do Q q 1 0 0 1 10 100 cm /Fm1 Do Q';
 
-  it('같은 Form 을 두 위치에 그린 뒤 제3의 위치에 Tr 7 로 같은 trm 의 글자를 쓰면 새 글자로 센다', () => {
+  it('after drawing the same Form at two positions, writing a character with the same trm at a third position with Tr 7 is counted as a new character', () => {
     const { model, stats } = run({
       content: `${twoForms} q 1 0 0 1 100 150 cm BT /F1 12 Tf 7 Tr 5 5 Td (A) Tj ET Q`,
       ...formA,
@@ -545,18 +548,18 @@ describe('extractPage: 클립 텍스트 첫 등장 계수(계약 3.1 표기 표)
     ]);
   });
 
-  it('같은 위치(trm 과 ctm 이 모두 같음)에 Tr 7 로 다시 쓰면 재전송으로 본다(알려진 한계)', () => {
+  it('writing again with Tr 7 at the same position (both trm and ctm equal) is treated as a resend (known limitation)', () => {
     const { model, stats } = run({
       content: `${twoForms} q 1 0 0 1 10 100 cm BT /F1 12 Tf 7 Tr 5 5 Td (A) Tj ET Q`,
       ...formA,
     });
     expect(text(model)).toBe('AA');
     expect(stats.retransmitted).toBe(1);
-    // 소비는 항목 하나씩이므로 두 번째 Form 인스턴스(같은 위치)의 글리프에만 clip 이 붙는다.
+    // Consumption is one item at a time, so the clip is attached only to the glyphs of the second Form instance (same position).
     expect(model.chars.map((c) => c.clip)).toEqual([false, true]);
   });
 
-  it('다른 위치의 같은 글자는 재전송이 아니다', () => {
+  it('the same character at a different position is not a resend', () => {
     const { model } = run(
       'BT /F1 12 Tf 10 150 Td (AB) Tj ET BT /F1 12 Tf 7 Tr 10 100 Td (AB) Tj ET',
     );
@@ -575,7 +578,7 @@ const near = (
   actual!.forEach((v, i) => expect(Math.abs(v - expected[i]!)).toBeLessThanOrEqual(eps));
 };
 
-describe('extractPage: 색공간', () => {
+describe('extractPage: color spaces', () => {
   const colorSpaces = (doc: mupdf.PDFDocument, res: Record<string, unknown>) => {
     res.ColorSpace = {
       Sep: [
@@ -602,7 +605,7 @@ describe('extractPage: 색공간', () => {
   });
   const paint = (i: number) => model.paths[i]!.color!;
 
-  it('DeviceRGB·DeviceGray: 원래 값과 같은 sRGB', () => {
+  it('DeviceRGB and DeviceGray: sRGB equal to the original values', () => {
     expect(paint(0)).toEqual({
       space: 'DeviceRGB',
       values: expect.any(Array),
@@ -615,41 +618,41 @@ describe('extractPage: 색공간', () => {
     near(paint(1).rgb, [0.5, 0.5, 0.5]);
   });
 
-  it('DeviceCMYK: 원래 CMYK 값과 MuPDF 변환 sRGB(렌더 결과와 같은 값)', () => {
+  it('DeviceCMYK: the original CMYK values and the MuPDF-converted sRGB (same value as the render result)', () => {
     expect(paint(2).space).toBe('DeviceCMYK');
     near(paint(2).values, [0.2, 0.4, 0.6, 0.1]);
     near(paint(2).rgb, [186 / 255, 143 / 255, 104 / 255], 1 / 255);
   });
 
-  it('Separation·Lab·Indexed: 원래 색공간 값과 sRGB 근사', () => {
+  it('Separation, Lab and Indexed: the original color space values and an sRGB approximation', () => {
     expect(paint(3).space).toBe('Separation(DeviceRGB,Spot)');
     near(paint(3).values, [0.7]);
     near(paint(3).rgb, [1, 76 / 255, 76 / 255], 1 / 255);
     expect(paint(4).space).toBe('Lab');
     near(paint(4).values, [50, 40, -30]);
     near(paint(4).rgb, [165 / 255, 91 / 255, 171 / 255], 2 / 255);
-    // Indexed 는 인덱스(정수)를 값으로, sRGB 는 팔레트 항목.
+    // Indexed takes the index (integer) as the value, and sRGB is the palette entry.
     expect(paint(5).space).toBe('Indexed(1,DeviceRGB)');
     expect(paint(5).values).toEqual([1]);
     near(paint(5).rgb, [0, 1, 0], 1 / 255);
   });
 
-  it('stroke 전용 텍스트(Tr 1)의 색은 선 색', () => {
+  it('the color of stroke-only text (Tr 1) is the stroke color', () => {
     expect(model.chars[0]!.render).toBe('stroke');
     near(model.chars[0]!.color, [1, 0, 0], 1 / 255);
   });
 });
 
-describe('extractPage: 도형', () => {
+describe('extractPage: shapes', () => {
   const content = [
     '0 0 1 rg 1 0 0 RG 3 w',
-    '10 10 50 20 re B', // 채움+선: 콜백 2개
-    '100 100 m 150 100 l 150 150 l h f*', // 짝홀 채움
-    '200 20 m 220 20 240 40 260 40 c S', // 곡선 선
-    '0 0 20 20 re W n', // 클립
+    '10 10 50 20 re B', // fill + stroke: 2 callbacks
+    '100 100 m 150 100 l 150 150 l h f*', // even-odd fill
+    '200 20 m 220 20 240 40 260 40 c S', // curved stroke
+    '0 0 20 20 re W n', // clip
   ].join('\n');
 
-  it('채움+선(B)은 paintSeq 2개(fill → stroke), 번호는 0부터 연속', () => {
+  it('fill + stroke (B) uses 2 paintSeq (fill → stroke), and numbers are consecutive from 0', () => {
     const m = extract(content);
     expect(m.paths.map((p) => [p.paintSeq, p.op, p.evenOdd])).toEqual([
       [0, 'fill', false],
@@ -662,7 +665,7 @@ describe('extractPage: 도형', () => {
     expect(m.paths.length + m.images.length + m.shades.length).toBe(m.paintCount);
   });
 
-  it('경계·변환·선 폭·색', () => {
+  it('bounds, transform, line width, color', () => {
     const m = extract(content);
     const [fill, stroke, evenOdd, curve, clip] = m.paths as [
       PageModel['paths'][number],
@@ -672,18 +675,18 @@ describe('extractPage: 도형', () => {
       PageModel['paths'][number],
     ];
     expect(fill.ctm).toEqual([1, 0, 0, -1, 0, 200]);
-    // 사용자 공간 (10,10)–(60,30) → 페이지 공간 (10,170)–(60,190)
+    // User space (10,10)–(60,30) → page space (10,170)–(60,190)
     near(fill.bbox, [10, 170, 60, 190]);
     expect(fill.lineWidth).toBeNull();
     expect(fill.alpha).toBe(1);
     near(fill.color!.rgb, [0, 0, 1]);
-    // 선 폭 3 을 포함한 경계
+    // Bounds including line width 3
     near(stroke.bbox, [8.5, 168.5, 61.5, 191.5]);
     expect(stroke.lineWidth).toBe(3);
     near(stroke.color!.rgb, [1, 0, 0]);
     near(evenOdd.bbox, [100, 50, 150, 100]);
-    // 열린 선의 경계는 MuPDF 가 이음·끝 모양 여유(마이터 한계)까지 넓게 잡는다. 곡선 점
-    // (200,180)–(260,160)을 포함하면 된다.
+    // The bounds of an open stroke are widened by MuPDF to include join and cap margins (miter limit). It is enough to include the curve points
+    // (200,180)–(260,160).
     expect(curve.bbox[0]).toBeLessThanOrEqual(200);
     expect(curve.bbox[2]).toBeGreaterThanOrEqual(260);
     expect(curve.bbox[1]).toBeLessThanOrEqual(160);
@@ -693,7 +696,7 @@ describe('extractPage: 도형', () => {
     near(clip.bbox, [0, 180, 20, 200]);
   });
 
-  it('includePathSegments: 요청할 때만 경로 공간 세그먼트를 담는다', () => {
+  it('includePathSegments: holds path-space segments only when requested', () => {
     const without = extract(content);
     expect(without.paths.every((p) => p.segments === null)).toBe(true);
     const withSegments = extract(content, true);
@@ -716,7 +719,7 @@ describe('extractPage: 도형', () => {
     ]);
   });
 
-  it('투명도(gs ca·CA)는 alpha 로 담긴다', () => {
+  it('opacity (gs ca, CA) is stored as alpha', () => {
     const m = extract({
       content: '/Gs1 gs 1 0 0 rg 0 0 1 RG 0 0 50 50 re B',
       resources: (_doc, res) => {
@@ -726,7 +729,7 @@ describe('extractPage: 도형', () => {
     expect(m.paths.map((p) => p.alpha)).toEqual([0.25, 0.5]);
   });
 
-  it('q/Q 클립: popClip 은 번호를 쓰지 않는다', () => {
+  it('q/Q clip: popClip uses no number', () => {
     const m = extract('q 0 0 50 50 re W n 10 10 20 20 re f Q 100 100 10 10 re f');
     expect(m.paths.map((p) => [p.paintSeq, p.op])).toEqual([
       [0, 'clip'],
@@ -736,7 +739,7 @@ describe('extractPage: 도형', () => {
   });
 });
 
-describe('extractPage: 이미지·셰이드', () => {
+describe('extractPage: images and shades', () => {
   const withImagesAndShade = (doc: mupdf.PDFDocument, res: Record<string, unknown>) => {
     const pixmap = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 4, 3], false);
     pixmap.clear(200);
@@ -760,13 +763,13 @@ describe('extractPage: 이미지·셰이드', () => {
   ].join('\n');
   const model = extract({ content, resources: withImagesAndShade });
 
-  it('이미지: 픽셀 크기·페이지 공간 경계·변환, 인라인 이미지와 이미지 마스크 포함', () => {
+  it('image: pixel size, page-space bounds and transform, including inline images and image masks', () => {
     expect(model.images.map((i) => [i.paintSeq, i.op, i.width, i.height])).toEqual([
       [0, 'image', 4, 3],
       [3, 'image', 2, 2],
       [4, 'image-mask', 8, 8],
     ]);
-    // XObject: 사용자 공간 (20,30)–(120,80) → 페이지 공간 (20,120)–(120,170)
+    // XObject: user space (20,30)–(120,80) → page space (20,120)–(120,170)
     near(model.images[0]!.bbox, [20, 120, 120, 170]);
     near(model.images[0]!.ctm, [100, 0, 0, 50, 20, 120]);
     expect(model.images[0]!.alpha).toBe(1);
@@ -774,14 +777,14 @@ describe('extractPage: 이미지·셰이드', () => {
     near(model.images[2]!.bbox, [150, 70, 180, 100]);
   });
 
-  it('셰이드: 무한 경계는 현재 클립 경계로 접는다', () => {
+  it('shade: an infinite bound is folded into the current clip bounds', () => {
     expect(model.shades).toHaveLength(1);
     expect(model.shades[0]!.paintSeq).toBe(2);
     near(model.shades[0]!.bbox, [10, 110, 90, 190]);
     expect(model.shades[0]!.alpha).toBe(1);
   });
 
-  it('paintSeq 는 이미지·클립·셰이드 전체에서 0부터 겹침 없이 연속', () => {
+  it('paintSeq is consecutive from 0 without overlap across images, clips and shades', () => {
     const all = [...model.paths, ...model.images, ...model.shades]
       .map((x) => x.paintSeq)
       .sort((a, b) => a - b);
@@ -791,8 +794,8 @@ describe('extractPage: 이미지·셰이드', () => {
   });
 });
 
-describe('extractPage: 셰이딩 패턴으로 칠한 도형', () => {
-  it('MuPDF 는 clipPath + fillShade 로 보낸다(번호 2개)', () => {
+describe('extractPage: shape painted with a shading pattern', () => {
+  it('MuPDF sends it as clipPath + fillShade (2 numbers)', () => {
     const m = extract({
       content: '/Pattern cs /P2 scn 10 10 80 80 re f',
       resources: (doc, res) => {
@@ -817,8 +820,8 @@ describe('extractPage: 셰이딩 패턴으로 칠한 도형', () => {
   });
 });
 
-describe('extractPage: 주석 제외·경고·캐시', () => {
-  it('주석 텍스트는 추출 모델에 들어오지 않는다', () => {
+describe('extractPage: annotations excluded, warnings, cache', () => {
+  it('annotation text does not enter the extraction model', () => {
     const s = new PdfSession();
     const doc = new mupdf.PDFDocument();
     const font = doc.addSimpleFont(new mupdf.Font('Helvetica'));
@@ -844,15 +847,15 @@ describe('extractPage: 주석 제외·경고·캐시', () => {
     s.close();
   });
 
-  it('MuPDF 경고를 warnings 에 담고, 끝나면 로그 콜백을 해제한다', () => {
+  it('puts MuPDF warnings into warnings and releases the log callback when done', () => {
     const m = extract('/NoSuchCS cs 0.5 sc 0 0 10 10 re f');
     expect(m.warnings.length).toBeGreaterThan(0);
     expect(m.warnings.every((w) => w.startsWith('MuPDF: '))).toBe(true);
-    // 정상 문서는 경고가 없다(이전 쪽의 경고가 남지 않는다).
+    // A normal document has no warnings (warnings from the previous page do not linger).
     expect(extract('0 0 10 10 re f').warnings).toEqual([]);
   });
 
-  it('쪽별 캐시: 같은 요청은 같은 객체, includePathSegments 는 별도 항목, 무효화하면 새로 만든다', () => {
+  it('per-page cache: the same request gives the same object, includePathSegments is a separate entry, and invalidation rebuilds it', () => {
     const s = open(['0 0 10 10 re f', 'BT /F1 12 Tf 10 150 Td (p2) Tj ET']);
     const a = s.extractPage({ pageIndex: 0 });
     expect(s.extractPage({ pageIndex: 0 })).toBe(a);
@@ -871,19 +874,19 @@ describe('extractPage: 주석 제외·경고·캐시', () => {
     s.close();
   });
 
-  it('캐시는 최근 사용 순으로 16쪽까지 보관한다', () => {
+  it('the cache keeps up to 16 pages in most-recently-used order', () => {
     const s = open(Array.from({ length: 18 }, (_, i) => `BT /F1 12 Tf 10 150 Td (${i}) Tj ET`));
     const first = s.extractPage({ pageIndex: 0 });
     for (let i = 1; i <= 16; i++) s.extractPage({ pageIndex: i });
-    // 0 쪽은 17번째로 들어온 항목에 밀려 빠졌다.
+    // Page 0 was evicted by the 17th entry.
     expect(s.extractPage({ pageIndex: 0 })).not.toBe(first);
     s.close();
   });
 });
 
-describe('extractPage: 합자', () => {
+describe('extractPage: ligatures', () => {
   const DEJAVU = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf';
-  it('glyphText: 합자 코드포인트는 NFKC 전개', async () => {
+  it('glyphText: ligature code points are expanded with NFKC', async () => {
     const { glyphText } = await import('../src/extract-stext.js');
     expect(glyphText(0xfb01)).toBe('fi');
     expect(glyphText(0xfb03)).toBe('ffi');
@@ -894,7 +897,7 @@ describe('extractPage: 합자', () => {
     expect(glyphText(0xd800)).toBe('�');
   });
 
-  /** F2 의 코드 A 를 "fi"(두 코드포인트)로, B 를 "B" 로 대응시키는 ToUnicode 를 단 한 쪽을 추출한다. */
+  /** Extracts one page with a ToUnicode that maps code A of F2 to "fi" (two code points) and B to "B". */
   const extractMultiChar = (tr: number, glyphs: string) =>
     extract({
       content: `BT /F2 14 Tf ${tr} Tr 10 150 Td ${hexGlyphs(glyphs)} Tj ET`,
@@ -918,8 +921,8 @@ describe('extractPage: 합자', () => {
       },
     });
 
-  it('ToUnicode 가 글리프 하나를 여러 글자로 대응시키면 글리프는 한 번만 세고 text 에 모은다', () => {
-    // MuPDF 는 이런 글리프를 gid 한 번 + 나머지 글자 gid -1(폭 0) 항목으로 보낸다(계약 3.1 단계 0).
+  it('when ToUnicode maps one glyph to several characters, the glyph is counted once and the characters are gathered in text', () => {
+    // MuPDF sends such a glyph as one gid entry + entries for the remaining characters with gid -1 (width 0) (contract 3.1 step 0).
     const m = extractMultiChar(0, 'ABA');
     expect(m.glyphCount).toBe(3);
     expect(m.chars.map((c) => c.text)).toEqual(['fi', 'B', 'fi']);
@@ -929,7 +932,7 @@ describe('extractPage: 합자', () => {
     expect(m.warnings).toEqual([]);
   });
 
-  it('Tr 2: stroke 콜백을 건너뛰어도 그 글리프 CharInfo 의 text 는 "fi"', () => {
+  it('Tr 2: even when the stroke callback is skipped, the text of the CharInfo of that glyph is "fi"', () => {
     const m = extractMultiChar(2, 'AB');
     expect(m.chars.map((c) => [c.text, c.render])).toEqual([
       ['fi', 'fill-stroke'],
@@ -937,7 +940,7 @@ describe('extractPage: 합자', () => {
     ]);
   });
 
-  it('Tr 4: 클립 재전송을 소비해도 text 는 "fi" 한 번(보조 글자가 두 번 붙지 않는다)', () => {
+  it('Tr 4: even when the clip resend is consumed, text is "fi" once (the auxiliary character is not appended twice)', () => {
     const m = extractMultiChar(4, 'AB');
     expect(m.glyphCount).toBe(2);
     expect(m.chars.map((c) => [c.text, c.clip])).toEqual([
@@ -946,13 +949,13 @@ describe('extractPage: 합자', () => {
     ]);
   });
 
-  it('알려진 한계: Tr 7 처럼 클립 콜백에서 처음 세는 글리프는 MuPDF 가 보조 글자를 보내지 않아 text 가 첫 글자뿐', () => {
+  it('known limitation: for a glyph counted first in the clip callback like Tr 7, MuPDF does not send the auxiliary characters, so text is only the first character', () => {
     const m = extractMultiChar(7, 'AB');
     expect(m.chars.map((c) => c.text)).toEqual(['f', 'B']);
     expect(seqs(m)).toEqual([0, 1]);
   });
 
-  it('unionQuads: 같은 줄의 quad 를 줄 방향으로 합친다(회전한 줄 포함)', async () => {
+  it('unionQuads: merges quads of the same line along the line direction (including rotated lines)', async () => {
     const { unionQuads } = await import('../src/extract-stext.js');
     const ch = (quad: number[]) =>
       ({ quad }) as unknown as Parameters<typeof unionQuads>[0][number];
@@ -960,13 +963,13 @@ describe('extractPage: 합자', () => {
     expect(unionQuads([ch([0, 0, 5, 0, 0, 10, 5, 10]), ch([5, 0, 9, 0, 5, 10, 9, 10])])).toEqual([
       0, 0, 9, 0, 0, 10, 9, 10,
     ]);
-    // 아래로 진행하는 줄(ul→ur 이 +y).
+    // A line running downward (ul→ur is +y).
     const down = unionQuads([ch([0, 0, 0, 5, -10, 0, -10, 5]), ch([0, 5, 0, 9, -10, 5, -10, 9])]);
     expect(down.map((v) => Math.round(v))).toEqual([0, 0, 0, 9, -10, 0, -10, 9]);
   });
 
   it.skipIf(!existsSync(DEJAVU))(
-    '합자 글리프 하나가 "fi" 한 글자로 들어오고 뒤 글자와 짝이 어긋나지 않는다',
+    'one ligature glyph arrives as the single character "fi" and does not misalign the pairing with the following characters',
     () => {
       const font = new mupdf.Font('DejaVu', readFileSync(DEJAVU));
       const gid = (c: string | number) => font.encodeCharacter(c).toString(16).padStart(4, '0');
@@ -980,14 +983,14 @@ describe('extractPage: 합자', () => {
       expect(m.chars.every((c) => c.line === 0)).toBe(true);
       expect(m.lines[0]!.chars).toEqual([0, 1, 2]);
       expect(m.warnings).toEqual([]);
-      // 합자 글리프의 quad 는 'f'·'i' 두 글자를 합쳐 뒤 글자 'B' 의 원점까지 닿는다.
+      // The quad of the ligature glyph merges the two characters 'f' and 'i' and reaches the origin of the following character 'B'.
       expect(m.chars[1]!.quad[2]).toBeCloseTo(m.chars[2]!.origin[0], 1);
     },
   );
 });
 
-describe('extractPage: 래퍼 소유권(mupdf.js Shade 래퍼)', () => {
-  it('셰이드가 있는 쪽을 GC 와 함께 반복 추출해도 문서가 손상되지 않는다', async () => {
+describe('extractPage: wrapper ownership (mupdf.js Shade wrapper)', () => {
+  it('repeatedly extracting a page with shades alongside GC does not corrupt the document', async () => {
     v8.setFlagsFromString('--expose-gc');
     const gc = vm.runInNewContext('gc') as () => void;
     const s = open([
@@ -1011,13 +1014,13 @@ describe('extractPage: 래퍼 소유권(mupdf.js Shade 래퍼)', () => {
       expect(s.extractPage({ pageIndex: 0 }).shades).toHaveLength(1);
       if (i % 20 === 0) {
         gc();
-        // 종료자(FinalizationRegistry)는 GC 뒤 다음 태스크에서 돈다.
+        // Finalizers (FinalizationRegistry) run in the next task after GC.
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     }
     gc();
     await new Promise((resolve) => setTimeout(resolve, 20));
-    // 해제된 셰이드를 다시 쓰면 "Unexpected mesh type" 으로 실패한다.
+    // Reusing a released shade fails with "Unexpected mesh type".
     expect(s.renderPage({ pageIndex: 0, scale: 1 }).width).toBe(300);
     s.invalidatePageCache();
     expect(s.extractPage({ pageIndex: 0 }).shades).toHaveLength(1);
@@ -1025,10 +1028,10 @@ describe('extractPage: 래퍼 소유권(mupdf.js Shade 래퍼)', () => {
   });
 });
 
-describe('extractPage: WASM 래퍼 해제(M1 리뷰 반영)', () => {
+describe('extractPage: WASM wrapper release (from M1 review)', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  /** 클래스 종료자 레지스트리의 등록·해제 횟수를 센다(래퍼 생성 = 등록, destroy = 해제). */
+  /** Counts registrations and unregistrations of the class finalizer registry (wrapper creation = registration, destroy = unregistration). */
   function countWrappers(cls: { _finalizer?: FinalizationRegistry<unknown> }) {
     const registry = cls._finalizer!;
     const register = vi.spyOn(registry, 'register');
@@ -1036,8 +1039,8 @@ describe('extractPage: WASM 래퍼 해제(M1 리뷰 반영)', () => {
     return () => ({ created: register.mock.calls.length, released: unregister.mock.calls.length });
   }
 
-  it('소프트 마스크 안(guard 가 건너뜀)의 텍스트 래퍼도 놓는다', () => {
-    // 레지스트리는 첫 래퍼 생성 때 생긴다.
+  it('also releases text wrappers inside a soft mask (skipped by the guard)', () => {
+    // The registry is created at the first wrapper creation.
     new mupdf.Text().destroy();
     const s = open([
       {
@@ -1052,12 +1055,12 @@ describe('extractPage: WASM 래퍼 해제(M1 리뷰 반영)', () => {
     page.destroy();
     s.close();
     expect(text(model)).toBe('after');
-    // 마스크 그룹 글자 M 과 본문 글자: 텍스트 콜백 2회 이상.
+    // Mask group character M and body characters: at least 2 text callbacks.
     expect(c.created).toBeGreaterThanOrEqual(2);
     expect(c.released).toBe(c.created);
   });
 
-  it('구조화 텍스트 글자마다 만드는 Font 래퍼를 놓는다', () => {
+  it('releases the Font wrapper created for every structured text character', () => {
     new mupdf.Font('Helvetica').destroy();
     const s = open([
       `BT /F1 12 Tf 10 150 Td (Hello) Tj ET BT /F2 14 Tf 10 100 Td ${hexGlyphs('한글')} Tj ET`,

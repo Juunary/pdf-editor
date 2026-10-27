@@ -1,13 +1,13 @@
-// M4 core 계측(docs/m4-core.md 4절, 계약 5.1 V5·6.2). 먼저 `pnpm --filter @pdf-editor/core build` 로 dist 를 만든다.
+// M4 core measurement (docs/m4-core.md section 4, contract 5.1 V5 and 6.2). First build dist with `pnpm --filter @pdf-editor/core build`.
 //
-//   node scripts/measure-m4.mjs max-paths <PDF 폴더> [문서 이름 접두 ...]
-//       쪽별 패스 수를 세어 코퍼스 최대 패스 쪽을 찾는다(V5 측정 쪽 고정용). 접두를 주면 그 문서만.
-//   node scripts/measure-m4.mjs drag <PDF> <쪽(0부터)> [패스 수=10] [단계=50] [배율=2]
-//       큰 패스 N개를 단계마다 이동하며 `updatePathDraft` 시간(스트림 다시 쓰기 + 변경 영역 렌더)을 잰다.
-//       pdf-ops 패스 쓰기가 구현돼 있으면 실제 경로, "M4 미구현" 이면 대체 측정(쪽 콘텐츠 스트림 전체를 같은
-//       바이트로 다시 쓰기 + 같은 영역 렌더)이며 출력에 `mode` 로 구분한다.
+//   node scripts/measure-m4.mjs max-paths <PDF folder> [document name prefix ...]
+//       Counts paths per page to find the corpus page with the most paths (to fix the V5 measurement page). With prefixes, only those documents.
+//   node scripts/measure-m4.mjs drag <PDF> <page (0-based)> [paths=10] [steps=50] [scale=2]
+//       Moves N large paths each step and measures `updatePathDraft` time (stream rewrite + changed-area render).
+//       If the pdf-ops path write is implemented this is the real path; with "M4 미구현" (not implemented) it is a substitute measurement (rewrite the whole page content stream with the same
+//       bytes + render the same area), distinguished in the output by `mode`.
 //
-// 코퍼스 PDF 는 커밋하지 않는다(fixtures/corpus/manifest.json). 읽기 전용으로만 연다.
+// Corpus PDFs are not committed (fixtures/corpus/manifest.json). They are opened read-only.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PdfSession } from '../dist/index.js';
@@ -71,7 +71,7 @@ async function drag(file, pageArg, countArg = '10', stepsArg = '50', scaleArg = 
   const session = new PdfSession();
   session.open(new Uint8Array(readFileSync(file)));
   const area = (p) => (p.bbox[2] - p.bbox[0]) * (p.bbox[3] - p.bbox[1]);
-  // 편집 가능 판정을 통과한 패스만(통합 뒤 실제 경로). 판정 시간도 잰다.
+  // Only paths that pass the editability classification (the real path after integration). Classification time is measured too.
   const te = performance.now();
   const editability = await session.getPageEditability(pageIndex);
   const editabilityMs = performance.now() - te;
@@ -160,8 +160,8 @@ async function drag(file, pageArg, countArg = '10', stepsArg = '50', scaleArg = 
 }
 
 /**
- * 대체 측정: 저널을 켠 작업 안에서 쪽 콘텐츠 스트림을 같은 바이트로 다시 쓰고(패스 하나의 바이트 교체와 같은 스트림 쓰기
- * 비용의 상한) 편집 전 ∪ 후 상자를 렌더한다. 패스 쓰기 구현 자체의 비용(연산 재작성, 지문)은 포함하지 않는다.
+ * Substitute measurement: inside a journal-on operation, rewrite the page content stream with the same bytes (an upper bound on the stream write cost of replacing the bytes of one path)
+ * and render the before ∪ after box. Does not include the cost of the path write implementation itself (operator rewriting, fingerprint).
  */
 const proxyParts = { write: [], render: [] };
 function proxyDrag(session, pageIndex, union, steps, dx, scale) {

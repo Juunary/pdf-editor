@@ -26,18 +26,18 @@ type DragMode = 'char' | 'word' | 'line';
 
 interface Drag {
   mode: DragMode;
-  /** char 모드의 고정 캐럿. */
+  /** Fixed caret in char mode. */
   anchor: number;
-  /** word·line 모드의 처음 선택 구간. */
+  /** Initial selection range in word and line modes. */
   base: [number, number];
 }
 
 /**
- * 캔버스 위 투명 텍스트 층. 글자마다 span 하나를 quad 위치에 두고(DOM 순서 = 읽기 순서) 글자색은 투명하다.
+ * Transparent text layer over the canvas. Puts one span per character at the quad position (DOM order = reading order) and the text color is transparent.
  *
- * 선택은 브라우저 기본 드래그 선택을 쓰지 않고 포인터 위치를 직접 판정해(가장 가까운 글자 기준 캐럿)
- * DOM Selection 에 반영한다. 줄 사이·줄 끝 바깥에서도 선택이 튀지 않고, 더블/트리플클릭은 단어/줄 선택이다.
- * 복사(copy 이벤트)는 선택된 글자를 읽기 순서 텍스트로 조립해 text/plain 으로 넣는다.
+ * Selection does not use the browser's default drag selection; it decides the pointer position directly (caret based on the nearest character)
+ * and reflects it in the DOM Selection. Selection does not jump between lines or outside line ends, and double/triple-click select a word/line.
+ * Copy (copy event) assembles the selected characters into reading-order text and puts it in as text/plain.
  */
 export function TextLayer({ model, order, layout }: Props) {
   const layerRef = useRef<HTMLDivElement>(null);
@@ -52,7 +52,7 @@ export function TextLayer({ model, order, layout }: Props) {
     [model, order, layout],
   );
 
-  // 레이아웃이 바뀌면 span 목록 캐시를 버리고, 남은 선택의 하이라이트를 새 배율로 다시 그린다.
+  // When the layout changes, discard the span list cache and redraw the highlight of the remaining selection at the new scale.
   useLayoutEffect(() => {
     spansRef.current = null;
     refreshSelection.current();
@@ -62,9 +62,9 @@ export function TextLayer({ model, order, layout }: Props) {
     const layer = layerRef.current;
     if (!layer) return;
     let drag: Drag | null = null;
-    /** Shift+클릭 확장용: 마지막 단일 클릭의 캐럿. */
+    /** For Shift+click extension: the caret of the last single click. */
     let lastAnchor: number | null = null;
-    /** 이 층이 마지막으로 만든 선택 구간(복사·하이라이트가 글자를 훑지 않게 하는 힌트). */
+    /** The selection range this layer made last (a hint so copy and highlight do not scan characters). */
     let lastInterval: [number, number] | null = null;
 
     const spans = (): HTMLElement[] => {
@@ -107,11 +107,11 @@ export function TextLayer({ model, order, layout }: Props) {
 
     const onDown = (e: MouseEvent) => {
       if (e.button !== 0) return;
-      // 브라우저 기본 선택 시작·드래그를 막고 직접 선택한다. 입력란 포커스는 해제한다.
+      // Block the browser's default selection start and drag, and select directly. Release focus from the input field.
       e.preventDefault();
-      // 기본 동작을 막으면 하위 프레임(MIME handler·임베디드 문맥)으로 포커스가 옮겨 가지 않아
-      // Ctrl+A·C·F 가 바깥 문서로 간다(2026-10-19 통합 e2e 실측). 층 요소에 직접 포커스를 주면 입력란
-      // 포커스도 해제되고 프레임 포커스도 따라온다(window.focus() 만으로는 embed 에서 간헐적으로 실패).
+      // If the default action is blocked, focus does not move to a subframe (MIME handler / embedded context), so
+      // Ctrl+A, C and F go to the outer document (2026-10-19 integration e2e measurement). Focusing the layer element directly also releases the input field
+      // focus and frame focus follows (window.focus() alone fails intermittently in embed).
       layer.focus({ preventScroll: true });
       if (!document.hasFocus()) window.focus();
       const hit = caretFromEvent(e);
@@ -133,7 +133,7 @@ export function TextLayer({ model, order, layout }: Props) {
       document.addEventListener('mouseup', onUp);
     };
 
-    /** 복사: 선택이 이 층 안이면 읽기 순서 텍스트로 대체한다. */
+    /** Copy: if the selection is inside this layer, replaces it with reading-order text. */
     const onCopy = (e: ClipboardEvent) => {
       const selection = document.getSelection();
       if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
@@ -146,7 +146,7 @@ export function TextLayer({ model, order, layout }: Props) {
       e.preventDefault();
     };
 
-    /** Ctrl+A: 이 층의 모든 글자를 선택한다(입력란 안에서는 기본 동작). */
+    /** Ctrl+A: selects all characters of this layer (default action inside an input field). */
     const onKeyDown = (e: KeyboardEvent) => {
       if (!isSelectAllShortcut(e) || isTypingTarget(document.activeElement)) return;
       const selection = document.getSelection();
@@ -155,7 +155,7 @@ export function TextLayer({ model, order, layout }: Props) {
       lastInterval = selectInterval(selection, spans(), 0, spans().length);
     };
 
-    /** DOM 선택(어떤 경로로 만들어졌든)을 읽어 하이라이트 상자를 갱신한다. */
+    /** Reads the DOM selection (however it was made) and updates the highlight boxes. */
     const updateHighlight = () => {
       const { model, order, layout } = latest.current;
       let rects: CssBox[] = [];

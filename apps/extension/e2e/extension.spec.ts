@@ -10,7 +10,7 @@ import { E2E_LOCALE } from './locale.js';
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
 
-/** dist/diag 를 http 로 제공한다(MIME handler 가로채기 대상). */
+/** Serves dist/diag over http (the MIME handler interception target). */
 function serveDiag(): Promise<{ server: Server; base: string }> {
   const server = createServer((req, res) => {
     const file = join(DIST, 'diag', basename(new URL(req.url ?? '/', 'http://x').pathname));
@@ -48,7 +48,7 @@ async function viewerFrames(page: Page, extensionId: string, count: number): Pro
   return page.frames().filter((f) => f.url().startsWith(prefix));
 }
 
-/** 렌더 완료·캔버스 잉크 확인 후, 저장 메뉴의 두 경로(downloads·다른 이름)를 눌러 결과를 모은다. */
+/** After render completion and the canvas ink check, clicks the save menu's two paths (downloads, save as) and collects the results. */
 async function exercise(page: Page, frame: Frame, label: string) {
   await expect(frame.locator('#status')).toHaveAttribute('data-state', 'rendered', {
     timeout: 20_000,
@@ -63,7 +63,7 @@ async function exercise(page: Page, frame: Frame, label: string) {
   });
   expect(ink.nonWhite, `${label}: 캔버스에 페이지가 그려져야 한다`).toBeGreaterThan(5000);
 
-  // downloads 폴백: 다운로드 이벤트와 바이트 수
+  // downloads fallback: download event and byte count
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     chooseSave(frame, 'save-downloads'),
@@ -71,7 +71,7 @@ async function exercise(page: Page, frame: Frame, label: string) {
   const downloaded = statSync(await download.path()).size;
   expect(downloaded).toBe(statSync(SAMPLE).size);
 
-  // FSA: 헤드리스 Chromium 은 피커를 즉시 취소한다. 결과(오류 종류)만 기록한다.
+  // FSA: headless Chromium cancels the picker immediately. Only the result (error kind) is recorded.
   await chooseSave(frame, 'save-as');
   await expect
     .poll(async () => (await diagOf(frame)).filter((e) => e.event === 'save').length)
@@ -90,7 +90,7 @@ async function exercise(page: Page, frame: Frame, label: string) {
   };
 }
 
-test('확장 로드: 서비스 워커, MIME handler 세 문맥 렌더, 저장 경로', async () => {
+test('extension load: service worker, MIME handler renders in three contexts, save paths', async () => {
   const testInfo = test.info();
   const { server, base } = await serveDiag();
   const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-editor-e2e-'));
@@ -109,26 +109,26 @@ test('확장 로드: 서비스 워커, MIME handler 세 문맥 렌더, 저장 �
       userAgent: navigator.userAgent,
       dynamicRules: (await chrome.declarativeNetRequest.getDynamicRules()).length,
     }));
-    // 번들 Chromium(150+)은 MIME handler 경로 → DNR 폴백 규칙이 없어야 한다.
+    // The bundled Chromium (150+) uses the MIME handler path -> there must be no DNR fallback rules.
     expect(swInfo.hasMimeHandlerApi).toBe(true);
     expect(swInfo.dynamicRules).toBe(0);
 
     const results = [];
 
-    // 1) 일반 뷰어 페이지(viewer.html?file=)
+    // 1) plain viewer page (viewer.html?file=)
     const p1 = await context.newPage();
     await p1.goto(`chrome-extension://${extensionId}/viewer.html?file=${base}/m0-sample.pdf`);
     await expect(p1.locator('body')).toHaveAttribute('data-context', 'url-param');
     results.push(await exercise(p1, p1.mainFrame(), 'viewer-page'));
 
-    // 2) 최상위 MIME handler: http PDF 로 직접 이동
+    // 2) top-level MIME handler: navigate directly to the http PDF
     const p2 = await context.newPage();
     await p2.goto(`${base}/m0-sample.pdf`);
     const [top] = await viewerFrames(p2, extensionId, 1);
     await expect(top!.locator('body')).toHaveAttribute('data-context', 'mime-handler-top');
     results.push(await exercise(p2, top!, 'mime-handler-top'));
 
-    // 3) 임베디드 MIME handler: <embed>, <iframe>, <object>
+    // 3) embedded MIME handler: <embed>, <iframe>, <object>
     const p3 = await context.newPage();
     await p3.goto(`${base}/embed-test.html`);
     const embedded = await viewerFrames(p3, extensionId, 3);

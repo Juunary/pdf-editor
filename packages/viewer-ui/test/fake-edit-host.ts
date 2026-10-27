@@ -1,9 +1,9 @@
 /**
- * 테스트용 가짜 편집 호스트(M3 계약 4절 RPC). 단위 테스트와 Playwright 하니스(apps/extension/e2e)가 함께 쓴다.
- * 하니스는 이 파일을 TypeScript `transpileModule` 로 JS 로 바꿔 페이지에 싣는다 — 타입 import 외에 다른 import 를 두지 않는다.
+ * Fake edit host for tests (RPCs of M3 contract section 4). Shared by unit tests and the Playwright harness (apps/extension/e2e).
+ * The harness converts this file to JS with TypeScript `transpileModule` and loads it into the page — keep no imports other than type imports.
  *
- * 리플로우는 글자 폭이 일정한 단순 배치다: 줄 나눔은 공백 뒤(없으면 글자 단위), `\n` 은 강제 줄바꿈,
- * 한글 음절은 폴백 폰트, U+2603(☃)은 글리프 없음으로 둔다.
+ * Reflow is a simple layout with constant character width: line breaks come after whitespace (per character if none), `\n` is a forced line break,
+ * Hangul syllables use the fallback font, and U+2603 (☃) is treated as having no glyph.
  */
 import type {
   BeginEditResult,
@@ -37,7 +37,7 @@ export interface FakeLayoutOptions {
   charWidth: number;
   ascent: number;
   descent: number;
-  /** 줄 끝 `\n` 을 줄의 [start, end) 에 포함할지. */
+  /** Whether the trailing `\n` of a line is included in the line's [start, end). */
   newlineInLine: boolean;
 }
 
@@ -51,7 +51,7 @@ export const DEFAULT_LAYOUT: FakeLayoutOptions = {
 const isHangul = (ch: string): boolean => /[가-힣]/.test(ch);
 const isMissing = (ch: string): boolean => ch === '☃';
 
-/** 글리프 하나(자소)의 텍스트 구간. */
+/** Text range of one glyph (grapheme). */
 function clusters(text: string): { offset: number; length: number; ch: string }[] {
   const seg = new Intl.Segmenter('und', { granularity: 'grapheme' });
   return [...seg.segment(text)].map((s) => ({
@@ -80,7 +80,7 @@ export function fakeReflow(
     let lineStart = 0;
     let lineGlyphs: PlacedGlyph[] = [];
     let x = area[0];
-    let lastBreak = -1; // lineGlyphs 안 공백 뒤 위치(인덱스)
+    let lastBreak = -1; // position (index) after whitespace within lineGlyphs
     const flush = (end: number, hardBreak: boolean) => {
       const baseline = area[1] + format.firstBaselineOffset * s + lines.length * lineHeight;
       let x1 = area[0];
@@ -113,11 +113,11 @@ export function fakeReflow(
       }
       const missing = isMissing(c.ch);
       const advance = missing ? 0 : layout.charWidth * s;
-      // 공백은 줄 끝에 걸려도 줄을 나누지 않는다(줄 끝 공백은 폭 계산에서 뺀다, 계약 5.4).
+      // Whitespace does not break the line even if it hangs at the line end (trailing whitespace is excluded from the width calculation, contract 5.4).
       const hanging = /\s/.test(c.ch);
       if (!missing && !hanging && x + advance > area[0] + width + 1e-6 && lineGlyphs.length > 0) {
         if (lastBreak > 0 && lastBreak < lineGlyphs.length) {
-          // 마지막 공백 뒤에서 나눈다: 그 뒤 글리프는 다음 줄로 옮긴다.
+          // Break after the last whitespace: glyphs after it move to the next line.
           const moved = lineGlyphs.splice(lastBreak);
           const end = moved[0]!.offset;
           flush(end, false);
@@ -154,7 +154,7 @@ export function fakeReflow(
   };
   const built = build();
   const bottomOf = (l: PlacedLine[]) => (l.at(-1)?.baseline ?? 0) + (l.at(-1)?.descent ?? 0);
-  // 계약 5.4(2026-10-20): 넘치면 아래 변을 글 높이까지(상한까지) 자동으로 내린다.
+  // Contract 5.4 (2026-10-20): on overflow, the bottom edge is lowered automatically to the text height (up to the limit).
   if (bottomOf(built.lines) > area[3] + 0.5) {
     area = [area[0], area[1], area[2], Math.min(areaLimit[3], bottomOf(built.lines))];
   }
@@ -183,15 +183,15 @@ export interface FakeParagraph {
   editable?: boolean;
   reasons?: string[];
   limits?: ParagraphLimit[];
-  /** 태그 PDF 쪽(plan.insertion.mcidKept 가 null 이 아님). */
+  /** Tagged PDF page (plan.insertion.mcidKept is not null). */
   tagged?: boolean;
   charIndexOfOffset?: number[];
   warnings?: EditWarning[];
-  /** 표 셀이면 셀 위치(M4, bbox 는 셀 상자). */
+  /** Cell position if it is a table cell (M4, bbox is the cell box). */
   cell?: { table: number; row: number; col: number };
 }
 
-/** 가짜 호스트가 편집 결과를 반영해 돌려주는 벡터 패스(PageModel.paths 의 한 PathInfo + 판정). */
+/** Vector path the fake host returns with edit results applied (one PathInfo of PageModel.paths + classification). */
 export interface FakePath {
   info: PathInfo;
   editable?: boolean;
@@ -222,7 +222,7 @@ interface Draft {
   input: DraftInput | null;
 }
 
-/** 호출 기록·실패 주입·응답 보류를 지원하는 가짜 편집 호스트. */
+/** Fake edit host that supports call recording, failure injection and response holding. */
 export class FakeEditHost implements EditHostApi, PathHostApi {
   readonly calls: { method: string; args: unknown[] }[] = [];
   readonly inputs: DraftInput[] = [];
@@ -236,7 +236,7 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
   private undone: string[] = [];
   private readonly committedOps = new Map<string, EditOp>();
   private failures = new Map<Method, Error[]>();
-  /** 패스 상태(편집 반영). 초안 중 변경은 커밋 때 반영한다. */
+  /** Path state (edits applied). Changes during a draft are applied at commit. */
   private paths: (FakePath & { deleted?: boolean })[];
   private pathDrafts = new Map<string, { seqs: number[]; edit: PathEdit | null }>();
   readonly pathEdits: PathEdit[] = [];
@@ -248,12 +248,12 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
     this.paths = (options.paths ?? []).map((p) => ({ ...p, info: structuredClone(p.info) }));
   }
 
-  /** 편집이 반영된 PathInfo 목록(PageModel.paths 용, 삭제된 패스 제외). */
+  /** List of PathInfo with edits applied (for PageModel.paths, excluding deleted paths). */
   pathInfos(): PathInfo[] {
     return this.paths.filter((p) => !p.deleted).map((p) => p.info);
   }
 
-  /** 문서가 바깥에서 바뀐 것처럼 같은 paintSeq 패스의 상자를 바꾼다(지문이 달라짐). revision 도 올린다. */
+  /** Changes the box of the path with the same paintSeq as if the document were changed from outside (the fingerprint changes). Also bumps revision. */
   shiftPath(paintSeq: number, dx: number): void {
     const p = this.paths.find((x) => x.info.paintSeq === paintSeq)!;
     const b = p.info.bbox;
@@ -261,12 +261,12 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
     this.revision++;
   }
 
-  /** 다음 `method` 호출을 이 오류로 실패시킨다. */
+  /** Fails the next `method` call with this error. */
   failNext(method: Method, error: Error): void {
     this.failures.set(method, [...(this.failures.get(method) ?? []), error]);
   }
 
-  /** 다음 `method` 호출을 release() 때까지 보류한다. */
+  /** Holds the next `method` call until release(). */
   hold(method: Method): () => void {
     let release!: () => void;
     const promise = new Promise<void>((r) => (release = r));
@@ -274,7 +274,7 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
     return release;
   }
 
-  /** Worker 가 새로 만들어진 것처럼 초안을 잃고 revision 이 바뀐다(복구 시뮬레이션). */
+  /** Loses the draft and changes revision as if the Worker were newly created (recovery simulation). */
   simulateRecovery(): void {
     this.drafts.clear();
     this.pathDrafts.clear();
@@ -398,7 +398,7 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
     const width = Math.round((clip[2] - clip[0]) * scale);
     const height = Math.round((clip[3] - clip[1]) * scale);
     const rgba = new Uint8ClampedArray(width * height * 4).fill(255);
-    // 글리프 상자를 어둡게 칠한다(합성 위치 확인용).
+    // Paint the glyph boxes dark (for checking synthetic positions).
     for (const g of reflow.glyphs) {
       if (g.advance <= 0) continue;
       const line = reflow.lines.find((l) => g.offset >= l.start && g.offset < l.end);
@@ -504,7 +504,7 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
     return this.history([]);
   }
 
-  // ── M4 벡터 패스 ─────────────────────────────────────────────────────
+  // ── M4 vector paths ─────────────────────────────────────────────────────
 
   private pathBySeq(seq: number) {
     const p = this.paths.find((x) => x.info.paintSeq === seq && !x.deleted);
@@ -583,7 +583,7 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
       const m: Matrix | null = edit.transform;
       return m ? [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]] : p;
     };
-    // 가짜 호스트는 ctm 이 항등인 패스만 다룬다(좌표 = 페이지 공간).
+    // The fake host handles only paths whose ctm is the identity (coordinates = page space).
     next.segments =
       next.segments?.map((s) => {
         if (s.type === 'M' || s.type === 'L') return { ...s, p: map(s.p) };
@@ -660,7 +660,7 @@ export class FakeEditHost implements EditHostApi, PathHostApi {
     const width = Math.round((clip[2] - clip[0]) * renderScale);
     const height = Math.round((clip[3] - clip[1]) * renderScale);
     const rgba = new Uint8ClampedArray(width * height * 4).fill(255);
-    // 편집 후 상자를 파랗게 칠한다(합성 위치 확인용).
+    // Paint the box blue after the edit (for checking synthetic positions).
     if (!edit.delete) {
       for (
         let y = Math.round((after[1] - clip[1]) * renderScale);

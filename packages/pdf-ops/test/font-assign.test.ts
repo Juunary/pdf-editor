@@ -5,7 +5,7 @@ import { FontState } from '../src/font-assign.js';
 import { findParagraph, loadModules, pageContext, reopen } from './helpers/edit-context.js';
 import { fallbackFor, loadFallback } from './helpers/edit-driver.js';
 
-/** R-L3(docs/m4-contract.md 1.2): FontState·OriginalFont 의 WASM 자원 해제. */
+/** R-L3 (docs/m4-contract.md 1.2): release of WASM resources of FontState and OriginalFont. */
 beforeAll(async () => {
   await loadModules();
 });
@@ -14,7 +14,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Noto Sans KR 을 Type0 으로 넣은 문서(임베디드라 원본 판정에 렌더 탐침을 쓴다). */
+/** A document with Noto Sans KR embedded as Type0 (embedded, so original classification uses a render probe). */
 function notoDoc(text: string): mupdf.PDFDocument {
   const font = new mupdf.Font('NotoSansKR', loadFallback());
   const src = new mupdf.PDFDocument();
@@ -31,15 +31,15 @@ function notoDoc(text: string): mupdf.PDFDocument {
 }
 
 describe('R-L3 FontState.dispose', () => {
-  it('탐침 임시 문서와 폴백 mupdf.Font 를 해제하고, 해제 뒤 배정은 예외', () => {
+  it('releases the probe temporary document and the fallback mupdf.Font; assignment after release throws', () => {
     const doc = notoDoc('가나다 문단');
     const ctx = pageContext(doc, 0);
     const p = findParagraph(ctx, '가나다');
     const style = resolveStyle(ctx, p.chars[0]!)!;
     const state = new FontState(doc, fallbackFor(doc));
     const orig = state.original(style, ctx.map);
-    expect(orig.encode('가')).not.toBeNull(); // 탐침 임시 문서를 만든다
-    expect(state.fallbackHas('한')).toBe(true); // 폴백 mupdf.Font 를 만든다
+    expect(orig.encode('가')).not.toBeNull(); // creates the probe temporary document
+    expect(state.fallbackHas('한')).toBe(true); // creates the fallback mupdf.Font
 
     const docDestroy = vi.spyOn(mupdf.PDFDocument.prototype, 'destroy');
     const fontDestroy = vi.spyOn(mupdf.Font.prototype, 'destroy');
@@ -48,16 +48,16 @@ describe('R-L3 FontState.dispose', () => {
     expect(fontDestroy).toHaveBeenCalledTimes(1);
     expect(state.originalByKey(orig.key)).toBeUndefined();
 
-    state.dispose(); // 두 번째는 아무것도 하지 않는다
+    state.dispose(); // the second call does nothing
     expect(docDestroy).toHaveBeenCalledTimes(1);
     expect(fontDestroy).toHaveBeenCalledTimes(1);
     expect(() => state.original(style, ctx.map)).toThrow('해제');
     expect(() => state.fallbackFace()).toThrow('해제');
-    // 원본 문서는 그대로 쓸 수 있다.
+    // The original document remains usable.
     expect(doc.countPages()).toBe(1);
   });
 
-  it('폴백·탐침을 만들지 않았으면 해제할 것이 없다', () => {
+  it('nothing to release if no fallback or probe was created', () => {
     const doc = notoDoc('가나다');
     const state = new FontState(doc, fallbackFor(doc));
     const docDestroy = vi.spyOn(mupdf.PDFDocument.prototype, 'destroy');
@@ -69,7 +69,7 @@ describe('R-L3 FontState.dispose', () => {
 });
 
 describe('R-L3 OriginalFont.destroy', () => {
-  it('여러 번 불러도 되고, 해제 뒤 새 글자는 탐침을 다시 만들어 판정한다', () => {
+  it('can be called multiple times; after release, a new character recreates the probe for classification', () => {
     const doc = notoDoc('가나다 문단');
     const ctx = pageContext(doc, 0);
     const style = resolveStyle(ctx, findParagraph(ctx, '가나다').chars[0]!)!;

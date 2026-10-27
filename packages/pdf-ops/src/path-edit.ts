@@ -1,21 +1,21 @@
 /**
- * 벡터 패스 편집(M4, docs/m4-contract.md 4.2·4.3·D2·D3·D4).
+ * Vector path editing (M4, docs/m4-contract.md 4.2, 4.3, D2, D3, D4).
  *
- * 편집 단위는 칠하기 연산 하나(`S s f F f* B B* b b*`)다. 구성 연산(`m l c v y re h`)은 인터프리터가 채운
- * `SourceOp.pathOps` 로 찾는다. 쓰기는 스트림마다 원본 바이트 기준 교체 목록 하나로 한다(M3 D2 와 같음).
+ * The edit unit is one painting operation (`S s f F f* B B* b b*`). The construction operations (`m l c v y re h`) are found through
+ * `SourceOp.pathOps`, which the interpreter fills. Writing is a single replacement list per stream based on the original bytes (same as M3 D2).
  *
- * - 기하: 구성 연산 숫자 피연산자를 콘텐츠 공간 좌표로 다시 쓴다(`cm` 을 덧씌우지 않음). `re` 는 결과가 축 정렬
- *   직사각형이면 `re` 그대로, 아니면 `m l l l h`.
- * - 속성: 첫 구성 연산 앞에 `q` + 색·`w`, 칠하기 연산 뒤에 `Q`. 구성 ~ 칠하기 사이에는 넣지 않는다.
- * - 삭제: 구성 연산 ~ 칠하기 연산을 공백 하나로 바꾼다(리뷰 L1: 짝 없는 `n` 을 남기지 않아 엄격한 프리플라이트에도 깨끗하다).
- *   칠하기 연산이 없어지므로 뒤 칠하기의 paintSeq 는 하나씩 당겨진다(계약 패스 삭제 항목). 대상 확인은 지문(D4)이 맡고, 지문은
- *   바뀐 스트림에서 다시 계산하므로 삭제 뒤 판정(planPathEdit)은 새 순서를 쓴다. 재적용은 로그 순서대로 같은 규칙을 따른다.
- * - Form 안 패스는 사용 경로(상위 체인 포함)를 복제해 이 사용 위치만 바꾼다. 같은 체인의 여러 패스는 복제본 하나를
- *   같이 쓴다. 공유 /Contents 는 사본.
+ * - Geometry: rewrites the numeric operands of construction operations as content-space coordinates (no `cm` is layered on). `re` stays `re` if the result is an axis-aligned
+ *   rectangle, otherwise `m l l l h`.
+ * - Attributes: `q` + color and `w` before the first construction operation, `Q` after the painting operation. Nothing is inserted between construction and painting.
+ * - Delete: replaces the construction operations through the painting operation with a single space (review L1: no unpaired `n` is left, so it is clean even for a strict preflight).
+ *   Since the painting operation disappears, the paintSeq of later painting operations shifts down by one (contract path-deletion item). Target confirmation is the fingerprint's job (D4), and the fingerprint is
+ *   recomputed from the changed stream, so the post-delete classification (planPathEdit) uses the new order. Reapply follows the same rule in log order.
+ * - A path inside a Form duplicates the usage path (including the parent chain) and changes only this usage location. Several paths on the same chain share
+ *   one copy. A shared /Contents is copied.
  *
- * 점 번호(PathEdit.points)는 PageModel PathInfo.segments 순서다. 구성 연산과의 대응: `m`·`l` 점 1개, `c` 3개,
- * `v` 3개(첫 점은 현재점, 피연산자 없음), `y` 3개(셋째 = 둘째 피연산자), `re` 4개(MuPDF fz_rectto 순서:
- * (x,y)·(x+w,y)·(x+w,y+h)·(x,y+h) + 닫기), `h` 0개. 모델에 세그먼트가 있으면 이 대응을 세그먼트와 대조한다.
+ * Point numbers (PathEdit.points) follow the order of PageModel PathInfo.segments. Correspondence with construction operations: `m` and `l` 1 point, `c` 3,
+ * `v` 3 (the first point is the current point, no operand), `y` 3 (third = second operand), `re` 4 (MuPDF fz_rectto order:
+ * (x,y), (x+w,y), (x+w,y+h), (x,y+h) + close), `h` 0. If the model has segments, this correspondence is checked against the segments.
  */
 import type * as mupdf from 'mupdf';
 import type {
@@ -64,15 +64,15 @@ import {
 } from './text-remove.js';
 import { writeStreamBytes } from './mupdf-util.js';
 
-/** 패스 편집이 바꾸는 객체 번호 목록을 담은 준비 결과. */
+/** Preparation result holding the list of object numbers a path edit changes. */
 export interface PreparedPathEdit {
   editId: string;
   target: PathTarget;
-  /** 이 편집이 바꾸는 스트림 객체 번호. */
+  /** Stream object numbers this edit changes. */
   changedObjects: number[];
 }
 
-// ---------------------------------------------------------------- 판정(4.2)
+// ---------------------------------------------------------------- Classification (4.2)
 
 const PAINT_TARGETS: ReadonlySet<string> = new Set([
   'S',
@@ -116,20 +116,20 @@ const PATH_DETAIL: Record<PathLimitReason, string> = {
   'singular-ctm': '칠하기 시점 CTM 이 특이 행렬',
 };
 
-/** 구성 연산 하나. nums 는 준비(preparePathEdit) 때 읽는다(판정은 문법만 검사, 쪽 판정 시간 4.2). */
+/** One construction operation. nums is read at preparation (preparePathEdit) (classification checks only the grammar, page classification time 4.2). */
 interface Construct {
   op: SourceOp;
   nums: number[];
 }
 
-/** 칠하기 연산 하나의 판정. */
+/** Classification of one painting operation. */
 interface PathItem {
   op: SourceOp;
-  /** 구성 연산(실행 순서). */
+  /** Construction operations (execution order). */
   constructs: SourceOp[];
-  /** PageModel.paths 인덱스(이 연산에 연결된 것 전부). */
+  /** PageModel.paths indices (all linked to this operation). */
   infos: number[];
-  /** 대표 PathInfo(첫 fill·stroke, 없으면 첫 항목). */
+  /** Representative PathInfo (first fill/stroke, otherwise the first entry). */
   pathIndex: number;
   paintSeq: number;
   bbox: Rect;
@@ -157,8 +157,8 @@ function addLimit(list: PathLimit[], reason: PathLimitReason | EditLimitReason, 
 }
 
 /**
- * PDF 숫자 토큰([+-]? 숫자 [. 숫자], 또는 [+-]? . 숫자). 아니면 NaN. 정수는 직접, 소수는 Number(십진 표기).
- * values 가 false 면 문법만 보고 0 을 돌려준다.
+ * PDF number token ([+-]? digits [. digits], or [+-]? . digits). NaN otherwise. Integers directly, decimals via Number (decimal notation).
+ * If values is false, only checks the grammar and returns 0.
  */
 function readNumber(b: Uint8Array, s: number, e: number, values: boolean): number {
   let i = s;
@@ -186,8 +186,8 @@ const isSpace = (c: number) =>
   c === 0x20 || c === 0x0a || c === 0x0d || c === 0x09 || c === 0x0c || c === 0x00;
 
 /**
- * 구성 연산의 숫자 피연산자. 인터프리터가 채운 operandRanges(숫자·이름 토큰)로 바로 읽는다: 토큰 수 = 피연산자 수,
- * 첫 토큰이 연산 시작, 토큰 사이·마지막 토큰과 연산자 사이는 공백뿐, 모두 숫자. operandRanges 가 없으면 토큰 분리.
+ * Numeric operands of a construction operation. Read directly from operandRanges (number and name tokens) filled by the interpreter: token count = operand count,
+ * the first token is the operation start, only whitespace between tokens and between the last token and the operator, all numbers. Tokenizes if operandRanges is absent.
  */
 function parseConstruct(op: SourceOp, stream: Uint8Array, values = true): number[] | null {
   const arity = CONSTRUCT_ARITY[op.op];
@@ -219,13 +219,13 @@ function parseConstruct(op: SourceOp, stream: Uint8Array, values = true): number
 const sameStream = (a: ContentStreamRef, b: ContentStreamRef) =>
   a.objectNumber === b.objectNumber && a.contentsIndex === b.contentsIndex;
 
-/** 쪽의 칠하기 연산 판정(SourceMap 별로 한 번). */
+/** Classification of the page's painting operations (once per SourceMap). */
 function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
   const cached = analyses.get(ctx.map);
   if (cached) return cached;
   const ops = ctx.map.ops;
   const streams = new StreamCache(ctx.doc);
-  // 칠하기 연산 → 연결된 PathInfo(PageModel.paths 는 paintSeq 순이라 연산별로 모인다).
+  // Painting operation → linked PathInfo (PageModel.paths is in paintSeq order, so they gather per operation).
   const infosOf = new Map<number, number[]>();
   const pathOp = ctx.linkage.pathOp;
   for (let i = 0; i < pathOp.length; i++) {
@@ -235,7 +235,7 @@ function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
     if (l) l.push(i);
     else infosOf.set(opId, [i]);
   }
-  // BT 안 여부. 같은 콘텐츠 실행의 연산은 formPath 배열을 공유하므로 배열 자체를 키로 쓴다.
+  // Whether inside BT. Operations of the same content execution share the formPath array, so the array itself is used as the key.
   const inText = new Uint8Array(ops.length);
   const textState = new Map<readonly FormStep[], boolean>();
   for (const o of ops) {
@@ -243,8 +243,8 @@ function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
     else if (o.op === 'ET') textState.set(o.formPath, false);
     else if (o.kind === 'path-paint' && textState.get(o.formPath) === true) inText[o.id] = 1;
   }
-  // 효력 있는 SMask: 뒤의 gs 가 이긴다. extGStateOps 배열은 실행 지점마다 하나라 마지막 gs id 로 결과를 기억한다
-  // (gs 가 많은 쪽에서 칠하기마다 배열 전체를 다시 훑지 않게).
+  // Effective SMask: the later gs wins. The extGStateOps array is one per execution point, so the result is remembered by the last gs id
+  // (so that a page with many gs does not rescan the whole array for every painting operation).
   const smaskKey = new Map<number, boolean | undefined>();
   const smaskAt = new Map<number, boolean>();
   const keyValue = (id: number) => {
@@ -297,7 +297,7 @@ function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
   let lastNum = -1;
   let lastBytes: Uint8Array = new Uint8Array(0);
   const paths = ctx.model.paths;
-  // PathInfo 가 연결된 칠하기 연산만(연산 id 순 = paintSeq 순).
+  // Only painting operations with a linked PathInfo (operation id order = paintSeq order).
   for (const [opId, infos] of infosOf) {
     const op = ops[opId]!;
     if (op.kind !== 'path-paint' || !PAINT_TARGETS.has(op.op) || !op.paintSeq?.length) continue;
@@ -364,7 +364,7 @@ function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
       for (const id of state.strokeColorOps) patterned ||= isPattern(id);
     }
     if (patterned) addLimit(limits, 'pattern-or-shading');
-    // 패턴 칠하기도 MuPDF 는 clip + 내용으로 보내므로 클립 PathInfo 는 패턴이 아닐 때만 클립 사유다.
+    // MuPDF also sends pattern painting as clip + content, so a clip PathInfo is a clip reason only when it is not a pattern.
     else if (clipInfo) addLimit(limits, 'clip-path');
     if (inText[op.id]) addLimit(limits, 'inside-text-object');
     if (state && hasSMask(state.extGStateOps)) addLimit(limits, 'soft-mask');
@@ -393,7 +393,7 @@ function analyzePage(ctx: ParagraphEditContext): PageAnalysis {
   return result;
 }
 
-/** 53비트 해시(cyrb53) 16진. */
+/** 53-bit hash (cyrb53) in hex. */
 function hashBytes(parts: readonly Uint8Array[]): string {
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
@@ -421,7 +421,7 @@ function fingerprintOf(item: PathItem, streams: StreamCache): PathFingerprint {
   };
 }
 
-/** 지문 비교(상자는 반올림 경계 흔들림을 2e-3 까지 허용). */
+/** Fingerprint comparison (boxes tolerate rounding-boundary jitter up to 2e-3). */
 export function sameFingerprint(a: PathFingerprint, b: PathFingerprint): boolean {
   return (
     a.paintOp === b.paintOp &&
@@ -431,7 +431,7 @@ export function sameFingerprint(a: PathFingerprint, b: PathFingerprint): boolean
   );
 }
 
-/** 쪽의 모든 패스 판정(PageModel.paths 순서). */
+/** Classification of all paths of the page (PageModel.paths order). */
 export function planPathEditability(ctx: ParagraphEditContext): PathEditability[] {
   return analyzePage(ctx)
     .items.map((it) => ({
@@ -444,7 +444,7 @@ export function planPathEditability(ctx: ParagraphEditContext): PathEditability[
     .sort((a, b) => a.pathIndex - b.pathIndex);
 }
 
-/** paintSeq 들이 가리키는 판정 항목(중복 제거, 입력 순서). 없는 번호는 예외. */
+/** Classification entries that the paintSeqs point to (duplicates removed, input order). Throws for a number that does not exist. */
 function itemsFor(ctx: ParagraphEditContext, paintSeqs: readonly number[]): PathItem[] {
   const a = analyzePage(ctx);
   const out: PathItem[] = [];
@@ -457,7 +457,7 @@ function itemsFor(ctx: ParagraphEditContext, paintSeqs: readonly number[]): Path
   return out;
 }
 
-/** Form 객체 번호를 이 쪽에서 Do 로 쓰는 횟수. */
+/** Number of times this page uses a Form object number as Do. */
 function formUses(ctx: ParagraphEditContext, num: number): number {
   let n = 0;
   const seen = new Set<string>();
@@ -516,7 +516,7 @@ function planWarnings(ctx: ParagraphEditContext, items: readonly PathItem[]): Ed
   return warnings;
 }
 
-/** step 의 Do 피연산자가 이전 편집이 만든 복제본 이름(/PEFn)이면 그 이름, 아니면 null. */
+/** The name if the step's Do operand is a copy name made by a previous edit (/PEFn), otherwise null. */
 function clonedName(streams: StreamCache, step: FormStep): string | null {
   const bytes = streams.get(step.stream.objectNumber);
   const text = latin1String(bytes.subarray(step.nameRange[0], step.nameRange[1]));
@@ -525,9 +525,9 @@ function clonedName(streams: StreamCache, step: FormStep): string | null {
 }
 
 /**
- * 다른 쪽 Resources /XObject 에서 같은 Form 을 가리키는 쪽 수(+ 이 쪽).
- * 캐시는 판정 컨텍스트(ctx)에 묶는다. ctx 는 호출마다(= revision 마다) 새로 만들어지므로 문서가 바뀐 뒤의 옛 값이
- * 남지 않는다(M4 리뷰 L5).
+ * Number of pages whose Resources /XObject point to the same Form (+ this page).
+ * The cache is tied to the classification context (ctx). ctx is created anew on every call (= every revision), so a stale value from before the document changed
+ * does not remain (M4 review L5).
  */
 const pageUseCache = new WeakMap<ParagraphEditContext, Map<number, number>>();
 function pageUses(ctx: ParagraphEditContext, step: FormStep): number {
@@ -550,7 +550,7 @@ function pageUses(ctx: ParagraphEditContext, step: FormStep): number {
         if (v.isIndirect() && v.asIndirect() === step.objectNumber) used = true;
       });
     }
-    // 래퍼는 쓰는 즉시 해제한다(쪽 수만큼 쌓이지 않게).
+    // The wrapper is released as soon as it is used (so they do not pile up per page count).
     if (dict !== res) dict.destroy();
     res.destroy();
     page.destroy();
@@ -565,10 +565,10 @@ function paintColorOf(ctx: ParagraphEditContext, it: PathItem, op: 'fill' | 'str
   return i === undefined ? null : ctx.model.paths[i]!;
 }
 
-/** 경로 공간 선 두께 → 페이지 공간 pt(√|det|, MuPDF fz_matrix_expansion). */
+/** Path-space line width → page-space pt (√|det|, MuPDF fz_matrix_expansion). */
 const expansion = (m: Matrix) => Math.sqrt(Math.abs(determinant(m)));
 
-/** 선택한 패스의 편집 계획. revision 은 호출자가 채운다. */
+/** Edit plan of the selected path. revision is filled in by the caller. */
 export function planPathEdit(
   ctx: ParagraphEditContext,
   paintSeqs: number[],
@@ -606,15 +606,15 @@ export function planPathEdit(
   };
 }
 
-// ---------------------------------------------------------------- 점 대응표(D4)
+// ---------------------------------------------------------------- Point correspondence table (D4)
 
-/** 점 하나의 출처: 구성 연산 번호와 그 안 점 번호. implicit = v 의 첫 점(현재점). */
+/** Origin of a point: construction operation number and point number within it. implicit = the first point of v (current point). */
 export interface PointSlot {
   construct: number;
   k: number;
 }
 
-/** 구성 연산 → 점 목록(콘텐츠 공간)과 MuPDF 세그먼트(대조용). */
+/** Construction operation → point list (content space) and MuPDF segments (for cross-checking). */
 export function constructPoints(constructs: readonly { op: string; nums: readonly number[] }[]): {
   points: Point[];
   slots: PointSlot[];
@@ -699,7 +699,7 @@ export function constructPoints(constructs: readonly { op: string; nums: readonl
   return { points, slots, segments };
 }
 
-/** 세그먼트 목록의 점(PathEdit.points 번호 순서). */
+/** Points of a segment list (in PathEdit.points number order). */
 function segmentPoints(segs: readonly PathSegment[]): Point[] {
   const out: Point[] = [];
   for (const s of segs) {
@@ -713,7 +713,7 @@ const near = (a: Point, b: Point, tol = 1e-6) =>
   Math.abs(a[0] - b[0]) <= tol * Math.max(1, Math.abs(a[0])) &&
   Math.abs(a[1] - b[1]) <= tol * Math.max(1, Math.abs(a[1]));
 
-/** 점 목록으로 구성 연산 텍스트를 다시 만든다. changed 가 false 인 연산은 null(원 바이트 유지). */
+/** Rebuilds the construction operation text from the point list. null for an operation whose changed is false (original bytes kept). */
 function rebuildConstructs(
   constructs: readonly Construct[],
   slots: readonly PointSlot[],
@@ -745,7 +745,7 @@ function rebuildConstructs(
         cur = np[2]!;
         break;
       case 'v': {
-        // 첫 제어점이 (새) 현재점과 같으면 v 그대로, 아니면 c.
+        // If the first control point equals the (new) current point, keep v; otherwise c.
         const implicit = near(np[0]!, before, 1e-12);
         const prevMoved = !near(before, oldPts[idx[0]!]!, 0);
         if (changed || prevMoved) {
@@ -784,16 +784,16 @@ function rebuildConstructs(
   });
 }
 
-// ---------------------------------------------------------------- 쓰기(4.3·D3·D4)
+// ---------------------------------------------------------------- Writing (4.3, D3, D4)
 
-/** 쓰기 대상 스트림(쪽 /Contents 칸 또는 Form 복제본). */
+/** Stream to write (page /Contents slot or Form copy). */
 interface Holder {
   key: string;
   orig: Uint8Array;
   write(bytes: Uint8Array): void;
-  /** Do 이름 교체 등 편집과 무관한 고정 교체. */
+  /** Fixed replacements unrelated to editing, such as Do name replacement. */
   fixed: Replacement[];
-  /** Form 복제본의 Resources(자식 복제본 등록용). 쪽은 null(쪽 Resources 를 쓴다). */
+  /** Resources of the Form copy (for registering child copies). null for the page (the page Resources are used). */
   res: mupdf.PDFObject | null;
 }
 
@@ -803,17 +803,17 @@ interface PreparedItem {
   paint: SourceOp;
   toPage: Matrix;
   bbox: Rect;
-  /** 구성 점의 페이지 공간 상자(선 폭 제외). 칠한 상자와의 차이가 선 폭 여백이다. */
+  /** Page-space box of the construction points (excluding line width). The difference from the painted box is the line-width margin. */
   pointsBox: Rect;
   pathIndex: number;
-  /** 이 칠하기 연산에 연결된 PageModel.paths 인덱스 전부. */
+  /** All PageModel.paths indices linked to this painting operation. */
   infos: number[];
   fill: PaintColor | null;
   stroke: PaintColor | null;
-  /** 경로 공간 선 두께(stroke 계열만). */
+  /** Path-space line width (stroke kinds only). */
   lineWidth: number | null;
   clipRect: Rect | null;
-  /** 모델 세그먼트(있으면 점 번호 대조용). */
+  /** Model segments (for point number cross-checking, if present). */
   segments: PathSegment[] | null;
 }
 
@@ -821,14 +821,14 @@ interface PreparedState {
   editId: string;
   holders: Map<string, Holder>;
   items: PreparedItem[];
-  /** 괘선 전략 표가 격자로 쓴 PageModel.paths 인덱스(LayoutTable.paths). */
+  /** PageModel.paths indices the ruled-strategy table used as its grid (LayoutTable.paths). */
   rulePaths: Set<number>;
   warnings: EditWarning[];
 }
 
 const prepared = new WeakMap<mupdf.PDFDocument, Map<string, PreparedState>>();
 
-/** 패스 초안 준비 상태를 버린다(R-L3). editId 가 없으면 이 문서의 상태 전부. */
+/** Discards the path draft preparation state (R-L3). Without editId, all state of this document. */
 export function releasePathEdit(doc: mupdf.PDFDocument, editId?: string): void {
   if (editId === undefined) prepared.delete(doc);
   else prepared.get(doc)?.delete(editId);
@@ -840,7 +840,7 @@ function stateOf(doc: mupdf.PDFDocument, editId: string): PreparedState {
   return s;
 }
 
-/** 편집 준비(필요하면 Form 복제 등). 저널 작업 안에서 호출한다. */
+/** Edit preparation (Form duplication etc. if needed). Called inside a journal operation. */
 export function preparePathEdit(
   ctx: ParagraphEditContext,
   plan: Omit<PathEditPlan, 'revision'>,
@@ -904,7 +904,7 @@ export function preparePathEdit(
   };
   const holderOfStream = (s: ContentStreamRef, path: readonly FormStep[]): Holder =>
     s.contentsIndex !== null ? slotHolder(s) : formHolder(path);
-  /** 사용 경로 path(길이 ≥ 1)의 가장 안쪽 Form 복제본. 같은 경로 접두는 복제본 하나. */
+  /** Innermost Form copy of usage path path (length ≥ 1). A shared path prefix is one copy. */
   const formHolder = (path: readonly FormStep[]): Holder => {
     const key = `f:${formKey(path)}`;
     let h = holders.get(key);
@@ -923,14 +923,14 @@ export function preparePathEdit(
     });
     const clone = doc.addStream('', cd);
     const parentRes = parent.res ?? ownPageRes();
-    // /Resources 가 없는 Form 은 부르는 쪽(상위 Form, 없으면 쪽)의 Resources 로 그린다(명세 7.8.3 의 폐기된 상속,
-    // MuPDF·pdf.js·Poppler 모두 따른다). 복제본에 빈 사전을 두면 폰트 등 이름을 찾지 못하므로 부르는 쪽의 유효
-    // Resources 사본을 복제본 소유로 둔다(아래 putUniqueResource 전에 복사해 자기 자신 항목은 들어가지 않는다).
+    // A Form without /Resources is drawn with the Resources of its caller (the parent Form, or the page if none) (the deprecated inheritance of spec 7.8.3,
+    // followed by MuPDF, pdf.js and Poppler alike). An empty dictionary on the copy would leave names such as fonts unfound, so a copy of the caller's effective
+    // Resources is made and owned by the copy (copied before putUniqueResource below, so its own entry is not included).
     const res = ownResources(doc, clone, orig.get('Resources').isNull() ? parentRes : null);
     changed.add(clone.asIndirect());
     const xobjects = ownSubdict(doc, parentRes, 'XObject');
-    // 이미 복제본(PEFn)인 Form 을 다시 편집하는 것이면 쓰이지 않게 될 이전 이름을 지운다(M4 리뷰 L2). 이 쪽에서
-    // 이 Form 을 한 곳만 부르고 Resources 항목이 이 객체를 가리킬 때만 지운다(저장 garbage 가 객체를 걷는다).
+    // If this re-edits a Form that is already a copy (PEFn), erase the previous name that will no longer be used (M4 review L2). Erased only when this page
+    // calls this Form from a single place and a Resources entry points to this object (save garbage walks the objects).
     const oldName = clonedName(streams, step);
     if (oldName !== null && formUses(ctx, step.objectNumber) === 1) {
       const ref = xobjects.get(oldName);
@@ -983,8 +983,8 @@ export function preparePathEdit(
       segments: info?.segments ?? null,
     };
   });
-  // 복제본은 빈 스트림으로 만들었으므로 고정 교체만으로 한 번 쓴다. 고정 교체가 없는 쪽 /Contents 칸은 쓰지 않는다
-  // (첫 쓰기는 writePathEdit). 변경 없이 취소한 초안이 문서를 바꾸지 않아 redo 가 남는다(M4 리뷰 M1).
+  // The copy was made with an empty stream, so it is written once with only the fixed replacements. A page /Contents slot with no fixed replacement is not written
+  // (the first write is writePathEdit). An initial draft cancelled without changes does not change the document, so redo remains (M4 review M1).
   for (const h of holders.values()) {
     if (h.res !== null || h.fixed.length > 0) h.write(applyReplacements(h.orig, h.fixed));
   }
@@ -1010,13 +1010,13 @@ export function preparePathEdit(
   };
 }
 
-/** 8비트 반올림 비교(D3: 같으면 그 채널은 쓰지 않음). */
+/** 8-bit rounding comparison (D3: if equal, that channel is not written). */
 const same8 = (a: RGB, b: RGB | null) =>
   b !== null && a.every((v, i) => Math.round(v * 255) === Math.round(b[i]! * 255));
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
-/** 새 색 연산(D3). 원래 색공간 계열의 Device 공간, 표현할 수 없으면 DeviceRGB + 경고. */
+/** New color operation (D3). A Device space in the original color space family; DeviceRGB + a warning if it cannot be represented. */
 function colorOps(
   rgb: RGB,
   orig: PaintColor | null,
@@ -1040,7 +1040,7 @@ function colorOps(
   return { text: `${cmyk.map(fmt9).join(' ')} ${op('k')}`, spaceChanged: false };
 }
 
-/** 페이지 공간 아핀 transform 이 이동·확대축소만인지. */
+/** Whether the page-space affine transform is translation and scaling only. */
 function checkTransform(t: Matrix): void {
   if (!t.every(Number.isFinite)) throw new Error('변환 행렬이 유한하지 않음');
   if (Math.abs(t[1]) > 1e-9 || Math.abs(t[2]) > 1e-9) {
@@ -1101,7 +1101,7 @@ function itemReplacements(it: PreparedItem, edit: PathEdit, single: boolean): It
     reps.push({ start: op.range[0], end: op.range[1], text: t });
   });
 
-  // 속성.
+  // Attributes.
   const attrs: string[] = [];
   let spaceChanged = false;
   const fills = FILLS.has(paint.op);
@@ -1130,7 +1130,7 @@ function itemReplacements(it: PreparedItem, edit: PathEdit, single: boolean): It
     reps.push({ start: paint.range[1], end: paint.range[1], text: ' Q' });
   }
 
-  // 새 상자: 점 상자 + 원래 선 폭 여백(두께 비율 반영).
+  // New box: point box + original line-width margin (reflecting the thickness ratio).
   let box: Rect | null = null;
   for (const p of newPts) {
     const q = apply(it.toPage, p[0], p[1]);
@@ -1153,7 +1153,7 @@ function itemReplacements(it: PreparedItem, edit: PathEdit, single: boolean): It
 const inside = (a: Rect, b: Rect, tol = 0.5) =>
   a[0] >= b[0] - tol && a[1] >= b[1] - tol && a[2] <= b[2] + tol && a[3] <= b[3] + tol;
 
-/** 패스 편집을 스트림에 쓴다. 같은 초안에서 반복 호출할 수 있다. */
+/** Writes the path edit to the stream. Can be called repeatedly in the same draft. */
 export function writePathEdit(
   ctx: ParagraphEditContext,
   prepared: PreparedPathEdit,
@@ -1207,7 +1207,7 @@ export function writePathEdit(
     });
   }
   if (taggedRects.length > 0) {
-    // 새 경고 종류를 만들지 않고 기존 구조 경고를 쓴다(shared-types 는 M5 S5 범위 밖).
+    // Use an existing structure warning instead of creating a new warning kind (shared-types is outside the M5 S5 scope).
     warnings.push({
       kind: 'tagged-structure-unlinked',
       message:
@@ -1221,8 +1221,8 @@ export function writePathEdit(
 }
 
 /**
- * 마지막 writePathEdit 의 편집 경고(`color-space-changed`·`path-clipped`·`table-rule-removed`·삭제 시 태그 `tagged-structure-unlinked`). 계획 경고
- * (PathEditPlan.warnings)는 포함하지 않는다. writePathEdit 의 반환 시그니처가 고정이라 따로 둔다.
+ * Edit warnings of the last writePathEdit (`color-space-changed`, `path-clipped`, `table-rule-removed`, and on deletion the tag `tagged-structure-unlinked`). Plan warnings
+ * (PathEditPlan.warnings) are not included. They are kept separately because the return signature of writePathEdit is fixed.
  */
 export function pathEditWarnings(
   ctx: ParagraphEditContext,

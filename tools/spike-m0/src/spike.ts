@@ -1,4 +1,4 @@
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// core must be imported before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { openPdf } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import {
@@ -29,12 +29,12 @@ export const SEARCH_TERMS = ['한글', '폴백 폰트', '임베딩', '검색과 
 
 export interface SpikeInput {
   sampleBytes: Uint8Array;
-  /** 샘플에서 대상 문단만 뺀 페이지. redaction 결과와 픽셀 비교한다. */
+  /** Page from the sample with only the target paragraph removed. Compared pixel by pixel with the redaction result. */
   expectedBytes: Uint8Array;
   fontBytes: Uint8Array;
   fontName: string;
   renderScale?: number;
-  /** 단계 경계마다 호출(시간·메모리 측정용). */
+  /** Called at each stage boundary (for time·memory measurement). */
   onPhase?: (phase: string) => void;
 }
 
@@ -57,9 +57,9 @@ export interface SpikeResult {
     preexistingRedactAnnots: number;
     targetTextBefore: boolean;
     targetTextAfter: boolean;
-    /** redaction 결과 vs 기대 페이지(대상 문단 없음) 전체 픽셀 차이 */
+    /** Whole-page pixel difference between the redaction result and the expected page (no target paragraph) */
     diffVsExpectedPx: number;
-    /** redaction 전후, 대상 영역 밖 픽셀 차이 */
+    /** Pixel difference outside the target area before and after redaction */
     diffOutsideRectPx: number;
   };
   layout: {
@@ -96,7 +96,7 @@ const squash = (s: string) => s.replace(/\s+/g, '');
 const pageText = (page: mupdf.Page) => page.toStructuredText('preserve-whitespace').asText();
 const hasText = (text: string, needle: string) => squash(text).includes(squash(needle));
 
-/** MuPDF 경고·오류를 수집한다(서브셋 실패 등은 예외 없이 로그로만 나온다). */
+/** Collects MuPDF warnings and errors (subset failures etc. appear only in the log, without exceptions). */
 export function captureMupdfLog<T>(fn: (messages: string[]) => T): T {
   const messages: string[] = [];
   mupdf.setLog({
@@ -110,7 +110,7 @@ export function captureMupdfLog<T>(fn: (messages: string[]) => T): T {
   }
 }
 
-/** fz 페이지 좌표 사각형 → PDF 사용자 공간 사각형(y 위 방향). */
+/** fz page coordinate rectangle → PDF user space rectangle (y up). */
 function toPdfRect(page: mupdf.PDFPage, rect: Rect): Rect {
   const inv = mupdf.Matrix.invert(page.getTransform());
   const r = mupdf.Rect.transform(rect, inv);
@@ -148,14 +148,14 @@ export function inspectFont(page: mupdf.PDFPage, resourceName: string): FontObje
 }
 
 /**
- * M0 Day 1 스파이크: 하드코딩 좌표 문단 redaction → 폴백 폰트 임베딩 → 새 콘텐츠 스트림 →
- * 전체 저장 → 재열기 검증.
+ * M0 Day 1 spike: hard-coded-coordinate paragraph redaction → fallback font embedding → new content stream →
+ * full save → reopen verification.
  */
 export function runSpike(input: SpikeInput): SpikeResult {
   const scale = input.renderScale ?? 2;
   const phase = input.onPhase ?? (() => {});
   return captureMupdfLog((mupdfMessages) => {
-    // 1. 열기
+    // 1. open
     const doc = openPdf(input.sampleBytes);
     let page = doc.loadPage(0);
     const afterOpen = doc.canBeSavedIncrementally();
@@ -165,7 +165,7 @@ export function runSpike(input: SpikeInput): SpikeResult {
     const original = renderPage(page, scale);
     phase('verify:original-render');
 
-    // 2. 대상 문단 제거(텍스트만)
+    // 2. remove the target paragraph (text only)
     const red = redactRegions(page, [TARGET_RECT]);
     page = doc.loadPage(0);
     const afterRedaction = doc.canBeSavedIncrementally();
@@ -179,7 +179,7 @@ export function runSpike(input: SpikeInput): SpikeResult {
     const targetTextAfter = hasText(pageText(page), targetText);
     phase('verify:redaction');
 
-    // 3. 폴백 폰트 임베딩 + 배치
+    // 3. fallback font embedding + placement
     const embedded = embedFont(doc, input.fontName, input.fontBytes);
     phase('embed-font');
     const box = toPdfRect(page, TARGET_TEXT_BOX);
@@ -194,7 +194,7 @@ export function runSpike(input: SpikeInput): SpikeResult {
     });
     const missing = missingCodepoints(embedded.font, REPLACEMENT_TEXT);
 
-    // 참조 렌더: redaction 결과 위에 폰트 파일에서 직접 글리프를 그린 것
+    // Reference render: glyphs drawn directly from the font file over the redaction result
     const reference = renderPage(page, scale, {
       font: embedded.font,
       fontSize,
@@ -204,7 +204,7 @@ export function runSpike(input: SpikeInput): SpikeResult {
     const referenceInk = inkPixels(reference, textRegion);
     phase('layout+reference-render');
 
-    // 4. 새 콘텐츠 스트림
+    // 4. new content stream
     const resourceName = addPageFontResource(doc, page, embedded.ref);
     appendPageContent(
       doc,
@@ -223,7 +223,7 @@ export function runSpike(input: SpikeInput): SpikeResult {
     const preSaveDiff = diffRasters(preSave, reference);
     phase('verify:pre-save');
 
-    // 5. 서브셋 + 저장 방식 결정 + 전체 저장
+    // 5. subset + choose save method + full save
     const changes: ChangeKind[] = ['redaction', 'font-embed', 'content-stream'];
     const t0 = performance.now();
     doc.subsetFonts();
@@ -238,7 +238,7 @@ export function runSpike(input: SpikeInput): SpikeResult {
     phase('save');
     doc.destroy();
 
-    // 6. 재열기 검증
+    // 6. reopen verification
     const reopened = openPdf(savedBytes);
     const rp = reopened.loadPage(0);
     const text = pageText(rp);
@@ -294,8 +294,8 @@ export function runSpike(input: SpikeInput): SpikeResult {
 
 export interface IncrementalControl {
   /**
-   * 대조 1: redaction 직후 증분 저장 시도. MuPDF 가 거부하지 않으면 출력 앞부분(이전 리비전)이
-   * 원본과 같은지 확인한다 — 같으면 제거한 문단이 파일에 그대로 남는다.
+   * Control 1: try an incremental save right after redaction. If MuPDF does not reject it, check whether the first part of the output (earlier revision) is
+   * the same as the original — if so, the removed paragraph remains in the file.
    */
   afterRedaction: {
     canBeSavedIncrementally: boolean;
@@ -304,7 +304,7 @@ export interface IncrementalControl {
     bytes: number | null;
     prefixIsOriginal: boolean | null;
   };
-  /** 대조 2: 주석만 추가 */
+  /** Control 2: add only an annotation */
   annotationOnly: {
     canBeSavedIncrementally: boolean;
     decided: SaveMethod;

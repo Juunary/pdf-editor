@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-// core 를 mupdf 보다 먼저 import 한다(src/save-bench.ts 참고).
+// Import core before mupdf (see src/save-bench.ts).
 import '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import { applyBenchEdit } from '../src/bench.js';
@@ -22,8 +22,8 @@ function editAndSave(doc: mupdf.PDFDocument): Uint8Array {
   return out;
 }
 
-describe('Stream 입력(new Stream(handle))', () => {
-  it('편집·전체 저장 결과가 Buffer 입력과 바이트 단위로 같다', () => {
+describe('Stream input (new Stream(handle))', () => {
+  it('edit and full-save results are byte-identical to Buffer input', () => {
     const bytes = buildSamplePdf();
     const viaBuffer = editAndSave(
       mupdf.Document.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument,
@@ -32,7 +32,7 @@ describe('Stream 입력(new Stream(handle))', () => {
     expect(Buffer.from(viaStream).equals(Buffer.from(viaBuffer))).toBe(true);
   });
 
-  it('MuPDF 는 필요한 구간만 읽는다: 8 MiB 미참조 스트림이 있는 문서를 열고 1쪽을 렌더해도 읽은 양은 일부', () => {
+  it('MuPDF reads only the ranges it needs: opening a document with an 8 MiB unreferenced stream and rendering page 1 reads only a portion', () => {
     const doc = new mupdf.PDFDocument();
     doc.insertPage(-1, doc.addPage([0, 0, 100, 100], 0, {}, '0 0 1 rg 10 10 50 50 re f'));
     doc.addRawStream(new Uint8Array(8 * 2 ** 20), {});

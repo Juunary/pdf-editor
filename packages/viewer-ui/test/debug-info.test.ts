@@ -28,21 +28,21 @@ const ops = [
 ];
 const map = makeSourceMap(model, ops);
 
-describe('디버그 오버레이 정보', () => {
-  it('classifyChar: 매칭 / 편집 제한 / 실패', () => {
+describe('debug overlay info', () => {
+  it('classifyChar: matched / edit-limited / failed', () => {
     const linkage = makeLinkage(model, [0, 1, -1]);
     expect(classifyChar(linkage, map, 0)).toBe('matched');
     expect(classifyChar(linkage, map, 1)).toBe('limited');
     expect(classifyChar(linkage, map, 2)).toBe('unmatched');
   });
 
-  it('연산 번호가 맵에 없으면 실패로 본다', () => {
+  it('an op number not in the map is treated as a failure', () => {
     const linkage = makeLinkage(model, [0, 77, 0]);
     expect(classifyChar(linkage, map, 1)).toBe('unmatched');
     expect(classifyChar(linkage, map, 99)).toBe('unmatched');
   });
 
-  it('findOp 는 id 가 인덱스와 달라도 찾는다', () => {
+  it('findOp finds the op even if its id differs from the index', () => {
     const shifted = { ...map, ops: [ops[2]!, ops[0]!] };
     expect(findOp(shifted, 0)?.id).toBe(0);
     expect(findOp(shifted, 2)?.id).toBe(2);
@@ -57,7 +57,7 @@ describe('디버그 오버레이 정보', () => {
     });
   });
 
-  it('describeChar: 매칭 글자는 op·kind·range·limits 를 포함한다', () => {
+  it('describeChar: a matched character includes op, kind, range and limits', () => {
     const linkage = makeLinkage(model, [0, 1, -1]);
     const lines = describeChar(model, linkage, map, 1);
     expect(lines[0]).toContain('글자 #1 "B"');
@@ -68,7 +68,7 @@ describe('디버그 오버레이 정보', () => {
     expect(lines.at(-1)).toBe('제한: spans-stream-boundary');
   });
 
-  it('describeChar: 제한 없음, Form 경로, 글리프 원점 오차', () => {
+  it('describeChar: no limits, Form path, glyph origin error', () => {
     const linkage = makeLinkage(model, [2, 2, 2]);
     const op = map.ops[2]!;
     op.text = {
@@ -102,7 +102,7 @@ describe('디버그 오버레이 정보', () => {
     expect(lines.at(-1)).toBe('제한: 없음');
   });
 
-  it('describeChar: 매칭 실패 글자는 실패만 적는다', () => {
+  it('describeChar: an unmatched character lists only the failure', () => {
     const linkage = makeLinkage(model, [0, 1, -1]);
     const lines = describeChar(model, linkage, map, 2);
     expect(lines).toHaveLength(2);

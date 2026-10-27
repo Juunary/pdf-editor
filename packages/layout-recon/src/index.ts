@@ -1,6 +1,6 @@
 /**
- * 레이아웃 복원(M2, PLAN.md 4절): PageModel → PageLayout. MuPDF 에 의존하지 않는 순수 함수.
- * 계약: docs/m2-contract.md.
+ * Layout reconstruction (M2, PLAN.md section 4): PageModel → PageLayout. Pure functions with no MuPDF dependency.
+ * Contract: docs/m2-contract.md.
  */
 export { fingerprintText, lineFeatures, type Box, type LineFeature } from './features.js';
 export {

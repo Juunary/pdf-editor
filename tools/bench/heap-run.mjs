@@ -1,8 +1,8 @@
-// 저장 힙 측정 실행기(docs/m5-heap.md 2절). 문서 × 저장 경로마다 heap-child.mjs 를 새 프로세스로 돌려 JSON 줄로 모은다.
-// 사용: node tools/bench/heap-run.mjs [--corpus <dir>] [--only id,id] [--jobs N] [--out out/m5-heap/measure.jsonl]
+// Save-heap measurement runner (docs/m5-heap.md section 2). For each document × save path, runs heap-child.mjs as a fresh process and collects JSON lines.
+// Usage: node tools/bench/heap-run.mjs [--corpus <dir>] [--only id,id] [--jobs N] [--out out/m5-heap/measure.jsonl]
 //   [--variants full,none] [--views 0,3,10,30] [--synth-dir <dir>]
-// 같은 세션 저장 2회는 --variants full2,none2(heap-child.mjs, docs/m5-heap.md 4.4). 판정은 heap-check-twice.mjs.
-// 합성 문서가 없으면 synth.mjs 로 만든다(--synth-dir 로 저장소 밖에 둘 수 있다). 코퍼스는 fixtures/corpus/manifest.json 의 id 를 쓴다(PDF 는 git 밖).
+// Two saves in the same session use --variants full2,none2 (heap-child.mjs, docs/m5-heap.md 4.4). Classification is in heap-check-twice.mjs.
+// If synthetic documents are missing, they are created with synth.mjs (--synth-dir can place them outside the repository). The corpus uses the ids in fixtures/corpus/manifest.json (PDFs are outside git).
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -12,7 +12,7 @@ import { SYNTHETIC, writeSynthetic } from './synth.mjs';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const CHILD = join(ROOT, 'tools/bench/heap-child.mjs');
 const VARIANTS = (arg('variants', 'full,none') ?? 'full,none').split(',');
-/** 저장 전에 넘겨 본 쪽 수(힙 이력). 같은 문서도 이력에 따라 피크 계단이 달라 시나리오마다 잰다(docs/m5-heap.md 2절). */
+/** Pages viewed before saving (heap history). The same document gets different peak steps depending on history, so each scenario is measured (docs/m5-heap.md section 2). */
 const VIEWS = (arg('views', '0,3,10,30') ?? '0').split(',').map(Number);
 
 function arg(name, fallback) {
@@ -58,7 +58,7 @@ function runChild(doc, variant, view) {
       try {
         r = JSON.parse(stdout.trim().split('\n').at(-1));
       } catch {
-        // 프로세스가 죽었다(WASM 힙 상한 밖 abort 등). 미탐 판정에서 실패로 센다.
+        // The process died (abort beyond the WASM heap limit, etc.). Counted as a failure in miss classification.
         r = {
           path: doc.path,
           variant,
@@ -83,7 +83,7 @@ for (const d of docs) {
 const missing = docs.filter((d) => !existsSync(d.path));
 if (missing.length) throw new Error(`문서 없음: ${missing.map((d) => d.path).join(', ')}`);
 
-// 큰 문서부터(피크 메모리가 큰 작업을 먼저 흩어 놓는다).
+// Largest documents first (spreads out the jobs with high peak memory).
 const { statSync } = await import('node:fs');
 const tasks = docs
   .flatMap((d) =>

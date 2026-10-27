@@ -14,7 +14,7 @@ const key = (k: string, extra: Partial<EditKeyLike> = {}): EditKeyLike => ({
 });
 
 describe('mapEditKey', () => {
-  it('화살표·Home/End 는 Shift(선택)·Ctrl(단어·문단)을 반영한다', () => {
+  it('arrows and Home/End reflect Shift (selection) and Ctrl (word/paragraph)', () => {
     expect(mapEditKey(key('ArrowLeft'))).toEqual({
       type: 'move-h',
       dir: -1,
@@ -46,7 +46,7 @@ describe('mapEditKey', () => {
     });
   });
 
-  it('삭제·Enter·Esc·Ctrl+A·Ctrl+Z/Shift+Z/Y', () => {
+  it('delete, Enter, Esc, Ctrl+A, Ctrl+Z/Shift+Z/Y', () => {
     expect(mapEditKey(key('Backspace', { ctrlKey: true }))).toEqual({
       type: 'backspace',
       word: true,
@@ -62,7 +62,7 @@ describe('mapEditKey', () => {
     expect(mapEditKey(key('y', { ctrlKey: true }))).toEqual({ type: 'redo' });
   });
 
-  it('글자·Ctrl+S·Ctrl+F·Ctrl+C 등은 가로채지 않는다', () => {
+  it('characters, Ctrl+S, Ctrl+F, Ctrl+C etc. are not intercepted', () => {
     for (const k of [
       key('a'),
       key('s', { ctrlKey: true }),
@@ -73,7 +73,7 @@ describe('mapEditKey', () => {
     }
   });
 
-  it('조합 중에는 모든 키(화살표·Ctrl+Z·Esc)를 무시한다(I4·I5·I8)', () => {
+  it('during composition, all keys (arrows, Ctrl+Z, Esc) are ignored (I4, I5, I8)', () => {
     for (const k of ['ArrowLeft', 'ArrowUp', 'Backspace', 'Enter', 'Escape']) {
       expect(mapEditKey(key(k, { isComposing: true }))).toBeNull();
       expect(mapEditKey(key(k, { keyCode: 229 }))).toBeNull();
@@ -83,7 +83,7 @@ describe('mapEditKey', () => {
 });
 
 describe('docHistoryShortcut', () => {
-  it('편집 밖 문서 undo/redo 단축키', () => {
+  it('document undo/redo shortcuts outside editing', () => {
     expect(docHistoryShortcut(key('z', { ctrlKey: true }))).toBe('undo');
     expect(docHistoryShortcut(key('z', { ctrlKey: true, shiftKey: true }))).toBe('redo');
     expect(docHistoryShortcut(key('y', { ctrlKey: true }))).toBe('redo');
@@ -93,22 +93,22 @@ describe('docHistoryShortcut', () => {
   });
 });
 
-describe('영역 핸들·문단 찾기', () => {
+describe('region handles and paragraph lookup', () => {
   const limit: [number, number, number, number] = [0, 0, 300, 200];
-  it('변·모서리 드래그와 상한·최소 크기', () => {
+  it('edge/corner drag, upper limit and minimum size', () => {
     const area: [number, number, number, number] = [100, 50, 200, 90];
     expect(resizeArea(area, 'e', 30, 99, limit)).toEqual([100, 50, 230, 90]);
     expect(resizeArea(area, 'se', 40, 25, limit)).toEqual([100, 50, 240, 115]);
     expect(resizeArea(area, 'nw', -30, -10, limit)).toEqual([70, 40, 200, 90]);
-    // 상한 밖으로 나가지 못한다
+    // It cannot go past the upper limit
     expect(resizeArea(area, 'e', 999, 0, limit)).toEqual([100, 50, 300, 90]);
     expect(resizeArea(area, 'n', 0, -999, limit)).toEqual([100, 0, 200, 90]);
-    // 최소 크기
+    // Minimum size
     expect(resizeArea(area, 'w', 999, 0, limit, 20)).toEqual([180, 50, 200, 90]);
     expect(resizeArea(area, 's', 0, -999, limit, 20, 8)).toEqual([100, 50, 200, 58]);
   });
 
-  it('점이 놓인 가장 안쪽 문단', () => {
+  it('the innermost paragraph containing the point', () => {
     const ps = [
       { id: 1, bbox: [0, 0, 100, 100] as [number, number, number, number] },
       { id: 2, bbox: [10, 10, 40, 40] as [number, number, number, number] },
@@ -119,7 +119,7 @@ describe('영역 핸들·문단 찾기', () => {
   });
 });
 
-describe('변경 영역 합성 위치', () => {
+describe('changed-region composite position', () => {
   const layout: PageLayout = {
     cssScale: 1.5,
     devicePixelRatio: 2,
@@ -138,7 +138,7 @@ describe('변경 영역 합성 위치', () => {
     clip,
   });
 
-  it('clip(페이지 공간)을 렌더 배율(CSS 배율 × dpr)로 환산한다', () => {
+  it('converts clip (page space) to render scale (CSS scale × dpr)', () => {
     expect(regionPlacement(region([100, 50, 200, 90]), layout)).toEqual({ x: 300, y: 150 });
     expect(regionPlacement(region(null), layout)).toEqual({ x: 0, y: 0 });
     expect(regionPlacement(region([10, 10, 20, 20]), { ...layout, origin: [10, 10] })).toEqual({

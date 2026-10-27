@@ -1,4 +1,4 @@
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// core must be imported before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { openPdf } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import {
@@ -37,7 +37,7 @@ export const CARD_REPLACEMENT =
   '공유 Form XObject 의 선택 위치만 복제해 이 문단을 교체했습니다. 다른 위치와 다른 페이지는 원본 그대로입니다.';
 export const BADGE_REPLACEMENT = '중첩 Form 교체: 한글 배지';
 
-/** 사용 위치 이름표: `p{쪽}:{Do 순번 체인}` → 픽스처 설명(fixture-xobject.ts) */
+/** Usage location label: `p{page}:{Do index chain}` → fixture description (fixture-xobject.ts) */
 export const USAGE_LABELS: Record<string, string> = {
   'p1:0': 'A',
   'p1:0>0': 'A/Fx2',
@@ -61,9 +61,9 @@ export interface UsageState {
 export interface XObjectCaseResult {
   case: XObjectCase;
   description: string;
-  /** 편집 전 원본 Form 별 문서 전체 사용 위치 수 */
+  /** Number of document-wide usage locations per original Form before the edit */
   usageCountsBefore: Record<string, number>;
-  /** 선택 사용 위치(1쪽 B) Form BBox 의 페이지 사용자 공간 사각형 */
+  /** Rectangle of the selected usage location (page 1 B) Form BBox in page user space */
   selectedPageBox: Rect;
   edits: {
     usage: string;
@@ -74,16 +74,16 @@ export interface XObjectCaseResult {
     layout: { lineCount: number; overflow: boolean; missing: number[]; outsideFormBBox: boolean };
   }[];
   objects: { changed: string[]; added: number };
-  /** 1쪽 콘텐츠(디코드) 변경 구간: 공통 앞·뒤를 뺀 나머지(최대 160자) */
+  /** Changed span of page 1 content (decoded): what remains after removing the common prefix and suffix (up to 160 characters) */
   page1Content: { beforeBytes: number; afterBytes: number; removed: string; inserted: string };
   usagesAfter: UsageState[];
   render: {
-    /** redaction 직후 1쪽 vs 기대 페이지(대상 텍스트만 없음) */
+    /** Page 1 right after redaction vs expected page (only the target text is missing) */
     afterRemovalVsExpectedPx: number;
-    /** redaction 직후 1쪽 vs 원본, 선택 사용 위치 영역 밖 */
+    /** Page 1 right after redaction vs original, outside the selected usage location area */
     page1OutsideSelectedPx: number;
     page2VsOriginalPx: number;
-    /** 텍스트 추가 후 1쪽 vs 참조(기대 페이지 + 폰트 파일 직접 렌더) */
+    /** Page 1 after adding text vs reference (expected page + direct render from the font file) */
     preSaveVsReferencePx: number | null;
     referenceInkPx: number | null;
   };
@@ -103,9 +103,9 @@ export interface XObjectCaseResult {
     newTextFound: boolean[];
     page1Counts: Record<string, number>;
     page2TextSame: boolean;
-    /** 2쪽 객체 트리(번호 무관) 디코드 내용 동일 */
+    /** Page 2 object tree (independent of numbers) decoded content is identical */
     page2TreeDecodedSame: boolean;
-    /** 2쪽 객체 트리 원시 스트림 바이트까지 동일 */
+    /** Page 2 object tree is identical down to the raw stream bytes */
     page2TreeRawSame: boolean;
   };
   mupdfMessages: string[];
@@ -198,7 +198,7 @@ interface PlacedText {
   layout: { lineCount: number; overflow: boolean; missing: number[]; outsideFormBBox: boolean };
 }
 
-/** 대상 Form(Form 공간)에 폴백 폰트 문단을 붙인다. */
+/** Attaches a fallback-font paragraph to the target Form (Form space). */
 function placeText(
   doc: mupdf.PDFDocument,
   form: mupdf.PDFObject,
@@ -350,7 +350,7 @@ export function runXObjectCase(c: XObjectCase, input: XObjectSpikeInput): XObjec
       };
     });
     const page1Px = pixelRectOf(doc.loadPage(0), selectedBox, scale);
-    // 연속 편집: 마지막 단계 직전 렌더에는 앞 단계 새 텍스트가 있으므로 같은 오버레이를 그린 기대 렌더와 비교한다.
+    // Consecutive edits: the render just before the last step contains the earlier step's new text, so compare with an expected render that draws the same overlay.
     const expectedForRemoval =
       c === 'sequential'
         ? renderPage(expectedDoc.loadPage(0), scale, overlays.slice(0, -1))

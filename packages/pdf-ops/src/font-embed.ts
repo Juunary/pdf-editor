@@ -2,9 +2,9 @@ import * as mupdf from 'mupdf';
 import { glyphHex } from './text-ops.js';
 
 /**
- * 폴백 폰트로 처리할 수 없는 폰트 형식. 폴백 폰트는 TrueType(glyf) 전용이다(PLAN.md 2절 P1).
- * - cff-outlines: CFF 기반 OpenType('OTTO')·순수 CFF. MuPDF 1.28.1 은 FontFile3 로 넣고 표시·서브셋이 실패한다.
- * - no-fontfile2: 임시 문서에 넣은 결과에 FontFile2 가 없다(그 밖의 형식).
+ * Font formats that cannot be handled as a fallback font. A fallback font is TrueType (glyf) only (PLAN.md section 2, P1).
+ * - cff-outlines: CFF-based OpenType ('OTTO') or bare CFF. MuPDF 1.28.1 embeds it as FontFile3, and rendering and subsetting fail.
+ * - no-fontfile2: the result inserted into a temporary document has no FontFile2 (other formats).
  */
 export class UnsupportedFontError extends Error {
   constructor(
@@ -16,7 +16,7 @@ export class UnsupportedFontError extends Error {
   }
 }
 
-/** sfnt 머리로 본 외곽선 형식. 'OTTO' = CFF OpenType, 01 00 04 = 순수 CFF 머리. */
+/** Outline format as seen from the sfnt header. 'OTTO' = CFF OpenType, 01 00 04 = bare CFF header. */
 export function fontOutlineFormat(
   bytes: Uint8Array | ArrayBuffer,
 ): 'truetype' | 'cff' | 'collection' | 'unknown' {
@@ -32,24 +32,24 @@ export function fontOutlineFormat(
 
 export interface EmbeddedFont {
   font: mupdf.Font;
-  /** Type0 폰트 사전 간접 참조. */
+  /** Indirect reference to the Type0 font dictionary. */
   ref: mupdf.PDFObject;
 }
 
 /**
- * 폰트 바이트를 실제로 포함해 Type0(Identity-H) 폰트로 추가한다(PLAN.md 3.3).
- * `addCJKFont` 는 폰트 바이트를 포함하지 않으므로 쓰지 않는다. 폴백 폰트는 TrueType(glyf) 전용이다
- * (CFF OpenType 은 MuPDF 1.28.1 에서 표시가 깨진다, PLAN.md 2절 P1). 서브셋 없이 넣는 경로는 M0 대조 측정
- * (tools/spike-m0)이 CFF 실패를 재현하는 데 쓰므로 막지 않는다.
+ * Adds a font as Type0 (Identity-H) with the font bytes actually embedded (PLAN.md 3.3).
+ * `addCJKFont` does not embed the font bytes, so it is not used. A fallback font is TrueType (glyf) only
+ * (CFF OpenType renders broken in MuPDF 1.28.1, PLAN.md section 2, P1). The path that embeds without a subset is used by the M0 comparison measurement
+ * (tools/spike-m0) to reproduce the CFF failure, so it is not blocked.
  *
- * 서브셋: `subsetGids` 를 주면 그 글리프만 남긴 바이트(`subsetFontBytes`)를 넣는다. 편집 중인 문서에서
- * `doc.subsetFonts()` 는 부르지 않는다. MuPDF 1.28.1 은 문서 전체 폰트를 다시 서브셋하며 원본 단순 폰트의
- * `/Widths` 를 정수로 반올림해 편집하지 않은 쪽 표시를 바꾼다(docs/m0-corpus-recheck.md C1, A7-1).
+ * Subset: if `subsetGids` is given, embeds the bytes with only those glyphs kept (`subsetFontBytes`). `doc.subsetFonts()`
+ * is not called on a document being edited. MuPDF 1.28.1 re-subsets all fonts in the document and rounds the original simple font's
+ * `/Widths` to integers, which changes how unedited pages render (docs/m0-corpus-recheck.md C1, A7-1).
  */
 /**
- * 바이트에서 `mupdf.Font` 를 만든다. mupdf.js 는 Uint8Array 를 받으면 임시 `mupdf.Buffer` 래퍼를 만들고 해제를 GC
- * (FinalizationRegistry)에 맡겨, 동기 루프·짧은 세션 반복에서 바이트 사본(폴백 폰트 약 4 MB)이 WASM 힙에 남는다(R-L3).
- * 버퍼를 직접 만들어 폰트가 참조를 잡은 뒤 바로 놓는다.
+ * Creates a `mupdf.Font` from bytes. When given a Uint8Array, mupdf.js creates a temporary `mupdf.Buffer` wrapper and leaves its release to the GC
+ * (FinalizationRegistry), so in synchronous loops and repeated short sessions byte copies (about 4 MB for the fallback font) stay in the WASM heap (R-L3).
+ * Build the buffer directly and release it right after the font holds its reference.
  */
 export function fontFromBytes(name: string, bytes: Uint8Array | ArrayBuffer): mupdf.Font {
   const buffer = new mupdf.Buffer(bytes);
@@ -72,11 +72,11 @@ export function embedFont(
 }
 
 /**
- * 폴백 폰트만 서브셋한다(A7-1). 별도 임시 문서에 폰트를 Type0(Identity-H)로 넣고 `gids` 만 그린 뒤 그 임시
- * 문서에서 `subsetFonts()` 를 실행해 줄어든 FontFile2 바이트를 돌려준다. 편집 중인 문서는 건드리지 않는다.
- * MuPDF 의 CID TrueType 서브셋은 glyph id 를 유지한다(쓰지 않는 글리프만 비움). 그래서 원래 폰트로 계산한
- * Identity-H 콘텐츠의 gid 가 서브셋 폰트에서도 그대로 유효하다(테스트로 고정).
- * TrueType(glyf) 전용: CFF 기반 폰트는 `UnsupportedFontError('cff-outlines')`, 결과에 FontFile2 가 없으면
+ * Subsets only the fallback font (A7-1). Embeds the font as Type0 (Identity-H) in a separate temporary document, draws only `gids`, then runs
+ * `subsetFonts()` on that temporary document and returns the shrunk FontFile2 bytes. The document being edited is not touched.
+ * MuPDF's CID TrueType subsetting keeps glyph ids (it only empties unused glyphs). So the gids of Identity-H content computed with the original font
+ * stay valid with the subset font as well (pinned by tests).
+ * TrueType (glyf) only: a CFF-based font throws `UnsupportedFontError('cff-outlines')`; if the result has no FontFile2,
  * `UnsupportedFontError('no-fontfile2')`.
  */
 export function subsetFontBytes(
@@ -117,7 +117,7 @@ export function subsetFontBytes(
   }
 }
 
-/** 폰트에 글리프가 없는 코드포인트(`encodeCharacter` = 0). 공백류 제외. */
+/** Codepoint for which the font has no glyph (`encodeCharacter` = 0). Whitespace excluded. */
 export function missingCodepoints(font: mupdf.Font, text: string): number[] {
   const missing = new Set<number>();
   for (const ch of text) {

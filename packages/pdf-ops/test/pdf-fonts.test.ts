@@ -8,9 +8,9 @@ import {
 } from '../src/glyph-names.js';
 
 /**
- * 기대값은 MuPDF 1.28.1 자체(Device 콜백 글리프 원점)와 대조한다.
- * 글자 크기 1000, Tc=Tw=0, 항등 CTM 이면 연속 글리프 원점 차 = advance (1/1000 단위).
- * float32 누적 오차를 피하려고 절대 좌표가 아니라 인접 차를 비교한다.
+ * Expected values are checked against MuPDF 1.28.1 itself (Device callback glyph origins).
+ * With font size 1000, Tc=Tw=0 and identity CTM, the difference between consecutive glyph origins = advance (in 1/1000 units).
+ * To avoid float32 accumulation error, adjacent differences are compared instead of absolute coordinates.
  */
 
 interface Shown {
@@ -31,8 +31,8 @@ const hex = (bytes: ArrayLike<number>): string =>
   `<${Array.from(bytes as ArrayLike<number>, (b) => b.toString(16).padStart(2, '0')).join('')}>`;
 
 /**
- * 폰트 사전을 만들어 한 쪽짜리 문서에 넣고, 저장·재오픈한 뒤 MuPDF 가 그린 글리프와 FontCache 결과를 함께 돌려준다.
- * show 는 BT 안에 들어갈 텍스트 표시 연산(예: `<4142> Tj`). resource=false 면 /F 를 리소스에 넣지 않는다(hail-mary).
+ * Builds a font dictionary, puts it in a one-page document, saves and reopens it, then returns the glyphs MuPDF drew together with the FontCache result.
+ * show is the text-showing operation to put inside BT (e.g. `<4142> Tj`). If resource=false, /F is not added to the resources (hail-mary).
  */
 function run(
   makeFont: (doc: mupdf.PDFDocument) => mupdf.PDFObject,
@@ -77,13 +77,13 @@ function run(
 }
 
 interface Compare {
-  /** MuPDF 가 그린 글리프 수 */
+  /** Number of glyphs MuPDF drew */
   drawn: number;
-  /** 우리 예측과 어긋난 항목(인덱스 + 설명) */
+  /** Items that deviate from our prediction (index + description) */
   mismatches: string[];
 }
 
-/** 가로쓰기: MuPDF 글리프 열과 decode→cid→advance 예측을 비교한다 */
+/** Horizontal writing: compares MuPDF's glyph sequence with the decode->cid->advance prediction */
 function compareHorizontal(r: Run, bytes: Uint8Array, checkGid = false): Compare {
   const mismatches: string[] = [];
   const codes = r.font.decode(bytes).filter((c) => r.font.cid(c.code) >= 0);
@@ -127,7 +127,7 @@ const TEXT_FACES = [
   'Times-BoldItalic',
 ];
 
-describe('표준 14 글꼴 /Widths 없음 (내장 글꼴 폭·글리프)', () => {
+describe('standard 14 fonts without /Widths (built-in font widths and glyphs)', () => {
   const codes = range(0, 255);
   const bytes = bytesOf(codes);
   const make =
@@ -137,7 +137,7 @@ describe('표준 14 글꼴 /Widths 없음 (내장 글꼴 폭·글리프)', () =>
 
   for (const base of TEXT_FACES) {
     for (const enc of [undefined, 'StandardEncoding', 'WinAnsiEncoding', 'MacRomanEncoding']) {
-      it(`${base} /Encoding ${enc ?? '없음'}: 코드 0–255 의 글리프·폭이 MuPDF 와 일치`, () => {
+      it(`${base} /Encoding ${enc ?? '없음'}: glyphs and widths for codes 0-255 match MuPDF`, () => {
         const r = run(make(base, enc ? { Encoding: enc } : {}), `${hex(bytes)} Tj`);
         expect(r.font.unresolved).toEqual([]);
         expect(r.font.glyphIds).toBeDefined();
@@ -148,7 +148,7 @@ describe('표준 14 글꼴 /Widths 없음 (내장 글꼴 폭·글리프)', () =>
     }
   }
 
-  it('기술자 Flags=4(심볼릭)이면 /Encoding 이름만 적용되고 기본 인코딩은 내장 인코딩', () => {
+  it('with descriptor Flags=4 (symbolic), only the /Encoding name applies and the base encoding is the built-in encoding', () => {
     const symbolic = (doc: mupdf.PDFDocument, enc?: unknown) =>
       doc.addObject({
         Type: 'Font',
@@ -179,7 +179,7 @@ describe('표준 14 글꼴 /Widths 없음 (내장 글꼴 폭·글리프)', () =>
   });
 });
 
-describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
+describe('standard 14 fonts: Differences and glyph name resolution', () => {
   const codes = range(0, 255);
   const bytes = bytesOf(codes);
   const base =
@@ -196,7 +196,7 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
       });
 
   for (const face of TEXT_FACES) {
-    it(`${face}: 아는 글리프 이름 ${KNOWN_GLYPH_NAMES.length}개를 Differences 로 배치해도 글리프·폭이 일치`, () => {
+    it(`${face}: glyphs and widths match even when placing ${KNOWN_GLYPH_NAMES.length} known glyph names via Differences`, () => {
       const mismatches: string[] = [];
       for (let from = 0; from < KNOWN_GLYPH_NAMES.length; from += codes.length) {
         const names = KNOWN_GLYPH_NAMES.slice(from, from + codes.length);
@@ -213,8 +213,8 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
     });
   }
 
-  it('uXXXX·uniXXXX·접미어(.alt, _) 합성 이름은 대개 못 찾아 내장 글리프로 되돌아가며 unresolved 로 표시된다', () => {
-    // 1.28.1 실측: 이 이름들은 모두 글꼴에서 찾아지지 않아 코드 위치의 내장 글리프가 나온다(uni20AC·Euro.sc 는 Euro 가 나오므로 제외)
+  it('synthesized names uXXXX, uniXXXX and suffixed (.alt, _) are mostly not found, fall back to built-in glyphs, and are marked unresolved', () => {
+    // Measured on 1.28.1: none of these names are found in the font, so the built-in glyph at the code position appears (uni20AC and Euro.sc are excluded because Euro appears)
     const names = ['u2022', 'uni00E9', 'A.alt', 'one.oldstyle', 'f_i', 'eacute.x'];
     const part = bytesOf([65, 66, 67, 68, 69, 70]);
     for (const face of ['Helvetica', 'Times-Italic', 'Courier-Bold']) {
@@ -224,7 +224,7 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
     }
   });
 
-  it('글꼴에 없는 이름은 내장 인코딩 글리프로 되돌아간다(0x27 은 quoteright)', () => {
+  it('a name missing from the font falls back to the built-in encoding glyph (0x27 is quoteright)', () => {
     const names = ['noSuchGlyphA', 'noSuchGlyphB', 'g12', 'cid77'];
     const part = bytesOf([39, 40, 41, 42, 43]);
     const r = run(base('Helvetica', [39, ...names]), `${hex(part)} Tj`);
@@ -232,7 +232,7 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
     expect(r.font.unresolved.length).toBe(4);
   });
 
-  it('BaseEncoding 이 있으면 그 위에, 없으면 StandardEncoding 위에 Differences 가 얹힌다', () => {
+  it('Differences is applied on top of BaseEncoding if present, otherwise on top of StandardEncoding', () => {
     for (const enc of [undefined, 'WinAnsiEncoding', 'MacRomanEncoding', 'PDFDocEncoding']) {
       const r = run(
         base('Times-Roman', [65, 'Euro', 'fi', 'quotesingle'], enc),
@@ -242,7 +242,7 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
     }
   });
 
-  it('Differences 의 첫 항목이 이름이거나 코드가 범위 밖이어도 MuPDF 와 같다', () => {
+  it('matches MuPDF even when the first Differences entry is a name or a code is out of range', () => {
     const r1 = run(
       base('Times-Roman', ['Euro', 'fi', 300, 'bullet', -1, 'florin', 70, 'germandbls']),
       `${hex(bytes)} Tj`,
@@ -250,7 +250,7 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
     expect(compareHorizontal(r1, bytes, true).mismatches).toEqual([]);
   });
 
-  it('Subtype TrueType 로 표시된 표준 글꼴도 같은 결과', () => {
+  it('a standard font marked with Subtype TrueType gives the same result', () => {
     for (const enc of ['WinAnsiEncoding', 'MacRomanEncoding']) {
       const r = run(
         (doc) =>
@@ -261,7 +261,7 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
     }
   });
 
-  it('별칭 이름(ArialMT, TimesNewRomanPS-BoldMT, 공백 포함)이 표준 글꼴로 해석된다', () => {
+  it('alias names (ArialMT, TimesNewRomanPS-BoldMT, including spaces) resolve to standard fonts', () => {
     for (const name of [
       'ArialMT',
       'Arial MT',
@@ -283,7 +283,7 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
     }
   });
 
-  it('MacExpertEncoding 은 표가 없어 unresolved 로 표시한다', () => {
+  it('MacExpertEncoding has no table, so it is marked unresolved', () => {
     const r = run(
       (doc) =>
         doc.addObject({
@@ -298,7 +298,7 @@ describe('표준 14 글꼴: Differences 와 글리프 이름 해석', () => {
   });
 });
 
-describe('Symbol·ZapfDingbats (/Widths 없음)', () => {
+describe('Symbol and ZapfDingbats (no /Widths)', () => {
   const bytes = bytesOf(range(0, 255));
   const make =
     (base: string, extra: Record<string, unknown> = {}) =>
@@ -306,21 +306,21 @@ describe('Symbol·ZapfDingbats (/Widths 없음)', () => {
       doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: base, ...extra });
 
   for (const base of ['Symbol', 'ZapfDingbats']) {
-    it(`${base}: 내장 인코딩 코드 0–255 의 글리프·폭이 MuPDF 와 일치`, () => {
+    it(`${base}: glyphs and widths for built-in encoding codes 0-255 match MuPDF`, () => {
       const r = run(make(base), `${hex(bytes)} Tj`);
       expect(r.font.unresolved).toEqual([]);
       const cmp = compareHorizontal(r, bytes, true);
       expect(cmp.drawn).toBe(256);
       expect(cmp.mismatches).toEqual([]);
     });
-    it(`${base} + /Encoding: 근사임을 unresolved 로 알린다`, () => {
+    it(`${base} + /Encoding: reports the approximation as unresolved`, () => {
       const r = run(make(base, { Encoding: 'WinAnsiEncoding' }), `${hex(bytes)} Tj`);
       expect(r.font.unresolved.length).toBeGreaterThan(0);
     });
   }
 });
 
-describe('표준 글꼴이 아닌 이름 (/Widths 없음)', () => {
+describe('names that are not standard fonts (no /Widths)', () => {
   const bytes = bytesOf(range(32, 126));
   const desc = (
     doc: mupdf.PDFDocument,
@@ -341,7 +341,7 @@ describe('표준 글꼴이 아닌 이름 (/Widths 없음)', () => {
       ...extra,
     });
 
-  it('기술자도 없고 이름도 모르면 Times-Roman', () => {
+  it('with no descriptor and an unknown name, Times-Roman', () => {
     const r = run(
       (doc) => doc.addObject({ Type: 'Font', Subtype: 'TrueType', BaseFont: 'Foo' }),
       `${hex(bytes)} Tj`,
@@ -349,11 +349,11 @@ describe('표준 글꼴이 아닌 이름 (/Widths 없음)', () => {
     expect(r.font.unresolved).toEqual([]);
     expect(compareHorizontal(r, bytes, true).mismatches).toEqual([]);
     expect(r.font.advance(32)).toBe(250);
-    // 내장 글꼴 폭은 정수이므로 명세 폭과 같다.
+    // Built-in font widths are integers, so they equal the specified widths.
     for (const c of bytes) expect(r.font.advanceSpec(c)).toBe(r.font.advance(c));
   });
 
-  it('부분 집합 접두어가 붙은 표준 이름은 별칭으로 인정되지 않는다(1.28.1 실측)', () => {
+  it('a standard name with a subset prefix is not accepted as an alias (measured on 1.28.1)', () => {
     const r = run(
       (doc) =>
         doc.addObject({
@@ -368,7 +368,7 @@ describe('표준 글꼴이 아닌 이름 (/Widths 없음)', () => {
     expect(r.font.advance(32)).toBe(250);
   });
 
-  // [이름, 플래그, 기대 대체 글꼴의 공백 폭]
+  // [name, flags, space width of the expected substitute font]
   const cases: [string, number, number][] = [
     ['Foo', 32, 278],
     ['Foo-Bold', 32, 278],
@@ -381,7 +381,7 @@ describe('표준 글꼴이 아닌 이름 (/Widths 없음)', () => {
     ['ABCDEF+Helvetica', 32, 278],
   ];
   for (const [name, flags, space] of cases) {
-    it(`기술자 있음: ${name} Flags=${flags} → 대체 글꼴 (공백 ${space})`, () => {
+    it(`with descriptor: ${name} Flags=${flags} -> substitute font (space ${space})`, () => {
       const r = run(
         (doc) =>
           doc.addObject({
@@ -401,7 +401,7 @@ describe('표준 글꼴이 아닌 이름 (/Widths 없음)', () => {
     });
   }
 
-  it('임베디드 폰트 파일 + /Widths 없음: 폭 해석 불가 → MissingWidth 로 대체하고 unresolved 표시', () => {
+  it('embedded font file + no /Widths: width cannot be resolved -> replaced by MissingWidth and marked unresolved', () => {
     const r = run(
       (doc) =>
         doc.addObject({
@@ -420,7 +420,7 @@ describe('표준 글꼴이 아닌 이름 (/Widths 없음)', () => {
   });
 });
 
-describe('단순 폰트 /Widths', () => {
+describe('simple font /Widths', () => {
   const desc = (doc: mupdf.PDFDocument, missing?: number) =>
     doc.addObject({
       Type: 'FontDescriptor',
@@ -451,9 +451,9 @@ describe('단순 폰트 /Widths', () => {
         ...extra,
       });
 
-  it('FirstChar 오프셋, 구간 밖은 MissingWidth(실수는 내림 절단), 짧은 Widths 는 0, 소수는 floor(x+0.5)', () => {
+  it('FirstChar offset, outside the range MissingWidth (reals truncated by floor), short Widths give 0, fractions use floor(x+0.5)', () => {
     const widths = [556.6, 556.4, 500.5, -300.5, -300.6, 100, 2.5];
-    // LastChar(73) 가 Widths 길이(7)를 넘는다 → 뒤쪽은 0
+    // LastChar (73) exceeds the Widths length (7) -> the rest is 0
     const bytes = bytesOf(range(60, 80));
     const r = run(make(widths, { FirstChar: 65, LastChar: 73 }, 123.9), `${hex(bytes)} Tj`);
     expect(r.font.unresolved).toEqual([]);
@@ -463,7 +463,7 @@ describe('단순 폰트 /Widths', () => {
     const adv = (c: number) => r.font.advance(r.font.cid(c));
     expect([60, 64, 74, 80].map(adv)).toEqual([123, 123, 123, 123]);
     expect(range(65, 73).map(adv)).toEqual([557, 556, 501, -300, -301, 100, 3, 0, 0]);
-    // 명세 폭(편집용): 실수 그대로(MuPDF 객체의 float32 정밀도), MissingWidth 도 자르지 않는다.
+    // Specified width (for editing): the real value as is (float32 precision of the MuPDF object); MissingWidth is not truncated either.
     const spec = (c: number) => r.font.advanceSpec(r.font.cid(c));
     const near = (got: number[], want: number[]) =>
       want.forEach((w, i) => expect(got[i], `${i}`).toBeCloseTo(w, 4));
@@ -471,7 +471,7 @@ describe('단순 폰트 /Widths', () => {
     near(range(65, 73).map(spec), [556.6, 556.4, 500.5, -300.5, -300.6, 100, 2.5, 0, 0]);
   });
 
-  it('MissingWidth 가 없으면 0, 기술자가 없어도 0', () => {
+  it('0 without MissingWidth, and 0 even without a descriptor', () => {
     const bytes = bytesOf([65, 66, 67, 68]);
     const r1 = run(make([700, 800], { FirstChar: 65, LastChar: 66 }), `${hex(bytes)} Tj`);
     expect(compareHorizontal(r1, bytes).mismatches).toEqual([]);
@@ -492,7 +492,7 @@ describe('단순 폰트 /Widths', () => {
     expect([65, 66, 67].map((c) => r2.font.advance(c))).toEqual([0, 900, 0]);
   });
 
-  it('FirstChar > LastChar, LastChar > 255, FirstChar < 0 이면 first=last=0 으로 취급', () => {
+  it('FirstChar > LastChar, LastChar > 255 or FirstChar < 0 is treated as first=last=0', () => {
     for (const extra of [
       { FirstChar: 70, LastChar: 66 },
       { FirstChar: 65, LastChar: 300 },
@@ -505,7 +505,7 @@ describe('단순 폰트 /Widths', () => {
     }
   });
 
-  it('표준 글꼴 이름이어도 /Widths 가 있으면 그 폭을 쓴다', () => {
+  it('even for a standard font name, /Widths is used if present', () => {
     const bytes = bytesOf([65, 66]);
     const r = run(
       (doc) =>
@@ -524,7 +524,7 @@ describe('단순 폰트 /Widths', () => {
     expect(r.font.advance(65)).toBe(111);
   });
 
-  it('decode 는 1바이트 코드, cid=code', () => {
+  it('decode yields 1-byte codes, cid=code', () => {
     const font = new FontCache(new mupdf.PDFDocument()).load(null);
     const codes = font.decode(Uint8Array.from([0x41, 0x00, 0xff]));
     expect(codes).toEqual([
@@ -537,8 +537,8 @@ describe('단순 폰트 /Widths', () => {
   });
 });
 
-describe('hail-mary 폰트 (Tf 리소스 없음)', () => {
-  it('Times-Roman + StandardEncoding 폭으로 그려진다', () => {
+describe('hail-mary font (no Tf resource)', () => {
+  it('drawn with Times-Roman + StandardEncoding widths', () => {
     const bytes = bytesOf(range(0, 255));
     const r = run(
       (doc) => doc.addObject({ Type: 'Font', Subtype: 'Type1', BaseFont: 'Helvetica' }),
@@ -605,7 +605,7 @@ describe('Type3', () => {
     ],
   ];
   for (const [label, extra, expected] of cases) {
-    it(`${label}: 폭 = trunc(float32(a·w·1000))`, () => {
+    it(`${label}: width = trunc(float32(a*w*1000))`, () => {
       const r = run(type3(extra), `${hex(bytes)} Tj`);
       expect(r.font.subtype).toBe('Type3');
       expect(r.font.unresolved).toEqual([]);
@@ -616,7 +616,7 @@ describe('Type3', () => {
     });
   }
 
-  it('type3Matrix 는 MuPDF 가 쓰는 행렬(float32)', () => {
+  it('type3Matrix is the matrix MuPDF uses (float32)', () => {
     const r = run(
       type3({ FontMatrix: [0.001, 0, 0, 0.001, 0, 0], Widths: [1, 2, 3, 4] }),
       `${hex(bytes)} Tj`,
@@ -626,7 +626,7 @@ describe('Type3', () => {
     expect(r2.font.type3Matrix).toEqual([1, 0, 0, 1, 0, 0]);
   });
 
-  it('FirstChar > LastChar 이면 first=last=0: 코드 0 만 Widths[0], 나머지는 0', () => {
+  it('if FirstChar > LastChar then first=last=0: only code 0 gets Widths[0], the rest are 0', () => {
     const r = run(
       type3({
         FirstChar: 70,
@@ -640,7 +640,7 @@ describe('Type3', () => {
     expect([0, 65, 66].map((c) => r.font.advance(c))).toEqual([500, 0, 0]);
   });
 
-  it('Widths·Encoding·CharProcs 중 하나라도 없으면 MuPDF 는 로드 실패 → hail-mary 폭', () => {
+  it('if any of Widths, Encoding, CharProcs is missing, MuPDF fails to load -> hail-mary widths', () => {
     for (const drop of ['Widths', 'Encoding', 'CharProcs']) {
       const extra: Record<string, unknown> = {
         FontMatrix: [0.001, 0, 0, 0.001, 0, 0],
@@ -662,7 +662,7 @@ describe('Type3', () => {
   });
 });
 
-/** 세로쓰기: 글리프 원점 = (-v.x, 누적 w1 - v.y). size 1000 이라 1/1000 단위 그대로 */
+/** Vertical writing: glyph origin = (-v.x, accumulated w1 - v.y). Size is 1000, so the 1/1000 unit is used as is */
 function compareVertical(r: Run, bytes: Uint8Array): Compare {
   const mismatches: string[] = [];
   const codes = r.font.decode(bytes).filter((c) => r.font.cid(c.code) >= 0);
@@ -682,7 +682,7 @@ function compareVertical(r: Run, bytes: Uint8Array): Compare {
   return { drawn: r.shown.length, mismatches };
 }
 
-describe('Type0 (CID 폰트)', () => {
+describe('Type0 (CID font)', () => {
   const cidSystemInfo = (doc: mupdf.PDFDocument) => ({
     Registry: doc.newString('Adobe'),
     Ordering: doc.newString('Identity'),
@@ -700,7 +700,7 @@ describe('Type0 (CID 폰트)', () => {
       CapHeight: 700,
       StemV: 80,
     });
-  /** Type0 + CIDFontType2(내장 글꼴 없음: MuPDF 가 대체 글꼴을 쓰지만 폭은 /W 에서 온다) */
+  /** Type0 + CIDFontType2 (no embedded font: MuPDF uses a substitute font, but the widths come from /W) */
   const type0 =
     (
       encoding: string | ((doc: mupdf.PDFDocument) => unknown),
@@ -726,8 +726,8 @@ describe('Type0 (CID 폰트)', () => {
     };
   const be16 = (...v: number[]): Uint8Array => Uint8Array.from(v.flatMap((x) => [x >> 8, x & 255]));
 
-  describe('Identity-H 가로쓰기', () => {
-    it('/W 배열형·범위형, /DW, 실수 폭, 범위 밖은 DW', () => {
+  describe('Identity-H horizontal writing', () => {
+    it('/W array form and range form, /DW, real widths, DW outside the range', () => {
       const W = [10, [100, 200.5, 300], 20, 22, 450, 40, [999], 100.4, [123.6]];
       const bytes = be16(5, 10, 11, 12, 20, 21, 22, 23, 40, 41, 100, 101, 0xffff);
       const r = run(type0('Identity-H', { DW: 500, W }), `${hex(bytes)} Tj`);
@@ -749,7 +749,7 @@ describe('Type0 (CID 폰트)', () => {
       );
     });
 
-    it('/DW 없으면 1000, /DW 가 실수면 반올림', () => {
+    it('1000 without /DW, rounded if /DW is a real', () => {
       const bytes = be16(1, 2, 3);
       const r1 = run(type0('Identity-H'), `${hex(bytes)} Tj`);
       expect(compareHorizontal(r1, bytes).mismatches).toEqual([]);
@@ -760,7 +760,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(r2.font.advanceSpec(1)).toBe(777.5);
     });
 
-    it('겹치는 /W 항목·자르다 만 /W·시작 CID 가 실수인 항목도 MuPDF 와 같은 폭', () => {
+    it('overlapping /W entries, truncated /W, and entries with a real start CID also get the same widths as MuPDF', () => {
       const cases: unknown[][] = [
         [65, 70, 111, 66, 66, 222, 0, [5, 6]],
         [1, 10, 100, 5, 6, 300],
@@ -778,7 +778,7 @@ describe('Type0 (CID 폰트)', () => {
       }
     });
 
-    it('홀수 길이: 끝에 남은 1바이트는 코드 0, 길이 1 (Identity-H 의 CID 0 글리프)', () => {
+    it('odd length: the single trailing byte is code 0, length 1 (the CID 0 glyph of Identity-H)', () => {
       const bytes = Uint8Array.from([0x00, 0x41, 0x42]);
       const r = run(type0('Identity-H', { DW: 500, W: [0, [111]] }), `${hex(bytes)} Tj`);
       expect(r.font.decode(bytes)).toEqual([
@@ -791,7 +791,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(r.font.advance(r.font.cid(0))).toBe(111);
     });
 
-    it('FontCache: 같은 간접 객체는 같은 인스턴스, 해석한 직접 객체도 같은 포인터면 같은 인스턴스', () => {
+    it('FontCache: the same indirect object gives the same instance, and a resolved direct object with the same pointer also gives the same instance', () => {
       const r = run(type0('Identity-H'), `${hex(be16(1))} Tj`);
       const cache = new FontCache(r.doc);
       const a = cache.load(r.fontObj);
@@ -808,9 +808,9 @@ describe('Type0 (CID 폰트)', () => {
     });
   });
 
-  describe('Identity-V 세로쓰기', () => {
+  describe('Identity-V vertical writing', () => {
     const bytes = be16(1, 2, 3, 10, 11, 20, 21, 22, 30);
-    it('DW2·W2 없음: 기본 (880, -1000), 위치 벡터 x = 폭/2', () => {
+    it('without DW2/W2: default (880, -1000), position vector x = width/2', () => {
       const r = run(
         type0('Identity-V', { DW: 500, W: [10, [400, 600], 20, 22, 300] }),
         `${hex(bytes)} Tj`,
@@ -825,7 +825,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(r.font.vertical(1)).toEqual({ w: -1000, x: 250, y: 880 });
     });
 
-    it('DW2 명시, W2 배열형·범위형', () => {
+    it('explicit DW2, W2 array form and range form', () => {
       const r = run(
         type0('Identity-V', {
           DW: 800,
@@ -845,7 +845,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(r.font.vertical(1)).toEqual({ w: -1100, x: 400, y: 900 });
     });
 
-    it('W2 가 short 범위를 넘으면 C short 로 잘린다(래핑)', () => {
+    it('if W2 exceeds the short range it is truncated to a C short (wrapping)', () => {
       const r = run(
         type0('Identity-V', { DW: 500, DW2: [40000, -40000], W2: [1, [70000, 1, 2]] }),
         `${hex(be16(1, 2))} Tj`,
@@ -854,7 +854,7 @@ describe('Type0 (CID 폰트)', () => {
     });
   });
 
-  describe('임베디드 CMap 스트림', () => {
+  describe('embedded CMap stream', () => {
     const cmapStream =
       (body: string, dict: Record<string, unknown> = {}) =>
       (doc: mupdf.PDFDocument) =>
@@ -868,7 +868,7 @@ describe('Type0 (CID 폰트)', () => {
       1 begincidchar <8140> 5000 endcidchar`;
     const W = [1, [100, 200, 300], 1000, 1002, 450, 5000, [999]];
 
-    it('1·2바이트 혼합 코드스페이스 + cidrange·cidchar: 분할·CID·폭이 MuPDF 와 일치', () => {
+    it('mixed 1/2-byte codespace + cidrange/cidchar: splitting, CIDs and widths match MuPDF', () => {
       const bytes = Uint8Array.from([
         0x01, 0x02, 0x03, 0x80, 0x00, 0x80, 0x01, 0x81, 0x40, 0x41, 0x90,
       ]);
@@ -882,7 +882,7 @@ describe('Type0 (CID 폰트)', () => {
         [0x8001, 2],
         [0x8140, 2],
         [0x41, 1],
-        [0, 1], // 끝의 0x90: 1바이트 코드스페이스(00–7F)에 없고 뒤따르는 바이트도 없음
+        [0, 1], // the trailing 0x90: not in the 1-byte codespace (00-7F) and no byte follows
       ]);
       expect(r.font.cid(0x8001)).toBe(1001);
       expect(r.font.cid(0x8140)).toBe(5000);
@@ -891,7 +891,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(cmp.mismatches).toEqual([]);
     });
 
-    it('매핑이 없는 코드(CID -1)는 글리프도 전진도 없다', () => {
+    it('a code with no mapping (CID -1) has neither a glyph nor an advance', () => {
       const body = `1 begincodespacerange <00> <FF> endcodespacerange 1 begincidrange <00> <0F> 0 endcidrange`;
       const bytes = Uint8Array.from([0x01, 0x20, 0x02, 0x30]);
       const r = run(type0(cmapStream(body), { DW: 500 }), `${hex(bytes)} Tj`);
@@ -901,7 +901,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(cmp.mismatches).toEqual([]);
     });
 
-    it('나중에 정의한 범위가 겹친 구간을 덮는다(범위 속 범위, cidchar 뒤 cidrange)', () => {
+    it('a later-defined range overrides the overlapping part (range within range, cidrange after cidchar)', () => {
       const bodies = [
         `1 begincodespacerange <00> <FF> endcodespacerange 2 begincidrange <41> <50> 100 <45> <46> 900 endcidrange`,
         `1 begincodespacerange <00> <FF> endcodespacerange 2 begincidrange <45> <46> 900 <41> <50> 100 endcidrange`,
@@ -921,7 +921,7 @@ describe('Type0 (CID 폰트)', () => {
       ]);
     });
 
-    it('코드스페이스가 없는데 매핑 범위가 있으면 2바이트 <0000>-<FFFF> 가 들어간다', () => {
+    it('if there is no codespace but there are mapping ranges, a 2-byte <0000>-<FFFF> is inserted', () => {
       const bytes = Uint8Array.from([0x00, 0x41, 0x42, 0x43, 0x44]);
       const r = run(
         type0(cmapStream('1 begincidrange <0000> <FFFF> 0 endcidrange'), {
@@ -936,7 +936,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(cmp.mismatches).toEqual([]);
     });
 
-    it('/Identity-H usecmap: 코드스페이스 상속(범위가 없을 때), 못 찾은 코드는 usecmap 으로', () => {
+    it('/Identity-H usecmap: inherits the codespace (when there are no ranges), unfound codes go through usecmap', () => {
       const bytes = Uint8Array.from([0x00, 0x41, 0x00, 0x43, 0x00]);
       const r = run(
         type0(cmapStream('/Identity-H usecmap 1 begincidrange <41> <42> 100 endcidrange'), {
@@ -953,7 +953,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(cmp.mismatches).toEqual([]);
     });
 
-    it('/Identity-H usecmap 뒤에 1바이트 코드스페이스를 더하면 짧은 쪽이 먼저 맞는다', () => {
+    it('if a 1-byte codespace is added after /Identity-H usecmap, the shorter one matches first', () => {
       const body =
         '/Identity-H usecmap 1 begincodespacerange <00> <FF> endcodespacerange 1 begincidrange <41> <42> 100 endcidrange';
       const bytes = Uint8Array.from([0x41, 0x42, 0x43, 0x00, 0x44, 0x00]);
@@ -964,7 +964,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(cmp.mismatches).toEqual([]);
     });
 
-    it('사전 /UseCMap 이름(Identity-H) 도 폴백으로 쓰인다', () => {
+    it('the dictionary /UseCMap name (Identity-H) is also used as a fallback', () => {
       const bytes = Uint8Array.from([0x00, 0x41, 0x00, 0x43]);
       const r = run(
         type0(cmapStream('1 begincidrange <41> <42> 100 endcidrange', { UseCMap: 'Identity-H' }), {
@@ -976,7 +976,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(compareHorizontal(r, bytes).mismatches).toEqual([]);
     });
 
-    it('WMode: 사전 값이 있으면 사전, 없으면 본문', () => {
+    it('WMode: the dictionary value if present, otherwise the body', () => {
       const bytes = Uint8Array.from([0x01, 0x02, 0x80, 0x00]);
       const cases: [string, Record<string, unknown>, 0 | 1][] = [
         ['/WMode 1 def', {}, 1],
@@ -997,7 +997,7 @@ describe('Type0 (CID 폰트)', () => {
       }
     });
 
-    it('MuPDF 가 읽지 못하는 usecmap 이름은 무시되고 unresolved 에 남는다', () => {
+    it('a usecmap name MuPDF cannot read is ignored and remains in unresolved', () => {
       const body = `/Nonexistent-H usecmap 1 begincodespacerange <00> <FF> endcodespacerange 1 begincidrange <41> <42> 100 endcidrange`;
       const bytes = Uint8Array.from([0x41, 0x43]);
       const r = run(type0(cmapStream(body), { DW: 500 }), `${hex(bytes)} Tj`);
@@ -1007,11 +1007,11 @@ describe('Type0 (CID 폰트)', () => {
       expect(cmp.mismatches).toEqual([]);
     });
 
-    it('사전 정의 CMap 을 usecmap 하면 코드스페이스를 상속(범위 없음)하고 CID 는 자리표시자', () => {
+    it('usecmap of a predefined CMap inherits the codespace (no ranges) and the CID is a placeholder', () => {
       const bytes = Uint8Array.from([0x41, 0x43, 0x81, 0x40, 0x20, 0xa1]);
       const r = run(type0(cmapStream('/90ms-RKSJ-H usecmap'), { DW: 500 }), `${hex(bytes)} Tj`);
       expect(r.font.decode(bytes).map((c) => c.length)).toEqual([1, 1, 2, 1, 1]);
-      // 폭이 균일(W 없음)하므로 CID 를 몰라도 폭은 맞다
+      // Widths are uniform (no W), so widths are right even without knowing the CID
       expect(r.font.unresolved).toEqual([]);
       const cmp = compareHorizontal(r, bytes);
       expect(cmp.drawn).toBe(5);
@@ -1019,14 +1019,14 @@ describe('Type0 (CID 폰트)', () => {
     });
   });
 
-  describe('무작위 대조 (고정 시드)', () => {
-    /** 선형 합동 생성기 */
+  describe('random comparison (fixed seed)', () => {
+    /** Linear congruential generator */
     const prng = (seed: number) => () => {
       seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
       return seed / 0x7fffffff;
     };
 
-    it('겹치는 cidrange·cidchar 를 무작위로 쌓아도 모든 코드의 CID 가 MuPDF 와 같다', () => {
+    it('even with overlapping cidrange/cidchar stacked at random, the CID of every code equals the MuPDF one', () => {
       for (let seed = 1; seed <= 25; seed++) {
         const rnd = prng(seed);
         const ri = (n: number) => Math.floor(rnd() * n);
@@ -1042,7 +1042,7 @@ describe('Type0 (CID 폰트)', () => {
           );
         }
         const body = `1 begincodespacerange <00> <FF> endcodespacerange ${items.join(' ')}`;
-        // 폭 = 100 + CID 라서 MuPDF 의 전진량으로 CID 를 알 수 있다
+        // Width = 100 + CID, so the CID can be derived from MuPDF's advance
         const widths = Array.from({ length: 600 }, (_, i) => 100 + i);
         const cmap = (doc: mupdf.PDFDocument) =>
           doc.addStream(
@@ -1053,13 +1053,13 @@ describe('Type0 (CID 폰트)', () => {
         const r = run(type0(cmap, { DW: 50, W: [0, widths] }), `${hex(bytes)} Tj`);
         const cmp = compareHorizontal(r, bytes);
         expect(cmp.mismatches, `seed ${seed}: ${body}`).toEqual([]);
-        // 같은 코드가 MuPDF 와 같은 CID 로 풀렸다면 폭(100+CID)도 같다. 매핑이 없는 코드는 -1
+        // If the same code resolved to the same CID as MuPDF, the width (100+CID) is also the same. A code with no mapping is -1
         const mapped = range(0, 255).filter((c) => r.font.cid(c) >= 0).length;
         expect(r.shown.length).toBe(mapped);
       }
     });
 
-    it('무작위 /W (시작 CID 가 서로 다른 항목, 겹침 허용)의 폭이 MuPDF 와 같다', () => {
+    it('widths of a random /W (entries with distinct start CIDs, overlaps allowed) equal those of MuPDF', () => {
       for (let seed = 1; seed <= 25; seed++) {
         const rnd = prng(1000 + seed);
         const ri = (n: number) => Math.floor(rnd() * n);
@@ -1070,7 +1070,7 @@ describe('Type0 (CID 폰트)', () => {
           while (used.has(c0)) c0 = (c0 + 1) % 280;
           used.add(c0);
           if (rnd() < 0.5) {
-            // 배열형은 c0+j 마다 항목을 만든다: 이미 쓴 시작 CID 를 만나기 전까지만 길이를 잡는다
+            // The array form creates an entry for each c0+j: the length is taken only until an already-used start CID is reached
             const ws: number[] = [];
             for (let j = 0, len = 1 + ri(8); j < len && (j === 0 || !used.has(c0 + j)); j++) {
               ws.push(ri(1500) - 100);
@@ -1090,8 +1090,8 @@ describe('Type0 (CID 폰트)', () => {
     });
   });
 
-  describe('사전 정의 CMap', () => {
-    // 각 CMap 에서 실제로 매핑되는 코드열(1·2바이트 혼합)
+  describe('predefined CMap', () => {
+    // Code sequences actually mapped by each CMap (mixed 1/2 bytes)
     const samples: [string, number[]][] = [
       ['KSCms-UHC-H', [0x41, 0x42, 0xb0, 0xa1, 0x81, 0x41, 0xc8, 0xfe, 0x20]],
       ['KSC-EUC-H', [0x41, 0xb0, 0xa1, 0xc8, 0xfe, 0x42]],
@@ -1110,7 +1110,7 @@ describe('Type0 (CID 폰트)', () => {
       ['UniJIS-UTF16-H', [0x00, 0x41, 0x30, 0x42, 0xd8, 0x40, 0xdc, 0x0b]],
       ['UniKS-UTF16-H', [0x00, 0x41, 0xac, 0x00]],
       ['UniGB-UTF16-H', [0x00, 0x41, 0x4e, 0x00]],
-      // Adobe 배포본과 같은 경계(MuPDF 1.28.1 이 실제로 그렇게 나눔을 Device 로 확인한 코드열)
+      // Same boundaries as the Adobe distribution (code sequences for which MuPDF 1.28.1 was confirmed via Device to split that way)
       ['B5pc-H', [0xfd, 0xfe, 0x41]],
       ['GBpc-EUC-H', [0xfd, 0x41]],
       ['83pv-RKSJ-H', [0xfd, 0x41]],
@@ -1118,7 +1118,7 @@ describe('Type0 (CID 폰트)', () => {
       ['CNS-EUC-H', [0x8e, 0xa1, 0xa1, 0xa1, 0x41, 0x8e, 0xa4, 0xa1, 0xa1, 0x8e, 0xa7, 0xa1, 0xa1]],
     ];
     for (const [name, raw] of samples) {
-      it(`${name}: 코드 분할이 MuPDF 와 일치(폭 균일 → unresolved 비어 있음)`, () => {
+      it(`${name}: code splitting matches MuPDF (uniform widths -> unresolved is empty)`, () => {
         const bytes = Uint8Array.from(raw);
         const r = run(type0(name, { DW: 777 }, {}), `${hex(bytes)} Tj`);
         const codes = r.font.decode(bytes);
@@ -1130,7 +1130,7 @@ describe('Type0 (CID 폰트)', () => {
       });
     }
 
-    it('표에 있는 이름(-H/-V)은 모두 MuPDF 가 읽고, 표에 없는 이름은 MuPDF 도 못 읽는다', () => {
+    it('every name in the table (-H/-V) is read by MuPDF, and a name not in the table is not read by MuPDF either', () => {
       const bad: string[] = [];
       let checked = 0;
       for (const base of Object.keys(PREDEFINED_CMAP_CODESPACES)) {
@@ -1146,7 +1146,7 @@ describe('Type0 (CID 폰트)', () => {
                 : [first.low >> 8, first.low & 255];
           const r = run(type0(name, { DW: 777 }), `${hex(Uint8Array.from(sample))} Tj`);
           const loaded = r.font.fallbackReason === undefined;
-          // MuPDF 가 읽었다면 글리프(있다면)가 'Foo' 폰트, 못 읽었다면 hail-mary(폰트 이름 '')
+          // If MuPDF read it, the glyph (if any) is in the 'Foo' font; if not, hail-mary (font name '')
           const mupdfLoaded = r.shown.length > 0 ? r.shown.every((g) => g.font === 'Foo') : loaded;
           checked++;
           if (mine !== loaded || mupdfLoaded !== loaded)
@@ -1173,7 +1173,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(bad).toEqual([]);
     });
 
-    it('-V 이름은 wmode 1, 폭 균일이면 세로 지표도 정확', () => {
+    it('-V names have wmode 1, and with uniform widths the vertical metrics are exact too', () => {
       const bytes = Uint8Array.from([0x41, 0xb0, 0xa1, 0x42]);
       const r = run(type0('KSCms-UHC-V', { DW: 777 }), `${hex(bytes)} Tj`);
       expect(r.font.wmode).toBe(1);
@@ -1184,7 +1184,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(r.font.vertical(5)).toEqual({ w: -1000, x: 388, y: 880 });
     });
 
-    it('폭이 균일하지 않으면(W 에 DW 와 다른 값) CID 매핑을 모르므로 unresolved', () => {
+    it('if widths are not uniform (W has values different from DW), the CID mapping is unknown, so unresolved', () => {
       const r = run(
         type0('KSCms-UHC-H', { DW: 777, W: [1, [500]] }),
         `${hex(Uint8Array.from([0x41]))} Tj`,
@@ -1197,7 +1197,7 @@ describe('Type0 (CID 폰트)', () => {
       expect(same.font.unresolved).toEqual([]);
     });
 
-    it('UCS2·UTF16 CMap 은 D800–DFFF 를 2바이트 코드로 받지 않는다(1바이트씩 코드 0)', () => {
+    it('UCS2/UTF16 CMaps do not accept D800-DFFF as a 2-byte code (code 0 byte by byte)', () => {
       const bytes = Uint8Array.from([0xd8, 0x00, 0x00, 0x41, 0x00, 0x42]);
       for (const name of ['UniKS-UCS2-H', 'UniGB-UTF16-H']) {
         const r = run(type0(name, { DW: 777 }), `${hex(bytes)} Tj`);
@@ -1211,14 +1211,14 @@ describe('Type0 (CID 폰트)', () => {
           [0, 1],
         ]);
       }
-      // MuPDF 는 이 열에서 UniKS-UCS2-H 는 글리프 0개(네 코드 모두 매핑 없음), UniGB-UTF16-H 는 U+4100 하나만 그린다
+      // For this sequence MuPDF draws 0 glyphs with UniKS-UCS2-H (none of the four codes are mapped) and only U+4100 with UniGB-UTF16-H
       expect(run(type0('UniKS-UCS2-H', { DW: 777 }), `${hex(bytes)} Tj`).shown.length).toBe(0);
       expect(run(type0('UniGB-UTF16-H', { DW: 777 }), `${hex(bytes)} Tj`).shown.length).toBe(1);
     });
 
-    it('UTF16 CMap: 서로게이트 쌍은 4바이트 코드', () => {
+    it('UTF16 CMap: a surrogate pair is a 4-byte code', () => {
       const font = new FontCache(new mupdf.PDFDocument()).load(null);
-      expect(font.decode(Uint8Array.from([0xd8, 0x40, 0xdc, 0x0b])).length).toBe(4); // hail-mary 는 1바이트씩
+      expect(font.decode(Uint8Array.from([0xd8, 0x40, 0xdc, 0x0b])).length).toBe(4); // hail-mary goes byte by byte
       const r = run(
         type0('UniJIS-UTF16-H', { DW: 777 }),
         `${hex(Uint8Array.from([0x00, 0x41, 0xd8, 0x40, 0xdc, 0x0b]))} Tj`,
@@ -1229,7 +1229,7 @@ describe('Type0 (CID 폰트)', () => {
     });
   });
 
-  describe('MuPDF 가 폰트를 로드하지 못해 hail-mary 로 대체하는 경우', () => {
+  describe('cases where MuPDF fails to load the font and falls back to hail-mary', () => {
     const bytes = Uint8Array.from([0x00, 0x41, 0x00, 0x42, 0x80, 0xff]);
     const cases: [string, (doc: mupdf.PDFDocument) => mupdf.PDFObject, string][] = [
       ['MuPDF 가 모르는 CMap 이름', type0('Foo-H'), 'Foo-H'],

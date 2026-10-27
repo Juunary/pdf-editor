@@ -3,7 +3,7 @@ import type { Quad, SearchHit, SearchRequest, SearchResult } from '@pdf-editor/s
 
 export const DEFAULT_MAX_HITS = 1000;
 
-/** mupdf.js `runSearch` 가 한 쪽에서 돌려주는 사각형(quad) 수의 상한. 넘으면 그 쪽 결과는 잘렸을 수 있다. */
+/** Upper bound on the number of rectangles (quads) mupdf.js `runSearch` returns for one page. If exceeded, that page's results may be truncated. */
 export const MUPDF_PAGE_QUAD_CAP = 500;
 
 function assertInteger(name: string, value: number, min: number): void {
@@ -13,11 +13,11 @@ function assertInteger(name: string, value: number, min: number): void {
 }
 
 /**
- * 문서 텍스트 검색. `startPage` 부터 끝 쪽까지 간 뒤 0 쪽으로 돌아 `pageLimit` 쪽까지 본다.
- * 결과는 검색한 쪽 순서이고, 한 쪽 안에서는 MuPDF 결과 순서다. 기본은 대소문자를 구분한다.
+ * Document text search. Goes from `startPage` to the last page, wraps around to page 0, and looks through `pageLimit` pages.
+ * Results are in the order of pages searched, and within a page in MuPDF result order. Case-sensitive by default.
  *
- * `truncated` 는 maxHits 를 넘는 결과가 더 있거나, 한 쪽의 결과가 MuPDF 쪽 상한(500 quad)에
- * 닿아 잘렸을 수 있을 때 true 다.
+ * `truncated` is true when there are more results beyond maxHits, or when a page's results
+ * may have been cut off at MuPDF's per-page limit (500 quads).
  */
 export function searchDocument(doc: mupdf.PDFDocument, request: SearchRequest): SearchResult {
   const t0 = performance.now();
@@ -37,7 +37,7 @@ export function searchDocument(doc: mupdf.PDFDocument, request: SearchRequest): 
 
   const result: SearchResult = { query, hits: [], truncated: false, pagesSearched: 0, searchMs: 0 };
   if (query.length > 0) {
-    // MuPDF 검색 옵션: 기본(옵션 없음)이 대소문자 구분, 'ignore-case' 가 무시.
+    // MuPDF search option: the default (no option) is case-sensitive, 'ignore-case' ignores case.
     const options = request.caseSensitive ? undefined : 'ignore-case';
     search: for (let k = 0; k < pageLimit; k++) {
       const pageIndex = (startPage + k) % pageCount;

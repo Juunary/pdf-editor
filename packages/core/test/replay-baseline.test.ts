@@ -1,7 +1,7 @@
 /**
- * 복구 기준점(계약 D4 사용자 결정 2026-10-21): 저장한 바이트를 기준점으로 열고 저장 뒤 편집만 재적용한다.
- * 실제 어댑터로 저장 → 편집 → 기준점 재적용 결과가 원래 세션과 같고, 저장 전 편집이 두 번 들어가지 않으며, 재적용 뒤
- * 되돌리기 이력·저널 추정이 새 세션처럼 동작하는지 본다. 나눠 적용(`more`)도 한 번에 적용한 결과와 같아야 한다.
+ * Recovery checkpoint (contract D4 user decision 2026-10-21): open the saved bytes as the checkpoint and reapply only the edits made after saving.
+ * Check that with the real adapter, save → edit → checkpoint reapply gives the same result as the original session, that edits made before saving are not applied twice, and that after reapply the
+ * undo history and journal estimate behave like a new session. Split application (`more`) must also equal the result of applying all at once.
  */
 import { describe, expect, it } from 'vitest';
 import type { DraftInput, EditOp, ParagraphEditPlan } from '@pdf-editor/shared-types';
@@ -34,7 +34,7 @@ function input(plan: ParagraphEditPlan, value: string): DraftInput {
   };
 }
 
-/** `startsWith` 로 시작하는 레이아웃 문단을 고친다(편집 블록이면 블록 전체가 대상). */
+/** Edits the layout paragraph starting with `startsWith` (if it is an edit block, the whole block is the target). */
 async function edit(s: PdfSession, startsWith: string, value: string): Promise<EditOp> {
   const paragraph = s.getPageLayout(0).paragraphs.find((p) => p.text.startsWith(startsWith));
   if (!paragraph) throw new Error(`문단 없음: ${startsWith}`);
@@ -45,7 +45,7 @@ async function edit(s: PdfSession, startsWith: string, value: string): Promise<E
   return (await s.commitParagraphEdit(started.draftId)).op;
 }
 
-/** 저장 전 2건(한 건은 폴백 글자) → 저장 → 저장 뒤 2건(새 문단 1건, 저장 전 블록 재편집 1건). */
+/** 2 edits before save (one with fallback characters) → save → 2 edits after save (1 new paragraph, 1 re-edit of a pre-save block). */
 async function scenario() {
   const live = session(source());
   const before = [
@@ -61,8 +61,8 @@ async function scenario() {
   return { live, before, after, saved, savedIds };
 }
 
-describe('복구 기준점(D4): 저장 바이트 + 저장 뒤 편집 재적용', () => {
-  it('기준점 재적용 결과 = 원래 세션 = 원본 + 전체 로그 재적용, 저장 전 편집은 한 번만 있다', async () => {
+describe('recovery checkpoint (D4): saved bytes + reapply of post-save edits', () => {
+  it('checkpoint reapply result = original session = original + full log reapply, and pre-save edits appear only once', async () => {
     const { live, before, after, saved, savedIds } = await scenario();
     expect(savedIds).toEqual(before.map((o) => o.id));
     const expected = text(live);
@@ -73,7 +73,7 @@ describe('복구 기준점(D4): 저장 바이트 + 저장 뒤 편집 재적용',
     expect(text(fromBaseline)).toBe(expected);
     expect(count(text(fromBaseline).replace(/\s/gu, ''), 'Savededittwo.')).toBe(1);
     expect(count(text(fromBaseline).replace(/\s/gu, ''), 'changedaftersave.')).toBe(1);
-    // 기준점 세션의 이력은 저장 뒤 편집만이고 되돌릴 수 없다(복구 전 되돌리기 이력은 사라진다).
+    // The checkpoint session's history contains only post-save edits and cannot be undone (the pre-recovery undo history is gone).
     expect(history).toMatchObject({
       activeEditIds: after.map((o) => o.id),
       canUndo: false,
@@ -87,7 +87,7 @@ describe('복구 기준점(D4): 저장 바이트 + 저장 뒤 편집 재적용',
     for (const s of [live, fromBaseline, fromOriginal]) s.close();
   });
 
-  it('기준점 재적용 뒤: 저널 추정 0 에서 시작하고 새 편집은 되돌릴 수 있으며 되돌리면 재적용 결과로 돌아온다', async () => {
+  it('after checkpoint reapply: the journal estimate starts at 0, new edits can be undone, and undoing returns to the reapply result', async () => {
     const { live, after, saved } = await scenario();
     const s = session(saved);
     await s.replayEdits(structuredClone(after));
@@ -103,14 +103,14 @@ describe('복구 기준점(D4): 저장 바이트 + 저장 뒤 편집 재적용',
     await s.undo();
     expect(text(s)).toBe(replayed);
     expect((await s.getEditHistory()).activeEditIds).toEqual(after.map((o) => o.id));
-    // 재적용한 편집은 되돌릴 수 없다.
+    // Reapplied edits cannot be undone.
     expect((await s.undo()).activeEditIds).toEqual(after.map((o) => o.id));
     expect(text(s)).toBe(replayed);
     live.close();
     s.close();
   });
 
-  it('저장 뒤 편집이 없으면 기준점만 열면 되고(재적용 0건) 저장 결과와 같다', async () => {
+  it('with no post-save edits, opening only the checkpoint is enough (0 reapplies) and equals the save result', async () => {
     const live = session(source());
     await edit(live, 'first paragraph', 'Only before save.');
     const saved = live.save({ changes: [] }).bytes;
@@ -124,8 +124,8 @@ describe('복구 기준점(D4): 저장 바이트 + 저장 뒤 편집 재적용',
   });
 });
 
-describe('나눠 적용하는 재적용(D4 진행 표시)', () => {
-  it('more 로 한 건씩 적용한 결과 = 한 번에 적용한 결과, 마지막 호출에서 저널이 켜진다', async () => {
+describe('split reapply (D4 progress display)', () => {
+  it('result of applying one at a time with more = result of applying all at once, and the journal is enabled on the last call', async () => {
     const { live, before, after } = await scenario();
     const ops = [...before, ...after];
     const whole = session(source());
@@ -144,14 +144,14 @@ describe('나눠 적용하는 재적용(D4 진행 표시)', () => {
       edits: ops.length,
     });
     expect(partsHistory.revision).toBe(wholeHistory.revision);
-    // 저장 결과도 같다(메타 기록은 마지막 호출에서 한 번).
+    // The save result is also the same (the metadata record is written once, on the last call).
     const a = whole.save({ changes: [] }).bytes;
     const b = parts.save({ changes: [] }).bytes;
     expect(text(session(b))).toBe(text(session(a)));
     for (const s of [live, whole, parts]) s.close();
   });
 
-  it('이어 받는 중에는 편집 시작을 거절하고, 마지막 호출 뒤에는 다시 재적용할 수 없다', async () => {
+  it('rejects starting an edit while a continuation is in progress, and cannot reapply again after the last call', async () => {
     const { live, before } = await scenario();
     const s = session(source());
     await s.replayEdits([structuredClone(before[0]!)], { more: true });

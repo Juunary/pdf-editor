@@ -38,8 +38,8 @@ const pkg = JSON.parse(readFileSync(join(extRoot, 'package.json'), 'utf8')) as {
 const tmp = mkdtempSync(join(tmpdir(), 'pdf-editor-release-test-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-describe('빌드 종류별 매니페스트(D7)', () => {
-  it('dev: Chrome 128, DNR·호스트 권한·WAR 유지, 이름 표시, 버전은 package.json', () => {
+describe('manifest per build kind (D7)', () => {
+  it('dev: Chrome 128, keeps DNR, host permissions and WAR, shows the name, version from package.json', () => {
     const m = buildManifest(base, 'dev', pkg.version);
     expect(m.version).toBe(pkg.version);
     expect(m.name).toBe('__MSG_appName__');
@@ -49,7 +49,7 @@ describe('빌드 종류별 매니페스트(D7)', () => {
     expect(m.web_accessible_resources).toBeDefined();
   });
 
-  it('store: Chrome 151, DNR·호스트 권한·WAR 제거, downloads 만 남김', () => {
+  it('store: Chrome 151, removes DNR, host permissions and WAR, keeps only downloads', () => {
     const m = buildManifest(base, 'store', pkg.version);
     expect(m.name).toBe('__MSG_appName__');
     expect(m.version).toBe('1.0.0');
@@ -61,7 +61,7 @@ describe('빌드 종류별 매니페스트(D7)', () => {
     expect(JSON.stringify(m)).not.toContain('<all_urls>');
   });
 
-  it('기준 매니페스트를 바꾸지 않고 알 수 없는 종류는 거부한다', () => {
+  it('does not modify the base manifest and rejects unknown kinds', () => {
     const before = JSON.stringify(base);
     buildManifest(base, 'store', '9.9.9');
     expect(JSON.stringify(base)).toBe(before);
@@ -69,7 +69,7 @@ describe('빌드 종류별 매니페스트(D7)', () => {
     expect(BUILD_KINDS).toEqual(['dev', 'store']);
   });
 
-  it('아이콘 16·32·48·128 과 action.default_icon 을 가진다', () => {
+  it('has icons 16, 32, 48, 128 and action.default_icon', () => {
     const m = buildManifest(base, 'store', '1.0.0') as {
       icons: Record<string, string>;
       action: { default_icon: Record<string, string> };
@@ -82,28 +82,28 @@ describe('빌드 종류별 매니페스트(D7)', () => {
     expect(Object.keys(m.action.default_icon)).toEqual(['16', '32']);
   });
 
-  it('이름이 메시지 참조가 아니면 dev 는 매니페스트 이름에 (dev) 를 붙인다', () => {
+  it('if the name is not a message reference, dev appends (dev) to the manifest name', () => {
     const m = buildManifest({ ...base, name: 'X' }, 'dev', '1.0.0');
     expect(m.name).toBe('X (dev)');
   });
 
-  it('소스 링크는 버전 태그를 가리킨다', () => {
+  it('the source link points to the version tag', () => {
     expect(sourceUrl('1.0.0')).toBe('https://github.com/Juunary/pdf-editor/tree/v1.0.0');
   });
 });
 
-describe('이름·설명 현지화(사용자 결정 2026-10-26)', () => {
+describe('name and description localization (user decision 2026-10-26)', () => {
   const locales = readLocales(join(extRoot, '_locales'));
   const fields = ['name', 'description'] as const;
 
-  it('기본 언어 en, 이름·설명·툴바 제목은 메시지 참조', () => {
+  it('default language en; name, description and toolbar title are message references', () => {
     expect(base.default_locale).toBe(DEFAULT_LOCALE);
     expect(Object.keys(locales).sort()).toEqual([...LOCALES].sort());
     for (const f of fields) expect(base[f]).toMatch(/^__MSG_\w+__$/);
     expect((base.action as { default_title: string }).default_title).toMatch(/^__MSG_\w+__$/);
   });
 
-  it('두 언어의 키가 같고 값이 있으며 설명은 132자 이하', () => {
+  it('both languages have the same keys with values, and the description is at most 132 characters', () => {
     expect(Object.keys(locales.ko!).sort()).toEqual(Object.keys(locales.en!).sort());
     for (const [lang, messages] of Object.entries(locales)) {
       for (const f of fields) expect(resolveMessage(base[f], messages), lang).toBeTruthy();
@@ -113,33 +113,33 @@ describe('이름·설명 현지화(사용자 결정 2026-10-26)', () => {
     expect(resolveMessage(base.description, locales.en!)).not.toMatch(/[가-힣]/);
   });
 
-  it('설명은 등록 자료(docs/store/listing.md) 요약과 같다', () => {
+  it('the description matches the summary in the listing material (docs/store/listing.md)', () => {
     const listing = readFileSync(join(repoRoot, 'docs/store/listing.md'), 'utf8');
     for (const messages of Object.values(locales)) {
       expect(listing).toContain(resolveMessage(base.description, messages)!);
     }
   });
 
-  it('스토어는 두 언어 모두 "PDF Editor", 개발 빌드는 " (dev)" 를 붙인다', () => {
+  it('the store uses "PDF Editor" for both languages; the dev build appends " (dev)"', () => {
     const store = buildLocaleMessages(locales, 'store');
     const dev = buildLocaleMessages(locales, 'dev');
     for (const lang of LOCALES) {
       expect(resolveMessage(base.name, store[lang]!)).toBe('PDF Editor');
       expect(resolveMessage(base.name, dev[lang]!)).toBe('PDF Editor (dev)');
     }
-    expect(resolveMessage(base.name, locales.en!)).toBe('PDF Editor'); // 원본은 그대로
+    expect(resolveMessage(base.name, locales.en!)).toBe('PDF Editor'); // the original is unchanged
     expect(() => buildLocaleMessages(locales, 'x' as never)).toThrow();
   });
 });
 
-describe('서드파티 고지', () => {
+describe('third-party notices', () => {
   function fakeMap(name: string, sources: string[]): string {
     const file = join(tmp, name);
     writeFileSync(file, JSON.stringify({ version: 3, sources }));
     return file;
   }
 
-  it('소스맵의 node_modules 패키지만 센다(작업공간 코드·개발 의존성 제외)', () => {
+  it('counts only node_modules packages from the source map (excludes workspace code and dev dependencies)', () => {
     const map = fakeMap('a.map', [
       '../../../../../../node_modules/.pnpm/preact@10.29.8/node_modules/preact/dist/preact.module.js',
       '../../../../../../node_modules/.pnpm/mupdf@1.28.1/node_modules/mupdf/dist/mupdf.js',
@@ -153,7 +153,7 @@ describe('서드파티 고지', () => {
     }
   });
 
-  it('패키지 라이선스 본문·수동 표 항목(MuPDF thirdparty·harfbuzz·Noto)을 함께 쓴다', () => {
+  it('uses the package license text and the manual table entries (MuPDF thirdparty, harfbuzz, Noto) together', () => {
     const map = fakeMap('b.map', [
       '../node_modules/.pnpm/preact@10.29.8/node_modules/preact/dist/preact.module.js',
     ]);
@@ -185,7 +185,7 @@ describe('서드파티 고지', () => {
     expect(text).toContain('/tree/v1.0.0');
   });
 
-  it('수동 표가 가리키는 라이선스 파일이 모두 존재한다', () => {
+  it('every license file the manual table points to exists', () => {
     for (const e of loadExtra().entries) {
       for (const f of e.licenseFiles) {
         const path = join(repoRoot, 'scripts', 'release', f);
@@ -195,8 +195,8 @@ describe('서드파티 고지', () => {
   });
 });
 
-describe('OFL 예약 이름', () => {
-  it("폴백 폰트의 글꼴 이름 항목에 'Source' 가 없다(저작권 고지 문자열에만 있음)", () => {
+describe('OFL reserved name', () => {
+  it("the fallback font name entries do not contain 'Source' (only in the copyright notice string)", () => {
     const font = readFileSync(join(repoRoot, 'assets/fonts/NotoSansKR-Regular-subset.ttf'));
     expect(findReservedNameUse(font, 'Source')).toEqual([]);
     const family = readNameRecords(font).find((r) => r.nameID === 1 && r.platformID === 3);
@@ -204,8 +204,8 @@ describe('OFL 예약 이름', () => {
   });
 });
 
-describe('결정적 zip·크기 기록', () => {
-  it('같은 입력은 같은 바이트, 항목은 경로순', () => {
+describe('deterministic zip and size record', () => {
+  it('same input gives the same bytes, entries in path order', () => {
     const dir = join(tmp, 'zip-src');
     mkdirSync(join(dir, 'assets'), { recursive: true });
     writeFileSync(join(dir, 'b.txt'), 'bbb');
@@ -218,7 +218,7 @@ describe('결정적 zip·크기 기록', () => {
     expect(a.indexOf('assets/c.wasm')).toBeLessThan(a.indexOf('b.txt'));
   });
 
-  it('gzip·brotli 크기를 잰다', () => {
+  it('measures gzip and brotli sizes', () => {
     const dir = join(tmp, 'size-src');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'x.wasm'), Buffer.alloc(50_000, 1));

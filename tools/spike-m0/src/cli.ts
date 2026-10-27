@@ -1,18 +1,18 @@
-// M0 Day 1 스파이크 실행기.
+// M0 Day 1 spike runner.
 //
-//   pnpm spike                      # 전체 실행 → out/m0-day1/spike-result.json, summary.md
-//   pnpm spike -- --bench-pages 50  # 합성 벤치마크 쪽수 변경
-//   pnpm --filter @pdf-editor/spike-m0 fixtures   # fixtures/m0/*.pdf 갱신
-//   pnpm --filter @pdf-editor/spike-m0 spike:xobject  # 공유 Form XObject → out/m0-dod/xobject-result.json
-//   pnpm --filter @pdf-editor/spike-m0 spike:redact   # 기존 Redact 주석 → out/m0-dod/redact-result.json
-//   pnpm --filter @pdf-editor/spike-m0 spike:save-bench  # 대형 문서 저장 상한 → out/m0-dod/save-bench-result.json
-//   pnpm --filter @pdf-editor/spike-m0 spike:corpus   # 실제 코퍼스 재실행 → out/m0-corpus/corpus-result.json
-//     (-- --no-subset --out out/m0-corpus-nosubset: 저장 전 subsetFonts() 생략 대조 실행)
-//   pnpm --filter @pdf-editor/spike-m0 spike:pdfjs    # pdf.js(pdfjs-dist) 확인 → out/m0-corpus/pdfjs-result.json
-//   pnpm --filter @pdf-editor/spike-m0 spike:objstms  # 전체 저장 objstms 검증(A3-7) → out/m0-dod/objstms/objstms-result.json
+//   pnpm spike                      # run everything → out/m0-day1/spike-result.json, summary.md
+//   pnpm spike -- --bench-pages 50  # change the synthetic benchmark page count
+//   pnpm --filter @pdf-editor/spike-m0 fixtures   # refresh fixtures/m0/*.pdf
+//   pnpm --filter @pdf-editor/spike-m0 spike:xobject  # shared Form XObject → out/m0-dod/xobject-result.json
+//   pnpm --filter @pdf-editor/spike-m0 spike:redact   # existing Redact annotations → out/m0-dod/redact-result.json
+//   pnpm --filter @pdf-editor/spike-m0 spike:save-bench  # large-document save limit → out/m0-dod/save-bench-result.json
+//   pnpm --filter @pdf-editor/spike-m0 spike:corpus   # rerun on the real corpus → out/m0-corpus/corpus-result.json
+//     (-- --no-subset --out out/m0-corpus-nosubset: control run that skips subsetFonts() before saving)
+//   pnpm --filter @pdf-editor/spike-m0 spike:pdfjs    # pdf.js (pdfjs-dist) check → out/m0-corpus/pdfjs-result.json
+//   pnpm --filter @pdf-editor/spike-m0 spike:objstms  # full-save objstms verification (A3-7) → out/m0-dod/objstms/objstms-result.json
 //
-// 피크 메모리를 섞지 않기 위해 측정 대상(스파이크 변형·벤치마크)은 각각 별도 Node 프로세스로
-// 실행한다. WASM 선형 메모리는 줄지 않으므로 프로세스 종료 시점 값이 그 작업의 최대치다.
+// To keep peak memory from mixing, each measured target (spike variant, benchmark) runs in its own Node process.
+// WASM linear memory never shrinks, so the value at process exit is that task's maximum.
 import { wasmHeapBytes } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import { spawnSync } from 'node:child_process';
@@ -127,7 +127,7 @@ function runChild(task: string, out: string): void {
   };
   writeFileSync(join(out, `${task.replace(':', '-')}.json`), JSON.stringify(report, null, 2));
 
-  // 측정 후: 시각 확인용 PNG(MuPDF 렌더)
+  // After measuring: PNG for visual check (MuPDF render)
   if (task.startsWith('spike:')) {
     const variant = task.slice(6);
     const doc = mupdf.Document.openDocument(
@@ -159,7 +159,7 @@ function tool(cmd: string, args: string[]): { ok: boolean; stdout: string } {
   return { ok: r.status === 0, stdout: r.status === 0 ? r.stdout : (r.stderr ?? String(r.error)) };
 }
 
-/** Poppler(독립 구현)로 재추출·폰트 표 확인. 없으면 available=false. */
+/** Re-extract and check the font table with Poppler (an independent implementation). available=false if absent. */
 function popplerCheck(pdf: string, pngPrefix: string): Record<string, unknown> {
   const version = spawnSync('pdftotext', ['-v'], { encoding: 'utf8' });
   if (version.error) return { available: false };
@@ -274,7 +274,7 @@ function runParent(): void {
   console.log(`\n결과: ${relative(ROOT, join(out, 'spike-result.json'))}`);
 }
 
-/** 수동 검증용 고정 파일: 샘플 원본과 스파이크 저장 결과(TTF). 출력은 결정적이다. */
+/** Fixed files for manual verification: the sample original and the spike save result (TTF). Output is deterministic. */
 function writeFixtures(): void {
   const dir = join(ROOT, 'fixtures/m0');
   const diag = join(ROOT, 'apps/extension/public/diag');
@@ -295,7 +295,7 @@ function writeFixtures(): void {
     copyFileSync(join(dir, name), join(diag, name));
     console.log(`${name}: ${bytes.byteLength} B, sha256 ${sha256(bytes)}`);
   }
-  // M0 DoD 잔여 항목 픽스처(fixtures/m0 에만 둔다)
+  // M0 DoD remaining-item fixtures (placed only in fixtures/m0)
   for (const { name, bytes } of writeDodFixtures(ROOT, FONTS.ttf)) {
     writeFileSync(join(dir, name), bytes);
     console.log(`${name}: ${bytes.byteLength} B, sha256 ${sha256(bytes)}`);

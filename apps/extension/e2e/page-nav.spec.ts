@@ -1,9 +1,9 @@
 /**
- * 쪽 좌우 이전·다음 화살표 e2e(docs/m3-viewer-ui.md 페이지 이동).
+ * Page left/right previous/next arrow e2e (docs/m3-viewer-ui.md page navigation).
  *
- * 1) 가짜 편집 호스트 하니스: 3쪽 문서에서 앞뒤 이동·끝 쪽 비활성·툴바 연동, 편집 중 이동 시 먼저 커밋.
- * 2) 확장 연동: 시험 안에서 만든 3쪽 PDF 를 일반 뷰어·임베디드(iframe·embed)에서 열어 이동과 배치(쪽·텍스트 층을
- *    가리지 않음, 가로 넘침 없음, 좁은 폭)를 확인한다.
+ * 1) Fake edit host harness: back/forward navigation on a 3-page document, disabled arrow on the end pages, toolbar linkage, commit first when navigating during editing.
+ * 2) Extension integration: opens a 3-page PDF built in the test in the plain viewer and embedded (iframe, embed) and checks navigation and layout (does not cover the page or text layer,
+ *    no horizontal overflow, narrow widths).
  */
 import {
   chromium,
@@ -23,13 +23,13 @@ import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
-// ══ 1. 하니스 ═════════════════════════════════════════════════════════
+// ══ 1. Harness ═══════════════════════════════════════════════════════
 
 const PARAGRAPHS = [
   { id: 1, bbox: [20, 20, 130, 60] as [number, number, number, number], text: 'Hello World' },
 ];
 
-test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
+test.describe('page arrows (fake edit host, 3 pages)', () => {
   test.beforeAll(startEditHarness);
   test.afterAll(stopEditHarness);
 
@@ -57,7 +57,9 @@ test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
 
   const shownPage = (page: Page) => page.locator('#pe-page-input');
 
-  test('앞뒤 이동과 끝 쪽 비활성, 툴바 쪽 번호와 연동', async ({ page }) => {
+  test('back/forward navigation, disabled on the end pages, linked to the toolbar page number', async ({
+    page,
+  }) => {
     const prev = page.locator('#pe-arrow-prev');
     const next = page.locator('#pe-arrow-next');
     await expect(prev).toBeVisible();
@@ -80,14 +82,14 @@ test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
     await expect(page.locator('#pe-page')).toHaveAttribute('data-page-index', '0');
     await expect(prev).toBeDisabled();
     await expect(page.locator('#pe-prev')).toBeDisabled();
-    // 툴바 입력으로 이동해도 화살표 상태가 따라온다.
+    // Navigating with the toolbar input also makes the arrow state follow.
     await shownPage(page).fill('3');
     await shownPage(page).press('Enter');
     await expect(next).toBeDisabled();
     await expect(prev).toBeEnabled();
   });
 
-  test('화살표는 48×96 이상이고 기본·hover·비활성 모양이 구분된다(사용자 요청 2026-10-23)', async ({
+  test('arrows are at least 48×96 and default, hover and disabled looks are distinguishable (user request 2026-10-23)', async ({
     page,
   }) => {
     const prev = page.locator('#pe-arrow-prev');
@@ -105,22 +107,24 @@ test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
       }, sel);
     await page.mouse.move(1, 1);
     const enabled = await look('#pe-arrow-next');
-    const disabled = await look('#pe-arrow-prev'); // 첫 쪽
+    const disabled = await look('#pe-arrow-prev'); // first page
     expect(disabled).not.toBe(enabled);
-    // 기본 판은 88% 불투명(이전: 배경과 거의 같은 #4a4f54).
+    // The default plate is 88% opaque (previously: #4a4f54, almost the same as the background).
     expect(enabled).toContain('rgba(32, 33, 36, 0.88)');
     await next.hover();
     expect(await look('#pe-arrow-next')).not.toBe(enabled);
   });
 
-  test('좌우 방향키는 쪽을 넘기지 않는다(캐럿 이동과 충돌 방지)', async ({ page }) => {
+  test('left/right arrow keys do not turn pages (avoids conflict with caret movement)', async ({
+    page,
+  }) => {
     await page.locator('#pe-page').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('ArrowRight');
     await page.keyboard.press('ArrowLeft');
     await expect(page.locator('#pe-page')).toHaveAttribute('data-page-index', '0');
   });
 
-  test('화살표는 쪽·텍스트 층 영역 바깥이고 쪽 가운데 클릭은 화살표가 가로채지 않는다', async ({
+  test('arrows are outside the page and text layer area, and clicking the page center is not intercepted by the arrows', async ({
     page,
   }) => {
     const pageBox = (await page.locator('#pe-page').boundingBox())!;
@@ -135,7 +139,9 @@ test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
     expect(hit).toBe('pe-page');
   });
 
-  test('편집 중 화살표를 누르면 초안을 먼저 커밋하고 이동한다', async ({ page }) => {
+  test('pressing an arrow during editing commits the draft first and navigates', async ({
+    page,
+  }) => {
     const box = (await page.locator('#pe-page').boundingBox())!;
     const scale = 1.5;
     await page.mouse.dblclick(box.x + (20 + 6 * 10 + 2) * scale, box.y + 27 * scale);
@@ -164,13 +170,13 @@ test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
     await expect(page.locator('#pe-page')).toHaveAttribute('data-page-index', '1');
     await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
     expect(await commits()).toBe(1);
-    await expect(page.locator('#pe-doc-undo')).toBeEnabled(); // 커밋된 편집이 문서 이력에 있다
+    await expect(page.locator('#pe-doc-undo')).toBeEnabled(); // the committed edit is in the document history
   });
 });
 
-// ══ 2. 확장 연동(시험에서 만든 3쪽 PDF) ═══════════════════════════════════
+// ══ 2. Extension integration (3-page PDF built in the test) ═══════════════════════════════════
 
-/** Helvetica 한 줄씩 가진 n 쪽 PDF(쪽 612 × heightPt pt). */
+/** n-page PDF with one line of Helvetica per page (page 612 × heightPt pt). */
 function makePdf(n: number, heightPt = 792): Buffer {
   const objs: string[] = [];
   const kids = Array.from({ length: n }, (_, i) => `${4 + i * 2} 0 R`).join(' ');
@@ -197,7 +203,7 @@ function makePdf(n: number, heightPt = 792): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
-/** 한 페이지에 뷰어 하나만 둔다(여러 뷰어 사이 포커스 이동은 헤드리스에서 불안정). */
+/** Only one viewer per page (focus movement between multiple viewers is unstable in headless). */
 const HOSTS: Record<string, string> = {
   iframe800: '<iframe src="/multi.pdf" style="width:800px;height:560px;border:1px solid #888">',
   iframe480: '<iframe src="/multi.pdf" style="width:480px;height:560px;border:1px solid #888">',
@@ -206,7 +212,7 @@ const HOSTS: Record<string, string> = {
 
 function servePdf(): Promise<{ server: Server; base: string }> {
   const pdf = makePdf(3);
-  // 세로로 긴 쪽(612 × 1584 pt, 폭의 2.6 배): 어느 창 크기에서도 쪽이 문서 영역보다 훨씬 길다.
+  // Tall page (612 × 1584 pt, 2.6 times the width): the page is much longer than the document area at any window size.
   const tall = makePdf(2, 1584);
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://x').pathname;
@@ -281,7 +287,7 @@ async function navigateAndCheck(frame: Frame): Promise<void> {
   await expect(prev).toBeDisabled();
 }
 
-/** 화살표 두 상자, 쪽 캔버스 상자, 문서 영역의 보이는 범위(안쪽 여백 포함·스크롤바 제외). 모두 뷰포트 좌표. */
+/** The two arrow boxes, the page canvas box, and the visible range of the document area (including inner padding, excluding the scrollbar). All in viewport coordinates. */
 async function arrowGeometry(page: Page) {
   return page.evaluate(() => {
     const c = document.getElementById('page-container')!;
@@ -323,13 +329,13 @@ const inside = (a: Box, b: Box) =>
   a.top >= b.top - 0.5 &&
   a.bottom <= b.bottom + 0.5;
 
-/** 문서 영역 안쪽 여백(viewer.css #page-container padding). 겹침 배치의 화살표는 보이는 범위 끝에서 이 안에 있다. */
+/** Inner padding of the document area (viewer.css #page-container padding). In the overlap layout the arrows are within this at the end of the visible range. */
 const AREA_PADDING = 16;
 
 type Geometry = Awaited<ReturnType<typeof arrowGeometry>>;
 
 function checkPlacement(g: Geometry, tag: string): void {
-  // 판정 기준(page-nav.ts pageArrowLayout): 문서 영역 464 px 이상이면 좌우 칸, 아니면 쪽 위 겹침.
+  // Classification criterion (page-nav.ts pageArrowLayout): a document area of 464 px or more gets left/right slots, otherwise the arrows overlap the page.
   expect(g.placement, tag).toBe(g.clientWidth >= 464 ? 'side' : 'overlay');
   if (g.placement === 'side') {
     expect(overlaps(g.prev, g.canvas), `${tag}: 이전 화살표 × 쪽`).toBe(false);
@@ -337,7 +343,7 @@ function checkPlacement(g: Geometry, tag: string): void {
     expect(g.scrollWidth, `${tag}: 가로 넘침 없음`).toBeLessThanOrEqual(g.clientWidth);
     return;
   }
-  // 겹침(사용자 결정 2026-10-26 변경): 두 화살표가 보이는 범위 안, 이전은 왼쪽 끝·다음은 오른쪽 끝, 쪽 위에 겹친다.
+  // Overlap (changed by user decision 2026-10-26): both arrows are inside the visible range, previous at the left end and next at the right end, overlapping the page.
   expect(inside(g.prev, g.visible), `${tag}: 이전 화살표가 보이는 범위 안`).toBe(true);
   expect(inside(g.next, g.visible), `${tag}: 다음 화살표가 보이는 범위 안`).toBe(true);
   expect(g.prev.left - g.visible.left, `${tag}: 이전은 왼쪽 끝`).toBeLessThanOrEqual(
@@ -348,7 +354,7 @@ function checkPlacement(g: Geometry, tag: string): void {
   );
   expect(overlaps(g.prev, g.canvas), `${tag}: 이전 화살표가 쪽 위`).toBe(true);
   expect(overlaps(g.next, g.canvas), `${tag}: 다음 화살표가 쪽 위`).toBe(true);
-  // 쪽 폭 = 문서 영역 − 여백(최소 320), 칸 몫을 빼지 않는다. 가로 넘침은 쪽 최소 폭 때문인 만큼만.
+  // Page width = document area − padding (minimum 320), without subtracting the slot share. Horizontal overflow only as much as the page minimum width causes.
   const pageWidth = g.canvas.right - g.canvas.left;
   expect(Math.abs(pageWidth - Math.max(320, g.clientWidth - 32)), `${tag}: 쪽 폭`).toBeLessThan(
     1.5,
@@ -360,11 +366,11 @@ function checkPlacement(g: Geometry, tag: string): void {
   ).toBeLessThanOrEqual(minOverflow + 1);
 }
 
-test('[통합] 창 폭 320·400·464·800 px: 넓으면 화살표가 쪽 밖 좌우 칸, 좁으면 보이는 범위 좌우 끝에서 쪽 위에 겹친다', async () => {
+test('[integration] window width 320, 400, 464, 800 px: when wide the arrows sit in slots left and right outside the page, when narrow they overlap the page at the left and right ends of the visible range', async () => {
   await withExtension(async (env) => {
     const page = await env.context.newPage();
     for (const width of [320, 400, 464, 800]) {
-      // 높이를 낮춰 세로로도 넘치게 한다(세로 끝까지 스크롤해도 화살표가 보이는 범위 안인지 본다).
+      // Lower the height so it also overflows vertically (check that the arrows stay within the visible range even when scrolled to the vertical end).
       await page.setViewportSize({ width, height: 480 });
       await page.goto(
         `chrome-extension://${env.extensionId}/viewer.html?file=${env.base}/multi.pdf`,
@@ -374,7 +380,7 @@ test('[통합] 창 폭 320·400·464·800 px: 넓으면 화살표가 쪽 밖 좌
       const tag = `${width} px (문서 영역 ${g.clientWidth} px, ${g.placement})`;
       expect(g.maxScroll.top, `${tag}: 세로 넘침(시험 전제)`).toBeGreaterThan(0);
       checkPlacement(g, tag);
-      // 가로·세로 끝까지 스크롤해도 같은 조건을 지킨다.
+      // The same conditions hold even when scrolled to the horizontal and vertical ends.
       await page.evaluate(() => {
         const c = document.getElementById('page-container')!;
         c.scrollLeft = c.scrollWidth;
@@ -384,7 +390,7 @@ test('[통합] 창 폭 320·400·464·800 px: 넓으면 화살표가 쪽 밖 좌
       expect(end.scroll, `${tag}: 끝까지 스크롤`).toEqual(end.maxScroll);
       checkPlacement(end, `${tag} 끝까지 스크롤 뒤`);
       if (g.placement === 'overlay') {
-        // 화살표 밖 쪽 가운데·화살표 바로 안쪽은 쪽이 받는다(칸이 포인터를 가로채지 않음).
+        // The page center outside the arrows and the point just inside the arrows are received by the page (the slot does not intercept the pointer).
         const hits = await page.evaluate(
           ({ prev, next, canvas }) => {
             const at = (x: number, y: number) => {
@@ -407,7 +413,7 @@ test('[통합] 창 폭 320·400·464·800 px: 넓으면 화살표가 쪽 밖 좌
         for (const [where, h] of Object.entries(hits)) {
           expect(h, `${tag}: ${where} 은 쪽이 받음`).toEqual({ page: true, arrow: false });
         }
-        // 실제 클릭도 쪽으로 간다(쪽 이동 없음, 클릭 대상이 쪽 안).
+        // A real click also goes to the page (no page navigation, the click target is inside the page).
         await page.evaluate(() => {
           const w = window as unknown as { __clickTarget: string | null };
           w.__clickTarget = null;
@@ -434,17 +440,17 @@ test('[통합] 창 폭 320·400·464·800 px: 넓으면 화살표가 쪽 밖 좌
           )
           .toBe('page');
         await expect(page.locator('#pe-page-input'), tag).toHaveValue('1');
-        // 화살표로 쪽 이동(끝까지 스크롤한 상태 그대로).
+        // Navigate pages with the arrows (staying scrolled to the end).
         await navigateAndCheck(page.mainFrame());
       }
     }
   });
 });
 
-/** 화살표 세로 가운데 허용 오차(px). */
+/** Allowed tolerance of the arrow vertical center (px). */
 const CENTER_TOLERANCE = 8;
 
-test('[통합] 긴 쪽 맨 위·가운데·끝 스크롤: 두 화살표가 문서 영역 보이는 범위 안 세로 가운데에 남는다', async () => {
+test('[integration] scrolling a long page to the top, middle and end: both arrows stay at the vertical center of the visible range of the document area', async () => {
   await withExtension(async (env) => {
     const page = await env.context.newPage();
     const sizes: [number, number][] = [
@@ -461,11 +467,11 @@ test('[통합] 긴 쪽 맨 위·가운데·끝 스크롤: 두 화살표가 문�
       await waitRendered(page.mainFrame());
       const g = await arrowGeometry(page);
       const tag = `${width}×${height} (문서 영역 ${g.clientWidth} px, ${g.placement})`;
-      // 시험 전제: 쪽이 문서 영역보다 많이 길다(보이는 높이 이상 넘침).
+      // Test premise: the page is much longer than the document area (overflows by at least the visible height).
       expect(g.maxScroll.top, `${tag}: 세로 넘침`).toBeGreaterThan(
         g.visible.bottom - g.visible.top,
       );
-      // 화살표가 스크롤 범위를 늘리지 않는다: 세로 스크롤 높이 = 쪽 높이 + 위아래 여백.
+      // The arrows do not extend the scroll range: vertical scroll height = page height + top/bottom padding.
       const canvasHeight = g.canvas.bottom - g.canvas.top;
       expect(
         Math.abs(
@@ -498,7 +504,7 @@ test('[통합] 긴 쪽 맨 위·가운데·끝 스크롤: 두 화살표가 문�
             `${at}: ${name} 화살표 세로 가운데(위 ${b.top.toFixed(1)}, 보이는 범위 ${s.visible.top}–${s.visible.bottom})`,
           ).toBeLessThanOrEqual(CENTER_TOLERANCE);
         }
-        // 칸은 포인터를 받지 않는다: 버튼 바로 위·아래 점은 칸이 아니라 쪽(overlay)이나 문서 영역(side)이 받는다.
+        // The slot does not receive the pointer: the points just above and below the button are received by the page (overlay) or the document area (side), not by the slot.
         const hits = await page.evaluate(
           ({ prev, next }) =>
             [prev, next].flatMap((b) =>
@@ -523,7 +529,7 @@ test('[통합] 긴 쪽 맨 위·가운데·끝 스크롤: 두 화살표가 문�
   });
 });
 
-test('[통합] 일반 뷰어: 3쪽 PDF 를 화살표로 앞뒤 이동한다', async () => {
+test('[integration] plain viewer: navigate a 3-page PDF back and forth with the arrows', async () => {
   await withExtension(async (env) => {
     const page = await env.context.newPage();
     await page.goto(`chrome-extension://${env.extensionId}/viewer.html?file=${env.base}/multi.pdf`);
@@ -533,7 +539,7 @@ test('[통합] 일반 뷰어: 3쪽 PDF 를 화살표로 앞뒤 이동한다', as
   });
 });
 
-test('[통합] 임베디드(iframe 800·480 폭, embed): 화살표가 보이고 쪽·텍스트 선택을 가리지 않는다', async () => {
+test('[integration] embedded (iframe 800 and 480 widths, embed): arrows are visible and do not cover the page or text selection', async () => {
   await withExtension(async (env) => {
     const prefix = `chrome-extension://${env.extensionId}/viewer.html`;
     for (const kind of Object.keys(HOSTS)) {
@@ -581,7 +587,7 @@ test('[통합] 임베디드(iframe 800·480 폭, embed): 화살표가 보이고 
         geometry.viewWidth,
       );
       expect(geometry.textHit, `${tag}: 텍스트 위 포인터는 텍스트 층`).toBe(true);
-      // 텍스트 선택·복사가 그대로 된다(글자 클릭으로 포커스를 준 뒤 Ctrl+A, Ctrl+C).
+      // Text selection and copy still work (focus by clicking a glyph, then Ctrl+A, Ctrl+C).
       await f.evaluate(() => {
         (window as unknown as { __copied: string | null }).__copied = null;
         window.addEventListener('copy', (e) => {

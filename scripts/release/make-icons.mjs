@@ -1,5 +1,5 @@
-// 확장 아이콘 생성(16·32·48·128 px). 단순 도형(파란 둥근 사각형 위 접힌 모서리 문서)만 쓰며 상표·글자는 없다.
-// 외부 의존성 없이 래스터 → PNG(RGBA, zlib)로 쓴다. 결과는 저장소에 커밋한다.
+// Extension icon generation (16·32·48·128 px). Uses only a simple shape (a folded-corner document on a blue rounded square); no trademarks or text.
+// Writes raster → PNG (RGBA, zlib) with no external dependencies. The result is committed to the repository.
 //
 //   node scripts/release/make-icons.mjs
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -17,21 +17,21 @@ const outDir = join(
   'icons',
 );
 export const ICON_SIZES = [16, 32, 48, 128];
-const SS = 4; // 슈퍼샘플링 배수
+const SS = 4; // supersampling factor
 
 const BLUE = [43, 108, 176];
 const WHITE = [255, 255, 255];
 const FOLD = [190, 210, 235];
 const LINE = [43, 108, 176];
 
-/** 단위 정사각형(0–1) 좌표의 색. 투명이면 null. */
+/** Color at unit-square (0–1) coordinates. null if transparent. */
 function shade(x, y) {
-  // 배경: 둥근 사각형(반지름 0.2)
+  // Background: rounded square (radius 0.2)
   const r = 0.2;
   const cx = Math.min(Math.max(x, r), 1 - r);
   const cy = Math.min(Math.max(y, r), 1 - r);
   if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) return null;
-  // 문서: x 0.25–0.75, y 0.17–0.83, 오른쪽 위 모서리 접힘(0.17 변)
+  // Document: x 0.25–0.75, y 0.17–0.83, top-right corner folded (fold side 0.17)
   const left = 0.25;
   const right = 0.75;
   const top = 0.17;
@@ -41,10 +41,10 @@ function shade(x, y) {
     const dx = x - (right - fold);
     const dy = y - top;
     if (dx > 0 && dy < fold) {
-      // 접힌 영역: 대각선 아래쪽은 접힌 면, 위쪽은 배경
+      // Folded region: below the diagonal is the folded face, above it is the background
       return dx + (fold - dy) > fold ? (dy + (fold - dx) > fold ? FOLD : BLUE) : BLUE;
     }
-    // 본문 줄 3개
+    // 3 body lines
     for (const ly of [0.46, 0.58, 0.7]) {
       if (Math.abs(y - ly) < 0.025 && x > 0.32 && x < (ly > 0.65 ? 0.58 : 0.68)) return LINE;
     }
@@ -108,13 +108,13 @@ export function encodePng(size) {
   const stride = size * 4;
   const raw = Buffer.alloc((stride + 1) * size);
   for (let y = 0; y < size; y++) {
-    raw[y * (stride + 1)] = 0; // 필터 없음
+    raw[y * (stride + 1)] = 0; // no filter
     px.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride);
   }
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; // 비트 깊이
+  ihdr[8] = 8; // bit depth
   ihdr[9] = 6; // RGBA
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),

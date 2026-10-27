@@ -1,24 +1,24 @@
 /**
- * 벤치 전용 WASM 힙 측정(계약 D1·4.1 사용자 결정 2026-10-21, docs/m5-followup.md). 스토어 빌드에 넣지 않는다:
- * 확장의 Worker 진입점이 dev 빌드에서만 이 모듈을 동적 import 해 `benchProbeHeap` RPC 로 노출한다.
+ * Bench-only WASM heap measurement (contract D1 and 4.1 user decision 2026-10-21, docs/m5-followup.md). Not included in the store build:
+ * the extension's Worker entry point dynamically imports this module only in dev builds and exposes it via the `benchProbeHeap` RPC.
  *
- * WASM 선형 메모리는 줄지 않으므로 MuPDF 캐시를 비운(`emptyStore`) 뒤의 값은 선형 메모리 크기가 아니라 "사용 중 힙"으로
- * 잰다: 선형 메모리 확장을 막은 채 `_wasm_malloc` 으로 빈 공간을 큰 조각부터(16 MiB → 1 MiB → 64 KiB) 받아 보고 모두
- * 돌려준다. 사용 중 = 선형 메모리 − 받은 합. 64 KiB 보다 작은 빈 조각은 사용 중으로 센다(과대 쪽 오차).
- * MuPDF 의 malloc 은 실패하면 자원 캐시를 비워(scavenge) 다시 시도하므로, 이 측정은 캐시를 비운 상태의 값이 된다.
+ * WASM linear memory never shrinks, so after clearing the MuPDF cache (`emptyStore`) the value is measured as the "heap in use" rather than the linear memory size:
+ * with linear memory growth blocked, free space is requested with `_wasm_malloc` from the largest chunks down (16 MiB -> 1 MiB -> 64 KiB), and everything is
+ * returned. In use = linear memory − total obtained. Free chunks smaller than 64 KiB count as in use (error on the overestimate side).
+ * MuPDF's malloc clears the resource cache (scavenge) and retries on failure, so this measurement reflects the state with the cache cleared.
  */
 import './wasm-module.js';
 import * as mupdf from 'mupdf';
 import { libmupdfModule } from './wasm-module.js';
 
 export interface WasmHeapProbe {
-  /** 선형 메모리 크기(byte, 줄지 않는 최대치). 측정이 선형 메모리를 늘리지 않는다. */
+  /** Linear memory size (bytes, the maximum, which never shrinks). The measurement does not grow linear memory. */
   linearBytes: number;
-  /** 받아 본 빈 공간 합(byte). */
+  /** Total free space obtained (bytes). */
   freeBytes: number;
   /** linearBytes − freeBytes. */
   usedBytes: number;
-  /** 측정 전에 `emptyStore` 를 불렀는지. */
+  /** Whether `emptyStore` was called before measuring. */
   emptiedStore: boolean;
   probeMs: number;
 }
@@ -31,7 +31,7 @@ interface MallocModule {
 
 const CHUNKS = [16 * 2 ** 20, 2 ** 20, 64 * 2 ** 10];
 
-/** 사용 중 WASM 힙을 잰다. `emptyStore` 가 true 면 먼저 MuPDF 자원 캐시를 비운다. 측정할 수 없으면 null. */
+/** Measures the WASM heap in use. If `emptyStore` is true, the MuPDF resource cache is cleared first. null if it cannot be measured. */
 export function probeWasmHeap(options: { emptyStore?: boolean } = {}): WasmHeapProbe | null {
   const m = libmupdfModule as MallocModule;
   if (!m.HEAPU8 || !m._wasm_malloc || !m._wasm_free) return null;
@@ -39,7 +39,7 @@ export function probeWasmHeap(options: { emptyStore?: boolean } = {}): WasmHeapP
   if (options.emptyStore) mupdf.emptyStore();
   const proto = WebAssembly.Memory.prototype;
   const grow = proto.grow;
-  // 확장 실패는 emscripten 이 잡아 malloc 실패로 바꾼다(선형 메모리는 그대로).
+  // emscripten catches the growth failure and turns it into a malloc failure (linear memory stays as is).
   proto.grow = function (): number {
     throw new RangeError('probeWasmHeap: 선형 메모리 확장 금지');
   };
@@ -73,7 +73,7 @@ export function probeWasmHeap(options: { emptyStore?: boolean } = {}): WasmHeapP
   };
 }
 
-/** 확장 Worker 가 dev 빌드에서 더하는 벤치 RPC(`exposePdfWorker` 세 번째 인자). */
+/** Bench RPCs the extension Worker adds in dev builds (third argument of `exposePdfWorker`). */
 export interface BenchWorkerExtras {
   benchProbeHeap(options?: { emptyStore?: boolean }): Promise<WasmHeapProbe | null>;
 }

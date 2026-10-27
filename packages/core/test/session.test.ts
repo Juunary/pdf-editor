@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(src/wasm-module.ts).
+// core must be imported before mupdf so that the WASM heap probe object is attached (src/wasm-module.ts).
 import { PdfSession } from '../src/index.js';
 import * as mupdf from 'mupdf';
 import { buildPdf } from './pdf-fixtures.js';
 
-/** 200x100pt, 왼쪽 절반 파란 사각형. */
+/** 200x100pt, blue rectangle on the left half. */
 function bluePdf(): Uint8Array {
   const doc = new mupdf.PDFDocument();
   doc.insertPage(-1, doc.addPage([0, 0, 200, 100], 0, {}, '0 0 1 rg 0 0 100 100 re f'));
@@ -12,7 +12,7 @@ function bluePdf(): Uint8Array {
 }
 
 describe('PdfSession', () => {
-  it('열기 → 1페이지 RGBA 렌더(불투명 흰 배경)', () => {
+  it('open → render page 1 as RGBA (opaque white background)', () => {
     const s = new PdfSession();
     const info = s.open(bluePdf());
     expect(info.pageCount).toBe(1);
@@ -28,7 +28,7 @@ describe('PdfSession', () => {
     s.close();
   });
 
-  it('변경 없는 저장은 증분, redaction 포함은 전체 저장', () => {
+  it('a save without changes is incremental, and one including redaction is a full save', () => {
     const s = new PdfSession();
     s.open(bluePdf());
     const inc = s.save({ changes: [] });
@@ -42,7 +42,7 @@ describe('PdfSession', () => {
     expect(full.heap?.inputBytes).toBe(s.originalBytes.byteLength);
   });
 
-  it('열기 결과의 입력 방식, 페이지 정보', () => {
+  it('input mode and page info of the open result', () => {
     const s = new PdfSession();
     expect(s.open(bluePdf()).inputMode).toBe('stream');
     expect(s.getPageInfo(0)).toEqual({
@@ -54,13 +54,13 @@ describe('PdfSession', () => {
     s.close();
   });
 
-  it('저장 전 판정은 저장하지 않고 방식·예상 피크 힙을 돌려준다', () => {
+  it('the pre-save check does not save and returns the mode and expected peak heap', () => {
     const s = new PdfSession();
     s.open(bluePdf());
     const plan = s.planSave({ changes: ['content-stream'] });
     expect(plan.method).toBe('full');
     expect(plan.heap.level).toBe('ok');
-    // pdf-ops 는 예상 피크를 정수 바이트로 반올림한다.
+    // pdf-ops rounds the expected peak to integer bytes.
     expect(
       Math.abs(plan.heap.estimatedPeakBytes - plan.heap.inputBytes * plan.heap.ratio),
     ).toBeLessThanOrEqual(1);
@@ -68,7 +68,7 @@ describe('PdfSession', () => {
     s.close();
   });
 
-  it('추출·검색 RPC 구현이 세션에 연결되어 있다', () => {
+  it('the extraction and search RPC implementations are connected to the session', () => {
     const s = new PdfSession();
     s.open(
       buildPdf(['BT /F1 12 Tf 10 150 Td (find me) Tj ET', 'BT /F1 12 Tf 10 150 Td (other) Tj ET']),
@@ -83,9 +83,9 @@ describe('PdfSession', () => {
     s.close();
   });
 
-  it('쪽 SourceMap 을 캐시해 linkPage 의 unmatched 표시가 getSourceMap 결과에 남는다', () => {
+  it('caches the page SourceMap so that the unmatched marks of linkPage remain in the getSourceMap result', () => {
     const s = new PdfSession();
-    // core 알려진 한계(같은 자리 Tr 0 뒤 다른 BT 의 Tr 7)로 SourceMap 이 글리프 2개를 더 센다 → 짝 없는 연산.
+    // Because of a known core limitation (Tr 7 of another BT after Tr 0 at the same position), the SourceMap counts 2 more glyphs → unpaired operations.
     const show = (tr: number, body: string) => `BT /F1 12 Tf ${tr} Tr 10 150 Td ${body} ET`;
     s.open(
       buildPdf([
@@ -101,11 +101,11 @@ describe('PdfSession', () => {
     expect(after).toBe(before);
     const unmatched = after.ops.filter((o) => o.limits.includes('unmatched'));
     expect(unmatched.map((o) => o.op)).toEqual(['Tj']);
-    // 다시 매칭해도 표시는 한 번만.
+    // Even if matched again, the mark appears only once.
     s.linkPage(0);
     expect(unmatched[0]!.limits.filter((r) => r === 'unmatched')).toHaveLength(1);
 
-    // 쪽 캐시 무효화: 그 쪽만 다시 만든다.
+    // Page cache invalidation: only that page is rebuilt.
     const other = s.getSourceMap(1);
     s.invalidatePageCache(0);
     expect(s.getSourceMap(0)).not.toBe(before);
@@ -124,7 +124,7 @@ describe('PdfSession.getPageLayout', () => {
     'BT /F1 10 Tf 72 640 Td (Second paragraph starts here and ends.) Tj ET',
   ].join('\n');
 
-  it('제목·문단 복원, 쪽 캐시, 캐시 무효화', () => {
+  it('heading and paragraph reconstruction, page cache, cache invalidation', () => {
     const s = new PdfSession();
     s.open(buildPdf([{ content, mediabox: [0, 0, 612, 792] }]));
     const layout = s.getPageLayout(0);
@@ -141,7 +141,7 @@ describe('PdfSession.getPageLayout', () => {
     s.close();
   });
 
-  it('레이아웃 캐시는 최근 사용 순 16쪽까지(오래된 쪽은 다시 계산)', () => {
+  it('the layout cache keeps up to 16 pages in most-recently-used order (older pages are recomputed)', () => {
     const s = new PdfSession();
     s.open(
       buildPdf(
@@ -159,8 +159,8 @@ describe('PdfSession.getPageLayout', () => {
   });
 });
 
-describe('PdfSession.extractPage · 세그먼트 없는 모델', () => {
-  it('세그먼트 없는 요청이 먼저 와도 한 번의 추출로 두 모델을 만들고, 세그먼트 있는 모델과 일치한다', () => {
+describe('PdfSession.extractPage · model without segments', () => {
+  it('even if the request without segments comes first, one extraction builds both models, and it matches the model with segments', () => {
     const s = new PdfSession();
     s.open(bluePdf());
     const plain = s.extractPage({ pageIndex: 0 });
@@ -172,10 +172,10 @@ describe('PdfSession.extractPage · 세그먼트 없는 모델', () => {
     expect(plain.paths.map((p) => ({ ...p, segments: null }))).toEqual(
       full.paths.map((p) => ({ ...p, segments: null })),
     );
-    // 같은 요청은 같은 객체.
+    // The same request gives the same object.
     expect(s.extractPage({ pageIndex: 0 })).toBe(plain);
     expect(s.extractPage({ pageIndex: 0, includePathSegments: true })).toBe(full);
-    // 쪽 캐시를 비우면 둘 다 다시 만든다.
+    // Clearing the page cache rebuilds both.
     s.invalidatePageCache(0);
     expect(s.extractPage({ pageIndex: 0 })).not.toBe(plain);
   });

@@ -1,6 +1,6 @@
-/* 뷰어 UI 스타일(접두사 pe-). apps/extension 뷰어가 `@pdf-editor/viewer-ui/style.css` 로 가져온다. */
+/* Viewer UI styles (prefix pe-). The apps/extension viewer imports it as `@pdf-editor/viewer-ui/style.css`. */
 
-/* ── 툴바 컨트롤 ─────────────────────────────────────────────── */
+/* ── Toolbar controls ────────────────────────────────────────── */
 .pe-controls {
   display: flex;
   gap: 6px;
@@ -44,9 +44,9 @@
   cursor: help;
 }
 
-/* ── 검색창 ─────────────────────────────────────────────────── */
-/* 호스트가 툴바에 CSS zoom 을 주면(확장 뷰어의 머리 영역 확대 보정) 같은 값을 --pe-header-zoom 으로 둔다. zoom 아래에서는
-   vw 도 zoom 배가 되므로 vw 길이는 그 값으로 나눠 화면 폭 기준을 지킨다. */
+/* ── Search bar ──────────────────────────────────────────────── */
+/* If the host applies CSS zoom to the toolbar (the extension viewer's header-area magnification correction), set the same value as --pe-header-zoom. Under zoom,
+   vw is also multiplied by the zoom, so vw lengths are divided by that value to keep the screen-width reference. */
 .pe-find {
   position: fixed;
   top: var(--pe-find-top, 44px);
@@ -87,7 +87,7 @@
   font-size: 12px;
 }
 
-/* ── 페이지 표면 ─────────────────────────────────────────────── */
+/* ── Page surface ────────────────────────────────────────────── */
 .pe-page {
   position: relative;
   flex: none;
@@ -105,7 +105,7 @@
   color: #ffb4a8;
 }
 
-/* 검색 하이라이트: 글자 위에 겹쳐도 글자가 보이도록 multiply 로 섞는다. */
+/* Search highlight: blended with multiply so the characters stay visible even when overlapped. */
 .pe-hl-layer {
   position: absolute;
   inset: 0;
@@ -122,7 +122,7 @@
   outline: 2px solid rgb(230 81 0 / 90%);
 }
 
-/* 텍스트 선택 층: 글자는 투명, 선택 영역만 보인다. */
+/* Text selection layer: characters are transparent; only the selection area is visible. */
 .pe-text-layer {
   position: absolute;
   inset: 0;
@@ -145,7 +145,7 @@
   color: transparent;
   white-space: pre;
 }
-/* 글자마다 블록이라 기본 선택 표시가 줄바꿈 표식과 겹쳐 줄무늬가 진다. 하이라이트는 .pe-sel 로 직접 그린다. */
+/* Every character is a block, so the browser's default selection rendering overlaps the line-break markers and produces stripes. The highlight is drawn directly with .pe-sel. */
 .pe-text-layer span::selection {
   background: transparent;
   color: transparent;
@@ -161,7 +161,7 @@
   background: rgb(0 100 220 / 35%);
 }
 
-/* ── 디버그 오버레이 ─────────────────────────────────────────── */
+/* ── Debug overlay ───────────────────────────────────────────── */
 .pe-debug-canvas {
   position: absolute;
   top: 0;
@@ -169,7 +169,7 @@
   pointer-events: none;
 }
 .pe-debug-hud {
-  /* 페이지 글자를 가리지 않도록 화면 왼쪽 아래에 고정한다. */
+  /* Pinned to the bottom left of the screen so it does not cover page characters. */
   position: fixed;
   bottom: 12px;
   left: 12px;
@@ -217,7 +217,7 @@
   pointer-events: none;
 }
 
-/* ── 문단 편집(M3) ───────────────────────────────────────────── */
+/* ── Paragraph editing (M3) ──────────────────────────────────── */
 .pe-edit-opt {
   display: flex;
   gap: 2px;
@@ -230,7 +230,7 @@
   cursor: pointer;
 }
 
-/* 진입: 마우스 오버 테두리와 제한 사유 팝오버 */
+/* Entry: hover border and limit-reason popover */
 .pe-edit-entry {
   position: absolute;
   inset: 0;
@@ -265,7 +265,7 @@
   padding-left: 16px;
 }
 
-/* 편집 층 */
+/* Edit layer */
 .pe-edit-layer {
   position: absolute;
   inset: 0;
@@ -375,7 +375,7 @@
   color: #ffb4a8;
 }
 .pe-edit-info {
-  /* 페이지 글자를 가리지 않도록 화면 오른쪽 아래에 고정한다. */
+  /* Pinned to the bottom right of the screen so it does not cover page characters. */
   position: fixed !important;
   right: 12px;
   bottom: 12px;
@@ -411,7 +411,7 @@
   color: #aab;
   font-size: 11px;
 }
-/* 입력용 숨은 textarea: 캐럿 위치에 두어 IME 후보창이 캐럿 옆에 뜨게 한다. */
+/* Hidden textarea for input: placed at the caret position so the IME candidate window appears next to the caret. */
 .pe-edit-input {
   width: 2px;
   margin: 0;
@@ -427,16 +427,16 @@
   pointer-events: none;
 }
 
-/* ── 쪽 좌우 화살표 ──────────────────────────────────────────── */
-/* 쪽 컨테이너(flex)의 양쪽 칸(너비 48 + 간격 3·3 = 54). 뷰어는 쪽 맞춤 너비에서 PAGE_ARROW_GUTTER(56) 두 몫을 빼므로
-   쪽 비트맵 폭 올림(최대 1 px)에도 가로로 넘치지 않는다. 칸 자체는 포인터를 받지 않고 버튼만 받는다.
-   좁은 창(문서 영역 폭 < 464 px, page-nav.ts `pageArrowLayout`)은 마운트가 컨테이너에 data-pe-arrows="overlay" 를 붙인다
-   (사용자 결정 2026-10-26 변경: 자리가 없으면 겹친다). 그 폭에서는 좌우 칸 몫을 빼지 않아 쪽이 넓어지고, 칸은 폭 0 으로
-   레이아웃 폭을 차지하지 않으며 버튼만 쪽 가장자리 위로 넘쳐 겹친다. 칸은 sticky(left·right 0)라 쪽이 최소 폭(320 px)
-   때문에 가로로 넘쳐도 문서 영역 보이는 범위의 좌우 끝에 붙는다.
-   세로: 칸 높이는 한 줄 flex 의 줄 높이(문서 영역 안쪽 높이)라 쪽보다 짧다. 칸도 세로 sticky(top 0)로 두어 쪽이 길어
-   아래로 스크롤해도 칸이 보이는 범위 위에 남고, 그 안에서 버튼 sticky 가 보이는 범위 세로 가운데를 잡는다. sticky 는
-   흐름 배치·스크롤 범위를 바꾸지 않는다. */
+/* ── Page left/right arrows ──────────────────────────────────── */
+/* Both side slots of the page container (flex) (width 48 + gaps 3·3 = 54). The viewer subtracts two PAGE_ARROW_GUTTER (56) shares from the fit-to-page width, so
+   it does not overflow horizontally even when the page bitmap width is rounded up (at most 1 px). The slots themselves do not receive pointer events; only the buttons do.
+   For a narrow window (document area width < 464 px, `pageArrowLayout` in page-nav.ts), mount sets data-pe-arrows="overlay" on the container
+   (user decision 2026-10-26 change: overlap when there is no room). At that width the side slot shares are not subtracted, so the page gets wider, the slots have width 0 and
+   take no layout width, and only the buttons overflow over the page edges and overlap. The slots are sticky (left/right 0), so even if the page overflows horizontally
+   because of the minimum width (320 px), they stick to the left and right ends of the visible range of the document area.
+   Vertical: the slot height is the line height of the single-line flex (the inner height of the document area), so it is shorter than the page. The slots are also made vertically sticky (top 0), so that
+   even when the page is long and scrolled down, the slots stay within the visible range, and within them the button sticky holds the vertical center of the visible range. Sticky does not
+   change the flow layout or the scroll range. */
 .pe-arrow-slot {
   flex: none;
   align-self: stretch;
@@ -453,8 +453,8 @@
 .pe-arrow-slot-next {
   right: 0;
 }
-/* 쪽 위 겹침: 칸 폭 0. 이전 버튼은 칸에서 오른쪽(쪽 안쪽)으로, 다음 버튼은 음수 여백으로 왼쪽(쪽 안쪽)으로 넘친다.
-   둘 다 쪽 상자 안쪽으로만 넘치므로 스크롤 폭을 늘리지 않는다. */
+/* Overlap over the page: slot width 0. The previous button overflows from the slot to the right (into the page), and the next button overflows to the left (into the page) with a negative margin.
+   Both overflow only into the page box, so the scroll width does not grow. */
 [data-pe-arrows='overlay'] > .pe-arrow-slot {
   width: 0;
   margin: 0;
@@ -462,11 +462,11 @@
 [data-pe-arrows='overlay'] > .pe-arrow-slot-next .pe-arrow {
   margin-left: -48px;
 }
-/* 버튼 48×96(터치 영역), 아이콘 30 px 셰브런. 기본은 진한 반투명 판(88%)에 흰 아이콘이라 회색 배경·쪽 위 모두에서 또렷하다.
-   hover 는 밝은 판·테두리, focus-visible 은 파란 외곽선, 비활성(첫·마지막 쪽)은 옅은 판·흐린 아이콘·그림자 없음. */
+/* Buttons 48×96 (touch target), 30 px chevron icon. By default a dark translucent plate (88%) with a white icon, so it is clear on both a gray background and over the page.
+   hover is a light plate/border, focus-visible a blue outline, disabled (first/last page) a faint plate, dimmed icon and no shadow. */
 .pe-arrow {
   position: sticky;
-  /* 스크롤 상자(문서 영역) 높이의 가운데. 창 높이가 아니라 상자 기준이다. */
+  /* Vertical center of the scroll box (document area) height. It is relative to the box, not the window height. */
   top: calc(50% - 48px);
   display: flex;
   align-items: center;
@@ -505,7 +505,7 @@
   outline-offset: 2px;
 }
 
-/* 편집 가능 표시(M4 D6) */
+/* Editability overlay (M4 D6) */
 .pe-marks {
   position: absolute;
   inset: 0;
@@ -563,7 +563,7 @@
   background: rgb(30 136 229 / 12%);
 }
 
-/* 벡터 패스 편집(M4) */
+/* Vector path editing (M4) */
 .pe-path-layer {
   position: absolute;
   inset: 0;

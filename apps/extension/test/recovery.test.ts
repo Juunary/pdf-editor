@@ -96,7 +96,7 @@ function setup(workers: FakeWorker[], log: EditOp[] = []) {
 const bytes = () => new Uint8Array([1, 2, 3, 4]).buffer as ArrayBuffer;
 
 describe('isFatalWorkerError', () => {
-  it('wasm 트랩·메모리 부족·Worker 스크립트 오류는 치명, 문서 오류는 아니다', () => {
+  it('wasm trap, out of memory and Worker script errors are fatal; document errors are not', () => {
     expect(isFatalWorkerError(fatal())).toBe(true);
     expect(isFatalWorkerError(new Error('abort(OOM). Build with -sASSERTIONS'))).toBe(true);
     expect(
@@ -110,14 +110,14 @@ describe('isFatalWorkerError', () => {
     expect(isFatalWorkerError('문자열')).toBe(false);
   });
 
-  it('WorkerRecoveredError 는 뷰어 UI 가 recovered 로 분류한다', () => {
+  it('WorkerRecoveredError is classified as recovered by the viewer UI', () => {
     const e = new WorkerRecoveredError('복구', 2);
     expect(classifyFailure(e).kind).toBe('recovered');
   });
 });
 
 describe('ResilientPdf', () => {
-  it('정상 호출은 그대로 통과하고 일반 오류는 복구하지 않는다', async () => {
+  it('normal calls pass through as is and regular errors do not trigger recovery', async () => {
     const w1 = fakeWorker({
       getPageInfo: vi.fn(async () => {
         throw new Error('page out of range');
@@ -130,7 +130,7 @@ describe('ResilientPdf', () => {
     expect(pdf.recoveryCount).toBe(0);
   });
 
-  it('open 은 원본을 Blob 으로 보관한 뒤 transfer 로 넘긴다', async () => {
+  it('open keeps the original as a Blob and then passes it by transfer', async () => {
     const w1 = fakeWorker();
     const transfer = vi.fn((b: ArrayBuffer) => b);
     const pdf = new ResilientPdf({
@@ -145,7 +145,7 @@ describe('ResilientPdf', () => {
     expect(w1.api.open).toHaveBeenCalledTimes(1);
   });
 
-  it('읽기 호출이 치명 오류면 새 Worker 로 원본 열기 → 로그 재적용 → 같은 호출을 다시 시도한다', async () => {
+  it('if a read call hits a fatal error: open the original in a new Worker → reapply the log → retry the same call', async () => {
     const log = [op('a'), op('b')];
     const w1 = fakeWorker({
       renderPage: vi.fn(async () => {
@@ -160,12 +160,12 @@ describe('ResilientPdf', () => {
     expect(w1.terminated()).toBe(true);
     expect(spawned()).toBe(2);
     expect(w2.api.open).toHaveBeenCalledTimes(1);
-    // 한 건씩 나눠 보내고(진행 표시), 마지막 호출에서 저널을 켠다(more: false).
+    // Send one at a time (progress display) and turn on the journal on the last call (more: false).
     expect(w2.api.replayEdits!.mock.calls).toEqual([
       [[log[0]], { more: true }],
       [[log[1]], { more: false }],
     ]);
-    // open 이 replayEdits 보다 먼저
+    // open comes before replayEdits
     expect(w2.api.open!.mock.invocationCallOrder[0]!).toBeLessThan(
       w2.api.replayEdits!.mock.invocationCallOrder[0]!,
     );
@@ -176,7 +176,7 @@ describe('ResilientPdf', () => {
     expect(infos[0]!.history?.activeEditIds).toEqual(['a', 'b']);
   });
 
-  describe('복구 기준점(D4 사용자 결정 2026-10-21)', () => {
+  describe('recovery checkpoint (D4 user decision 2026-10-21)', () => {
     const crashOnRender = () =>
       fakeWorker({
         renderPage: vi.fn(async () => {
@@ -187,7 +187,7 @@ describe('ResilientPdf', () => {
     const openedBytes = (w: FakeWorker) =>
       [...new Uint8Array(w.api.open!.mock.calls[0]![0] as ArrayBuffer)] as number[];
 
-    it('사용자 저장이 성공하면 복구는 저장 바이트를 열고 저장 뒤 편집만 다시 적용하며 진행을 알린다', async () => {
+    it('when a user save succeeds, recovery opens the saved bytes, reapplies only the edits after the save, and reports progress', async () => {
       const log = [op('a'), op('b')];
       const w1 = crashOnRender();
       const w2 = fakeWorker();
@@ -216,11 +216,11 @@ describe('ResilientPdf', () => {
       expect(progress).toEqual(['0/1', '1/1']);
       await new Promise((r) => setTimeout(r, 5));
       expect(infos[0]).toMatchObject({ replayedEdits: 1, fromSavedBaseline: true });
-      // 기준점에서 복구한 뒤에는 기준점이 원본이다(확정 기준점은 비운다).
+      // After recovering from the checkpoint, the checkpoint is the original (the confirmed checkpoint is cleared).
       expect(pdf.baselineEditIds).toBeNull();
     });
 
-    it('기준점 복구 직후 뷰어 로그가 바뀌기 전에 다시 복구해도 기준점 편집을 두 번 적용하지 않는다', async () => {
+    it('recovering again right after a checkpoint recovery, before the viewer log changes, does not apply the checkpoint edits twice', async () => {
       const log = [op('a'), op('b')];
       const w1 = crashOnRender();
       const w2 = crashOnRender();
@@ -228,20 +228,20 @@ describe('ResilientPdf', () => {
       const { pdf } = setup([w1, w2, w3], log);
       await pdf.open(bytes());
       await pdf.save({ changes: [] });
-      pdf.confirmSaved(); // 기준점 = 저장 시점 활성 [a, b]
+      pdf.confirmSaved(); // checkpoint = active [a, b] at save time
       log.push(op('c'));
-      // w1 실패 → w2 가 기준점 + [c] 로 복구, 재시도도 w2 에서 실패 → w3 으로 복구(재시도는 한 번뿐이라 오류로 알린다).
+      // w1 fails → w2 recovers with checkpoint + [c], the retry also fails on w2 → recovers to w3 (retry is only once, so it is reported as an error).
       await expect(pdf.renderPage({ pageIndex: 0, scale: 1 })).rejects.toBeInstanceOf(
         WorkerRecoveredError,
       );
       expect(openedBytes(w2)).toEqual([9, 9]);
       expect(w2.api.replayEdits!.mock.calls.map((c) => (c[0] as EditOp[])[0]!.id)).toEqual(['c']);
-      // 로그는 아직 [a, b, c] 그대로다: w3 은 기준점 바이트(이제 원본)에 c 만 다시 적용해야 한다.
+      // The log is still [a, b, c]: w3 must reapply only c on top of the checkpoint bytes (now the original).
       expect(openedBytes(w3)).toEqual([9, 9]);
       expect(w3.api.replayEdits!.mock.calls.map((c) => (c[0] as EditOp[])[0]!.id)).toEqual(['c']);
     });
 
-    it('저장 결과를 확정하지 않으면(취소·실패·측정 저장) 원본에서 전체 로그를 다시 적용한다', async () => {
+    it('if the save result is not confirmed (cancel, failure, measurement save), the whole log is reapplied from the original', async () => {
       const log = [op('a')];
       const w1 = crashOnRender();
       const w2 = fakeWorker();
@@ -249,7 +249,7 @@ describe('ResilientPdf', () => {
       await pdf.open(bytes());
       await pdf.save({ changes: [] });
       pdf.discardPendingSave();
-      pdf.confirmSaved(); // 확정할 후보가 없다
+      pdf.confirmSaved(); // no candidate to confirm
       expect(pdf.baselineEditIds).toBeNull();
       await pdf.renderPage({ pageIndex: 0, scale: 1 });
       expect(openedBytes(w2)).toEqual([1, 2, 3, 4]);
@@ -258,7 +258,7 @@ describe('ResilientPdf', () => {
       expect(infos[0]).toMatchObject({ replayedEdits: 1, fromSavedBaseline: false });
     });
 
-    it('저장 전 편집까지 되돌려 활성 로그가 기준점으로 시작하지 않으면 원본 + 활성 로그 전체', async () => {
+    it('if edits made before the save were undone and the active log does not start with the checkpoint, the original + the whole active log', async () => {
       const log = [op('a'), op('b')];
       const w1 = crashOnRender();
       const w2 = fakeWorker();
@@ -266,7 +266,7 @@ describe('ResilientPdf', () => {
       await pdf.open(bytes());
       await pdf.save({ changes: [] });
       pdf.confirmSaved();
-      log.splice(1, 1, op('x')); // b 를 되돌리고 x 를 새로 커밋
+      log.splice(1, 1, op('x')); // undo b and newly commit x
       await pdf.renderPage({ pageIndex: 0, scale: 1 });
       expect(openedBytes(w2)).toEqual([1, 2, 3, 4]);
       expect(w2.api.replayEdits!.mock.calls.map((c) => (c[0] as EditOp[])[0]!.id)).toEqual([
@@ -275,7 +275,7 @@ describe('ResilientPdf', () => {
       ]);
     });
 
-    it('다른 문서를 열면 기준점을 버린다', async () => {
+    it('opening another document discards the checkpoint', async () => {
       const w1 = fakeWorker({ save: vi.fn(async () => ({ bytes: new Uint8Array([9]) })) });
       const { pdf } = setup([w1], [op('a')]);
       await pdf.open(bytes());
@@ -286,7 +286,7 @@ describe('ResilientPdf', () => {
       expect(pdf.baselineEditIds).toBeNull();
     });
 
-    it('opsAfterBaseline: 앞부분 일치일 때만 뒤 편집, 아니면 null', () => {
+    it('opsAfterBaseline: the later edits only on a prefix match, otherwise null', () => {
       const snap = { ops: [op('a'), op('b'), op('c')], activeEditIds: ['a', 'b', 'c'] };
       expect(opsAfterBaseline(snap, ['a', 'b'])!.map((o) => o.id)).toEqual(['c']);
       expect(opsAfterBaseline(snap, [])!.map((o) => o.id)).toEqual(['a', 'b', 'c']);
@@ -296,7 +296,7 @@ describe('ResilientPdf', () => {
     });
   });
 
-  it('journalAdvice(D4)는 읽기 호출이라 복구 뒤 새 Worker 에서 다시 묻는다', async () => {
+  it('journalAdvice (D4) is a read call, so it is asked again on the new Worker after recovery', async () => {
     const advice = { advised: true, journalBytes: 9, incrementBytes: 1, thresholdBytes: 5 };
     const w1 = fakeWorker({
       journalAdvice: vi.fn(async () => {
@@ -310,7 +310,7 @@ describe('ResilientPdf', () => {
     expect(w2.api.journalAdvice).toHaveBeenCalledTimes(1);
   });
 
-  it('로그가 비어 있으면 replayEdits 를 부르지 않는다', async () => {
+  it('does not call replayEdits when the log is empty', async () => {
     const w1 = fakeWorker({
       renderPage: vi.fn(async () => {
         throw fatal();
@@ -323,7 +323,7 @@ describe('ResilientPdf', () => {
     expect(w2.api.replayEdits).not.toHaveBeenCalled();
   });
 
-  it('쓰기 호출(저장 등)은 복구 뒤 다시 시도하지 않고 WorkerRecoveredError 를 던진다', async () => {
+  it('write calls (save, etc.) are not retried after recovery and throw WorkerRecoveredError', async () => {
     const w1 = fakeWorker({
       save: vi.fn(async () => {
         throw fatal('abort(OOM)');
@@ -334,12 +334,12 @@ describe('ResilientPdf', () => {
     await pdf.open(bytes());
     await expect(pdf.save({ changes: [] })).rejects.toBeInstanceOf(WorkerRecoveredError);
     expect(w2.api.save).not.toHaveBeenCalled();
-    // 복구된 Worker 는 계속 쓸 수 있다.
+    // The recovered Worker can keep being used.
     await expect(pdf.save({ changes: [] })).resolves.toBeDefined();
     expect(w2.api.save).toHaveBeenCalledTimes(1);
   });
 
-  it('응답이 영영 오지 않는 호출도 Worker 가 죽으면(dead) 끊고 복구한다', async () => {
+  it('a call whose response never comes is also cut off and recovered when the Worker dies (dead)', async () => {
     const never = vi.fn(() => new Promise(() => {}));
     const w1 = fakeWorker({ getPageInfo: never });
     const w2 = fakeWorker();
@@ -352,7 +352,7 @@ describe('ResilientPdf', () => {
     expect(w2.api.open).toHaveBeenCalledTimes(1);
   });
 
-  it('동시에 여러 호출이 실패해도 복구는 한 번만 한다', async () => {
+  it('even if several calls fail at the same time, recovery runs only once', async () => {
     const boom = vi.fn(async () => {
       throw fatal();
     });
@@ -371,7 +371,7 @@ describe('ResilientPdf', () => {
     expect(pdf.recoveryCount).toBe(1);
   });
 
-  it('beginParagraphEdit 는 renderScale 을 Worker 로 넘긴다(R-L1)', async () => {
+  it('beginParagraphEdit passes renderScale to the Worker (R-L1)', async () => {
     const w1 = fakeWorker();
     const { pdf } = setup([w1]);
     await pdf.open(bytes());
@@ -379,7 +379,7 @@ describe('ResilientPdf', () => {
     expect(w1.api.beginParagraphEdit).toHaveBeenCalledWith(0, 1, 1, 3);
   });
 
-  it('복구 전 세대 초안으로 온 호출은 새 Worker 로 보내지 않는다', async () => {
+  it('a call arriving with a draft from a pre-recovery generation is not sent to the new Worker', async () => {
     const w1 = fakeWorker({
       getPageInfo: vi.fn(async () => {
         throw fatal();
@@ -389,8 +389,8 @@ describe('ResilientPdf', () => {
     const { pdf } = setup([w1, w2]);
     await pdf.open(bytes());
     const begun = await pdf.beginParagraphEdit(0, 1, 1);
-    await pdf.updateParagraphDraft(begun.draftId, {} as never); // 같은 세대: 통과
-    await pdf.getPageInfo(0); // 복구가 일어난다
+    await pdf.updateParagraphDraft(begun.draftId, {} as never); // same generation: passes through
+    await pdf.getPageInfo(0); // recovery happens
     await expect(pdf.updateParagraphDraft(begun.draftId, {} as never)).rejects.toBeInstanceOf(
       WorkerRecoveredError,
     );
@@ -401,12 +401,12 @@ describe('ResilientPdf', () => {
       WorkerRecoveredError,
     );
     expect(w2.api.updateParagraphDraft).not.toHaveBeenCalled();
-    // 새 세대에서 새 초안은 정상
+    // In the new generation, a new draft works normally
     const again = await pdf.beginParagraphEdit(0, 1, 2);
     await expect(pdf.updateParagraphDraft(again.draftId, {} as never)).resolves.toBeDefined();
   });
 
-  it('초안 호출 중 치명 오류: 복구하고 WorkerRecoveredError 를 던진다', async () => {
+  it('fatal error during a draft call: recovers and throws WorkerRecoveredError', async () => {
     const w1 = fakeWorker({
       updateParagraphDraft: vi.fn(async () => {
         throw fatal();
@@ -423,7 +423,7 @@ describe('ResilientPdf', () => {
     expect(classifyFailure(error).kind).toBe('recovered');
   });
 
-  it('복구 자체가 실패하면 오류를 던지고 다음 open 까지 문서를 쓸 수 없으며, open 은 새 Worker 로 다시 시작한다', async () => {
+  it('if recovery itself fails, an error is thrown and the document is unusable until the next open, and open restarts with a new Worker', async () => {
     const w1 = fakeWorker({
       getPageInfo: vi.fn(async () => {
         throw fatal();
@@ -440,18 +440,18 @@ describe('ResilientPdf', () => {
     await expect(pdf.getPageInfo(0)).rejects.toThrow('복구하지 못했습니다');
     expect(spawned()).toBe(2);
     await expect(pdf.renderPage({ pageIndex: 0, scale: 1 })).rejects.toThrow('다시 열어 주세요');
-    // 화면 문장은 이름으로 만든다(영어 화면, 사용자 결정 2026-10-26).
+    // The on-screen sentence is built from the name (English UI, user decision 2026-10-26).
     await expect(pdf.renderPage({ pageIndex: 0, scale: 1 })).rejects.toMatchObject({
       name: 'RecoveryFailedError',
     });
-    expect(spawned()).toBe(2); // 더 시도하지 않는다
+    expect(spawned()).toBe(2); // no further attempts
     await pdf.open(bytes());
     expect(spawned()).toBe(3);
     expect(bad.terminated()).toBe(true);
     await expect(pdf.getPageInfo(1)).resolves.toEqual({ pageIndex: 1 });
   });
 
-  it('복구 알림 콜백은 복구가 끝난 뒤 비동기로 불려 콜백 안 RPC 가 교착하지 않는다', async () => {
+  it('the recovery notification callback is called asynchronously after recovery finishes, so an RPC inside the callback does not deadlock', async () => {
     const w1 = fakeWorker({
       getPageInfo: vi.fn(async () => {
         throw fatal();
@@ -466,7 +466,7 @@ describe('ResilientPdf', () => {
       transfer: (b) => b,
       editLog: () => ({ ops: [], activeEditIds: [] }),
       onRecovered: async () => {
-        seen.push(await pdfRef.getPageInfo(2)); // 복구 중이면 교착한다
+        seen.push(await pdfRef.getPageInfo(2)); // would deadlock during recovery
       },
       log: () => {},
     });
@@ -476,7 +476,7 @@ describe('ResilientPdf', () => {
     expect(seen).toEqual([{ pageIndex: 2 }]);
   });
 
-  it('Redact 보고가 실패하면 null, 성공하면 요약', async () => {
+  it('Redact report: null on failure, a summary on success', async () => {
     const w1 = fakeWorker();
     const { pdf } = setup([w1]);
     await pdf.open(bytes());

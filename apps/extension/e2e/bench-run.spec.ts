@@ -1,19 +1,19 @@
 /**
- * M5 벤치마크 서버 정식 실행(계약 4.1·D1). 옵트인: BENCH_RUN=1 일 때만 돈다.
+ * M5 benchmark server official run (contract 4.1·D1). Opt-in: runs only when BENCH_RUN=1.
  *
  *   BENCH_RUN=1 BENCH_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus \
  *     pnpm --filter @pdf-editor/extension exec playwright test e2e/bench-run.spec.ts
  *
- * 환경 변수
- *   BENCH_TIER       fixtures/bench/manifest.json 의 tier(쉼표 목록, 기본 core)
- *   BENCH_DOCS       문서 id 쉼표 목록(기본: tier 전체)
- *   BENCH_IDS        벤치 세트 밖 코퍼스 문서 id 쉼표 목록(prepare.mjs --ids, Windows 실행과 같은 문서를 잴 때)
- *   BENCH_SCENARIOS  시나리오 쉼표 목록(기본: 전체)
- *   BENCH_OPTIONS    측정 옵션 JSON(BenchOptions 일부, 예 '{"mem":{"pages":50,"edits":0,"saves":2,"settleMs":30000}}')
- *   BENCH_LABEL      결과 파일 이름(기본: 시각)
- *   BENCH_BASELINE   직전 기록 JSON 경로(기본 fixtures/bench/baseline-server.json). +20% 초과 지표를 회귀로 표시한다.
+ * Environment variables
+ *   BENCH_TIER       tier of fixtures/bench/manifest.json (comma list, default core)
+ *   BENCH_DOCS       comma list of document ids (default: the whole tier)
+ *   BENCH_IDS        comma list of corpus document ids outside the bench set (prepare.mjs --ids, to measure the same documents as the Windows run)
+ *   BENCH_SCENARIOS  comma list of scenarios (default: all)
+ *   BENCH_OPTIONS    measurement options JSON (part of BenchOptions, e.g. '{"mem":{"pages":50,"edits":0,"saves":2,"settleMs":30000}}')
+ *   BENCH_LABEL      result file name (default: timestamp)
+ *   BENCH_BASELINE   path to the previous record JSON (default fixtures/bench/baseline-server.json). Metrics over +20% are flagged as regressions.
  *
- * 결과: out/m5-bench/<label>.json (측정 페이지 결과 + 렌더러 VmRSS 추적 + 회귀 표). 탭 메모리는 이 확장 렌더러의 VmRSS 다.
+ * Result: out/m5-bench/<label>.json (measurement page result + renderer VmRSS trace + regression table). Tab memory is the VmRSS of this extension's renderer.
  */
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
@@ -36,11 +36,11 @@ import { DEFAULT_OPTIONS, type BenchOptions, type Scenario } from '../src/viewer
 const RUN = process.env.BENCH_RUN === '1';
 const OUT_DIR = join(REPO, 'out/m5-bench');
 
-test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
+test.describe('M5 benchmark official run (opt-in)', () => {
   test.skip(!RUN, 'BENCH_RUN=1 이 아니면 건너뛴다');
   test.setTimeout(6 * 60 * 60 * 1000);
 
-  test('문서 세트 전체 지표', async () => {
+  test('full document set metrics', async () => {
     const tier = process.env.BENCH_TIER ?? 'core';
     const args = ['fixtures/bench/prepare.mjs', '--tier', tier];
     if (process.env.BENCH_CORPUS_DIR) args.push('--corpus-dir', process.env.BENCH_CORPUS_DIR);
@@ -55,7 +55,7 @@ test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
       DEFAULT_OPTIONS.scenarios) as Scenario[];
     const extra = JSON.parse(process.env.BENCH_OPTIONS ?? '{}') as Partial<BenchOptions>;
 
-    // 문서마다 새 브라우저(새 렌더러 프로세스)로 잰다: 앞 문서가 남긴 JS·WASM 메모리가 탭 메모리 기준을 흐리지 않게.
+    // A new browser (new renderer process) per document: so JS·WASM memory left by the previous document does not blur the tab memory baseline.
     const { server, base } = await serveDocs(docs);
     const trace: { t: number; mib: number; doc: string }[] = [];
     const labels: { label: string; docId: string; mib: number | null; t: number }[] = [];
