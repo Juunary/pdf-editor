@@ -52,7 +52,7 @@ describe('manifest per build kind (D7)', () => {
   it('store: Chrome 151, removes DNR, host permissions and WAR, keeps only downloads', () => {
     const m = buildManifest(base, 'store', pkg.version);
     expect(m.name).toBe('__MSG_appName__');
-    expect(m.version).toBe('1.0.0');
+    expect(m.version).toBe(pkg.version);
     expect(m.minimum_chrome_version).toBe(STORE_MIN_CHROME);
     expect(m.permissions).toEqual(['downloads']);
     expect(m).not.toHaveProperty('host_permissions');

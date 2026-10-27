@@ -1,4 +1,4 @@
-// Extension icon generation (16·32·48·128 px). Uses only a simple shape (a folded-corner document on a blue rounded square); no trademarks or text.
+// Extension icon generation (16·32·48·128 px). Uses only simple shapes (a folded-corner document with a pencil over it, on a blue rounded square); no trademarks or text.
 // Writes raster → PNG (RGBA, zlib) with no external dependencies. The result is committed to the repository.
 //
 //   node scripts/release/make-icons.mjs
@@ -23,6 +23,39 @@ const BLUE = [43, 108, 176];
 const WHITE = [255, 255, 255];
 const FOLD = [190, 210, 235];
 const LINE = [43, 108, 176];
+const LEAD = [45, 55, 72];
+const WOOD = [250, 222, 176];
+const BODY = [246, 173, 62];
+const BODY_SHADE = [221, 140, 40];
+const FERRULE = [203, 213, 224];
+const ERASER = [240, 128, 128];
+
+// Pencil: axis from the tip (lower left) to the eraser end (upper right), in unit-square coordinates
+const TIP = [0.4, 0.8];
+const END = [0.86, 0.34];
+const HALF_W = 0.085; // half width of the body
+const CONE = 0.17; // length of the sharpened cone
+const LEAD_LEN = 0.06; // length of the graphite point
+const ERASER_LEN = 0.11; // ferrule + eraser
+const FERRULE_LEN = 0.04;
+const GAP = 0.035; // background-coloured outline that separates the pencil from the document
+
+function pencil(x, y) {
+  const ax = END[0] - TIP[0];
+  const ay = END[1] - TIP[1];
+  const len = Math.hypot(ax, ay);
+  const u = ((x - TIP[0]) * ax + (y - TIP[1]) * ay) / len;
+  const v = ((x - TIP[0]) * -ay + (y - TIP[1]) * ax) / len;
+  const halfAt = u < CONE ? (HALF_W * u) / CONE : HALF_W;
+  if (u >= 0 && u <= len && Math.abs(v) <= halfAt) {
+    if (u < LEAD_LEN) return LEAD;
+    if (u < CONE) return WOOD;
+    if (u > len - ERASER_LEN) return u < len - ERASER_LEN + FERRULE_LEN ? FERRULE : ERASER;
+    return v < 0 ? BODY : BODY_SHADE;
+  }
+  if (u >= -GAP && u <= len + GAP && Math.abs(v) <= halfAt + GAP) return BLUE;
+  return null;
+}
 
 /** Color at unit-square (0–1) coordinates. null if transparent. */
 function shade(x, y) {
@@ -31,22 +64,24 @@ function shade(x, y) {
   const cx = Math.min(Math.max(x, r), 1 - r);
   const cy = Math.min(Math.max(y, r), 1 - r);
   if ((x - cx) ** 2 + (y - cy) ** 2 > r * r) return null;
-  // Document: x 0.25–0.75, y 0.17–0.83, top-right corner folded (fold side 0.17)
-  const left = 0.25;
-  const right = 0.75;
-  const top = 0.17;
-  const bottom = 0.83;
-  const fold = 0.18;
+  const p = pencil(x, y);
+  if (p) return p;
+  // Document: x 0.2–0.68, y 0.14–0.84, top-right corner folded (fold side 0.17)
+  const left = 0.2;
+  const right = 0.68;
+  const top = 0.14;
+  const bottom = 0.84;
+  const fold = 0.17;
   if (x >= left && x <= right && y >= top && y <= bottom) {
     const dx = x - (right - fold);
     const dy = y - top;
     if (dx > 0 && dy < fold) {
       // Folded region: below the diagonal is the folded face, above it is the background
-      return dx + (fold - dy) > fold ? (dy + (fold - dx) > fold ? FOLD : BLUE) : BLUE;
+      return dy >= dx ? FOLD : BLUE;
     }
     // 3 body lines
-    for (const ly of [0.46, 0.58, 0.7]) {
-      if (Math.abs(y - ly) < 0.025 && x > 0.32 && x < (ly > 0.65 ? 0.58 : 0.68)) return LINE;
+    for (const ly of [0.42, 0.54, 0.66]) {
+      if (Math.abs(y - ly) < 0.025 && x > 0.28 && x < (ly > 0.6 ? 0.46 : 0.6)) return LINE;
     }
     return WHITE;
   }
