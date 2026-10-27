@@ -280,7 +280,7 @@ PLAN.md 반영 필요:
 - 상한 실측(서버 Node, 합성 문서): Buffer 입력 525.5 MiB 성공·675.7 MiB 실패, Stream 입력 675.7 MiB 성공(피크 1,681 MiB, 상한의 82%).
 - maxRSS(Node 프로세스): 대형 900쪽 buffer 실패 2,788 MiB, stream 성공 2,339 MiB. 브라우저 탭은 WASM 힙 외에 JS 쪽 입력·출력 사본이 더해진다(미측정, A3 Day 1 과 함께).
 
-Windows Chrome 실측(2026-10-19 KST, W6 = U3): 확인 빌드 `m2` 110549f dist, Chrome 155.0.8059.82, 문맥 F2(file:// 직접 열기), 진단 "전체 저장 측정" 각 1회(측정, 진단 JSON). 저장 옵션 `garbage=yes,compress`, 입력 Stream, 파일은 만들지 않는다.
+Windows Chrome 실측(2026-10-19 KST, W6 = U3): 확인 빌드 `m2` 10e5ef7 dist, Chrome 155.0.8059.82, 문맥 F2(file:// 직접 열기), 진단 "전체 저장 측정" 각 1회(측정, 진단 JSON). 저장 옵션 `garbage=yes,compress`, 입력 Stream, 파일은 만들지 않는다.
 
 | 문서 | 입력 B | 열기 ms | 1쪽 렌더 ms(scale 3) | saveMs | wasmHeapBytes | outputBytes |
 |---|---|---|---|---|---|---|

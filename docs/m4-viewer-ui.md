@@ -4,7 +4,7 @@
 | --- | --- |
 | 작성일 | 2026-10-21 |
 | 범위 | `docs/m4-contract.md` 작업 S3(4.5, D1·D2·D6, 1.2 이관 중 입력 버퍼·R-L1·W4-6) |
-| 브랜치 | `m4-viewer-ui`(기준: `m4` 계약 커밋 `caa4654`) |
+| 브랜치 | `m4-viewer-ui`(기준: `m4` 계약 커밋 `b3fdde8`) |
 | 상태 | **구현 완료. 가짜 편집 호스트·실제 확장 빌드로 검증했다. 실제 core 패스 RPC(S2)·pdf-ops(S1) 연동 검증은 통합 후** |
 | 변경 범위 | 허용 파일만 변경(`packages/viewer-ui/**`, `apps/extension/**`, 이 문서). `shared-types`·`core`·`pdf-ops`·루트 설정·`pnpm-lock.yaml`·의존성 무변경 |
 

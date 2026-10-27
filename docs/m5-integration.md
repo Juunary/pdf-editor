@@ -4,21 +4,21 @@
 | --- | --- |
 | 작성일 | 2026-10-21 |
 | 범위 | `docs/m5-contract.md` 작업 S1–S5 머지 뒤 통합: C7 연결(`docs/m5-heap.md` 8절), 병합 정합 점검(벤치·릴리스 빌드, 스크롤 상자, 캐시 무효화), 전체 검증, 패키지 |
-| 기준 | `m5` 브랜치 f43523b(다섯 작업 브랜치 머지) 이후 커밋 |
+| 기준 | `m5` 브랜치 afcc69b(다섯 작업 브랜치 머지) 이후 커밋 |
 | 측정 환경 | 서버 `sailab01`, Node 22.18, npm `mupdf` 1.28.1, Playwright 1.64.1 번들 Chromium 156(headless). Windows Chrome 은 미측정 |
 
 ## 1. 머지
 
 | 순서 | 브랜치 | 머지 커밋 | 작업 문서 |
 | --- | --- | --- | --- |
-| 1 | `m5-heap`(S1) | 35ea746 | `docs/m5-heap.md` |
-| 2 | `m5-cleanup`(S5) | dd8560c | `docs/m4-integration.md` 9절 |
-| 3 | `m5-perf`(S2) | 85617dc | `docs/m5-perf.md` |
-| 4 | `m5-release`(S3) | eca71ca | `docs/m5-release.md` |
-| 5 | `m5-docs`(S4) | f43523b | `docs/user/`, `docs/store/`, README 등 |
+| 1 | `m5-heap`(S1) | 9b9a833 | `docs/m5-heap.md` |
+| 2 | `m5-cleanup`(S5) | 918536e | `docs/m4-integration.md` 9절 |
+| 3 | `m5-perf`(S2) | 53fd4c8 | `docs/m5-perf.md` |
+| 4 | `m5-release`(S3) | 72cb87b | `docs/m5-release.md` |
+| 5 | `m5-docs`(S4) | afcc69b | `docs/user/`, `docs/store/`, README 등 |
 
 - 충돌 1곳: S2 머지에서 `packages/core/src/session.ts` 첫 줄 `import './wasm-module.js'` 의 주석. 두 작업 모두 같은 import 를 첫 줄에 두었고 S1 주석으로 해소했다(`docs/m5-perf.md` 7절 #5 조건 충족).
-- 자동 병합 뒤 정리: 같은 파일에서 S2 가 넣은 `withoutPathSegments` 가 `touch` 의 문서 주석과 그 함수 사이에 끼어 주석 두 개가 이어져 있었다. 위치만 바로잡았다(c3b7831).
+- 자동 병합 뒤 정리: 같은 파일에서 S2 가 넣은 `withoutPathSegments` 가 `touch` 의 문서 주석과 그 함수 사이에 끼어 주석 두 개가 이어져 있었다. 위치만 바로잡았다(887e393).
 - S3 머지(`vite.config.ts`·`viewer.html`)는 충돌 없이 병합되었으나 스토어 빌드에 벤치 페이지가 들어갔다(3.1).
 
 ## 2. C7 연결(사용자 승인)
@@ -142,13 +142,13 @@ S3 가 창 스크롤을 `#page-container` 스크롤로 옮긴 뒤 window 스크�
 
 | 커밋 | 내용 |
 | --- | --- |
-| 3ec498e | M1 객체 스트림 전수, 합성 `large-objstm-4000` |
-| 8b90d99 | H1·M2 저장 힙 모델 `step-v2`(core·pdf-ops·shared-types) |
-| 20ce8b1 | H1·M2 뷰어 저장 전 판정 문구·"그래도 저장 시도" |
-| 1184969 | H1 벤치: 같은 세션 저장 2회 시나리오 |
-| 2352fbe | M8 패스 커밋 직후 Alt+클릭 보류 |
-| 0dcae46 | M7 메모리 왕복 e2e 정정 |
-| a7389d7 | M5 URW 글꼴 고지 |
+| 68bf756 | M1 객체 스트림 전수, 합성 `large-objstm-4000` |
+| bcbf0c8 | H1·M2 저장 힙 모델 `step-v2`(core·pdf-ops·shared-types) |
+| 6fee5da | H1·M2 뷰어 저장 전 판정 문구·"그래도 저장 시도" |
+| cbc5ac6 | H1 벤치: 같은 세션 저장 2회 시나리오 |
+| 13ec275 | M8 패스 커밋 직후 Alt+클릭 보류 |
+| 8cd4c22 | M7 메모리 왕복 e2e 정정 |
+| 5d8ebec | M5 URW 글꼴 고지 |
 | (이 커밋) | 문서: M3·M6·L6, `docs/m5-heap.md` 4.4·4.5, 이 절 |
 
 ### 8.2 지적별 처리
@@ -181,7 +181,7 @@ S3 가 창 스크롤을 `#page-container` 스크롤로 옮긴 뒤 window 스크�
 | R3 | M2 예시의 "되돌리기로 편집 줄이기" 는 안내하지 않았다. 저널 추정·실제 메모리 모두 되돌리기로 줄지 않는다 |
 | R4 | "그래도 저장 시도" 는 over-limit 이고 `grownHeapBasis` 일 때만 둔다. 측정에서 해당 표본은 1건(합성 이미지 1,000쪽 전체 보기 30, 두 번째 저장 성공) |
 
-### 8.4 검증(코드 최종 커밋 a7389d7, 2026-10-21)
+### 8.4 검증(코드 최종 커밋 5d8ebec, 2026-10-21)
 
 | 명령 | 결과 |
 | --- | --- |

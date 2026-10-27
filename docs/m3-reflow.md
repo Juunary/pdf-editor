@@ -5,7 +5,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 작성일 | 2026-10-19 |
-| 브랜치 | `m3-reflow`(기준 `a7464f1`, 계약 수정 1·2 머지 `1b640dd`(m3 `64f6fcd`), worktree `/mnt/nas4/kjune/pdf-editor-m3-reflow`) |
+| 브랜치 | `m3-reflow`(기준 `f17036e`, 계약 수정 1·2 머지 `47ce677`(m3 `b07c295`), worktree `/mnt/nas4/kjune/pdf-editor-m3-reflow`) |
 | 범위 | `docs/m3-contract.md` 6.2 작업 S2: D5 셰이퍼, 5.4 리플로우 전부, V6 |
 | 상태 | 계약 범위 구현 완료. V6 통과(계약 수정 2 폰트 기준): /W 차이 0, cmap gid 16,567개 일대일·ToUnicode 정확 왕복. 수정 2 이전 폰트의 왕복 불일치(316자)는 6절 N1 로 보고해 수정 2 로 해소 |
 | 측정 환경 | 서버 `sailab01`(AMD Ryzen 9 5950X), Node 22.18.0, harfbuzzjs 1.6.2, npm `mupdf` 1.28.1, 번들 폴백 폰트 `assets/fonts/NotoSansKR-Regular-subset.ttf`(계약 수정 2 판 4,082,236 B, sha256 `e96d7e43…a287`. 4절 아래 표는 수정 2 이전 판 4,083,596 B 측정) |
@@ -181,7 +181,7 @@
 
 | # | 내용 | 영향 | 제안 | 상태 |
 | --- | --- | --- | --- | --- |
-| N1 | V6 “모든 출력 gid 의 ToUnicode 왕복” 불성립. 번들 폴백 서브셋 cmap 이 다대일(317 gid)이고 MuPDF `addFont` ToUnicode 는 최대 코드 포인트를 고른다. 공백 → U+00A0, `-` → U+2011, 호환 자모 → 반각, 통합 한자 259자 → 호환 한자 | 폴백 폰트로 쓴 해당 문자의 복사·검색·8.3 텍스트 판정 실패(공백류 제외). 원본 폰트에 하이픈·공백·자모가 없는 서브셋 문서에서 흔히 발생 | A(권고, 메인 세션): `scripts/fonts/build-noto-sans-kr-subset.sh` 에서 cmap 을 일대일로 만든다(패자 코드 포인트 제거: U+00A0·U+00AD·U+2011·U+2003·U+2012·U+2035·U+301C 또는 U+FF5E 중 하나·U+FFA0–FFDC·U+F900–FA0B 등). B(S1): FontManager 가 `addFont` 뒤 폴백 /ToUnicode 를 선호 코드 포인트로 다시 쓴다. 둘 다 reflow 변경 없음 | 해소: 메인 세션이 안 A 로 계약 수정 2(m3 `64f6fcd`) 커밋, 이 브랜치에 머지(`1b640dd`), V6 재확인 통과(4.1) |
+| N1 | V6 “모든 출력 gid 의 ToUnicode 왕복” 불성립. 번들 폴백 서브셋 cmap 이 다대일(317 gid)이고 MuPDF `addFont` ToUnicode 는 최대 코드 포인트를 고른다. 공백 → U+00A0, `-` → U+2011, 호환 자모 → 반각, 통합 한자 259자 → 호환 한자 | 폴백 폰트로 쓴 해당 문자의 복사·검색·8.3 텍스트 판정 실패(공백류 제외). 원본 폰트에 하이픈·공백·자모가 없는 서브셋 문서에서 흔히 발생 | A(권고, 메인 세션): `scripts/fonts/build-noto-sans-kr-subset.sh` 에서 cmap 을 일대일로 만든다(패자 코드 포인트 제거: U+00A0·U+00AD·U+2011·U+2003·U+2012·U+2035·U+301C 또는 U+FF5E 중 하나·U+FFA0–FFDC·U+F900–FA0B 등). B(S1): FontManager 가 `addFont` 뒤 폴백 /ToUnicode 를 선호 코드 포인트로 다시 쓴다. 둘 다 reflow 변경 없음 | 해소: 메인 세션이 안 A 로 계약 수정 2(m3 `b07c295`) 커밋, 이 브랜치에 머지(`47ce677`), V6 재확인 통과(4.1) |
 | N2 | `PlacedLine.descent` 부호가 shared-types 에 정해져 있지 않다 | 뷰어 캐럿·선택 상자, core 변경 영역 | reflow 는 `FontFace` 와 같이 내림 음수로 낸다(2.7). shared-types 주석에 명시하는 것을 제안(메인 세션 소관) | 기록 |
 | N3 | harfbuzzjs 는 import 시 top-level await 로 `harfbuzz.wasm` 을 적재한다 | reflow 를 import 하는 core Worker 번들은 TLA 지원과 wasm 파일 위치(`import.meta.url` 기준)가 필요하다 | S4 의 “Worker 번들에 harfbuzz.wasm 포함” 항목에서 확인 | 기록 |
 | N4 | 계약 D5 의 대체 조건 “출력 gid 가 cmap 역상에 없으면” 을 “그 클러스터 자기 코드 포인트의 cmap gid 가 아니면” 으로 좁혔고, 기본 무시 문자는 폴백 폰트로 쓰지 않는다 | 숨긴 기본 무시 문자가 공백 글리프(gid 1)로 쓰여 추출에 공백이 끼는 것을 막는다. 기본 무시 문자만으로 된 클러스터는 FontManager 경고 없이 missing 이 된다 | 8.3 텍스트 판정에서 기본 무시 문자를 공백류처럼 빼는 것을 제안(메인 세션). FontManager 가 기본 무시 문자를 폴백에 배정할 때 경고하지 않아도 된다 | 기록 |
@@ -189,7 +189,7 @@
 | N6 | 계약 11절 실측의 `fi` → gid 11878 은 D12 이전 서브셋 기준이다. 현재(수정 2) 서브셋은 기본 기능에서 gid 16288 | 없음(kern 만 쓰면 합자 없음) | 기록만 | 기록 |
 | N7 | index.ts 에 내보내기를 더했다(`isOverflowClipped`·금칙 표·`OPENTYPE_FEATURES_OFF`). 고정 타입·시그니처는 그대로다 | 없음 | — | 기록 |
 
-## 7. 검증(2026-10-19, 계약 수정 2 머지 후 `b325d19` + 이 문서)
+## 7. 검증(2026-10-19, 계약 수정 2 머지 후 `38b761a` + 이 문서)
 
 | 명령(worktree 루트) | 결과 |
 | --- | --- |

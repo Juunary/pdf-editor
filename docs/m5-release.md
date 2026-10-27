@@ -3,7 +3,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 작성일 | 2026-10-21 |
-| 브랜치 | `m5-release` (기준 `m5` 6e4f3b2, worktree `/mnt/nas4/kjune/pdf-editor-m5-release`) |
+| 브랜치 | `m5-release` (기준 `m5` 3ddfcca, worktree `/mnt/nas4/kjune/pdf-editor-m5-release`) |
 | 범위 | `docs/m5-contract.md` 4.3·D6·D7 |
 | 상태 | 구현·시험 완료(10절 툴바 수정 포함). 매니페스트 이름·설명·버전 값은 메인 세션 승인 대기(5절) |
 
@@ -191,7 +191,7 @@ pnpm --filter @pdf-editor/extension package
 
 ### 10.1 툴바 수정 2 (사용자 요청 2026-10-22)
 
-브랜치 `m5-toolbar`(기준 main 3377d4f, worktree `/mnt/nas4/kjune/pdf-editor-m5ui`). 3절 스모크 항목의 "downloads 저장 버튼이 DOM 에 있으나 보이지 않음"과 6절 마지막 줄의 `downloads 저장` 버튼 설명은 이 절이 대체합니다(스토어 빌드에는 그 항목이 없습니다).
+브랜치 `m5-toolbar`(기준 main 492ad8e, worktree `/mnt/nas4/kjune/pdf-editor-m5ui`). 3절 스모크 항목의 "downloads 저장 버튼이 DOM 에 있으나 보이지 않음"과 6절 마지막 줄의 `downloads 저장` 버튼 설명은 이 절이 대체합니다(스토어 빌드에는 그 항목이 없습니다).
 
 #### 10.1.1 브라우저 확대·축소에도 머리 영역 크기 고정
 
@@ -270,7 +270,7 @@ pnpm --filter @pdf-editor/extension package
 
 ### 10.2 머리 영역 언어·개발 표시 숨김·쪽 화살표 (사용자 요청 2026-10-23)
 
-브랜치 `m5-windows`(기준 6637829, worktree `/mnt/nas4/kjune/pdf-editor-m5win`). 이 절의 진단 패널 동작은 10절 "진단 패널(dev)" 행과 6절 마지막 줄을 보완합니다(스토어 빌드 동작은 그대로).
+브랜치 `m5-windows`(기준 40f2e97, worktree `/mnt/nas4/kjune/pdf-editor-m5win`). 이 절의 진단 패널 동작은 10절 "진단 패널(dev)" 행과 6절 마지막 줄을 보완합니다(스토어 빌드 동작은 그대로).
 
 #### 10.2.1 언어 방식
 
@@ -376,7 +376,7 @@ pnpm --filter @pdf-editor/extension package
 
 ### 10.3 스토어 이름·설명, 쪽 위 편집 UI 언어, 좁은 창 쪽 화살표 (사용자 결정 2026-10-26)
 
-브랜치 `m5-windows`(기준 cdbc553, worktree `/mnt/nas4/kjune/pdf-editor-m5win`). 10.2.1 의 "`_locales`·`default_locale` 은 추가하지 않음"·"매니페스트 바꾸지 않음"과 10.2.2 의 남은 한국어 전용 표 중 쪽 위 편집 UI·편집 제한 사유·오류 상세·매니페스트 행, 10.2.4 의 좁은 창 행은 이 절이 대체합니다. 화면 문구 방식(코드 안 문자열 표 + `resolveUiLang`)은 그대로입니다.
+브랜치 `m5-windows`(기준 15e0fc1, worktree `/mnt/nas4/kjune/pdf-editor-m5win`). 10.2.1 의 "`_locales`·`default_locale` 은 추가하지 않음"·"매니페스트 바꾸지 않음"과 10.2.2 의 남은 한국어 전용 표 중 쪽 위 편집 UI·편집 제한 사유·오류 상세·매니페스트 행, 10.2.4 의 좁은 창 행은 이 절이 대체합니다. 화면 문구 방식(코드 안 문자열 표 + `resolveUiLang`)은 그대로입니다.
 
 #### 10.3.1 스토어 등록 이름·설명 현지화
 
@@ -430,7 +430,7 @@ core·Worker 문장의 처리:
 
 | 항목 | 내용 |
 | --- | --- |
-| 결정 | 사용자 결정 2026-10-26(변경): "너무 좁아져서 겹칠 수밖에 없으면 그냥 겹쳐줘." 같은 날 앞 결정(좁은 창은 화살표를 쪽 아래 줄로 옮겨 어떤 폭에서도 겹치지 않게, 커밋 66b2264)을 바꿈. 자리가 있으면 쪽 좌우 바깥 칸(겹치지 않음), 없으면 쪽 가장자리 위에 겹침 |
+| 결정 | 사용자 결정 2026-10-26(변경): "너무 좁아져서 겹칠 수밖에 없으면 그냥 겹쳐줘." 같은 날 앞 결정(좁은 창은 화살표를 쪽 아래 줄로 옮겨 어떤 폭에서도 겹치지 않게, 커밋 3e61589)을 바꿈. 자리가 있으면 쪽 좌우 바깥 칸(겹치지 않음), 없으면 쪽 가장자리 위에 겹침 |
 | 판정 | `page-nav.ts` `pageArrowLayout(문서 영역 clientWidth)`: 좌우 칸 두 몫(56×2)과 여백 32 를 빼고 쪽 최소 폭 320 이 남으면(폭 ≥ 464) side, 아니면 overlay. 경계는 앞 결정과 같음 |
 | side | 이전과 같음(쪽 좌우 바깥 칸, 쪽 맞춤 폭에서 칸 몫을 뺌) |
 | overlay | 쪽 맞춤 폭에서 칸 몫을 빼지 않음(쪽이 그만큼 넓어짐). 칸은 폭 0·여백 0 이라 레이아웃 폭을 차지하지 않고, 버튼만 쪽 안쪽으로 넘쳐 쪽 가장자리 위에 겹침(`style.css` `[data-pe-arrows='overlay']`, 다음 버튼은 왼쪽 여백 −48 px). 칸이 sticky(`left: 0`·`right: 0`)라 쪽이 최소 폭 때문에 가로로 넘쳐도 문서 영역 보이는 범위 좌우 끝(안쪽 여백 16 px 안)에 붙음. 세로는 아래 '세로' 행. 쪽 아래 줄(`below`) 배치는 제거 |

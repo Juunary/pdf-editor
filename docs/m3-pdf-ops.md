@@ -5,7 +5,7 @@
 | 항목 | 내용 |
 |---|---|
 | 작성일 | 2026-10-19(계약 수정 1–4 반영 2026-10-20) |
-| 브랜치 | `m3-pdf-ops`(기준 `m3` `a7464f1`, `m3` `78a01ce`(계약 수정 1–3) 머지 `87c04bc`, `m3` `fbbe205`(계약 수정 4) 머지, worktree `/mnt/nas4/kjune/pdf-editor-m3-pdf-ops`) |
+| 브랜치 | `m3-pdf-ops`(기준 `m3` `f17036e`, `m3` `927cfde`(계약 수정 1–3) 머지 `04d63d0`, `m3` `bec0225`(계약 수정 4) 머지, worktree `/mnt/nas4/kjune/pdf-editor-m3-pdf-ops`) |
 | 범위 | `docs/m3-contract.md` 6.2 작업 S1: 4절 SourceMap 선택 필드, 5.1 판정, D2 제거 확장, D3 삽입, D4 FontManager, 5.5 쓰기, 5.6 메타 |
 | 상태 | 범위 구현 완료. V2–V5 세 엔진 확인 완료(합성). 코퍼스 편집 가능 비율 측정 완료. S1 이 보고한 계약 불일치 2건은 계약 수정 3 으로 확정(8절). 계약 수정 1(FallbackFontSource·Info 는 core 생성)·2(폴백 cmap 일대일)·4(Info 기록은 커밋 작업 안, 텍스트 판정에서 기본 무시 문자 제외) 반영 |
 | 측정 환경 | 서버 `sailab01`, Node 22.18.0, npm `mupdf` 1.28.1, `pdfjs-dist` 6.4.299(legacy 빌드, `@napi-rs/canvas` 1.0.11), Poppler 22.02.0(`pdftoppm -cropbox`·`pdftotext`). 렌더 비교는 scale 2, 주석 제외, 채널 차 8 초과 픽셀 수(계약 8.3) |
