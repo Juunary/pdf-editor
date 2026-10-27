@@ -1,12 +1,12 @@
 /**
- * 배치 결과 → PDF 텍스트 연산자 직렬화. Identity-H(2바이트 CID = glyph id) 폰트 전용.
- * 줄 단위로 텍스트 행렬을 두고, 줄 안의 글리프 간격은 폰트 /W 폭에 맡긴다.
- * 따라서 배치는 /W 와 같은 1/1000 em 으로 양자화한 advance 로 계산해야 한다.
- * 클립 연산자(W n)는 내보내지 않는다(자동 클립 금지, PLAN.md 1.3).
+ * Layout result → PDF text operator serialization. Only for Identity-H fonts (2-byte CID = glyph id).
+ * One text matrix is set per line; glyph spacing within a line is left to the font's /W widths.
+ * Layout must therefore be computed with advances quantized to 1/1000 em, the same unit as /W.
+ * Clip operators (W n) are not emitted (no automatic clipping, PLAN.md 1.3).
  */
 
 export interface TextLine {
-  /** 줄 시작 기준선 원점, PDF 사용자 공간(pt, 원점 좌하단). */
+  /** Line-start baseline origin, PDF user space (pt, origin at bottom left). */
   x: number;
   y: number;
   gids: number[];

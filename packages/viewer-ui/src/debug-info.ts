@@ -1,6 +1,6 @@
 /**
- * 디버그 오버레이용 표시 정보(순수 함수). linkPage 결과로 글자를 분류하고, 마우스 위치 글자의
- * 원본 연산(SourceOp)을 사람이 읽는 줄로 만든다.
+ * Display info for the debug overlay (pure functions). Classifies characters using the linkPage result and turns the
+ * source operation (SourceOp) of the character under the mouse into human-readable lines.
  */
 import type {
   LinkStats,
@@ -10,7 +10,7 @@ import type {
   SourceOp,
 } from '@pdf-editor/shared-types';
 
-/** unmatched 매칭 실패, limited 매칭됐으나 편집 제한 사유 있음, matched 제한 없이 매칭. */
+/** unmatched = match failed, limited = matched but with an edit-limit reason, matched = matched without limits. */
 export type CharMatch = 'matched' | 'limited' | 'unmatched';
 
 export function findOp(map: SourceMap, opId: number): SourceOp | null {
@@ -28,7 +28,7 @@ export function classifyChar(linkage: PageLinkage, map: SourceMap, charIndex: nu
   return op.limits.length > 0 ? 'limited' : 'matched';
 }
 
-/** 오버레이 색(canvas fillStyle). */
+/** Overlay color (canvas fillStyle). */
 export const MATCH_COLORS: Record<CharMatch, string> = {
   matched: 'rgba(0, 160, 60, 0.30)',
   limited: 'rgba(240, 160, 0, 0.40)',
@@ -55,7 +55,7 @@ function percent(part: number, total: number): string {
   return total === 0 ? '-' : `${((part / total) * 100).toFixed(1)}%`;
 }
 
-/** 요약 한 줄: 글자·도형 매칭 수와 총수 차이. */
+/** One-line summary: character/shape match counts and the difference from the totals. */
 export function linkSummary(stats: LinkStats): string {
   return [
     `글자 ${stats.matchedChars}/${stats.chars} (${percent(stats.matchedChars, stats.chars)})`,
@@ -70,7 +70,7 @@ function hex(code: number): string {
   return `0x${code.toString(16).toUpperCase()}`;
 }
 
-/** 마우스 위치 글자의 설명 줄. 매칭 실패 글자는 그 사실만 적는다. */
+/** Description lines for the character under the mouse. A character that failed to match gets only that fact. */
 export function describeChar(
   model: PageModel,
   linkage: PageLinkage,

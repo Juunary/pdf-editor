@@ -3,11 +3,11 @@ import type { Rect } from '@pdf-editor/shared-types';
 import { addSamplePage, PAGE_HEIGHT } from './fixture.js';
 
 /**
- * 기존 Redact 주석이 있는 문서(A4 2쪽, 두 쪽 모두 Day 1 샘플 페이지).
- * 1쪽: 인접 문단을 덮는 Redact(R1, OverlayText), 교체 대상 문단 첫 줄 일부와 겹치는 Redact(R2),
- *      교체 대상 영역 안의 메모(Text) 주석, 교체 대상 첫 줄 위의 링크.
- * 2쪽: 꼬리말을 덮는 Redact(R3).
- * 좌표는 MuPDF 페이지 좌표(원점 좌상단).
+ * Document with existing Redact annotations (A4, 2 pages, both pages are the Day 1 sample page).
+ * Page 1: a Redact covering an adjacent paragraph (R1, OverlayText), a Redact overlapping part of the first line of the target paragraph (R2),
+ *      a memo (Text) annotation inside the target area, a link above the target's first line.
+ * Page 2: a Redact covering the footer (R3).
+ * Coordinates are MuPDF page coordinates (origin at top left).
  */
 export const R1_ADJACENT: Rect = [56, PAGE_HEIGHT - 636, 400, PAGE_HEIGHT - 604];
 export const R2_OVERLAP: Rect = [56, PAGE_HEIGHT - 712, 300, PAGE_HEIGHT - 694];

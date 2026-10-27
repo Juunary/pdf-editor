@@ -1,8 +1,8 @@
-// pdf.js 독립 확인(Day 1 9.3 V3 대체, docs/m0-corpus-recheck.md 3절). 브라우저 Firefox 가 아니라 npm
-// `pdfjs-dist`(legacy 빌드, Node) 결과다. 편집 결과를 pdf.js 로 텍스트 추출·렌더해
-// (1) 교체한 한글 문단이 추출되는지 (2) 검색어가 적중하는지 (3) 편집 영역 밖이 원본과 같은지
-// (4) 편집 영역 잉크량이 MuPDF 렌더와 비슷한지(글리프 미표시·대체 글리프 감지)를 본다.
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// Independent pdf.js check (replaces Day 1 9.3 V3, docs/m0-corpus-recheck.md section 3). Results come from the npm
+// `pdfjs-dist` (legacy build, Node), not from the Firefox browser. Extracts text from and renders the edit result with pdf.js to check
+// (1) the replaced Korean paragraph is extracted (2) search terms hit (3) the area outside the edit area matches the original
+// (4) the ink amount in the edit area is similar to the MuPDF render (detects undisplayed or substituted glyphs).
+// core must be imported before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { openPdf } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import type { Rect } from '@pdf-editor/shared-types';
@@ -24,12 +24,12 @@ const occurrences = (hay: string, needle: string) => hay.split(needle).length - 
 
 export interface PdfjsPageSpec {
   pageIndex: number;
-  /** 편집 결과에 있어야 할 텍스트 */
+  /** Text that must be in the edit result */
   expectedTexts: string[];
-  /** 편집 결과에 없어야 할 텍스트(지운 원 문단 줄) */
+  /** Text that must not be in the edit result (erased original paragraph lines) */
   removedTexts: string[];
   searchTerms: string[];
-  /** 편집 영역(MuPDF 페이지 좌표). 이 밖은 원본과 같아야 한다 */
+  /** Edit area (MuPDF page coordinates). Outside it must match the original */
   exclusions: Rect[];
 }
 
@@ -38,7 +38,7 @@ export interface PdfjsPair {
   original: string;
   edited: string;
   pages: PdfjsPageSpec[];
-  /** 편집하지 않은 쪽(원본과 렌더 동일 기대) */
+  /** Pages that were not edited (render expected to match the original) */
   unchangedPages: number[];
 }
 
@@ -75,8 +75,8 @@ async function open(path: string) {
 }
 
 /**
- * 편집 영역(MuPDF 페이지 좌표) 밖 텍스트 항목의 글자 다중집합(공백 제외, 정렬). 항목 기준점은 텍스트 행렬
- * 원점을 scale 1 뷰포트로 옮긴 값이다. 재직렬화로 항목 분할이 바뀌어도 글자 구성이 같으면 같다.
+ * Character multiset (excluding whitespace, sorted) of text items outside the edit area (MuPDF page coordinates). The item anchor is the text matrix
+ * origin moved into a scale-1 viewport. Even if reserialization changes how items are split, it is the same if the character composition is the same.
  */
 async function outsideChars(
   doc: pdfjs.PDFDocumentProxy,
@@ -115,7 +115,7 @@ async function render(
   const page = await doc.getPage(pageIndex + 1);
   const vp = page.getViewport({ scale });
   const factory = (doc as unknown as { canvasFactory: CanvasFactoryLike }).canvasFactory;
-  // 저장 시 페이지 상자 숫자가 근소하게 정규화되므로(실측: 1224.00002 → 1224) ceil 대신 반올림한다.
+  // Saving slightly normalizes the page box numbers (measured: 1224.00002 → 1224), so round instead of ceil.
   const { canvas, context } = factory.create(Math.round(vp.width), Math.round(vp.height));
   await page.render({
     canvas: canvas as unknown as HTMLCanvasElement,
@@ -132,7 +132,7 @@ function inside(x: number, y: number, rects: Rect[]): boolean {
   return rects.some((r) => x >= r[0] && x < r[2] && y >= r[1] && y < r[3]);
 }
 
-/** 편집 영역 밖 다른 픽셀 수·96단계 초과 수·최대 채널 차이(corpus-edit GLYPH_DELTA 와 같은 기준). */
+/** Number of other pixels outside the edit area, number exceeding 96 levels, maximum channel difference (same criterion as corpus-edit GLYPH_DELTA). */
 function diffOutside(
   a: Rgba,
   b: Rgba,
@@ -181,16 +181,16 @@ export interface PdfjsPageResult {
   pageIndex: number;
   expectedFound: boolean[];
   removedAbsent: boolean[];
-  /** 원본 pdf.js 추출에 그대로 나오지 않아 판정하지 않은 원 문단 줄 수 */
+  /** Number of original paragraph lines not classified because they do not appear as is in the original pdf.js extraction */
   removedUnchecked: number;
   searchHits: Record<string, boolean>;
-  /** 편집 영역 밖 렌더 차이(관찰): 다른 픽셀 수·96단계 초과 수·최대 채널 차이 */
+  /** Render difference outside the edit area (observation): number of differing pixels, number exceeding 96 levels, maximum channel difference */
   outsidePx: number;
   outsideStrongPx: number;
   outsideMaxDelta: number;
-  /** 편집 영역 밖 텍스트 글자 구성이 원본과 같음(판정 기준) */
+  /** The character composition of text outside the edit area matches the original (classification criterion) */
   outsideTextSame: boolean;
-  /** 편집 영역 잉크(pdf.js) ÷ 같은 배율 MuPDF 렌더 잉크 */
+  /** Edit-area ink (pdf.js) ÷ MuPDF render ink at the same scale */
   inkRatioVsMupdf: number | null;
   png: string;
 }
@@ -204,7 +204,7 @@ export interface PdfjsPairResult {
   error?: string;
 }
 
-/** 쌍마다 pdf.js 로 텍스트·렌더 확인. 렌더 PNG 는 outDir/<id>-p<쪽>.png. */
+/** For each pair, check text·render with pdf.js. Render PNGs go to outDir/<id>-p<page>.png. */
 export async function runPdfjsCheck(
   pairs: PdfjsPair[],
   outDir: string,
@@ -214,7 +214,7 @@ export async function runPdfjsCheck(
   for (const pair of pairs) {
     const warnings: string[] = [];
     const log = console.log;
-    // pdf.js 경고는 console.log("Warning: …") 로 나온다.
+    // pdf.js warnings come out as console.log("Warning: …").
     console.log = (...args: unknown[]) => {
       const line = args.map(String).join(' ');
       if (/^Warning:/.test(line)) warnings.push(line);
@@ -241,8 +241,8 @@ export async function runPdfjsCheck(
         pages.push({
           pageIndex: spec.pageIndex,
           expectedFound: spec.expectedTexts.map((t) => text.includes(squash(t))),
-          // 같은 쪽에 같은 문장이 또 있을 수 있으므로 등장 횟수가 줄었는지로 판정한다(corpus-edit 와 같은 방식).
-          // MuPDF 줄 문자열이 원본 pdf.js 추출에 그대로 없으면(합자·분할 차이) 판정하지 않고 수만 센다.
+          // The same sentence may appear again on the same page, so classify by whether the occurrence count dropped (same approach as corpus-edit).
+          // If the MuPDF line string does not appear as is in the original pdf.js extraction (ligature·split differences), only count it without classifying.
           removedAbsent: spec.removedTexts
             .filter((t) => occurrences(origText, squash(t)) > 0)
             .map((t) => occurrences(text, squash(t)) < occurrences(origText, squash(t))),
@@ -303,7 +303,7 @@ export async function runPdfjsCheck(
   return results;
 }
 
-/** mupdf 페이지 좌표 변환: PDF 사용자 공간 사각형 → MuPDF 페이지 좌표. */
+/** mupdf page coordinate conversion: PDF user space rectangle → MuPDF page coordinates. */
 export function pdfToPageRect(pdfPath: string, pageIndex: number, r: Rect): Rect {
   const doc = openPdf(new Uint8Array(readFileSync(pdfPath)));
   const page = doc.loadPage(pageIndex);
@@ -312,7 +312,7 @@ export function pdfToPageRect(pdfPath: string, pageIndex: number, r: Rect): Rect
   return [Math.min(t[0], t[2]), Math.min(t[1], t[3]), Math.max(t[0], t[2]), Math.max(t[1], t[3])];
 }
 
-/** fixtures/m0 편집 결과 3개(Day 1·공유 XObject·기존 Redact)의 확인 명세. */
+/** Check specifications for the 3 fixtures/m0 edit results (Day 1, shared XObject, existing Redact). */
 export function m0FixturePairs(root: string): PdfjsPair[] {
   const dir = join(root, 'fixtures/m0');
   const target: Rect = [56, 128, 540, 192];
@@ -352,7 +352,7 @@ export function m0FixturePairs(root: string): PdfjsPair[] {
           ],
           removedTexts: [],
           searchTerms: ['선택 위치만 복제', '한글 배지'],
-          // 1쪽 B 사용 위치(카드 BBox 0 0 483 200, 원점 56 300) = MuPDF 페이지 좌표 [56, 342, 539, 542]
+          // Page 1 B usage location (card BBox 0 0 483 200, origin 56 300) = MuPDF page coordinates [56, 342, 539, 542]
           exclusions: [pdfToPageRect(join(dir, 'm0-shared-xobject.pdf'), 0, [56, 300, 539, 500])],
         },
       ],
@@ -395,7 +395,7 @@ interface CorpusResultFile {
   }[];
 }
 
-/** out/m0-corpus/corpus-result.json 의 편집 성공 문서 → 확인 명세. 같은 쪽 문단은 한 명세로 묶는다. */
+/** Successfully edited documents in out/m0-corpus/corpus-result.json → check specifications. Paragraphs on the same page are grouped into one specification. */
 export function corpusPairs(root: string, corpusOut: string): PdfjsPair[] {
   const file = join(corpusOut, 'corpus-result.json');
   const r = JSON.parse(readFileSync(file, 'utf8')) as CorpusResultFile;

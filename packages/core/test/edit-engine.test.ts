@@ -1,6 +1,6 @@
 /**
- * 편집 엔진(저널·로그·초안·undo/redo) 단위 시험. pdf-ops·reflow 의 M3 함수 대신 가짜 어댑터를 쓰되 문서·저널·폰트
- * 추가는 실제 MuPDF 위에서 돈다(docs/m3-core.md 3절).
+ * Unit tests for the edit engine (journal, log, draft, undo/redo). Uses a fake adapter instead of the M3 functions of pdf-ops and reflow, while the document, journal and font
+ * addition run on real MuPDF (docs/m3-core.md section 3).
  */
 import { describe, expect, it } from 'vitest';
 import { PdfSession } from '../src/index.js';
@@ -22,8 +22,8 @@ import {
   text,
 } from './edit-harness.js';
 
-describe('판정 RPC', () => {
-  it('첫 호출에서 폴백 폰트를 한 번 await 하고, 판정은 문서를 바꾸지 않으며 저널도 켜지 않는다', async () => {
+describe('classification RPC', () => {
+  it('awaits the fallback font once on the first call, and the classification neither changes the document nor enables the journal', async () => {
     const { s, fontLoads } = harness();
     const [a, b] = await Promise.all([s.getPageEditability(0), s.getPageEditability(0)]);
     expect(fontLoads.count).toBe(1);
@@ -32,7 +32,7 @@ describe('판정 RPC', () => {
     expect(b.ms).toBeGreaterThanOrEqual(0);
     await s.planParagraphEdit(0, 1);
     expect(fontLoads.count).toBe(1);
-    // Info·폴백 폰트·저널은 첫 시작에서 만든다(계약 5.7 수정 1).
+    // Info, the fallback font and the journal are created on the first begin (contract 5.7 amendment 1).
     expect(s.document.getTrailer().get('Info').isNull()).toBe(true);
     expect(fallbackFonts(s.document)).toHaveLength(0);
     expect(journal(s)).toEqual({ position: 0, steps: [] });
@@ -40,7 +40,7 @@ describe('판정 RPC', () => {
 
     const { started } = await begin(s, 1);
     expect(fontLoads.count).toBe(1);
-    // 저널을 켜기 직전(작업 밖)에 만든 객체라 취소·undo 로 끊기지 않는다.
+    // It is an object created just before enabling the journal (outside the operation), so cancel and undo do not sever it.
     expect(s.document.getTrailer().get('Info').resolve().isDictionary()).toBe(true);
     expect(fallbackFonts(s.document)).toHaveLength(1);
     await s.cancelParagraphEdit(started.draftId);
@@ -49,7 +49,7 @@ describe('판정 RPC', () => {
     s.close();
   });
 
-  it('폴백 폰트 로드 실패는 폴백 없이 진행하고 다음 호출에서 다시 시도한다(R-L5)', async () => {
+  it('a fallback font load failure proceeds without the fallback and is retried on the next call (R-L5)', async () => {
     let calls = 0;
     const adapter = createFakeAdapter();
     const s = new PdfSession({
@@ -69,7 +69,7 @@ describe('판정 RPC', () => {
     s.close();
   });
 
-  it('기본 어댑터(실제 pdf-ops·reflow, M3 통합)로 판정한다', async () => {
+  it('classifies with the default adapter (real pdf-ops and reflow, M3 integration)', async () => {
     const s = new PdfSession();
     s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
     const editability = await s.getPageEditability(0);
@@ -77,14 +77,14 @@ describe('판정 RPC', () => {
     s.close();
   });
 
-  it('열린 문서가 없으면 예외', async () => {
+  it('throws when no document is open', async () => {
     const s = new PdfSession();
     await expect(s.getEditHistory()).rejects.toThrow('열린 문서 없음');
   });
 });
 
-describe('초안 → 커밋 → undo/redo', () => {
-  it('시작 시 원 문단이 편집 블록으로 바뀌고 초안 상태가 렌더·추출·검색에 보인다', async () => {
+describe('draft → commit → undo/redo', () => {
+  it('on begin the original paragraph becomes an edit block, and the draft state is visible in render, extraction and search', async () => {
     const { s } = harness();
     const before = text(s);
     const { plan, started } = await begin(s, 1);
@@ -92,7 +92,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     expect(started.plan.revision).toBe(0);
     expect(started.first.region.clip).not.toBeNull();
     expect(started.first.reflow.lines.length).toBeGreaterThan(0);
-    // 초안 중에도 같은 글자가 보인다(블록으로 다시 그려진 것).
+    // The same characters are visible during the draft (redrawn as a block).
     expect(text(s)).toContain('first paragraph line one');
     await expect(s.getPageEdits(0)).resolves.toMatchObject({ blocks: [{ editId: 'id-1' }] });
 
@@ -103,10 +103,10 @@ describe('초안 → 커밋 → undo/redo', () => {
     expect(text(s)).toContain('Hello 가나다');
     expect(text(s)).not.toContain('first paragraph');
     expect(s.searchText({ query: 'Hello' }).hits.length).toBeGreaterThan(0);
-    // 다른 쪽 글자는 그대로.
+    // Characters on other pages are unchanged.
     expect(text(s)).toContain('Title Heading');
     expect(text(s)).not.toBe(before);
-    // 초안 중 이력 질의는 core 상태로 답한다(MuPDF canUndo 는 작업 중 예외).
+    // History queries during a draft are answered from core state (MuPDF canUndo throws during an operation).
     expect(await s.getEditHistory()).toMatchObject({
       revision: 0,
       activeEditIds: [],
@@ -118,7 +118,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     s.close();
   });
 
-  it('커밋: 로그·revision·activeEditIds·저널 단계, 쪽 캐시 무효화', async () => {
+  it('commit: log, revision, activeEditIds, journal step, page cache invalidation', async () => {
     const { s } = harness(1);
     const layoutBefore = s.getPageLayout(0);
     const { plan, started } = await begin(s, 1);
@@ -145,7 +145,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     s.close();
   });
 
-  it('취소: 문서·블록 목록·저널·revision 이 원상태', async () => {
+  it('cancel: document, block list, journal and revision are restored', async () => {
     const { s } = harness();
     const before = text(s);
     const { plan, started } = await begin(s, 1);
@@ -160,13 +160,13 @@ describe('초안 → 커밋 → undo/redo', () => {
     expect(text(s)).toBe(before);
     expect((await s.getPageEdits(0)).blocks).toEqual([]);
     expect(journal(s)).toEqual({ position: 0, steps: [] });
-    // 취소 뒤 같은 문단을 같은 revision 으로 다시 시작할 수 있다.
+    // After cancelling, the same paragraph can be started again with the same revision.
     const again = await s.beginParagraphEdit(0, 1, plan.revision);
     await s.cancelParagraphEdit(again.draftId);
     s.close();
   });
 
-  it('undo/redo: 글자·블록 목록·activeEditIds·영향 쪽·revision', async () => {
+  it('undo/redo: characters, block list, activeEditIds, affected pages, revision', async () => {
     const { s } = harness();
     const original = text(s);
     await editParagraph(s, 1, 'First edit');
@@ -201,7 +201,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     s.close();
   });
 
-  it('undo 뒤 새로 커밋하면 redo 를 버린다(뷰어는 activeEditIds 에 없는 EditOp 를 버린다)', async () => {
+  it('a new commit after undo discards redo (the viewer discards EditOps not in activeEditIds)', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'One');
     await editParagraph(s, 2, 'Two');
@@ -215,7 +215,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     s.close();
   });
 
-  it('할 일이 없는 undo/redo 는 문서·revision 을 바꾸지 않는다', async () => {
+  it('an undo/redo with nothing to do does not change the document or revision', async () => {
     const { s } = harness();
     await s.getPageEditability(0);
     expect(await s.undo()).toMatchObject({ revision: 0, affectedPages: [], canUndo: false });
@@ -223,7 +223,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     s.close();
   });
 
-  it('재편집: 편집 블록 문단을 다시 편집해도 블록 하나(중첩 없음)', async () => {
+  it('re-edit: editing an edit block paragraph again still yields a single block (no nesting)', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'Alpha beta');
     const blockParagraph = s
@@ -235,7 +235,7 @@ describe('초안 → 커밋 → undo/redo', () => {
     expect((second.op as ReplaceParagraphOp).target.editedBlock).toBe('id-1');
     expect(second.op.id).not.toBe('id-1');
     expect((await s.getPageEdits(0)).blocks).toHaveLength(1);
-    // 블록 영역은 가장 나중 편집의 배치 결과다.
+    // The block area is the placement result of the latest edit.
     const third = await begin(s, blockParagraph.id);
     const updated = await s.updateParagraphDraft(
       third.started.draftId,
@@ -251,20 +251,20 @@ describe('초안 → 커밋 → undo/redo', () => {
   });
 });
 
-describe('상태 규칙', () => {
-  it('오래된 revision 으로는 시작할 수 없다', async () => {
+describe('state rules', () => {
+  it('cannot begin with a stale revision', async () => {
     const { s } = harness();
     const plan = await s.planParagraphEdit(0, 2);
     await editParagraph(s, 1, 'Changes revision');
     await expect(s.beginParagraphEdit(0, 2, plan.revision)).rejects.toBeInstanceOf(
       StaleRevisionError,
     );
-    // 저널은 열린 작업 없이 그대로.
+    // The journal stays as is, with no open operation.
     expect(journal(s).steps).toHaveLength(1);
     s.close();
   });
 
-  it('초안은 문서당 1개: 초안 중 다른 편집 RPC·저장 판정·저장은 예외, 렌더·추출·검색은 허용', async () => {
+  it('one draft per document: other edit RPCs, save classification and save throw during a draft, while render, extraction and search are allowed', async () => {
     const { s } = harness();
     const { plan, started } = await begin(s, 1);
     await expect(s.beginParagraphEdit(0, 2, 0)).rejects.toBeInstanceOf(EditStateError);
@@ -277,16 +277,16 @@ describe('상태 규칙', () => {
     expect(() => s.save({ changes: [] })).toThrow('초안');
     expect(s.renderPage({ pageIndex: 0, scale: 1 }).width).toBe(612);
     expect(text(s)).toContain('Title Heading');
-    // 다른 초안 id 는 거절.
+    // A different draft id is rejected.
     await expect(s.updateParagraphDraft('other', draftInput(plan, 'x'))).rejects.toThrow('초안');
     await expect(s.commitParagraphEdit('other')).rejects.toThrow('초안');
     await s.cancelParagraphEdit(started.draftId);
-    // 취소 뒤에는 모두 정상.
+    // Everything works normally after cancel.
     expect((await s.getPageEditability(0)).paragraphs).toHaveLength(3);
     s.close();
   });
 
-  it('동시에 시작한 두 번째 초안은 거절되고 첫 초안은 온전하다', async () => {
+  it('a second draft started concurrently is rejected and the first draft stays intact', async () => {
     const { s } = harness();
     const [first, second] = await Promise.allSettled([
       s.beginParagraphEdit(0, 1, 0),
@@ -300,7 +300,7 @@ describe('상태 규칙', () => {
     s.close();
   });
 
-  it('편집할 수 없는 문단은 시작할 수 없고 저널을 열어 두지 않는다', async () => {
+  it('a paragraph that cannot be edited cannot be started and leaves no journal open', async () => {
     const adapter = createFakeAdapter();
     const s = new PdfSession({ editAdapter: adapter, loadFallbackFont: async () => FONT_BYTES });
     s.open(
@@ -323,7 +323,7 @@ describe('상태 규칙', () => {
     s.close();
   });
 
-  it('시작 중 실패(제거·삽입)는 작업을 버리고 문서를 되돌린다', async () => {
+  it('a failure during begin (removal, insertion) discards the operation and restores the document', async () => {
     const { s, adapter } = harness();
     const before = text(s);
     adapter.probe.failNext.write = true;
@@ -338,7 +338,7 @@ describe('상태 규칙', () => {
     s.close();
   });
 
-  it('갱신 실패는 초안을 유지하고 취소할 수 있다', async () => {
+  it('an update failure keeps the draft and it can be cancelled', async () => {
     const { s, adapter } = harness();
     const { plan, started } = await begin(s, 1);
     adapter.probe.failNext.write = true;
@@ -351,7 +351,7 @@ describe('상태 규칙', () => {
     s.close();
   });
 
-  it('닫은 문서는 편집 RPC 를 받지 않는다', async () => {
+  it('a closed document accepts no edit RPCs', async () => {
     const { s } = harness();
     await s.getPageEditability(0);
     s.close();
@@ -359,12 +359,12 @@ describe('상태 규칙', () => {
   });
 });
 
-describe('초안 미리보기·경고', () => {
-  it('변경 영역은 이전·새 배치 상자를 모두 덮고 배율은 마지막 쪽 전체 렌더를 따른다', async () => {
+describe('draft preview and warnings', () => {
+  it('the changed area covers both the previous and new placed boxes, and the scale follows the last full page render', async () => {
     const { s } = harness();
     s.renderPage({ pageIndex: 0, scale: 1.5 });
     const { plan, started } = await begin(s, 1);
-    // 시작 미리보기는 원 문단 bbox ∪ 배치 상자를 덮는다. 배율 1.5.
+    // The begin preview covers the original paragraph bbox ∪ the placed box. Scale 1.5.
     const [x0, y0, x1, y1] = started.first.region.clip!;
     expect(started.first.region.width).toBeCloseTo((x1 - x0) * 1.5, 6);
     expect(started.first.region.height).toBeCloseTo((y1 - y0) * 1.5, 6);
@@ -391,7 +391,7 @@ describe('초안 미리보기·경고', () => {
     s.close();
   });
 
-  it('경고는 현재 글자 기준이다: 폴백·없는 글자 경고가 글자를 지우면 사라진다', async () => {
+  it('warnings are based on the current characters: fallback and missing-glyph warnings disappear when the characters are deleted', async () => {
     const { s } = harness();
     const { plan, started } = await begin(s, 1);
     const kinds = async (value: string) =>
@@ -406,7 +406,7 @@ describe('초안 미리보기·경고', () => {
     s.close();
   });
 
-  it('자동 확장이 영역 상한에 막혀 넘친 글은 초과 유지 + overflow-clipped 경고', async () => {
+  it('text that overflows because the automatic expansion hit the area limit stays overflowing + overflow-clipped warning', async () => {
     const adapter = createFakeAdapter();
     const s = new PdfSession({ editAdapter: adapter, loadFallbackFont: async () => FONT_BYTES });
     s.open(
@@ -426,8 +426,8 @@ describe('초안 미리보기·경고', () => {
   });
 });
 
-describe('저장 방식·문서 수명', () => {
-  it('판정만 한 문서의 변경 없는 저장은 증분 그대로이고, 시작한 문서는 전체 저장이다', async () => {
+describe('save mode and document lifetime', () => {
+  it('a save without changes of a document that was only classified stays incremental, and a document that was begun gets a full save', async () => {
     const { s } = harness();
     await s.getPageEditability(0);
     await s.planParagraphEdit(0, 1);
@@ -435,7 +435,7 @@ describe('저장 방식·문서 수명', () => {
     expect(plan).toMatchObject({ method: 'incremental', edits: null });
     expect(s.save({ changes: ['annotation'] }).method).toBe('incremental');
     expect(journal(s)).toEqual({ position: 0, steps: [] });
-    // 시작하면 폴백 폰트(미사용 객체)와 Info 가 문서에 들어가므로 취소해도 전체 저장이다(증분은 새 객체를 모두 덧붙인다).
+    // Beginning puts the fallback font (an unused object) and Info into the document, so even after cancel it is a full save (an incremental save appends all new objects).
     const { started } = await begin(s, 1);
     await s.cancelParagraphEdit(started.draftId);
     expect(s.planSave({ changes: [] })).toMatchObject({ method: 'full', edits: null });
@@ -445,11 +445,11 @@ describe('저장 방식·문서 수명', () => {
       saved.bytes.slice(),
       'application/pdf',
     ) as mupdf.PDFDocument;
-    expect(fallbackFonts(reopened)).toHaveLength(0); // 미사용 폴백 폰트는 garbage 가 뺀다
+    expect(fallbackFonts(reopened)).toHaveLength(0); // garbage collection removes the unused fallback font
     s.close();
   });
 
-  it('PDF/A 선언(XMP pdfaid)이 있으면 편집 요약에 표시한다', async () => {
+  it('shows it in the edit summary when there is a PDF/A declaration (XMP pdfaid)', async () => {
     const adapter = createFakeAdapter();
     const s = new PdfSession({ editAdapter: adapter, loadFallbackFont: async () => FONT_BYTES });
     s.open(buildPdf([{ content: PAGE, mediabox: MEDIABOX }]));
@@ -464,7 +464,7 @@ describe('저장 방식·문서 수명', () => {
     s.close();
   });
 
-  it('초안이 열린 채 닫아도 예외 없이 닫히고, 다시 열면 새 이력으로 시작한다', async () => {
+  it('closing with a draft open closes without an exception, and reopening starts with a new history', async () => {
     const { s } = harness();
     await begin(s, 1);
     expect(() => s.close()).not.toThrow();
@@ -476,8 +476,8 @@ describe('저장 방식·문서 수명', () => {
   });
 });
 
-describe('쪽 캐시 무효화(계약 5.7)', () => {
-  it('커밋하면 그 쪽과 ±2쪽 레이아웃 캐시를 비우고 먼 쪽은 둔다', async () => {
+describe('page cache invalidation (contract 5.7)', () => {
+  it('a commit clears the layout cache of that page and ±2 pages and keeps distant pages', async () => {
     const { s } = harness(7);
     const layouts = Array.from({ length: 7 }, (_, i) => s.getPageLayout(i));
     const model3 = s.extractPage({ pageIndex: 3 });
@@ -491,7 +491,7 @@ describe('쪽 캐시 무효화(계약 5.7)', () => {
     s.close();
   });
 
-  it('초안을 갱신·취소하면 그 쪽 추출 캐시를 다시 만든다', async () => {
+  it('updating or cancelling a draft rebuilds the extraction cache of that page', async () => {
     const { s } = harness(2);
     const { plan, started } = await begin(s, 1, 1);
     const draftModel = s.extractPage({ pageIndex: 1 });
@@ -505,8 +505,8 @@ describe('쪽 캐시 무효화(계약 5.7)', () => {
   });
 });
 
-describe('실패 경로(독립 검토 반영)', () => {
-  it('갱신이 쓴 뒤에 실패하면 직전 내용으로 되돌려 로그와 문서가 같다', async () => {
+describe('failure paths (from independent review)', () => {
+  it('when an update fails after writing, it rolls back to the previous content so the log and the document agree', async () => {
     const { s, adapter } = harness();
     const { plan, started } = await begin(s, 1);
     await s.updateParagraphDraft(started.draftId, draftInput(plan, 'Version X'));
@@ -521,7 +521,7 @@ describe('실패 경로(독립 검토 반영)', () => {
     s.close();
   });
 
-  it('되돌리기도 실패하면 초안은 취소만 할 수 있다', async () => {
+  it('if the rollback also fails, the draft can only be cancelled', async () => {
     const { s, adapter } = harness();
     const before = text(s);
     const { plan, started } = await begin(s, 1);
@@ -539,7 +539,7 @@ describe('실패 경로(독립 검토 반영)', () => {
     s.close();
   });
 
-  it('커밋 뒤 블록 목록 재구성이 실패해도 커밋 결과를 돌려준다', async () => {
+  it('returns the commit result even if rebuilding the block list after the commit fails', async () => {
     const { s, adapter } = harness();
     const { plan, started } = await begin(s, 1);
     await s.updateParagraphDraft(started.draftId, draftInput(plan, 'Committed'));
@@ -550,12 +550,12 @@ describe('실패 경로(독립 검토 반영)', () => {
     const result = await s.commitParagraphEdit(started.draftId);
     adapter.listEditBlocks = real;
     expect(result.history).toMatchObject({ edits: 1, canUndo: true });
-    // 다음에 쓸 때 다시 만든다.
+    // It is rebuilt on the next use.
     expect((await s.getPageEdits(0)).blocks).toHaveLength(1);
     s.close();
   });
 
-  it('커밋한 편집이 저널에 없으면 세션을 쓸 수 없게 한다', async () => {
+  it('makes the session unusable when the committed edit is not in the journal', async () => {
     const { s } = harness();
     const { plan, started } = await begin(s, 1);
     await s.updateParagraphDraft(started.draftId, draftInput(plan, 'Lost'));
@@ -567,8 +567,8 @@ describe('실패 경로(독립 검토 반영)', () => {
   });
 });
 
-describe('구조 연결이 끊긴 문단 수(SavePlan.edits)', () => {
-  it('같은 블록을 다시 편집해도 문단 하나로 센다', async () => {
+describe('number of paragraphs with a broken structure link (SavePlan.edits)', () => {
+  it('re-editing the same block still counts as one paragraph', async () => {
     const { s, adapter } = harness();
     adapter.probe.planWarnings = [
       { kind: 'tagged-structure-unlinked', message: '구조 연결 끊김', rects: [] },
@@ -594,8 +594,8 @@ describe('구조 연결이 끊긴 문단 수(SavePlan.edits)', () => {
   });
 });
 
-describe('Info 사전과 캐시', () => {
-  it('trailer /Info 가 직접 사전인 문서도 메타 기록이 undo 로 되돌아간다', async () => {
+describe('Info dictionary and caches', () => {
+  it('for a document whose trailer /Info is a direct dictionary, the metadata record is also reverted by undo', async () => {
     const adapter = createFakeAdapter();
     const direct = new mupdf.PDFDocument();
     const f1 = direct.addSimpleFont(new mupdf.Font('Helvetica'));
@@ -628,12 +628,12 @@ describe('Info 사전과 캐시', () => {
     s.close();
   });
 
-  it('원본 연결 정보 캐시에서 쪽이 빠지면 매칭 캐시도 다시 만든다', () => {
+  it('when a page drops out of the source link info cache, the matching cache is rebuilt too', () => {
     const s = new PdfSession();
     s.open(buildPdf(Array.from({ length: 18 }, () => ({ content: PAGE, mediabox: MEDIABOX }))));
     const first = s.linkPage(0);
     expect(s.linkPage(0)).toBe(first);
-    for (let i = 1; i <= 16; i++) s.getSourceMap(i); // 16쪽 LRU: 0쪽 원본 연결 정보가 밀려난다
+    for (let i = 1; i <= 16; i++) s.getSourceMap(i); // 16-page LRU: the source link info of page 0 is evicted
     expect(s.linkPage(0)).not.toBe(first);
     s.close();
   });

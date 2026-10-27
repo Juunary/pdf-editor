@@ -1,5 +1,5 @@
-// 첫 import 유지: mupdf 가 초기화되기 전에 Module 설정 객체를 등록해야 WASM 힙 측정(`wasmHeapBytes`)이 연결된다. Worker 번들은
-// 이 모듈과 mupdf 를 한 청크에 넣고 import 순서대로 실행한다(뒤에 두면 저장 힙 모델이 배율 모델로 떨어진다, docs/m5-heap.md 4.3).
+// Keep as the first import: the Module settings object must be registered before mupdf initializes so that the WASM heap measurement (`wasmHeapBytes`) is connected. The Worker bundle
+// puts this module and mupdf in one chunk and runs them in import order (if placed later, the save-heap model falls back to the ratio model, docs/m5-heap.md 4.3).
 import './wasm-module.js';
 import * as mupdf from 'mupdf';
 import {
@@ -59,10 +59,10 @@ import { renderPageRegionRgba, renderPageRgba } from './render.js';
 import { searchDocument } from './search.js';
 import { wasmHeapBytes } from './wasm-module.js';
 
-/** 추출 모델·원본 연결 정보를 캐시하는 최대 쪽 수(추출 모델은 요청 종류별로 센다). */
+/** Maximum number of pages for which extraction models and source-link info are cached (extraction models are counted per request kind). */
 const PAGE_CACHE_LIMIT = 16;
 
-/** 경로 세그먼트를 뺀 모델(나머지 배열은 공유한다). */
+/** Model without path segments (the remaining arrays are shared). */
 function withoutPathSegments(model: PageModel): PageModel {
   return {
     ...model,
@@ -70,7 +70,7 @@ function withoutPathSegments(model: PageModel): PageModel {
   };
 }
 
-/** 최근 사용 순 캐시에서 꺼내며 순서를 올린다. */
+/** Takes from the most-recently-used cache and moves the entry up in the order. */
 function touch<K, V>(cache: Map<K, V>, key: K): V | undefined {
   const value = cache.get(key);
   if (value !== undefined) {
@@ -80,7 +80,7 @@ function touch<K, V>(cache: Map<K, V>, key: K): V | undefined {
   return value;
 }
 
-/** 넣고, 상한을 넘으면 가장 오래된 항목을 뺀다. */
+/** Inserts, and if over the limit, drops the oldest entry. */
 function remember<K, V>(cache: Map<K, V>, key: K, value: V): void {
   cache.set(key, value);
   if (cache.size > PAGE_CACHE_LIMIT) {
@@ -91,17 +91,17 @@ function remember<K, V>(cache: Map<K, V>, key: K, value: V): void {
 
 export interface PdfSessionOptions {
   /**
-   * 한글 폴백 폰트(Noto Sans KR glyf 서브셋 TTF) 바이트. 문단 편집에서 처음 필요할 때 한 번 부른다
-   * (docs/m3-contract.md 5.7). 확장은 번들 파일을, Node 테스트는 assets/fonts 파일을 읽는다.
+   * Bytes of the Korean fallback font (Noto Sans KR glyf subset TTF). Called once, the first time paragraph editing needs it
+   * (docs/m3-contract.md 5.7). The extension reads a bundled file; Node tests read a file under assets/fonts.
    */
   loadFallbackFont?: () => Promise<Uint8Array>;
-  /** pdf-ops·reflow 편집 함수 경계(docs/m3-core.md 3절). 기본은 실제 구현, 테스트는 가짜를 넣는다. */
+  /** Boundary of the pdf-ops and reflow edit functions (docs/m3-core.md section 3). The default is the real implementation; tests inject a fake. */
   editAdapter?: EditAdapter;
-  /** 편집 id·초안 id 생성(기본 `crypto.randomUUID()`). 테스트에서 고정한다. */
+  /** Generates edit ids and draft ids (default `crypto.randomUUID()`). Fixed in tests. */
   createId?: () => string;
 }
 
-/** 쪽 전체 렌더를 한 번도 하지 않았을 때의 변경 영역 렌더 배율(`beginParagraphEdit` 첫 미리보기). */
+/** Render scale of the changed-area render when no full-page render has ever been done (first preview of `beginParagraphEdit`). */
 const DEFAULT_RENDER_SCALE = 2;
 
 function noDocument(): never {
@@ -109,8 +109,8 @@ function noDocument(): never {
 }
 
 /**
- * 문서 1개의 상태. 뷰어 소유 Worker 안에서만 생성한다(PLAN.md 5.2).
- * 원본 바이트는 편집 로그 재적용(PLAN.md 3.2)을 위해 보관한다.
+ * State of one document. Created only inside the viewer-owned Worker (PLAN.md 5.2).
+ * The original bytes are kept for reapplying the edit log (PLAN.md 3.2).
  */
 export class PdfSession {
   readonly #options: PdfSessionOptions;
@@ -123,16 +123,16 @@ export class PdfSession {
   #linkageCache = new Map<number, { map: SourceMap; linkage: PageLinkage }>();
   #edit: EditEngine | null = null;
   #lastRenderScale = DEFAULT_RENDER_SCALE;
-  /** 이 세션에서 전체 저장을 한 번이라도 했다(A3-9: 이후 저장도 전체 저장). */
+  /** A full save has been done at least once in this session (A3-9: later saves are also full saves). */
   #fullSaved = false;
-  /** 저장 힙 모델 기본값: 문서 열기 완료 직후 WASM 힙(D5). 측정 객체가 없으면 null. */
+  /** Default of the save-heap model: WASM heap right after the document finished opening (D5). null if there is no measurement object. */
   #baseHeapBytes: number | null = null;
-  /** 저장 힙 모델 입력(D5). 첫 쪽 렌더 뒤 유휴 시나 첫 planSave 에서 한 번 계산한다. */
+  /** Input of the save-heap model (D5). Computed once, at idle after the first page render or at the first planSave. */
   #stats: DocumentStatsDetail | null = null;
   #statsTimer: ReturnType<typeof setTimeout> | null = null;
   /**
-   * 직전 저장 기록(H1): 그 저장의 사용 중 힙 추정과 저장 직후 WASM 힙(실측 피크). 다음 planSave 가 저장이 쓰고 놓은 공간을
-   * 사용 중으로 세지 않도록 쓴다(`usedHeapAfterSave`). 문서를 새로 열면 지운다.
+   * Record of the previous save (H1): that save's in-use heap estimate and the WASM heap right after the save (measured peak). Used so that the next planSave does not count the space the save used and freed
+   * as in use (`usedHeapAfterSave`). Cleared when a document is newly opened.
    */
   #lastSave: { usedHeapBytes: number; heapAfterBytes: number } | null = null;
 
@@ -151,8 +151,8 @@ export class PdfSession {
   }
 
   /**
-   * 문서를 연다. 기본은 Stream 입력(A3-1): 보관 중인 원본 바이트를 MuPDF 가 필요한 구간만 읽어
-   * 입력 크기만큼의 WASM 힙을 쓰지 않는다. `buffer` 는 비교·측정용이다.
+   * Opens the document. The default is Stream input (A3-1): MuPDF reads only the needed ranges of the retained original bytes,
+   * so no WASM heap of the input size is used. `buffer` is for comparison and measurement.
    */
   open(bytes: ArrayBuffer | Uint8Array, inputMode: InputMode = 'stream'): OpenResult {
     this.close();
@@ -200,8 +200,8 @@ export class PdfSession {
   }
 
   /**
-   * 쪽 렌더. `clip`(페이지 공간)이 있으면 그 영역만 렌더하고 `RenderedPage.clip` 에 픽셀 격자에 맞춘 실제 영역을
-   * 돌려준다(M3 편집 미리보기). 편집 초안이 열려 있으면 초안 상태의 문서를 그린다(docs/m3-contract.md D7).
+   * Page render. If `clip` (page space) is given, only that area is rendered and the actual area aligned to the pixel grid is returned in `RenderedPage.clip`
+   * (M3 edit preview). If an edit draft is open, the document in draft state is drawn (docs/m3-contract.md D7).
    */
   renderPage({ pageIndex, scale, clip }: RenderRequest): RenderedPage {
     const page = this.document.loadPage(pageIndex);
@@ -229,16 +229,16 @@ export class PdfSession {
   }
 
   /**
-   * 페이지 추출 모델. 같은 요청은 문서가 바뀌기 전까지 캐시하고(최근 사용 순 최대 PAGE_CACHE_LIMIT 쪽),
-   * 같은 객체를 돌려준다. 호출자는 바꾸지 않는다. 문서를 편집하면 `invalidatePageCache` 를 부른다.
+   * Page extraction model. The same request is cached until the document changes (most recently used, at most PAGE_CACHE_LIMIT pages),
+   * and the same object is returned. The caller does not modify it. After editing the document, call `invalidatePageCache`.
    */
   extractPage(request: ExtractRequest): PageModel {
     const withSegments = request.includePathSegments === true;
     const key = `${request.pageIndex}:${withSegments ? 1 : 0}`;
     const cached = touch(this.#pageCache, key);
     if (cached) return cached;
-    // 쪽 판정(M5 4.1): 텍스트 층용 추출(경로 세그먼트 없음) 뒤에 편집 판정이 세그먼트 포함 추출을 다시 요청하면
-    // 같은 쪽 콘텐츠를 두 번 해석한다. 한 번에 세그먼트까지 모아 두고 세그먼트 없는 모델은 거기서 만든다.
+    // Page classification (M5 4.1): if, after the extraction for the text layer (without path segments), the edit classification asks again for an extraction with segments,
+    // the same page content is interpreted twice. Collect segments in one pass, and build the model without segments from it.
     const page = this.document.loadPage(request.pageIndex);
     let full: PageModel;
     try {
@@ -253,8 +253,8 @@ export class PdfSession {
   }
 
   /**
-   * 추출·원본 연결 정보·레이아웃 캐시를 비운다. 쪽을 지정하면 그 쪽만. 문서 내용(콘텐츠·리소스·쪽 순서)이 바뀐
-   * 뒤에 부른다.
+   * Clears the extraction, source-link info and layout caches. If a page is given, only that page. Call it after the document content (content, resources, page order)
+   * changes.
    */
   invalidatePageCache(pageIndex?: number): void {
     if (pageIndex === undefined) {
@@ -273,13 +273,13 @@ export class PdfSession {
   }
 
   /**
-   * 쪽 레이아웃(M2, docs/m2-contract.md). 경로 세그먼트를 포함한 추출 모델로 복원하고, 추출 캐시와 같은
-   * 규칙(최근 사용 순 최대 PAGE_CACHE_LIMIT 쪽)으로 캐시한다. 호출자는 결과를 바꾸지 않는다.
+   * Page layout (M2, docs/m2-contract.md). Reconstructed from the extraction model including path segments, and cached with the same
+   * rule as the extraction cache (most recently used, at most PAGE_CACHE_LIMIT pages). The caller does not modify the result.
    */
   getPageLayout(pageIndex: number): PageLayout {
     const cached = touch(this.#layoutCache, pageIndex);
     if (cached) return cached;
-    // 이웃 쪽(±1·±2) 추출 모델: 러닝헤드·쪽 번호 반복 판정용(계약 2.5). 추출 캐시를 거친다.
+    // Extraction models of neighboring pages (±1, ±2): for classifying repeated running heads and page numbers (contract 2.5). Goes through the extraction cache.
     const count = this.document.countPages();
     const neighbors = [-2, -1, 1, 2]
       .map((k) => pageIndex + k)
@@ -294,10 +294,10 @@ export class PdfSession {
   }
 
   /**
-   * 편집 블록마다 그 글자가 있는 줄 묶음(레이아웃 복원 힌트 `fixedGroups`, docs/m3-integration.md 9.6). 커밋한 편집
-   * 블록은 쪽 레이아웃에서 문단 하나다(오버레이·읽기 순서가 블록을 여러 문단으로 가르거나 이웃 문단과 합치지 않는다).
-   * 블록 목록은 편집 엔진 캐시(커밋·undo·redo·초안 시작 때 갱신), 소속은 원본 연결(linkPage)로 정한다. 블록이 없는
-   * 쪽은 원본 연결을 만들지 않는다. 레이아웃 캐시와 같이 비워지므로(invalidateAround) 따로 캐시하지 않는다.
+   * For each edit block, the group of lines holding its characters (layout reconstruction hint `fixedGroups`, docs/m3-integration.md 9.6). A committed edit
+   * block is one paragraph in the page layout (the overlay and reading order do not split a block into several paragraphs or merge it with a neighboring paragraph).
+   * The block list comes from the edit engine cache (updated at commit, undo, redo and draft start), and membership is decided by the source link (linkPage). For a page
+   * with no blocks, no source link is created. It is cleared together with the layout cache (invalidateAround), so it is not cached separately.
    */
   #editBlockGroups(pageIndex: number): number[][] {
     const blocks = this.#edit?.editBlocks(pageIndex) ?? [];
@@ -311,8 +311,8 @@ export class PdfSession {
   }
 
   /**
-   * 쪽의 원본 연결 정보. extractPage 와 같이 쪽마다 캐시하고 같은 객체를 돌려준다. `linkPage` 가 이 객체의
-   * `ops[].limits` 에 `unmatched` 를 더하므로, linkPage 뒤의 getSourceMap 은 그 표시를 담는다.
+   * Source-link info of a page. Cached per page like extractPage and returns the same object. `linkPage` adds `unmatched` to this object's
+   * `ops[].limits`, so getSourceMap after linkPage carries that mark.
    */
   getSourceMap(pageIndex: number): SourceMap {
     const cached = touch(this.#sourceMapCache, pageIndex);
@@ -323,11 +323,11 @@ export class PdfSession {
   }
 
   /**
-   * 캐시한 추출 모델과 원본 연결 정보를 매칭한다(원본 연결 정보에 `unmatched` 표시). 쪽마다 캐시하고 같은
-   * 객체를 돌려준다(`invalidatePageCache` 로 비운다).
+   * Matches the cached extraction model with the source-link info (marks `unmatched` on the source-link info). Cached per page and returns the same
+   * object (cleared by `invalidatePageCache`).
    */
   linkPage(pageIndex: number): PageLinkage {
-    // 원본 연결 정보가 캐시에서 빠져 다시 만들어졌으면 매칭도 다시 한다(`unmatched` 표시는 그 객체에 붙는다).
+    // If the source-link info dropped out of the cache and was rebuilt, match again (the `unmatched` mark is attached to that object).
     const map = this.getSourceMap(pageIndex);
     const cached = touch(this.#linkageCache, pageIndex);
     if (cached && cached.map === map) return cached.linkage;
@@ -337,8 +337,8 @@ export class PdfSession {
   }
 
   /**
-   * 문서가 바뀐 쪽의 캐시를 비운다. 이웃 쪽 레이아웃(머리·꼬리 반복 판정이 이 쪽 추출 모델을 쓴다, M2)도
-   * ±2쪽까지 비운다(docs/m3-contract.md 5.7).
+   * Clears the caches of pages whose document changed. Layouts of neighboring pages (the header/footer repetition check uses this page's extraction model, M2) are also
+   * cleared up to ±2 pages (docs/m3-contract.md 5.7).
    */
   invalidateAround(pageIndex: number): void {
     this.invalidatePageCache(pageIndex);
@@ -346,14 +346,14 @@ export class PdfSession {
   }
 
   /**
-   * 저장 힙 모델 입력(D5, `computeDocumentStats`). 처음 부를 때 계산해 문서를 닫을 때까지 보관한다. 열기 시간에 넣지 않도록
-   * 첫 쪽 전체 렌더 뒤 다음 작업 틈에 미리 계산해 두고(`#scheduleStats`), 그 전에 planSave 가 부르면 그때 계산한다.
+   * Input of the save-heap model (D5, `computeDocumentStats`). Computed on first call and kept until the document is closed. So that it is not added to open time,
+   * it is precomputed in the next gap after the first full page render (`#scheduleStats`); if planSave calls before that, it is computed then.
    */
   documentStats(): DocumentStatsDetail {
     return (this.#stats ??= computeDocumentStats(this.document, { bytes: this.originalBytes }));
   }
 
-  /** 첫 쪽 전체 렌더 응답이 나간 뒤(Worker 의 다음 작업 틈) 통계를 계산하도록 한 번 예약한다. */
+  /** Schedules once to compute stats after the first full page render response is sent (in the Worker's next gap between tasks). */
   #scheduleStats(): void {
     if (this.#stats || this.#statsTimer) return;
     this.#statsTimer = setTimeout(() => {
@@ -367,9 +367,9 @@ export class PdfSession {
   }
 
   /**
-   * 저장 전 판정. 로그가 더하는 변경 종류(`content-stream`·`font-embed`)를 `changes` 에 합치고 편집 요약
-   * (`SavePlan.edits`)을 채운다. 편집을 커밋·재적용한 문서와 전체 저장을 한 번이라도 한 세션은 전체 저장이다
-   * (docs/m3-contract.md D9·A3-9). 초안이 열려 있으면 예외.
+   * Pre-save classification. Merges the change kinds the log adds (`content-stream`, `font-embed`) into `changes` and fills the edit summary
+   * (`SavePlan.edits`). A document with committed or reapplied edits, and a session that has done a full save even once, gets a full save
+   * (docs/m3-contract.md D9, A3-9). Throws if a draft is open.
    */
   planSave({ changes }: SaveRequest): SavePlan & { warnings: string[] } {
     const edit = this.#edit;
@@ -386,7 +386,7 @@ export class PdfSession {
       decision.method === 'incremental' &&
       (this.#fullSaved || edit?.edited || edit?.hasNewObjects)
     ) {
-      // 증분 구간에는 되돌린(undo) 객체의 흔적이 남을 수 있고 xref 형식도 섞인다(A3-9). 전체 저장으로 올린다.
+      // The incremental section may keep traces of undone objects and mixes xref formats (A3-9). Promote to a full save.
       decision = {
         method: 'full',
         options: FULL_SAVE_OPTIONS,
@@ -410,8 +410,8 @@ export class PdfSession {
   }
 
   /**
-   * 저장 힙 모델 입력(D5). 계수 모델은 Stream 입력에서 잰 값이라 Stream 열기이고 힙 측정 객체가 있을 때만 쓴다. 그 밖에는
-   * 배율 모델(`ratio-v0`). 문서 통계를 아직 계산하지 않았으면 여기서 계산한다(첫 쪽 렌더 뒤 유휴 계산이 보통 먼저 끝난다).
+   * Input of the save-heap model (D5). The coefficient model was measured with Stream input, so it is used only for Stream opens when a heap measurement object exists. Otherwise the
+   * ratio model (`ratio-v0`). If document stats have not been computed yet, they are computed here (the idle computation after the first page render usually finishes first).
    */
   #saveSize(): SaveSizeInput {
     const inputBytes = this.originalBytes.byteLength;
@@ -445,21 +445,21 @@ export class PdfSession {
   }
 
   /**
-   * 저널 상한 판정(D4): 저널 보유 추정 + 예상 전체 저장 증가분이 경고선(저장 힙 warn 경계)을 넘으면 `advised`. 뷰어가 커밋
-   * 뒤 "저장 후 다시 열기" 안내에 쓴다. 계수 모델을 쓸 수 없는 환경(Buffer 입력·힙 측정 없음)이면 저널 0 으로 본다.
+   * Journal limit check (D4): `advised` if journal retention estimate + expected full-save increase exceeds the warning line (save-heap warn boundary). The viewer uses it after a commit
+   * for the "save and reopen" notice. In environments where the coefficient model cannot be used (Buffer input, no heap measurement), the journal is taken as 0.
    */
   journalAdvice(): JournalAdvice {
     return journalAdvice('full', this.#saveSize());
   }
 
-  /** 저장. 편집 RPC 를 쓴 문서는 저널 작업으로 감싼다(`EditEngine.runSave`, D9). 초안이 열려 있으면 예외. */
+  /** Save. A document that used edit RPCs is wrapped in a journal operation (`EditEngine.runSave`, D9). Throws if a draft is open. */
   save(request: SaveRequest): SaveResult & { warnings: string[] } {
     const doc = this.document;
     const plan = this.planSave(request);
     const t0 = performance.now();
-    // 두 번째 저장부터는 렌더가 쌓은 자원 캐시(MuPDF store: 풀린 이미지·글꼴 등)를 저장 전에 비운다. 직전 저장이 놓은 빈 공간 안에
-    // 쌓인 캐시는 힙 크기로 보이지 않아 사용 중 힙 추정(`usedHeapAfterSave`)이 놓친다(비우지 않으면 코퍼스 2건 미탐). 첫 저장
-    // 전에는 비우지 않는다: 비우면 빈 조각 때문에 저장 피크가 오히려 커졌다(합성 이미지 900쪽 1,370 → 1,924 MiB, docs/m5-heap.md 4.4).
+    // From the second save on, clear the resource cache the render accumulated (MuPDF store: decoded images, fonts, etc.) before saving. The cache piled up inside the free space the previous save left
+    // does not show up as heap size, so the in-use heap estimate (`usedHeapAfterSave`) misses it (without clearing, 2 corpus cases are missed). Before the first
+    // save it is not cleared: clearing made the save peak bigger because of free fragments (synthetic image 900 pages 1,370 -> 1,924 MiB, docs/m5-heap.md 4.4).
     if (this.#lastSave) mupdf.emptyStore();
     const write = (): Uint8Array<ArrayBuffer> => {
       const buffer = doc.saveToBuffer(plan.options);
@@ -487,13 +487,13 @@ export class PdfSession {
     };
   }
 
-  // M3 문단 편집(docs/m3-contract.md 4절·5.7). 상태는 EditEngine 이 맡는다(docs/m3-core.md).
+  // M3 paragraph editing (docs/m3-contract.md section 4 and 5.7). State is held by EditEngine (docs/m3-core.md).
 
   get #engine(): EditEngine {
     return this.#edit ?? noDocument();
   }
 
-  /** 폴백 폰트 로드 실패 사유(R-L5, 진단용). 폴백을 얻었거나 시도하지 않았으면 null. */
+  /** Reason the fallback font load failed (R-L5, for diagnostics). null if the fallback was obtained or not attempted. */
   get fallbackLoadError(): string | null {
     return this.#edit?.fallbackLoadError ?? null;
   }
@@ -519,7 +519,7 @@ export class PdfSession {
     return this.#engine.beginParagraphEdit(pageIndex, paragraphId, revision, renderScale);
   }
 
-  /** 기존 Redact 주석 수·쪽(A2-2). 문서를 바꾸지 않는다. */
+  /** Number and pages of existing Redact annotations (A2-2). Does not change the document. */
   listRedactAnnots(): RedactAnnotSummary {
     const report = listRedactAnnots(this.document);
     return { total: report.total, pages: report.pages };
@@ -581,15 +581,15 @@ export class PdfSession {
     return this.#engine.replayEdits(ops, options);
   }
 
-  /** 편집 엔진에 빌려주는 쪽 캐시·렌더. */
+  /** Page cache and render lent to the edit engine. */
   #editHost(doc: mupdf.PDFDocument): EditHost {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     return {
       document: doc,
       pageState: (pageIndex) => ({
-        // 레이아웃과 같은 모델(세그먼트 포함). pdf-ops 패스 점 편집이 점 번호를 모델 세그먼트로 대조한다
-        // (docs/m4-pdf-ops.md 7절 #4). 레이아웃이 이미 만든 캐시라 추출이 늘지 않는다.
+        // Same model as the layout (including segments). pdf-ops path point editing matches point numbers against the model segments
+        // (docs/m4-pdf-ops.md section 7 #4). It is a cache the layout already built, so extraction does not increase.
         model: this.extractPage({ pageIndex, includePathSegments: true }),
         map: this.getSourceMap(pageIndex),
         linkage: this.linkPage(pageIndex),

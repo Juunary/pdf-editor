@@ -1,4 +1,4 @@
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// core must be imported before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { openPdf } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import {
@@ -21,10 +21,10 @@ import { diffRasters, renderPage, type Raster } from './raster.js';
 import { captureMupdfLog } from './spike.js';
 
 /**
- * 실제 코퍼스의 공유 Form XObject 에 M0 정책(docs/m0-dod-xobject-redact-save.md 1절, A1-2)을 적용한다:
- * 텍스트가 있는 공유 Form 의 사용 위치 1곳만 `redactFormUsage`(임시 페이지 redaction)로 새 인스턴스로
- * 바꿔 그 안의 텍스트를 지우고, 인스턴스에 한글 한 줄을 넣는다. 같은 Form 의 다른 사용 위치(다른 쪽·같은 쪽)는
- * 렌더가 바뀌지 않아야 한다. Form 마다 새로 열어 독립 실행한다.
+ * Applies the M0 policy (docs/m0-dod-xobject-redact-save.md section 1, A1-2) to shared Form XObjects in the real corpus:
+ * only one usage location of a shared Form that has text is turned into a new instance with `redactFormUsage` (temporary page redaction),
+ * its text is erased, and one Korean line is put into the instance. Other usage locations of the same Form (other pages, same page)
+ * must not change in render. Each Form runs independently, reopened fresh.
  */
 
 const TEXT_SHOW = new Set(['Tj', 'TJ', "'", '"']);
@@ -35,28 +35,28 @@ export interface FormEditResult {
   usages: number;
   pages: number[];
   textShowOps: number;
-  /** /BBox 가 [x0 y0 x1 y1](x0≤x1, y0≤y1) 형태였는지 */
+  /** Whether /BBox was of the form [x0 y0 x1 y1] (x0≤x1, y0≤y1) */
   bboxNormalized: boolean;
   selected: { pageIndex: number; path: string; depth: number; pageBox: Rect };
-  /** v1 제한 조건(PLAN.md 3.4 L1·L2·L7)과 L3(새 텍스트가 BBox 밖) */
+  /** v1 restrictions (PLAN.md 3.4 L1·L2·L7) and L3 (new text outside BBox) */
   limits: { L1: boolean; L2: boolean; L3: boolean; L7: boolean };
-  /** 같은 줄 상자에 대한 pdf-ops `outsideFormBBox` 결과(정규화 안 된 /BBox 에서 오판 여부 확인용) */
+  /** pdf-ops `outsideFormBBox` result for the same line box (to check for misclassification with an unnormalized /BBox) */
   pdfOpsOutsideFormBBox: boolean | null;
   redact: { ok: boolean; error: string | null; ms: number; newForms: number };
-  /** 선택 사용 위치 박스 안 글자 수(공백 제외): 편집 전 → redaction 후 */
+  /** Character count inside the selected usage location's box (excluding whitespace): before edit → after redaction */
   charsInBox: { before: number; after: number };
-  /** 선택 쪽 박스 밖 텍스트(공백 제거) 동일 */
+  /** Same for text outside the selected page's box (whitespace removed) */
   outsideTextSame: boolean | null;
   render: {
-    /** redaction + 새 텍스트 후 선택 쪽, 선택 사용 위치 박스 밖 */
+    /** Selected page after redaction + new text, outside the selected usage location's box */
     selectedPageOutsidePx: number;
-    /** 같은 Form 을 쓰는 다른 쪽(최대 3쪽) */
+    /** Other pages using the same Form (up to 3 pages) */
     otherPages: { pageIndex: number; diffPx: number }[];
   };
   save: { ok: boolean; error: string | null; ms: number; bytes: number };
   reopen: {
     newTextFound: boolean;
-    /** newTextFound 가 false 일 때 추출 텍스트에서 '공유' 주변(원인 확인용) */
+    /** Around '공유' in the extracted text when newTextFound is false (for root-cause checking) */
     textAround: string | null;
     searchHits: number;
     selectedPageOutsidePx: number;
@@ -82,7 +82,7 @@ function pixelRect(r: Rect, bounds: Rect, s: number): Rect {
   ];
 }
 
-/** 박스 안(글자 중심 기준) 글자 수와 박스 밖 텍스트. */
+/** Number of characters inside the box (by character center) and the text outside the box. */
 function splitText(page: mupdf.Page, box: Rect): { inside: number; outside: string } {
   let inside = 0;
   let outside = '';
@@ -101,7 +101,7 @@ function splitText(page: mupdf.Page, box: Rect): { inside: number; outside: stri
 const pathKey = (u: XObjectUsage) =>
   u.path.map((s) => `${s.resourceName}#${s.doOrdinal}`).join('>');
 
-/** 텍스트가 있는 공유 Form 상위 `max` 개(텍스트 연산 수 순). */
+/** Top `max` shared Forms with text (ordered by number of text operators). */
 export function pickSharedTextForms(
   doc: mupdf.PDFDocument,
   max = 2,
@@ -188,8 +188,8 @@ export function runFormUsageEdit(
       op.destroy();
     }
 
-    // 1. 선택 사용 위치만 인스턴스화 + Form BBox 전체 텍스트 제거(선화·이미지 보존)
-    // /BBox 는 정규화되지 않은 사각형일 수 있다(실측: nasa-eo Form [0 792 612 0]).
+    // 1. Instantiate only the selected usage location + remove all text in the Form BBox (keep line art and images)
+    // /BBox may be an unnormalized rectangle (measured: nasa-eo Form [0 792 612 0]).
     const raw = [0, 1, 2, 3].map((i) => form.get('BBox').get(i).asNumber());
     const bbox: Rect = [
       Math.min(raw[0]!, raw[2]!),
@@ -218,7 +218,7 @@ export function runFormUsageEdit(
     result.outsideTextSame = squash(textAfter.outside) === squash(textBefore.outside);
     page.destroy();
 
-    // 2. 인스턴스에 한글 한 줄(쪽 공간 약 9pt)
+    // 2. One Korean line in the instance (about 9pt in page space)
     const det = Math.abs(edit.toPage[0] * edit.toPage[3] - edit.toPage[1] * edit.toPage[2]);
     const fontSize = 9 / Math.sqrt(det || 1);
     const embedded = embedFont(doc, 'NotoSansKR', fontBytes);
@@ -236,7 +236,7 @@ export function runFormUsageEdit(
     const lineBox: Rect = line
       ? [line.x, line.y - 0.25 * fontSize, line.x + 1, line.y + 0.88 * fontSize]
       : box;
-    // pdf-ops outsideFormBBox 는 /BBox 를 정규화하지 않으므로 여기서는 정규화한 bbox 로 판정한다.
+    // pdf-ops outsideFormBBox does not normalize /BBox, so here the check uses a normalized bbox.
     result.limits.L3 =
       layout.overflow ||
       lineBox[0] < bbox[0] ||
@@ -266,7 +266,7 @@ export function runFormUsageEdit(
       op.destroy();
     }
 
-    // 3. 전체 저장 → 재열기
+    // 3. full save → reopen
     let saved: Uint8Array | null = null;
     try {
       doc.subsetFonts();

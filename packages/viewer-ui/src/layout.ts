@@ -1,31 +1,31 @@
 /**
- * 페이지 공간(pt) → CSS 배치 변환. DOM 에 의존하지 않는 순수 함수만 둔다.
+ * Page space (pt) → CSS layout conversion. Contains only pure functions that do not depend on the DOM.
  *
- * 좌표계(docs/m1-contract.md 2절): 페이지 공간은 원점 좌상단, y 아래, 단위 pt 이고 `/Rotate` 가 이미
- * 반영돼 있다. 캔버스 비트맵은 `cssScale × devicePixelRatio` 배율로 그려지고 CSS 로는 비트맵 크기 ÷ dpr 로
- * 표시되므로, 오버레이는 항상 CSS 배율(`cssScale`)만 쓴다.
+ * Coordinate system (docs/m1-contract.md section 2): page space has its origin at the top-left, y down, unit pt, and `/Rotate` is already
+ * applied. The canvas bitmap is drawn at `cssScale × devicePixelRatio` and shown in CSS at bitmap size ÷ dpr,
+ * so overlays always use only the CSS scale (`cssScale`).
  */
 import type { Point, Quad, Rect } from '@pdf-editor/shared-types';
 
-/** 회전 가능한 CSS 상자. `left/top` 은 좌상단(quad 의 ul) 기준점이다. */
+/** Rotatable CSS box. `left/top` is the reference point of the top-left (ul of the quad). */
 export interface CssBox {
   left: number;
   top: number;
   width: number;
   height: number;
-  /** 도, CSS 기준(시계 방향 +). `transform-origin: 0 0` 에서 적용한다. */
+  /** Degrees, CSS convention (clockwise +). Applied with `transform-origin: 0 0`. */
   rotation: number;
 }
 
-/** 소수 셋째 자리까지 반올림(스타일 문자열이 길어지는 것을 막는다). */
+/** Round to three decimal places (keeps style strings from getting long). */
 export function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
 
 /**
- * quad(MuPDF 순서 ul, ur, ll, lr)를 CSS 상자로 바꾼다.
- * ul → ur 가 가로 방향, ul → ll 이 세로 방향이다. 회전된 글자는 `rotation` 으로 표현하고 가로·세로 길이는
- * 회전 전 크기를 돌려준다. 기울임(전단)은 무시한다.
+ * Converts a quad (MuPDF order ul, ur, ll, lr) to a CSS box.
+ * ul → ur is the horizontal direction and ul → ll is the vertical direction. A rotated character is expressed with `rotation`, and width/height
+ * are returned at the size before rotation. Skew (shear) is ignored.
  */
 export function quadToCssBox(quad: Quad, scale: number, origin: Point = [0, 0]): CssBox {
   const [ulx, uly, urx, ury, llx, lly] = quad;
@@ -44,7 +44,7 @@ export function quadToCssBox(quad: Quad, scale: number, origin: Point = [0, 0]):
   };
 }
 
-/** `quadToCssBox` 결과를 인라인 스타일 값으로 바꾼다. 회전이 없으면 transform 을 넣지 않는다. */
+/** Converts a `quadToCssBox` result into inline style values. No transform is added if there is no rotation. */
 export function cssBoxStyle(box: CssBox, extraTransform = ''): Record<string, string> {
   const transforms = [box.rotation !== 0 ? `rotate(${box.rotation}deg)` : '', extraTransform]
     .filter((t) => t !== '')
@@ -59,27 +59,27 @@ export function cssBoxStyle(box: CssBox, extraTransform = ''): Record<string, st
   return style;
 }
 
-/** 페이지 비트맵과 오버레이가 공유하는 배치 정보. 모든 길이는 CSS px. */
+/** Layout information shared by the page bitmap and the overlays. All lengths are CSS px. */
 export interface PageLayout {
   /** pt → CSS px. */
   cssScale: number;
   devicePixelRatio: number;
-  /** 페이지 경계 좌상단(페이지 공간). 보통 [0, 0]. */
+  /** Top-left of the page bounds (page space). Usually [0, 0]. */
   origin: Point;
-  /** 오버레이 컨테이너 크기 = 캔버스 표시 크기(비트맵 ÷ dpr). */
+  /** Overlay container size = canvas display size (bitmap ÷ dpr). */
   cssWidth: number;
   cssHeight: number;
-  /** 비트맵 크기(device px). */
+  /** Bitmap size (device px). */
   bitmapWidth: number;
   bitmapHeight: number;
 }
 
 export interface PageLayoutInput {
-  /** `PageInfo.bounds`(페이지 공간). */
+  /** `PageInfo.bounds` (page space). */
   bounds: Rect;
   cssScale: number;
   devicePixelRatio: number;
-  /** 렌더된 비트맵 크기(`RenderedPage.width/height`). */
+  /** Rendered bitmap size (`RenderedPage.width/height`). */
   bitmap: { width: number; height: number };
 }
 
@@ -96,41 +96,41 @@ export function pageLayout(input: PageLayoutInput): PageLayout {
   };
 }
 
-/** 렌더 요청 배율: CSS 배율에 devicePixelRatio 를 곱한다(`RenderRequest.scale`). */
+/** Render request scale: the CSS scale multiplied by devicePixelRatio (`RenderRequest.scale`). */
 export function renderScale(cssScale: number, devicePixelRatio: number): number {
   return cssScale * (devicePixelRatio > 0 ? devicePixelRatio : 1);
 }
 
 export interface FitWidthOptions {
-  /** 뷰어가 쓸 수 있는 CSS 폭(예: `documentElement.clientWidth`). */
+  /** CSS width available to the viewer (e.g. `documentElement.clientWidth`). */
   availableWidth: number;
   pageWidthPt: number;
-  /** 좌우 여백 합(기본 32). */
+  /** Sum of the left and right margins (default 32). */
   margin?: number;
-  /** 사용 가능 폭의 하한(기본 320). */
+  /** Lower bound of the usable width (default 320). */
   minWidth?: number;
-  /** 최대 배율(기본 1.5). */
+  /** Maximum scale (default 1.5). */
   maxScale?: number;
 }
 
-/** 화면 폭에 맞춘 CSS 배율. M0 의 `cssScaleFor` 와 같은 규칙이다. */
+/** CSS scale fitted to the screen width. Same rule as M0's `cssScaleFor`. */
 export function fitWidthScale(o: FitWidthOptions): number {
   const { availableWidth, pageWidthPt, margin = 32, minWidth = 320, maxScale = 1.5 } = o;
   if (!(pageWidthPt > 0)) return 1;
   return Math.min(maxScale, Math.max(minWidth, availableWidth - margin) / pageWidthPt);
 }
 
-/** 컨테이너 기준 CSS 좌표(px) → 페이지 공간(pt). */
+/** Container-relative CSS coordinates (px) → page space (pt). */
 export function cssToPage(x: number, y: number, layout: PageLayout): Point {
   return [x / layout.cssScale + layout.origin[0], y / layout.cssScale + layout.origin[1]];
 }
 
-/** 페이지 공간(pt) → 컨테이너 기준 CSS 좌표(px). */
+/** Page space (pt) → container-relative CSS coordinates (px). */
 export function pageToCss(p: Point, layout: PageLayout): Point {
   return [(p[0] - layout.origin[0]) * layout.cssScale, (p[1] - layout.origin[1]) * layout.cssScale];
 }
 
-/** quad 의 좌표축: 원점(ul), u(ul→ur 방향 단위), v(ul→ll 방향 단위), 그리고 각 길이. */
+/** Coordinate axes of a quad: origin (ul), u (unit vector along ul→ur), v (unit vector along ul→ll), and each length. */
 export interface QuadFrame {
   ox: number;
   oy: number;
@@ -142,7 +142,7 @@ export interface QuadFrame {
   lv: number;
 }
 
-/** 폭·높이가 0 인 quad 는 다른 축에 수직인 방향으로 축을 정한다(둘 다 0 이면 기본 가로·세로). */
+/** A quad with zero width or height takes the axis perpendicular to the other axis (if both are 0, default horizontal/vertical). */
 export function quadFrame(q: Quad): QuadFrame {
   const ux = q[2] - q[0];
   const uy = q[3] - q[1];
@@ -159,7 +159,7 @@ export function quadFrame(q: Quad): QuadFrame {
     uny = uy / lu;
   } else if (lv > 0) {
     unx = vy / lv;
-    uny = 0 - vx / lv; // -0 을 피한다
+    uny = 0 - vx / lv; // avoid -0
   }
   if (lv > 0) {
     vnx = vx / lv;
@@ -171,14 +171,14 @@ export function quadFrame(q: Quad): QuadFrame {
   return { ox: q[0], oy: q[1], ux: unx, uy: uny, vx: vnx, vy: vny, lu, lv };
 }
 
-/** quad 의 축 정렬 경계 사각형(페이지 공간). */
+/** Axis-aligned bounding rectangle of a quad (page space). */
 export function quadBounds(quad: Quad): Rect {
   const xs = [quad[0], quad[2], quad[4], quad[6]];
   const ys = [quad[1], quad[3], quad[5], quad[7]];
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
-/** 같은 문자열 폭을 반복 측정하지 않도록 캐시하는 측정 함수 래퍼. */
+/** Measurement function wrapper that caches results so the same string width is not measured repeatedly. */
 export function cachedMeasure(
   measure: (text: string, fontSizePx: number) => number,
 ): (text: string, fontSizePx: number) => number {

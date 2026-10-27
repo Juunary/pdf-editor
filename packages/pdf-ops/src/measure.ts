@@ -1,12 +1,12 @@
 /**
- * 매칭률 측정 도구(코퍼스 회귀·glyphSeq 정책 비교, docs/m1-pdf-ops.md 5.5절).
- * 패키지 index 에서 내보내지 않고 하위 경로 `@pdf-editor/pdf-ops/measure` 로만 제공한다.
+ * Match-rate measurement tool (corpus regression, glyphSeq policy comparison, docs/m1-pdf-ops.md section 5.5).
+ * Not exported from the package index; provided only through the subpath `@pdf-editor/pdf-ops/measure`.
  *
- * - SourceMap 은 계수 정책을 지정해 만든다(`buildSourceMap` 과 같고 정책만 다르다).
- * - PageModel 은 호출자가 같은 정책으로 만든다(core `extractPage` 또는 pdf-ops 테스트 헬퍼). `linkPage` 자체는
- *   정책과 무관하다.
- * - 실패 쪽 = 총수 차이(글리프·도형)가 0 이 아니거나, SourceMap 이 소유한 번호의 글자·도형 중 매칭되지 않은
- *   것이 있는 쪽. 소유 없는 번호(패턴 셀 글리프 등)는 실패로 세지 않고 따로 집계한다.
+ * - The SourceMap is built with a specified counting policy (same as `buildSourceMap`, only the policy differs).
+ * - The caller builds the PageModel with the same policy (core `extractPage` or the pdf-ops test helper). `linkPage` itself is
+ *   independent of the policy.
+ * - Failed page = total-count difference (glyphs, shapes) is not 0, or some character/shape with a SourceMap-owned number was not
+ *   matched. Unowned numbers (pattern cell glyphs, etc.) are not counted as failures and are tallied separately.
  */
 import type * as mupdf from 'mupdf';
 import type { PageModel, SourceMap } from '@pdf-editor/shared-types';
@@ -17,7 +17,7 @@ export { GLYPH_SEQ_POLICY, type GlyphSeqPolicy };
 
 export const GLYPH_SEQ_POLICIES: readonly GlyphSeqPolicy[] = ['first-arrival', 'no-clip'];
 
-/** 계수 정책을 지정해 SourceMap 을 만든다. */
+/** Builds a SourceMap with a specified counting policy. */
 export function buildSourceMapForPolicy(
   doc: mupdf.PDFDocument,
   pageIndex: number,
@@ -40,13 +40,13 @@ export interface PageMeasure {
   ownedPaints: number;
   matchedPaints: number;
   maxOriginError: number;
-  /** SourceMap 오류 수(토크나이저 오류, MuPDF 해석 중단 에뮬레이션). */
+  /** SourceMap error count (tokenizer errors, emulation of MuPDF parse aborts). */
   mapErrors: number;
   buildMs: number;
   linkMs: number;
 }
 
-/** 한 쪽 측정. model 은 같은 정책으로 만든 PageModel 이다. map 을 주지 않으면 여기서 만든다. */
+/** Measures one page. model is a PageModel built with the same policy. If map is not given, it is built here. */
 export function measurePage(
   doc: mupdf.PDFDocument,
   pageIndex: number,
@@ -90,16 +90,16 @@ export function measurePage(
 }
 
 export interface PolicySummary {
-  /** 측정한 쪽(PageModel 생성 예외 쪽 제외). */
+  /** Pages measured (excluding pages where PageModel creation threw). */
   pages: number;
   failedPages: number[];
-  /** 소유 번호인데 매칭되지 않은 글자·도형. */
+  /** Characters/shapes with an owned number that were not matched. */
   unmatchedChars: number;
   unmatchedPaints: number;
-  /** 소유 없는 번호의 글자·도형(패턴 셀 글리프 등, 실패로 세지 않음). */
+  /** Characters/shapes with unowned numbers (pattern cell glyphs, etc.; not counted as failures). */
   unownedChars: number;
   unownedPaints: number;
-  /** |총수 차이| 합. */
+  /** Sum of |total-count difference|. */
   glyphCountDeltaAbs: number;
   paintCountDeltaAbs: number;
   chars: number;
@@ -112,11 +112,11 @@ export interface DocumentMeasure {
   file: string;
   pageCount: number;
   byPolicy: Partial<Record<GlyphSeqPolicy, PolicySummary>>;
-  /** PageModel·SourceMap 생성 예외(예: MuPDF 해석 중단 R10). */
+  /** PageModel/SourceMap creation exceptions (e.g. MuPDF parse abort R10). */
   pageErrors: { pageIndex: number; policy: GlyphSeqPolicy; message: string }[];
 }
 
-/** 같은 정책으로 PageModel 을 만드는 함수(core extractPage 또는 테스트 헬퍼를 감싼다). */
+/** Function that builds a PageModel with the same policy (wraps core extractPage or a test helper). */
 export type ModelProvider = (
   doc: mupdf.PDFDocument,
   pageIndex: number,
@@ -140,7 +140,7 @@ function emptySummary(): PolicySummary {
   };
 }
 
-/** 문서 전체 쪽을 정책별로 측정한다. 쪽 단위 예외는 pageErrors 에 남기고 계속한다. */
+/** Measures all pages of a document per policy. Page-level exceptions are left in pageErrors and processing continues. */
 export function measureDocument(
   file: string,
   doc: mupdf.PDFDocument,
@@ -185,7 +185,7 @@ export function measureDocument(
   return result;
 }
 
-/** 문서별·정책별 Markdown 표와 정책별 합계 행. */
+/** Per-document, per-policy Markdown table with per-policy total rows. */
 export function formatMeasureTable(docs: readonly DocumentMeasure[]): string {
   const head =
     '| 문서 | 정책 | 쪽 | 실패 쪽 | 글자 | 미매칭 글자 | 소유 없는 글자 | 도형 | 미매칭 도형 | 소유 없는 도형 | 글리프 총수 차이 | 도형 총수 차이 | 예외 쪽 |';

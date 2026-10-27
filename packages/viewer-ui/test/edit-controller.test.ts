@@ -9,7 +9,7 @@ import type { ViewerHost } from '../src/viewer-host.js';
 import { FakeEditHost, type FakeParagraph } from './fake-edit-host.js';
 import { makePageModel } from './fixtures.js';
 
-// 글자 10×14, 왼쪽 20·위쪽 20. 줄 0 "Hello World"(글자 0–10, x 20–130).
+// Characters 10×14, left 20, top 20. Line 0 "Hello World" (characters 0–10, x 20–130).
 const MODEL: PageModel = makePageModel(['Hello World', '표 셀']);
 const PARAGRAPHS: FakeParagraph[] = [
   { id: 1, bbox: [20, 20, 130, 34], text: 'Hello World' },
@@ -93,8 +93,8 @@ function recovered(): Error {
   return e;
 }
 
-describe('기능 격리', () => {
-  it('호스트가 편집 RPC 를 주지 않으면 편집 UI 를 만들지 않고 렌더는 그대로다', async () => {
+describe('feature isolation', () => {
+  it('if the host does not provide edit RPCs, no edit UI is created and rendering is unchanged', async () => {
     const { controller, host } = setup({ withEdit: false });
     await controller.start();
     expect(controller.edit).toBeNull();
@@ -103,7 +103,7 @@ describe('기능 격리', () => {
     expect(host.renderPage).toHaveBeenCalledTimes(1);
   });
 
-  it('"M3 미구현" 이면 편집만 영구 비활성화하고 진단 로그는 한 번만 남긴다', async () => {
+  it('on "M3 미구현", only editing is permanently disabled and the diagnostic log is written just once', async () => {
     const { controller, host } = setup();
     (host.getPageEditability as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('M3 미구현: core.getPageEditability'),
@@ -118,7 +118,7 @@ describe('기능 격리', () => {
     expect(host.getPageEditability).toHaveBeenCalledTimes(1);
   });
 
-  it('일반 오류는 그 쪽만 실패하고 다음 쪽에서 다시 시도한다', async () => {
+  it('a general error fails only that page and is retried on the next page', async () => {
     const { controller, host } = setup();
     (host.getPageEditability as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('boom'));
     await controller.start();
@@ -129,15 +129,15 @@ describe('기능 격리', () => {
   });
 });
 
-describe('진입', () => {
-  it('쪽을 열면 문단별 편집 가능 판정을 불러오고 이력을 초기화한다', async () => {
+describe('entry', () => {
+  it('opening a page loads the per-paragraph editability classification and initializes the history', async () => {
     const { controller } = await started();
     const e = controller.getState().edit;
     expect(e.editability.status === 'ready' && e.editability.value.paragraphs).toHaveLength(3);
     await vi.waitFor(() => expect(controller.getState().edit.history?.canUndo).toBe(false));
   });
 
-  it('편집할 수 없는 문단은 사유 팝오버를 보이고 초안을 만들지 않는다', async () => {
+  it('a paragraph that cannot be edited shows the reason popover and creates no draft', async () => {
     const { controller, host } = await started();
     await controller.edit!.begin(0, 2, [25, 50]);
     const e = controller.getState().edit;
@@ -148,7 +148,7 @@ describe('진입', () => {
     expect(controller.getState().edit.popover).toBeNull();
   });
 
-  it('영어 표를 주면 팝오버 사유는 core 설명 대신 사유 코드 문구(사용자 결정 2026-10-26)', async () => {
+  it('given the English table, the popover reasons use the reason-code text instead of the core description (user decision 2026-10-26)', async () => {
     const { controller } = await started({ strings: VIEWER_STRINGS.en });
     await controller.edit!.begin(0, 2, [25, 50]);
     expect(controller.getState().edit.popover?.items).toEqual([
@@ -161,16 +161,16 @@ describe('진입', () => {
     expect(controller.getState().edit.popover?.items[0]).toContain('Block tagged PDF edits');
   });
 
-  it('편집 가능 문단은 클릭한 글자 위치에서 캐럿을 시작한다', async () => {
+  it('an editable paragraph starts the caret at the clicked character position', async () => {
     const { controller } = await started();
-    await controller.edit!.begin(0, 1, [68, 27]); // 'o'(글자 4, x 60–70)의 오른쪽 절반
+    await controller.edit!.begin(0, 1, [68, 27]); // right half of 'o' (character 4, x 60–70)
     const s = controller.getState().edit.session!;
     expect(s.editor.text).toBe('Hello World');
     expect(s.editor.caret).toBe(5);
     expect(controller.edit!.active).toBe(true);
   });
 
-  it('텍스트 모델이 없으면 캐럿은 문단 끝', async () => {
+  it('without a text model, the caret is at the paragraph end', async () => {
     const { controller, host } = setup();
     host.extractPage.mockRejectedValue(new Error('M1 미구현: core.extractPage'));
     await controller.start();
@@ -179,10 +179,10 @@ describe('진입', () => {
     expect(controller.getState().edit.session!.editor.caret).toBe(11);
   });
 
-  it('태그 PDF 편집 막기 설정이 켜져 있으면 태그 쪽 문단은 시작하지 않는다', async () => {
+  it('with the block-tagged-PDF-editing setting on, paragraphs on a tagged page are not started', async () => {
     const { controller, host } = await started();
     await controller.edit!.begin(0, 3, null);
-    expect(controller.edit!.active).toBe(true); // 기본은 허용
+    expect(controller.edit!.active).toBe(true); // allowed by default
     await controller.edit!.cancelActive();
     controller.edit!.setBlockTagged(true);
     (host.beginParagraphEdit as ReturnType<typeof vi.fn>).mockClear();
@@ -190,17 +190,17 @@ describe('진입', () => {
     expect(controller.edit!.active).toBe(false);
     expect(controller.getState().edit.popover?.items[0]).toContain('태그 PDF');
     expect(host.beginParagraphEdit).not.toHaveBeenCalled();
-    // 태그 없는 문단은 그대로 편집된다.
+    // A paragraph without tags is edited as usual.
     await controller.edit!.begin(0, 1, null);
     expect(controller.edit!.active).toBe(true);
   });
 
-  it('오래된 revision 이면 다시 판정해 한 번 더 시도한다', async () => {
+  it('with a stale revision, re-classifies and tries once more', async () => {
     const { controller, host, edit } = await started();
     (host.planParagraphEdit as ReturnType<typeof vi.fn>).mockImplementationOnce(
       async (i: number, p: number) => {
         const plan = await edit.planParagraphEdit(i, p);
-        edit.revision++; // 판정과 시작 사이에 문서가 바뀜
+        edit.revision++; // the document changed between classification and start
         return plan;
       },
     );
@@ -209,7 +209,7 @@ describe('진입', () => {
     expect(host.planParagraphEdit).toHaveBeenCalledTimes(2);
   });
 
-  it('진행 중이거나 이미 편집 중이면 다시 시작하지 않는다', async () => {
+  it('does not restart if one is in progress or already editing', async () => {
     const { controller, host } = await started();
     await Promise.all([controller.edit!.begin(0, 1, null), controller.edit!.begin(0, 1, null)]);
     expect(host.beginParagraphEdit).toHaveBeenCalledTimes(1);
@@ -218,8 +218,8 @@ describe('진입', () => {
   });
 });
 
-describe('종료', () => {
-  it('커밋하면 이력·복구 로그를 갱신하고 쪽 캐시를 버리고 다시 그린다', async () => {
+describe('finish', () => {
+  it('on commit, updates the history and recovery log, discards the page cache and redraws', async () => {
     const { controller, host, editLog } = await started();
     await controller.edit!.begin(0, 1, null);
     controller.edit!.currentSession()!.typeText('!');
@@ -235,7 +235,7 @@ describe('종료', () => {
     await vi.waitFor(() => expect(controller.getState().edit.editability.status).toBe('ready'));
   });
 
-  it('변경 없이 커밋하면 취소와 같고 캔버스만 복원한다(재렌더 없음)', async () => {
+  it('committing without changes is the same as cancel and only restores the canvas (no re-render)', async () => {
     const { controller, host } = await started();
     await controller.edit!.begin(0, 1, null);
     const before = controller.getState().repaintToken;
@@ -247,7 +247,7 @@ describe('종료', () => {
     expect(host.renderPage.mock.calls.length).toBe(renders);
   });
 
-  it('편집 취소: 초안을 버리고 쪽 캔버스를 복원한다', async () => {
+  it('edit cancel: discards the draft and restores the page canvas', async () => {
     const { controller, host, editLog } = await started();
     await controller.edit!.begin(0, 1, null);
     controller.edit!.currentSession()!.typeText('zzz');
@@ -260,7 +260,7 @@ describe('종료', () => {
     expect(editLog.snapshot().ops).toHaveLength(0);
   });
 
-  it('동시에 두 번 커밋을 요청해도 RPC 는 한 번', async () => {
+  it('even if commit is requested twice at the same time, the RPC is called once', async () => {
     const { controller, host } = await started();
     await controller.edit!.begin(0, 1, null);
     controller.edit!.currentSession()!.typeText('a');
@@ -268,7 +268,7 @@ describe('종료', () => {
     expect(host.commitParagraphEdit).toHaveBeenCalledTimes(1);
   });
 
-  it('쪽 이동은 초안을 먼저 커밋한 뒤 이동한다', async () => {
+  it('page navigation commits the draft first and then navigates', async () => {
     const { controller, host } = await started();
     await controller.edit!.begin(0, 1, null);
     controller.edit!.currentSession()!.typeText('a');
@@ -278,7 +278,7 @@ describe('종료', () => {
     expect(controller.edit!.active).toBe(false);
   });
 
-  it('커밋이 복구로 편집을 이어 가야 하면 쪽 이동을 하지 않는다', async () => {
+  it('if the commit must continue editing through recovery, page navigation does not happen', async () => {
     const { controller, host, edit } = await started();
     await controller.edit!.begin(0, 1, null);
     controller.edit!.currentSession()!.typeText('a');
@@ -291,7 +291,7 @@ describe('종료', () => {
     expect(controller.getState().edit.notice).toContain('복구');
   });
 
-  it('편집 중 창 크기 변화는 보류했다가 편집이 끝나면 반영한다', async () => {
+  it('a window resize during editing is held and applied after editing ends', async () => {
     const { controller, host } = await started();
     let width = 632;
     (
@@ -308,8 +308,8 @@ describe('종료', () => {
   });
 });
 
-describe('문서 undo/redo', () => {
-  it('undo·redo 는 영향 쪽을 다시 그리고 복구 로그의 활성 편집을 따라간다', async () => {
+describe('document undo/redo', () => {
+  it('undo and redo redraw the affected pages and follow the active edits of the recovery log', async () => {
     const { controller, host, editLog } = await started();
     await controller.edit!.begin(0, 1, null);
     controller.edit!.currentSession()!.typeText('a');
@@ -318,14 +318,14 @@ describe('문서 undo/redo', () => {
     const renders = host.renderPage.mock.calls.length;
     await controller.edit!.undo();
     expect(controller.getState().edit.history).toMatchObject({ canUndo: false, canRedo: true });
-    expect(editLog.snapshot().ops).toHaveLength(0); // 활성 로그에서 빠진다
+    expect(editLog.snapshot().ops).toHaveLength(0); // removed from the active log
     await vi.waitFor(() => expect(host.renderPage.mock.calls.length).toBe(renders + 1));
     await controller.edit!.redo();
-    expect(editLog.snapshot().ops).toHaveLength(1); // redo 로 되살린다(EditOp 는 유지)
+    expect(editLog.snapshot().ops).toHaveLength(1); // restored by redo (the EditOp is kept)
     expect(controller.getState().edit.history).toMatchObject({ canUndo: true, canRedo: false });
   });
 
-  it('되돌린 뒤 새 편집을 시작하면 다시 실행 기록이 사라진다는 안내를 보인다', async () => {
+  it('starting a new edit after undo shows a notice that the redo history is cleared', async () => {
     const { controller } = await started();
     await controller.edit!.begin(0, 1, null);
     controller.edit!.currentSession()!.typeText('a');
@@ -336,7 +336,7 @@ describe('문서 undo/redo', () => {
     expect(controller.getState().edit.notice).toBe(REDO_DISCARDED_NOTICE);
   });
 
-  it('할 수 없는 동작(canUndo=false)은 RPC 를 부르지 않고, 편집 중에는 막는다', async () => {
+  it('an action that cannot be done (canUndo=false) does not call RPC, and is blocked during editing', async () => {
     const { controller, host } = await started();
     await vi.waitFor(() => expect(controller.getState().edit.history).not.toBeNull());
     await controller.edit!.undo();
@@ -347,8 +347,8 @@ describe('문서 undo/redo', () => {
   });
 });
 
-describe('Worker 복구(D6)', () => {
-  it('초안 중이면 편집기 모델로 같은 문단 초안을 다시 시작한다', async () => {
+describe('Worker recovery (D6)', () => {
+  it('during a draft, restarts the same paragraph draft with the editor model', async () => {
     const { controller, host, edit } = await started();
     await controller.edit!.begin(0, 1, null);
     const session = controller.edit!.currentSession()!;
@@ -362,7 +362,7 @@ describe('Worker 복구(D6)', () => {
     expect(await controller.edit!.commitActive()).toBe(true);
   });
 
-  it('초안이 없으면 쪽 캐시를 버리고 되돌리기 이력이 사라졌음을 알린다', async () => {
+  it('with no draft, discards the page cache and notifies that the undo history is gone', async () => {
     const { controller, host } = await started();
     const renders = host.renderPage.mock.calls.length;
     await controller.handleWorkerRecovered();
@@ -370,14 +370,14 @@ describe('Worker 복구(D6)', () => {
     await vi.waitFor(() => expect(host.renderPage.mock.calls.length).toBe(renders + 1));
   });
 
-  it('영어 문자열 표를 주면 툴바 알림도 영어다(사용자 요청 2026-10-23)', async () => {
+  it('given the English string table, the toolbar notice is also in English (user request 2026-10-23)', async () => {
     const { controller } = await started({ strings: VIEWER_STRINGS.en });
     await controller.handleWorkerRecovered();
     expect(controller.getState().edit.notice).toBe(VIEWER_STRINGS.en.recoveredHistoryLost);
   });
 });
 
-describe('입력 버퍼(M3 이관)', () => {
+describe('input buffer (M3 handover)', () => {
   function fakeBuffer(text = '한x') {
     const calls: string[] = [];
     return {
@@ -388,7 +388,7 @@ describe('입력 버퍼(M3 이관)', () => {
     };
   }
 
-  it('시작과 동시에 모으고(plan 전에 open), 편집기가 열리면 캐럿 위치에 넣는다', async () => {
+  it('collects from the start (open before plan), and puts them at the caret position when the editor opens', async () => {
     const { controller, host } = await started();
     const buf = fakeBuffer('한x');
     controller.edit!.setInputBuffer(buf);
@@ -407,7 +407,7 @@ describe('입력 버퍼(M3 이관)', () => {
     expect(buf.calls).toEqual(['open', 'take']);
   });
 
-  it('편집기를 열지 못하면(제한 문단) 모은 글자를 버린다', async () => {
+  it('if the editor cannot be opened (restricted paragraph), the collected characters are discarded', async () => {
     const { controller } = await started();
     const buf = fakeBuffer();
     controller.edit!.setInputBuffer(buf);
@@ -416,7 +416,7 @@ describe('입력 버퍼(M3 이관)', () => {
     expect(buf.calls).toEqual(['open', 'close']);
   });
 
-  it('모은 글자가 없으면 텍스트는 그대로(변경 없음)다', async () => {
+  it('if there are no collected characters, the text is unchanged (no change)', async () => {
     const { controller } = await started();
     controller.edit!.setInputBuffer(fakeBuffer(''));
     await controller.edit!.begin(0, 1, null);

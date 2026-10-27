@@ -1,6 +1,6 @@
 /**
- * 경로 정규화(계약 3절 2단계). `PathInfo.segments`(경로 공간)를 페이지 공간으로 옮겨
- * 수평·수직 선분(괘선 후보), 채움 사각형, 그 밖의 도형으로 나눈다. clip 경로는 버린다.
+ * Path normalization (contract section 3, step 2). Moves `PathInfo.segments` (path space) into page space and
+ * splits them into horizontal/vertical segments (rule candidates), fill rectangles, and other shapes. Clip paths are discarded.
  */
 import type { PageModel, Point, RGB, Rect } from '@pdf-editor/shared-types';
 import { C } from './constants.js';
@@ -8,16 +8,16 @@ import { matrixScale, transformPoint } from './geom.js';
 
 export interface Rule {
   orient: 'h' | 'v';
-  /** h: y 고정(y0 = y1), x0 < x1. v: x 고정(x0 = x1), y0 < y1. */
+  /** h: y fixed (y0 = y1), x0 < x1. v: x fixed (x0 = x1), y0 < y1. */
   x0: number;
   y0: number;
   x1: number;
   y1: number;
-  /** 페이지 공간 두께(pt). */
+  /** Thickness in page space (pt). */
   width: number;
-  /** PageModel.paths 인덱스. */
+  /** PageModel.paths index. */
   path: number;
-  /** 두께 C.thinBoxMax 이하 채움 사각형에서 나왔는지. */
+  /** Whether it came from a fill rectangle with thickness at or below C.thinBoxMax. */
   fromBox: boolean;
 }
 
@@ -30,7 +30,7 @@ export interface FilledBox {
 export interface Shape {
   bbox: Rect;
   path: number;
-  /** 곡선·사선 포함 여부. */
+  /** Whether it contains curves or diagonal lines. */
   complex: boolean;
 }
 
@@ -43,7 +43,7 @@ export interface PathSummary {
 const EPS = 0.5;
 
 function rectOf(pts: Point[]): Rect | null {
-  // 닫힌 4점(마지막이 첫 점과 같으면 뺀다)이 축 정렬 사각형인지.
+  // Whether the closed 4 points (drop the last if equal to the first) form an axis-aligned rectangle.
   const p = pts.slice();
   if (p.length === 5 && Math.abs(p[0]![0] - p[4]![0]) < EPS && Math.abs(p[0]![1] - p[4]![1]) < EPS)
     p.pop();
@@ -116,7 +116,7 @@ export function summarizePaths(model: PageModel): PathSummary {
     if (info.op === 'clip' || info.op === 'clip-stroke' || !info.segments) return;
     const stroke = info.op === 'stroke';
     const lw = stroke ? Math.max((info.lineWidth ?? 1) * matrixScale(info.ctm), 0.1) : 0;
-    // 서브패스로 나눈다.
+    // Split into subpaths.
     const subpaths: { pts: Point[]; closed: boolean; curve: boolean }[] = [];
     let cur: { pts: Point[]; closed: boolean; curve: boolean } | null = null;
     for (const s of info.segments) {
@@ -139,7 +139,7 @@ export function summarizePaths(model: PageModel): PathSummary {
         complex = true;
         continue;
       }
-      // 선(stroke)은 닫힌 경로만 사각형으로 본다(열린 ㄷ자 경로는 변 3개). 채움은 암묵적으로 닫힌다.
+      // A stroke is treated as a rectangle only if the path is closed (an open "ㄷ"-shaped path has 3 edges). Fills are implicitly closed.
       const closedShape = !stroke || sp.closed || sp.pts.length === 5;
       const r = sp.pts.length >= 4 && closedShape ? rectOf(sp.pts) : null;
       if (r) {
@@ -163,7 +163,7 @@ export function summarizePaths(model: PageModel): PathSummary {
         continue;
       }
       if (!stroke) {
-        // 사각형이 아닌 채움: 도형.
+        // Non-rectangular fill: shape.
         if (sp.pts.length > 2) complex = true;
         continue;
       }
@@ -177,7 +177,7 @@ export function summarizePaths(model: PageModel): PathSummary {
       }
     }
     if (complex) {
-      // 사선·곡선이 섞인 경로는 선분까지 도형으로 본다(차트 꺾은선 등).
+      // A path mixing diagonals and curves is treated as a shape including its segments (chart line series, etc.).
       rules.length = before;
       shapes.push({ bbox: info.bbox, path: index, complex: true });
     } else if (rules.length === before && boxes.at(-1)?.path !== index) {

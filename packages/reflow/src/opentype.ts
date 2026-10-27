@@ -1,16 +1,16 @@
 /**
- * 폴백 폰트 셰이퍼(계약 D5): harfbuzzjs 로 kern 만 켜고 셰이핑한다. liga·clig·dlig·calt·ccmp·locl·rlig 는 끄고 언어 태그는
- * 쓰지 않는다(guessSegmentProperties 를 부르지 않아 기본 언어가 들어가지 않는다). 스크립트는 클러스터 단위로 나눠 정한다.
+ * Fallback font shaper (contract D5): shapes with harfbuzzjs with only kern enabled. liga, clig, dlig, calt, ccmp, locl and rlig are turned off, and no language tag is
+ * used (guessSegmentProperties is not called, so no default language gets in). The script is determined per cluster.
  *
- * 불변식: 쓰는 gid 는 모두 그 클러스터 자기 코드 포인트(기본 무시 문자 제외)의 cmap gid 다(계약의 "cmap 역상" 보다 좁다.
- * harfbuzz 가 숨긴 기본 무시 문자를 공백 글리프로 내는 경우도 거른다). 어긋나거나 harfbuzz 가 클러스터를 합치면 그 클러스터는
- * cmap gid + hmtx 폭으로 대신한다.
+ * Invariant: every gid written is the cmap gid of the cluster's own code point (excluding default-ignorable characters) (narrower than the contract's "cmap inverse".
+ * It also filters out the case where harfbuzz emits a default-ignorable character it hid as a space glyph). If it does not match, or harfbuzz merges clusters, that cluster is
+ * replaced with the cmap gid + hmtx width.
  */
 import * as hb from 'harfbuzzjs';
 import type { ShapeResult, ShapedCluster, ShapedGlyph } from './shaper.js';
 import { codePoints, isDefaultIgnorable } from './text.js';
 
-/** 끄는 GSUB 기능(계약 D5). 켜는 기능은 kern 하나다. */
+/** GSUB features turned off (contract D5). The only feature turned on is kern. */
 export const OPENTYPE_FEATURES_OFF = [
   'liga',
   'clig',
@@ -29,13 +29,13 @@ const FEATURES = [
 interface OtFont {
   bytes: Uint8Array;
   font: hb.Font;
-  /** 폰트 단위 → 1/1000 em. */
+  /** Font units -> 1/1000 em. */
   scale: number;
   nominal: Map<number, number | null>;
   hAdvance: Map<number, number>;
 }
 
-/** 폰트 키별 harfbuzz 폰트. 폴백 폰트는 문서당 1개라 작게 둔다. */
+/** harfbuzz font per font key. There is one fallback font per document, so keep this small. */
 const fonts = new Map<string, OtFont>();
 const MAX_FONTS = 4;
 
@@ -79,7 +79,7 @@ function hAdvance(f: OtFont, gid: number): number {
   return a;
 }
 
-/** 폴백 폰트 gid 의 쓰기 코드(Identity-H 2바이트, 계약 5.5). */
+/** Write code for a fallback font gid (Identity-H 2 bytes, contract 5.5). */
 export function gidCode(gid: number): Uint8Array {
   return Uint8Array.of((gid >> 8) & 0xff, gid & 0xff);
 }
@@ -96,7 +96,7 @@ const SCRIPT_TESTS: [RegExp, string][] = [
 const RE_COMMON = /[\p{Script=Common}\p{Script=Inherited}]/u;
 const scriptCache = new Map<number, string | null>();
 
-/** ISO 15924 스크립트. 공통·상속 문자는 null(이웃 스크립트를 따른다). */
+/** ISO 15924 script. Common and inherited characters are null (they follow the neighboring script). */
 function scriptOf(cp: number): string | null {
   let s = scriptCache.get(cp);
   if (s === undefined) {
@@ -107,12 +107,12 @@ function scriptOf(cp: number): string | null {
   return s;
 }
 
-/** 공용 버퍼(동기 실행이라 재사용한다). */
+/** Shared buffer (execution is synchronous, so it is reused). */
 let buffer: hb.Buffer | null = null;
 
 /**
- * 연속 클러스터를 셰이핑한다. 스크립트가 바뀌는 곳에서 나눠 셰이핑하고(공통·상속 문자는 앞 스크립트, 맨 앞이면 뒤 스크립트),
- * 클러스터마다 harfbuzz 결과를 검사해 어긋나면 cmap gid + hmtx 폭으로 대신한다.
+ * Shapes consecutive clusters. Splits and shapes where the script changes (common/inherited characters take the preceding script, or the following one if first),
+ * and checks the harfbuzz result for each cluster, replacing it with cmap gid + hmtx width if it does not match.
  */
 export function shapeOpenType(
   key: string,
@@ -158,7 +158,7 @@ function shapeRun(
   const infos = buffer.getGlyphInfos();
   const positions = buffer.getGlyphPositions();
 
-  // 클러스터별 글리프 인덱스(LTR 이라 cluster 값은 단조 증가).
+  // Glyph index per cluster (LTR, so cluster values increase monotonically).
   const n = i1 - i0;
   const glyphsOf: number[][] = Array.from({ length: n }, () => []);
   let k = 0;
@@ -167,7 +167,7 @@ function shapeRun(
     while (k < n - 1 && v >= (clusters[i0 + k]?.[1] ?? 0)) k++;
     glyphsOf[k]?.push(g);
   }
-  // 글리프가 없는 클러스터는 앞 클러스터와 합쳐졌다(합자 등): 둘 다 대신한다.
+  // A cluster with no glyph was merged with the preceding cluster (ligature etc.): replace both.
   const bad = new Array<boolean>(n).fill(false);
   let lastWithGlyphs = -1;
   for (let j = 0; j < n; j++) {
@@ -206,7 +206,7 @@ function shapeRun(
       const lastGlyph = idx[idx.length - 1] ?? 0;
       const lastGid = infos[lastGlyph]?.codepoint ?? 0;
       const lastAdv = positions[lastGlyph]?.xAdvance ?? 0;
-      // 0 전진(결합 표지 등)은 커닝으로 보지 않는다.
+      // A 0 advance (combining mark etc.) is not treated as kerning.
       const kernAfter = lastAdv === 0 ? 0 : (lastAdv - hAdvance(f, lastGid)) * f.scale;
       out[i0 + j] = { glyphs, advance, kernAfter };
     } else {
@@ -216,8 +216,8 @@ function shapeRun(
 }
 
 /**
- * cmap gid + hmtx 폭(커닝 없음). 기본 무시 문자(ZWJ·SHY·변이 선택자 등)는 쓰지 않는다(harfbuzz 도 보이지 않게 숨기는
- * 문자이고, 숨긴 공백 글리프를 쓰면 추출에 공백이 끼어든다). 그 밖의 글리프가 없으면 null.
+ * cmap gid + hmtx width (no kerning). Default-ignorable characters (ZWJ, SHY, variation selectors, etc.) are not written (they are characters harfbuzz also hides,
+ * and writing the hidden space glyph would insert a space into extraction). Null if there is no glyph otherwise.
  */
 function nominalCluster(
   f: OtFont,
@@ -238,7 +238,7 @@ function nominalCluster(
 }
 
 /**
- * 폰트 cmap 의 gid → 코드 포인트 목록(시험·진단용). 다대일 gid 는 ToUnicode 로 한 코드 포인트만 돌려줄 수 있다.
+ * Font cmap gid -> list of code points (for tests and diagnostics). A many-to-one gid can return only one code point through ToUnicode.
  */
 export function cmapPreimage(key: string, bytes: Uint8Array): Map<number, number[]> {
   const f = loadFont(key, bytes);
@@ -253,7 +253,7 @@ export function cmapPreimage(key: string, bytes: Uint8Array): Map<number, number
   return out;
 }
 
-/** gid 의 hmtx 전진량(1/1000 em, 시험·진단용). */
+/** hmtx advance of a gid (1/1000 em, for tests and diagnostics). */
 export function hmtxAdvance(key: string, bytes: Uint8Array, gid: number): number {
   const f = loadFont(key, bytes);
   return hAdvance(f, gid) * f.scale;

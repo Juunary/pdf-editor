@@ -1,11 +1,11 @@
 /**
- * 테스트용 가짜 편집 어댑터(docs/m3-core.md 3.2). pdf-ops·reflow 의 M3 함수가 병합되기 전에 core 편집 엔진을
- * 실제 MuPDF 문서·저널 위에서 검증하기 위한 최소 구현이다.
- * - 제거: 문단 글자의 text-show 연산을 쪽 콘텐츠 스트림에서 잘라 내고(바이트 교체), 그 자리에 `q /EBn Do Q` 를 넣는다.
- * - 편집 블록: `/PdfEditorEdit` 를 가진 Form XObject. 줄마다 `Tm` + `Tj` 로 쓴다.
- * - 폰트: 라틴은 쪽 리소스의 F1(Helvetica), 한글은 폴백 폰트(계약 D4 의 수명 규칙을 그대로 흉내: 쓸 때마다 객체가
- *   있는지 확인하고 없으면 로더 바이트로 현재 작업 안에서 다시 넣는다).
- * 가정: 쪽 콘텐츠가 스트림 하나, /Rotate 0, MediaBox 원점 0.
+ * Fake edit adapter for tests (docs/m3-core.md 3.2). A minimal implementation for verifying the core edit engine on a
+ * real MuPDF document and journal before the M3 functions of pdf-ops and reflow are merged.
+ * - Removal: cuts the text-show operations of the paragraph glyphs out of the page content stream (byte replacement) and puts `q /EBn Do Q` in their place.
+ * - Edit block: a Form XObject with `/PdfEditorEdit`. Each line is written with `Tm` + `Tj`.
+ * - Fonts: Latin uses F1 (Helvetica) of the page resources, Hangul uses the fallback font (imitating the lifetime rule of contract D4: each time it is used,
+ *   it checks that the object exists and, if not, inserts it again from the loader bytes inside the current operation).
+ * Assumptions: the page content is a single stream, /Rotate 0, MediaBox origin 0.
  */
 import * as mupdf from 'mupdf';
 import {
@@ -45,32 +45,32 @@ import { koreanFont } from './pdf-fixtures.js';
 type PlanBase = Omit<ParagraphEditPlan, 'revision'>;
 
 const HANGUL = /[가-힣]/;
-const UNSUPPORTED = /[☃]/; // 눈사람: 원본·폴백 모두 없음(glyph-missing)
+const UNSUPPORTED = /[☃]/; // snowman: absent from both the original and the fallback (glyph-missing)
 
 export interface FakeAdapterProbe {
-  /** recordEditMetadata 호출 인자. */
+  /** Arguments of the recordEditMetadata call. */
   metadataCalls: { pages: number[]; structureNotUpdated: boolean }[];
-  /** 호출 이력(prepare·write·list 등). */
+  /** Call history (prepare, write, list, etc.). */
   calls: string[];
-  /** 다음 prepare / write 호출을 실패시킨다. */
+  /** Makes the next prepare / write call fail. */
   failNext: {
     prepare?: boolean;
     write?: boolean;
     finalize?: boolean;
-    /** 쓰고 난 뒤 예외를 내는 write 호출 횟수(원자적이지 않은 쓰기). */
+    /** Number of write calls that throw after writing (non-atomic writes). */
     writeAfter?: number;
   };
-  /** 판정이 계획 경고로 더하는 경고(예: 태그 구조 끊김). */
+  /** Warnings the classification adds as plan warnings (e.g. tagged structure break). */
   planWarnings: EditWarning[];
-  /** 패스 쓰기 호출 인자(prepare 때 정한 편집 id → 쓴 편집 목록). */
+  /** Arguments of path write calls (edit id fixed at prepare → list of edits written). */
   pathWrites: { editId: string; edit: PathEdit }[];
-  /** 다음 패스 prepare / write 호출을 실패시킨다. */
+  /** Makes the next path prepare / write call fail. */
   failNextPath: { prepare?: boolean; write?: boolean; writeAfter?: boolean };
-  /** writePathEdit 결과에 실을 경고(pdf-ops 가 채울 `warnings` 선택 필드 흉내). */
+  /** Warnings to put in the writePathEdit result (imitates the optional `warnings` field that pdf-ops will fill). */
   pathWriteWarnings: EditWarning[] | undefined;
-  /** releaseEdit 호출 수(R-L3 연결 확인). */
+  /** Number of releaseEdit calls (R-L3 wiring check). */
   releaseCalls: number;
-  /** 만든 FontManager 의 dispose 호출 수. */
+  /** Number of dispose calls on the FontManagers created. */
   fontDisposeCalls: number;
 }
 
@@ -89,7 +89,7 @@ class FakeFonts extends FontManager {
     this.#probe = probe;
   }
 
-  /** core 가 저널을 켜기 직전(작업 밖)에 임베딩한 폴백 폰트 객체(계약 D4 수정 1). 판정 단계에는 없다. */
+  /** Fallback font object that core embedded just before enabling the journal (outside the operation) (contract D4 amendment 1). Absent during classification. */
   fallbackRef(): mupdf.PDFObject {
     const ref = this.#source.ref();
     if (!ref) throw new Error('fake: 폴백 폰트 객체가 아직 없음(저널을 켜기 전)');
@@ -106,7 +106,7 @@ class FakeFonts extends FontManager {
     let offset = 0;
     let usesFallback = false;
     let missing = false;
-    // 폴백 폰트를 얻지 못했으면(R-L5) 실제 FontManager 처럼 폴백 없음으로 다룬다.
+    // If the fallback font could not be obtained (R-L5), treat it as having no fallback, like the real FontManager.
     let fallbackAvailable = true;
     try {
       this.#source.bytes();
@@ -143,7 +143,7 @@ class FakeFonts extends FontManager {
     return { segments, warnings };
   }
 
-  /** 저장 작업 안에서: 쓴 글리프만 남긴 서브셋으로 FontFile2 를 바꾼다(작업을 버리면 되돌아간다). */
+  /** Inside the save operation: replaces FontFile2 with a subset holding only the glyphs used (reverts if the operation is discarded). */
   override dispose(): void {
     this.#probe.fontDisposeCalls++;
     super.dispose();
@@ -190,12 +190,12 @@ export function createFakeAdapter(): FakeAdapter {
     releaseCalls: 0,
     fontDisposeCalls: 0,
   };
-  /** 패스 편집 준비 때 찍어 둔 원본 스트림(쓰기는 항상 원본 기준 절대 편집). */
+  /** Original stream captured when the path edit was prepared (writes are always absolute edits relative to the original). */
   const pathSnapshots = new Map<
     string,
     { streamNum: number; original: Uint8Array<ArrayBuffer>; lines: PathLine[] }
   >();
-  /** 편집 블록 영역(plan 이 재편집 대상을 알아보는 데 쓴다). */
+  /** Edit block area (used by plan to recognize a re-edit target). */
   const blockBoxes = new Map<string, Rect>();
   let fonts: FakeFonts | null = null;
 
@@ -315,7 +315,7 @@ export function createFakeAdapter(): FakeAdapter {
           changedObjects: [block.objectNumber],
         };
       }
-      // 제거: 문단 글리프만으로 이루어진 text-show 연산의 바이트를 잘라 낸다.
+      // Removal: cuts out the bytes of text-show operations made up only of the paragraph glyphs.
       const seqs = new Set(plan.target.glyphSeqs);
       const ops = ctx.map.ops.filter(
         (op) =>
@@ -330,7 +330,7 @@ export function createFakeAdapter(): FakeAdapter {
       const buf = stream.readStream();
       const original = buf.asUint8Array().slice();
       buf.destroy();
-      // 편집 블록 Form 과 호출.
+      // Edit block Form and its invocation.
       const page = doc.loadPage(ctx.pageIndex);
       const pageObj = page.getObject();
       const block = doc.addStream('', {
@@ -350,7 +350,7 @@ export function createFakeAdapter(): FakeAdapter {
       for (const op of sorted) {
         bytes = concat([bytes.subarray(0, op.range[0]), bytes.subarray(op.range[1])]);
       }
-      // Do 는 텍스트 객체 밖이어야 하므로 첫 제거 연산이 속한 BT 바로 앞에 넣는다.
+      // Do must be outside a text object, so it is inserted right before the BT containing the first removed operation.
       const firstStart = Math.min(...ops.map((o) => o.range[0]));
       const insertAt = new TextDecoder('latin1').decode(original).lastIndexOf('BT', firstStart);
       bytes = concat([
@@ -367,7 +367,7 @@ export function createFakeAdapter(): FakeAdapter {
       };
     },
 
-    // ---- M4 패스: 한 줄 = 패스 하나(`x y w h re f` 꼴)인 쪽 콘텐츠만 다루는 최소 구현 ----
+    // ---- M4 paths: a minimal implementation handling only page content where one line = one path (of the form `x y w h re f`) ----
 
     planPathEditability(ctx) {
       return ctx.model.paths
@@ -479,7 +479,7 @@ export function createFakeAdapter(): FakeAdapter {
       const fontsUsed = new Set<string>();
       const ops: string[] = [];
       for (const line of result.lines) {
-        // 같은 폰트가 이어지는 글리프끼리 묶어 쓴다.
+        // Glyphs that continue with the same font are written together.
         let start = 0;
         while (start < line.length) {
           let end = start + 1;
@@ -497,7 +497,7 @@ export function createFakeAdapter(): FakeAdapter {
           start = end;
         }
       }
-      // 리소스: F1 은 쪽 리소스의 폰트를 가져오고, FB 는 현재 폴백 폰트 객체.
+      // Resources: F1 takes the font from the page resources, and FB is the current fallback font object.
       const resources = doc.newDictionary();
       const fontDict = doc.newDictionary();
       if (fontsUsed.has('F1')) {
@@ -529,7 +529,7 @@ export function createFakeAdapter(): FakeAdapter {
         const blocks: EditBlockRef[] = [];
         if (xobjects.isDictionary()) {
           xobjects.forEach((value) => {
-            // 스트림 여부는 간접 참조(객체 번호)로만 알 수 있다. resolve() 한 사전은 isStream() 이 false 다.
+            // Whether it is a stream is only known from the indirect reference (object number). A dictionary after resolve() has isStream() false.
             const id = value.get('PdfEditorEdit');
             if (value.isIndirect() && value.isStream() && !id.isNull()) {
               blocks.push({ editId: id.asString(), objectNumber: value.asIndirect() });
@@ -575,7 +575,7 @@ export function createFakeAdapter(): FakeAdapter {
   return adapter;
 }
 
-/** 고정 폭(0.5em) 줄 나눔. 공백 뒤에서 줄을 바꾼다. */
+/** Fixed-width (0.5em) line breaking. Lines break after spaces. */
 function fakeLayout(input: ReflowInput): ReflowResult {
   const { text, segments, format, areaLimit } = input;
   const advance = (seg: FontSegment): number =>
@@ -609,7 +609,7 @@ function fakeLayout(input: ReflowInput): ReflowResult {
       }
       if (seg.face === null) {
         i += ch.length;
-        continue; // glyph-missing: 쓰지 않음
+        continue; // glyph-missing: not written
       }
       const w = advance(seg);
       if (x + w > area[2] + 1e-6 && current.length > 0) flush();
@@ -653,7 +653,7 @@ function fakeLayout(input: ReflowInput): ReflowResult {
   };
   const placed = placeLines();
   const bottomOf = (p: { boxes: Rect[] }): number => Math.max(area[1], ...p.boxes.map((b) => b[3]));
-  // 계약 5.4(2026-10-20): 넘치면 아래 변을 필요한 높이까지(상한까지) 자동으로 내린다.
+  // Contract 5.4 (2026-10-20): on overflow, the bottom edge is lowered automatically to the required height (up to the limit).
   let overflow = bottomOf(placed) > area[3] + 0.5;
   if (overflow) {
     area = [area[0], area[1], area[2], Math.min(areaLimit[3], bottomOf(placed))];
@@ -718,16 +718,16 @@ function fmt(n: number): string {
 
 interface PathLine {
   streamNum: number;
-  /** 줄 전체(개행 제외)의 스트림 바이트 범위. */
+  /** Stream byte range of the whole line (excluding the newline). */
   range: [number, number];
-  /** 구성 숫자 4개와 칠하기 연산자. */
+  /** The 4 construction numbers and the paint operator. */
   nums: [number, number, number, number];
   paintOp: string;
   bbox: Rect;
   fingerprint: PathFingerprint;
 }
 
-/** paintSeq 를 가진 칠하기 연산이 있는 줄(`x y w h re f`)을 찾는다. */
+/** Finds the line (`x y w h re f`) with the paint operation that has paintSeq. */
 function pathLineOf(ctx: ParagraphEditContext, paintSeq: number): PathLine {
   const op = ctx.map.ops.find((o) => o.paintSeq?.includes(paintSeq) && o.kind === 'path-paint');
   const path = ctx.model.paths.find((p) => p.paintSeq === paintSeq);
@@ -763,7 +763,7 @@ function unionBox(a: Rect, b: Rect): Rect {
   return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
 }
 
-/** 줄을 편집 내용으로 다시 쓴다(크기·이동 아핀, 채움 색, 삭제). 반환: [새 줄 텍스트, 새 쪽 상자]. */
+/** Rewrites the line with the edit contents (size/move affine, fill color, deletion). Returns: [new line text, new page box]. */
 function rewritePathLine(line: PathLine, edit: PathEdit, pageHeight: number): [string, Rect] {
   if (edit.delete) return ['n', line.bbox];
   const [x, y, w, h] = line.nums;

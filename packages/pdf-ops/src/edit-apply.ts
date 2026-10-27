@@ -1,11 +1,11 @@
 /**
- * 초안 시작 적용(docs/m3-contract.md D2·D3·5.2): 원 문단 제거 + 삽입점에 빈 편집 블록 호출.
+ * Draft-start application (docs/m3-contract.md D2, D3, 5.2): removes the original paragraph + calls an empty edit block at the insertion point.
  *
- * - 한 스트림의 제거·삽입·이름 교체·ActualText 교체는 그 스트림 원본 바이트 기준 교체 목록 하나로 한 번에 적용한다.
- * - Form 안 텍스트는 사용 경로(상위 체인 포함)를 바이트 단위로 복제하고 Do 이름 피연산자만 새 이름으로 바꾼다.
- *   복제본에서 /StructParents 를 지운다(같은 ParentTree 키를 두 스트림이 갖지 않게).
- * - 쪽 /Contents 스트림을 다른 쪽·같은 배열 다른 칸과 공유하면 사본을 만들어 이 쪽 칸만 바꾼다.
- * - 편집 블록: /Matrix = 삽입점 CTM 역행렬(블록 안 = 사용자 공간), /BBox = 사용자 공간 areaLimit.
+ * - Removal, insertion, name replacement and ActualText replacement in one stream are applied at once as a single replacement list based on that stream's original bytes.
+ * - For text inside a Form, the usage path (including the parent chain) is duplicated byte by byte and only the Do name operand is changed to the new name.
+ *   /StructParents is removed from the copy (so two streams do not hold the same ParentTree key).
+ * - If the page /Contents stream is shared with another page or another slot of the same array, a copy is made and only this page's slot is changed.
+ * - Edit block: /Matrix = inverse of the insertion-point CTM (inside the block = user space), /BBox = user-space areaLimit.
  */
 import type * as mupdf from 'mupdf';
 import type {
@@ -41,14 +41,14 @@ import {
 } from './text-remove.js';
 import { writeStreamBytes } from './mupdf-util.js';
 
-/** 편집 블록 쓰기에 필요한 초안 시작 시점 해석(편집 id 별). */
+/** Draft-start resolution needed to write the edit block (per edit id). */
 export interface WriteContext {
   editId: string;
   blockNum: number;
   pageIndex: number;
-  /** sourceChar → 해석한 모양(판정 시점 PageModel 인덱스). */
+  /** sourceChar → resolved style (classification-time PageModel index). */
   styles: Map<number, ResolvedStyle>;
-  /** 삽입점의 ExtGState(바깥 → 안). */
+  /** ExtGState at the insertion point (outer → inner). */
   insertionGs: mupdf.PDFObject[];
   insertion: InsertionInfo;
   areaLimit: Rect;
@@ -59,8 +59,8 @@ const contexts = new WeakMap<mupdf.PDFDocument, Map<string, WriteContext>>();
 const latest = new WeakMap<mupdf.PDFDocument, WriteContext>();
 
 /**
- * 초안의 모양 해석(R-L4). 보관한 해석에 없으면 가장 가까운 글자 번호의 해석을 쓴다. 바뀐 문서를 판정 시점 SourceMap
- * 범위로 다시 읽지 않는다.
+ * Style resolution of a draft (R-L4). If absent from the kept resolution, the resolution of the nearest character number is used. The changed document is not re-read with the
+ * classification-time SourceMap range.
  */
 export function styleFor(wc: WriteContext, sourceChar: number): ResolvedStyle | null {
   const hit = wc.styles.get(sourceChar);
@@ -81,14 +81,14 @@ export function writeContextOf(doc: mupdf.PDFDocument, editId: string): WriteCon
   return contexts.get(doc)?.get(editId);
 }
 
-/** 이 문서의 마지막 초안(문서당 초안은 하나, 계약 5.7). */
+/** The last draft of this document (one draft per document, contract 5.7). */
 export function latestWriteContext(doc: mupdf.PDFDocument): WriteContext | undefined {
   return latest.get(doc);
 }
 
 /**
- * 초안의 쓰기 해석을 버린다(R-L3). editId 가 없으면 이 문서의 해석 전부. 커밋·취소·재적용 뒤에 부른다. 해석이 가진
- * PDFObject(폰트·ExtGState)는 문서 소유라 해제하지 않고 참조만 끊는다.
+ * Discards the write resolution of a draft (R-L3). Without editId, all resolutions of this document. Called after commit, cancel and reapply. The PDFObjects
+ * (font, ExtGState) the resolution holds are owned by the document, so they are not released, only the reference is dropped.
  */
 export function releaseWriteContext(doc: mupdf.PDFDocument, editId?: string): void {
   if (editId === undefined) {
@@ -111,9 +111,9 @@ function register(doc: mupdf.PDFDocument, wc: WriteContext): void {
 }
 
 /**
- * 판정 시점 모양 해석. 문서를 바꾸기 전에 부른다. plan.runs·문단 styleRuns 의 sourceChar 에 더해 대상 글자 전부를
- * 해석해 둔다(연산마다 한 번 읽고 글자별 fontId·size 만 바꾼다). 초안 중에는 문서가 바뀌어 SourceMap 범위로 다시 읽을
- * 수 없기 때문이다(R-L4).
+ * Classification-time style resolution. Call before changing the document. In addition to the sourceChar of plan.runs and paragraph styleRuns, resolves all target characters
+ * (reads once per operation and only changes fontId and size per character). This is because during a draft the document has changed and cannot be
+ * re-read with the SourceMap range (R-L4).
  */
 function resolveStyles(
   ctx: ParagraphEditContext,
@@ -151,7 +151,7 @@ function resolveStyles(
   return out;
 }
 
-/** Do 연산(그 스트림·이름 피연산자 범위)의 SourceOp. */
+/** SourceOp of a Do operation (its stream and name operand range). */
 function doOpOf(
   ctx: ParagraphEditContext,
   stream: ContentStreamRef,
@@ -169,7 +169,7 @@ function doOpOf(
   );
 }
 
-/** BDC 연산에서 ActualText 를 뺀 교체(인라인 사전) 또는 이름 피연산자 교체 정보. */
+/** Replacement info that removes ActualText from a BDC operation (inline dictionary) or replaces the name operand. */
 function actualTextEdit(
   bytes: Uint8Array,
 ): { kind: 'inline'; text: string } | { kind: 'name'; name: string; nameTok: Token } | null {
@@ -198,7 +198,7 @@ function actualTextEdit(
   return { kind: 'name', name: nameTok.value as string, nameTok };
 }
 
-/** 원 문단 제거와 빈 편집 블록 삽입(prepareParagraphEdit 본체). */
+/** Removes the original paragraph and inserts an empty edit block (body of prepareParagraphEdit). */
 export function prepareEdit(
   ctx: ParagraphEditContext,
   plan: Omit<ParagraphEditPlan, 'revision'>,
@@ -261,7 +261,7 @@ export function prepareEdit(
   const invU = invert(ctx.map.userToPage);
   if (!invCtm || !invU) throw new Error('특이 행렬');
 
-  // 1. 편집 블록.
+  // 1. Edit block.
   const bbox = transformRect(a.areaLimit, invU);
   const dict = doc.newDictionary();
   dict.put('Type', doc.newName('XObject'));
@@ -279,7 +279,7 @@ export function prepareEdit(
   const blockNum = block.asIndirect();
   changed.add(blockNum);
 
-  // 2. 교체 목록(스트림 키별).
+  // 2. Replacement list (per stream key).
   const lists = new Map<string, Replacement[]>();
   const keyOfStream = (s: ContentStreamRef) =>
     s.contentsIndex === null ? `f:${s.objectNumber}` : `p:${s.contentsIndex}:${s.objectNumber}`;
@@ -297,7 +297,7 @@ export function prepareEdit(
     s.contentsIndex !== null ? -1 : path.findIndex((st) => st.objectNumber === s.objectNumber);
   const ops = ctx.map.ops;
 
-  // 홀더별 처리(안쪽 Form 복제본 → 쪽). 홀더 인덱스 -1 = 쪽.
+  // Per-holder processing (inner Form copy → page). Holder index -1 = page.
   let childRef: mupdf.PDFObject = block;
   const holderIndices = [...path.keys()].reverse().concat([-1]);
   for (const hi of holderIndices) {
@@ -322,7 +322,7 @@ export function prepareEdit(
       res = ownResources(doc, clone, null);
       changed.add(clone.asIndirect());
     }
-    // 자식(편집 블록 또는 안쪽 복제본) 이름 등록.
+    // Register the name of the child (edit block or inner copy).
     const innermost = hi === path.length - 1 || (isPage && path.length === 0);
     const childName = putUniqueResource(
       ownSubdict(doc, res, 'XObject'),
@@ -331,7 +331,7 @@ export function prepareEdit(
     );
     if (innermost) {
       const blockName = childName;
-      // 제거·삽입(이 홀더의 스트림).
+      // Removal and insertion (streams of this holder).
       for (const r of a.removals) {
         const split =
           ins.splitOp === r.op.id && ins.splitGlyph !== null
@@ -356,11 +356,11 @@ export function prepareEdit(
         });
       }
     } else {
-      // 안쪽 단계 Do 이름 교체(이 홀더 스트림의 nameRange).
+      // Replace the inner-level Do name (nameRange of this holder's stream).
       const step = path[hi + 1]!;
       add(step.stream, { start: step.nameRange[0], end: step.nameRange[1], text: `/${childName}` });
     }
-    // ActualText(이 홀더 스트림의 BDC).
+    // ActualText (BDC of this holder's stream).
     for (const id of a.actualTextClears) {
       const op = ops[id]!;
       if (holderOf(op.stream) !== hi) continue;
@@ -385,7 +385,7 @@ export function prepareEdit(
         });
       }
     }
-    // 이 홀더 스트림 적용.
+    // Apply this holder's stream.
     if (!isPage) {
       const num = path[hi]!.objectNumber;
       const list = lists.get(`f:${num}`) ?? [];
@@ -394,7 +394,7 @@ export function prepareEdit(
     }
   }
 
-  // 3. 쪽 /Contents 칸.
+  // 3. Page /Contents slot.
   const pageObj = doc.findPage(ctx.pageIndex);
   const writes: { slot: number; num: number; bytes: Uint8Array }[] = [];
   for (const [k, list] of lists) {

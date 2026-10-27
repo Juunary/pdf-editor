@@ -3,7 +3,7 @@ import { PdfSession, assembleReadingText, foldWhitespace } from '../src/index.js
 import type { PageModel } from '@pdf-editor/shared-types';
 import { buildPdf, hexGlyphs } from './pdf-fixtures.js';
 
-/** 쪽 0 의 추출 모델과 MuPDF 구조화 텍스트 asText() 를 함께 돌려준다. */
+/** Returns the extraction model of page 0 together with the MuPDF structured text asText(). */
 function read(content: string): { model: PageModel; asText: string } {
   const s = new PdfSession();
   s.open(buildPdf([content]));
@@ -21,20 +21,20 @@ function expectSameReadingText(model: PageModel, asText: string): void {
   expect(foldWhitespace(assembleReadingText(model))).toBe(foldWhitespace(asText));
 }
 
-describe('LineInfo.spaceAfter: 합성 공백 위치(계약 수정 5)', () => {
-  it('TJ 간격으로만 단어를 나눈 줄: 공백 글리프가 없어도 조립 텍스트에 공백이 들어간다', () => {
+describe('LineInfo.spaceAfter: synthetic space positions (contract amendment 5)', () => {
+  it('a line split into words only by TJ gaps: spaces appear in the assembled text even without space glyphs', () => {
     const { model, asText } = read(
       'BT /F1 12 Tf 10 150 Td [(Hello) -300 (world) -300 (again)] TJ ET',
     );
     expect(model.chars.map((c) => c.text).join('')).toBe('Helloworldagain');
     expect(model.lines).toHaveLength(1);
-    // 'o'(4)와 'd'(9) 뒤에 합성 공백
+    // synthetic space after 'o'(4) and 'd'(9)
     expect(model.lines[0]!.spaceAfter).toEqual([4, 9]);
     expect(assembleReadingText(model)).toBe('Hello world again');
     expectSameReadingText(model, asText);
   });
 
-  it('실제 공백 글리프가 있는 문서: spaceAfter 는 비고 공백은 chars 에 있다', () => {
+  it('a document with real space glyphs: spaceAfter is empty and the spaces are in chars', () => {
     const { model, asText } = read('BT /F1 12 Tf 10 150 Td (Hello world again) Tj ET');
     expect(model.lines.map((l) => l.spaceAfter)).toEqual([[]]);
     expect(model.chars.map((c) => c.text).join('')).toBe('Hello world again');
@@ -42,7 +42,7 @@ describe('LineInfo.spaceAfter: 합성 공백 위치(계약 수정 5)', () => {
     expectSameReadingText(model, asText);
   });
 
-  it('한글·영문 혼합 CID 폰트: 합성 공백과 줄·블록 구분이 구조화 텍스트와 공백 접기 기준으로 같다', () => {
+  it('mixed Hangul/English CID font: synthetic spaces and line/block breaks match the structured text under whitespace folding', () => {
     const { model, asText } = read(
       [
         `BT /F2 14 Tf 10 150 Td [${hexGlyphs('한글')} -300 ${hexGlyphs('ab')} -300 ${hexGlyphs('cd')}] TJ ET`,
@@ -50,14 +50,14 @@ describe('LineInfo.spaceAfter: 합성 공백 위치(계약 수정 5)', () => {
       ].join('\n'),
     );
     expect(model.blocks).toHaveLength(2);
-    // CJK 와 영문 사이는 MuPDF 가 공백을 합성하지 않고, 영문 단어 사이만 합성한다.
+    // MuPDF does not synthesize a space between CJK and English, only between English words.
     expect(model.lines[0]!.spaceAfter).toEqual([3]);
     expect(model.lines[1]!.spaceAfter).toEqual([5]);
     expect(assembleReadingText(model)).toBe('한글ab cd\n\nsecond line');
     expectSameReadingText(model, asText);
   });
 
-  it('CJK 글자 사이의 간격은 공백이 아니다(MuPDF 가 합성하지 않으므로 spaceAfter 도 비다)', () => {
+  it('gaps between CJK characters are not spaces (MuPDF does not synthesize them, so spaceAfter is empty too)', () => {
     const { model, asText } = read(
       `BT /F2 14 Tf 10 150 Td [${hexGlyphs('안녕')} -500 ${hexGlyphs('하세요')}] TJ ET`,
     );
@@ -65,13 +65,13 @@ describe('LineInfo.spaceAfter: 합성 공백 위치(계약 수정 5)', () => {
     expectSameReadingText(model, asText);
   });
 
-  it('큰 간격은 줄을 나누므로 공백이 아니라 줄바꿈', () => {
+  it('a large gap splits the line, so it is a line break, not a space', () => {
     const { model, asText } = read('BT /F1 12 Tf 10 150 Td [(A) -1000 (B)] TJ ET');
     expect(model.lines.map((l) => l.spaceAfter)).toEqual([[], []]);
     expectSameReadingText(model, asText);
   });
 
-  it('줄 처음·끝의 합성 공백은 담지 않는다. 값은 오름차순이고 줄 안(마지막 글자 앞)에 있다', () => {
+  it('synthetic spaces at the start/end of a line are not included. Values are ascending and inside the line (before the last character)', () => {
     const { model } = read(
       'BT /F1 12 Tf 10 150 Td [(a) -250 (b) -250 (c) -250 (d) -250 (e)] TJ ET BT /F1 12 Tf 10 100 Td [(x) -300 (y)] TJ ET',
     );
@@ -85,14 +85,14 @@ describe('LineInfo.spaceAfter: 합성 공백 위치(계약 수정 5)', () => {
     expect(model.lines[0]!.spaceAfter).toEqual([0, 1, 2, 3]);
   });
 
-  it('Tr 4 의 구조화 텍스트 중복 줄은 조립 텍스트에 한 번만', () => {
+  it('a duplicate structured-text line from Tr 4 appears only once in the assembled text', () => {
     const { model } = read('BT /F1 12 Tf 4 Tr 10 150 Td [(Hel) -300 (lo)] TJ ET');
     expect(assembleReadingText(model)).toBe('Hel lo');
   });
 });
 
 describe('assembleReadingText', () => {
-  it('줄 사이 "\\n", 블록 사이 "\\n\\n", spaceAfter 위치에 공백', () => {
+  it('"\\n" between lines, "\\n\\n" between blocks, a space at spaceAfter positions', () => {
     const char = (text: string) => ({ text }) as PageModel['chars'][number];
     const line = (chars: number[], spaceAfter: number[], block: number) =>
       ({ chars, spaceAfter, block }) as PageModel['lines'][number];
@@ -104,7 +104,7 @@ describe('assembleReadingText', () => {
     expect(assembleReadingText(model)).toBe('a b\nc\n\nde');
   });
 
-  it('foldWhitespace: 연속 공백류를 하나로, 앞뒤 제거', () => {
+  it('foldWhitespace: collapses consecutive whitespace into one and trims both ends', () => {
     expect(foldWhitespace('  a \n\n b\t c  ')).toBe('a b c');
   });
 });

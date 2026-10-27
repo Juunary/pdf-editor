@@ -1,37 +1,37 @@
 /**
- * 원본 연결 정보(PLAN.md 3.4 "원본에서 그 부분만 바꾸기"). pdf-ops 콘텐츠 스트림 인터프리터가 만든다.
- * 그리고 PageModel 과의 매칭 결과(PageLinkage). 순서 번호 규칙은 page-model.ts 머리말과 같다.
+ * Source link info (PLAN.md 3.4 "change only that part of the source"). Built by the pdf-ops content stream interpreter.
+ * Also the matching result with the PageModel (PageLinkage). The sequence number rules are the same as in the page-model.ts header.
  */
 import type { ByteRange, Matrix, Point } from './geometry.js';
 
-/** 콘텐츠 스트림 하나. */
+/** A single content stream. */
 export interface ContentStreamRef {
-  /** 스트림 간접 객체 번호. */
+  /** Stream indirect object number. */
   objectNumber: number;
-  /** 페이지 /Contents 배열 인덱스(단일 스트림이면 0). Form XObject 스트림이면 null. */
+  /** Index in the page /Contents array (0 for a single stream). null for a Form XObject stream. */
   contentsIndex: number | null;
 }
 
 export interface ContentStreamInfo extends ContentStreamRef {
-  /** 디코드 후 길이(byte). ByteRange 는 이 바이트 기준이다. */
+  /** Length after decoding (byte). ByteRange is relative to these bytes. */
   decodedLength: number;
-  /** /Filter 이름 목록(없으면 빈 배열). */
+  /** List of /Filter names (empty array if none). */
   filters: string[];
 }
 
-/** Form XObject 사용 경로의 한 단계(Do 한 번). */
+/** One step of a Form XObject usage path (one Do). */
 export interface FormStep {
-  /** Do 피연산자 리소스 이름. */
+  /** Resource name of the Do operand. */
   resourceName: string;
-  /** 이 Do 가 있는 스트림 안에서 몇 번째 Do 인지(0부터). */
+  /** Which Do this is within the stream containing it (0-based). */
   doOrdinal: number;
-  /** 대상 Form XObject 객체 번호. */
+  /** Object number of the target Form XObject. */
   objectNumber: number;
-  /** Do 가 있는 스트림. */
+  /** The stream containing the Do. */
   stream: ContentStreamRef;
-  /** Do 의 이름 피연산자 바이트 범위(그 스트림 기준). */
+  /** Byte range of the Do's name operand (relative to that stream). */
   nameRange: ByteRange;
-  /** Do 실행 시점 CTM(Form 공간 진입 전, 사용자 공간 기준). */
+  /** CTM at the time of Do execution (before entering Form space, in user space). */
   ctm: Matrix;
 }
 
@@ -52,19 +52,19 @@ export type SourceOpKind =
   | 'type3' // d0 d1
   | 'other';
 
-/** 편집 제한 사유(docs/m0-dod-xobject-redact-save.md 1.6 L1–L7 + 폰트·텍스트 사유). */
+/** Edit limit reasons (docs/m0-dod-xobject-redact-save.md 1.6 L1–L7 + font and text reasons). */
 export const EDIT_LIMIT_REASONS = [
-  'unmatched', // PageModel 과 매칭 실패
-  'tokenizer-error', // L6 토큰 분리 실패
-  'spans-stream-boundary', // L6 연산이 /Contents 스트림 경계에 걸침
-  'form-inherits-resources', // L1 Form 에 자체 /Resources 없음
-  'tagged-content', // L2 /StructParents·MCID(태그 PDF)
-  'form-bbox-overflow', // L3 새 텍스트가 Form BBox 초과(편집 시점 판정)
-  'outside-page-content', // L4 주석 외관·패턴·Type3 글리프·SMask 안
-  'form-depth-exceeded', // L5 Form 재귀 깊이 초과·순환
-  'optional-content', // L7 선택적 콘텐츠(경고)
-  'type3-font', // Type3 폰트 텍스트
-  'font-encoding-unresolved', // 문자 코드 → 유니코드/글리프 매핑 복원 곤란(PLAN.md 3.3)
+  'unmatched', // failed to match the PageModel
+  'tokenizer-error', // L6 tokenization failure
+  'spans-stream-boundary', // L6 operation straddles a /Contents stream boundary
+  'form-inherits-resources', // L1 Form has no /Resources of its own
+  'tagged-content', // L2 /StructParents and MCID (tagged PDF)
+  'form-bbox-overflow', // L3 new text exceeds the Form BBox (decided at edit time)
+  'outside-page-content', // L4 inside annotation appearances, patterns, Type3 glyphs or SMask
+  'form-depth-exceeded', // L5 Form recursion depth exceeded or cycle
+  'optional-content', // L7 optional content (warning)
+  'type3-font', // Type3 font text
+  'font-encoding-unresolved', // character code → Unicode/glyph mapping hard to recover (PLAN.md 3.3)
   'clip-text', // Tr 4–7
   'invisible-text', // Tr 3
   'inline-image', // BI … EI
@@ -73,25 +73,25 @@ export const EDIT_LIMIT_REASONS = [
 export type EditLimitReason = (typeof EDIT_LIMIT_REASONS)[number];
 
 export interface SourceGlyph {
-  /** 문자 코드(폰트 인코딩 기준, 1–4바이트 값). */
+  /** Character code (per font encoding, 1–4 byte value). */
   code: number;
-  /** 문자열 토큰 안 이 코드의 바이트 범위(16진 문자열이면 16진 숫자 범위). */
+  /** Byte range of this code within the string token (the hex digit range for a hex string). */
   byteRange: ByteRange;
-  /** 기준선 원점, 페이지 공간(userToPage 적용 후). 매칭 검증에 쓴다. */
+  /** Baseline origin, page space (after applying userToPage). Used for match verification. */
   origin: Point;
-  /** glyphSeq. Device 에 오지 않거나 계약 3절 규칙상 세지 않는 글리프(꺼진 /OC 의 표시분 등)는 null. */
+  /** glyphSeq. null for glyphs that never reach the Device or are not counted under contract section 3 rules (e.g. shown parts under a disabled /OC). */
   seq: number | null;
 }
 
 export interface TextShowInfo {
-  /** Tf 리소스 이름. */
+  /** Tf resource name. */
   fontResource: string;
-  /** 폰트 객체 번호. 직접 객체이면 null. */
+  /** Font object number. null for a direct object. */
   fontObjectNumber: number | null;
-  /** /Subtype(Type0·Type1·MMType1·TrueType·Type3). 알 수 없으면 null. */
+  /** /Subtype (Type0, Type1, MMType1, TrueType, Type3). null if unknown. */
   fontSubtype: string | null;
   fontSize: number;
-  /** 연산자 실행 직전 텍스트 행렬 Tm. */
+  /** Text matrix Tm right before the operator executes. */
   tm: Matrix;
   charSpacing: number;
   wordSpacing: number;
@@ -102,98 +102,98 @@ export interface TextShowInfo {
   /** Tr 0–7. */
   renderMode: number;
   glyphs: SourceGlyph[];
-  /** 연산자 실행 직전 텍스트 줄 행렬 Tlm(M3 BT 나누기용, pdf-ops 인터프리터가 채운다). */
+  /** Text line matrix Tlm right before the operator executes (for M3 BT splitting; filled by the pdf-ops interpreter). */
   tlm?: Matrix;
 }
 
-/** 연산 실행 시점 그래픽 상태 요약(M3 편집 블록 쓰기용, pdf-ops 인터프리터가 채운다). */
+/** Summary of the graphics state at operation execution time (for writing M3 edit blocks; filled by the pdf-ops interpreter). */
 export interface SourceOpState {
-  /** 효력 있는 채움 색 설정 연산(cs·sc·scn·g·rg·k) id. 기본값이면 null. */
+  /** id of the effective fill color operator (cs, sc, scn, g, rg, k). null for the default. */
   fillColorOps: number[];
-  /** 효력 있는 선 색 설정 연산 id(M4). */
+  /** id of the effective stroke color operator (M4). */
   strokeColorOps?: number[];
-  /** 효력 있는 선 두께 w 연산 id(M4). */
+  /** id of the effective line width w operator (M4). */
   lineWidthOps?: number[];
-  /** 효력 있는 gs 연산 id(바깥 → 안). */
+  /** ids of effective gs operators (outer → inner). */
   extGStateOps: number[];
-  /** 활성 클립 중 직사각형으로 계산한 것의 교집합(페이지 공간). 직사각형이 아닌 클립이 있으면 null. 클립 없으면 쪽 경계. */
+  /** Intersection of the active clips computed as rectangles (page space). null if any clip is non-rectangular. The page bounds if there is no clip. */
   clipRect: [number, number, number, number] | null;
 }
 
-/** 열린 marked content(바깥 → 안). */
+/** Open marked content (outer → inner). */
 export interface OpenMarkedContent {
-  /** BMC·BDC 연산 id. */
+  /** BMC/BDC operation id. */
   opId: number;
   tag: string;
   mcid: number | null;
-  /** 속성에 /ActualText 가 있음. */
+  /** The properties contain /ActualText. */
   actualText: boolean;
-  /** 그 BMC·BDC 가 BT 안에서 열렸음. */
+  /** That BMC/BDC was opened inside BT. */
   insideText: boolean;
 }
 
 export interface SourceOp {
-  /** SourceMap.ops 인덱스. */
+  /** SourceMap.ops index. */
   id: number;
-  /** 연산자 키워드(인라인 이미지는 "BI"). */
+  /** Operator keyword ("BI" for inline images). */
   op: string;
   kind: SourceOpKind;
-  /** 연산자가 시작하는 스트림. */
+  /** Stream where the operator starts. */
   stream: ContentStreamRef;
-  /** 첫 피연산자 시작 ~ 연산자 끝(그 스트림의 디코드 바이트 기준). */
+  /** From the start of the first operand to the end of the operator (relative to that stream's decoded bytes). */
   range: ByteRange;
-  /** Form XObject 안이면 페이지에서 이 스트림까지의 Do 경로. 페이지 콘텐츠면 빈 배열. */
+  /** If inside a Form XObject, the Do path from the page to this stream. An empty array for page content. */
   formPath: FormStep[];
-  /** 실행 시점 CTM: 이 스트림의 콘텐츠 공간 → 사용자 공간(Form /Matrix 포함). */
+  /** CTM at execution time: this stream's content space → user space (including the Form /Matrix). */
   ctm: Matrix;
-  /** q 중첩과 무관한 활성 클립 수(W n 누적). */
+  /** Number of active clips regardless of q nesting (W n accumulated). */
   clipDepth: number;
-  /** 열린 marked content 의 MCID 들(바깥 → 안). 태그 정책(PLAN.md 1.4)용. */
+  /** MCIDs of open marked content (outer → inner). For the tagging policy (PLAN.md 1.4). */
   mcids: number[];
-  /** 선택적 콘텐츠(/OC) 안 여부. */
+  /** Whether inside optional content (/OC). */
   optionalContent: boolean;
-  /** kind = text-show 일 때만. */
+  /** Only when kind = text-show. */
   text?: TextShowInfo;
   /**
-   * 이 연산 글리프 seq 의 [최솟값, 최댓값 + 1). ET 시점 번호(Tr 7 등) 때문에 연속이 아닐 수 있으므로
-   * 글자별 값은 text.glyphs[].seq 를 쓴다. 번호를 받은 글리프가 없으면 생략.
+   * [min, max + 1) of this operation's glyph seq. It may not be contiguous because of numbers assigned at ET time (Tr 7, etc.), so
+   * use text.glyphs[].seq for per-character values. Omitted if no glyph received a number.
    */
   glyphSeq?: [number, number];
   /**
-   * path-paint·inline-image·xobject(이미지·Form BBox 클립)·shading 이 만든 paintSeq 들.
-   * 타일링 패턴 직접 실행 경로의 셀 내용 번호는 그 패턴 칠하기 연산에 포함한다(계약 3절 세부 표).
+   * paintSeqs produced by path-paint, inline-image, xobject (image, Form BBox clip) and shading.
+   * The numbers of cell content on the direct-execution path of a tiling pattern are included in that pattern's paint operation (contract section 3 detail table).
    */
   paintSeq?: number[];
-  /** 이 연산을 편집할 때의 제한 사유. 없으면 빈 배열. */
+  /** Limit reasons when editing this operation. An empty array if none. */
   limits: EditLimitReason[];
-  /** M3: 실행 시점 그래픽 상태 요약(pdf-ops 인터프리터가 채운다). */
+  /** M3: summary of the graphics state at execution time (filled by the pdf-ops interpreter). */
   state?: SourceOpState;
-  /** M3: 열린 marked content(mcids 의 상세, pdf-ops 인터프리터가 채운다). */
+  /** M3: open marked content (details of mcids, filled by the pdf-ops interpreter). */
   markedContent?: OpenMarkedContent[];
-  /** M4: 칠하기·클립 연산을 이루는 구성 연산(m·l·c·re 등) id. */
+  /** M4: ids of the construction operators (m, l, c, re, etc.) that make up a paint or clip operation. */
   pathOps?: number[];
-  /** M4: 숫자·이름 피연산자의 바이트 범위. */
+  /** M4: byte ranges of numeric and name operands. */
   operandRanges?: ByteRange[];
 }
 
 export interface SourceMapError {
   stream: ContentStreamRef;
-  /** 디코드 바이트 오프셋. */
+  /** Decoded byte offset. */
   offset: number;
   message: string;
 }
 
 export interface SourceMap {
   pageIndex: number;
-  /** 사용자 공간 → 페이지 공간(`PDFPage.getTransform()`). */
+  /** User space → page space (`PDFPage.getTransform()`). */
   userToPage: Matrix;
-  /** 이 페이지가 실행한 스트림(페이지 /Contents 순서, 이어서 Form 스트림 첫 등장 순). */
+  /** Streams executed by this page (in page /Contents order, then Form streams in order of first appearance). */
   streams: ContentStreamInfo[];
-  /** 실행 순서. Form XObject 안의 연산은 그 Do 연산 바로 뒤에 펼쳐 넣는다. */
+  /** Execution order. Operations inside a Form XObject are expanded right after their Do operation. */
   ops: SourceOp[];
-  /** 인터프리터가 센 glyphSeq 총수. PageModel.glyphCount 와 같아야 한다. */
+  /** Total glyphSeq counted by the interpreter. Must equal PageModel.glyphCount. */
   glyphCount: number;
-  /** 인터프리터가 센 paintSeq 총수. PageModel.paintCount 와 같아야 한다. */
+  /** Total paintSeq counted by the interpreter. Must equal PageModel.paintCount. */
   paintCount: number;
   errors: SourceMapError[];
   buildMs: number;
@@ -204,21 +204,21 @@ export interface LinkStats {
   matchedChars: number;
   paints: number;
   matchedPaints: number;
-  /** 매칭된 글자의 원점 오차 최댓값(pt, 페이지 공간). */
+  /** Maximum origin error of matched characters (pt, page space). */
   maxOriginError: number;
-  /** PageModel 과 SourceMap 의 총수 차이(모델 − 맵). 0 이 정상. */
+  /** Difference in totals between PageModel and SourceMap (model − map). 0 is normal. */
   glyphCountDelta: number;
   paintCountDelta: number;
 }
 
-/** PageModel ↔ SourceMap 매칭 결과. 배열 인덱스는 PageModel 의 같은 이름 배열과 같다. */
+/** PageModel ↔ SourceMap matching result. Array indices match the same-named arrays in PageModel. */
 export interface PageLinkage {
   pageIndex: number;
-  /** chars[i] → SourceOp.id. 실패 -1. */
+  /** chars[i] → SourceOp.id. -1 on failure. */
   charOp: number[];
-  /** chars[i] → 그 연산의 text.glyphs 인덱스. 실패 -1. */
+  /** chars[i] → text.glyphs index of that operation. -1 on failure. */
   charGlyph: number[];
-  /** paths[i] → SourceOp.id. 실패 -1. */
+  /** paths[i] → SourceOp.id. -1 on failure. */
   pathOp: number[];
   imageOp: number[];
   shadeOp: number[];

@@ -1,15 +1,15 @@
 /**
- * 편집기 텍스트 도우미(순수 함수). 위치는 UTF-16 위치이고 캐럿은 확장 자소(grapheme) 경계에만 놓인다
- * (docs/m3-contract.md 3절).
+ * Editor text helpers (pure functions). Positions are UTF-16 offsets and the caret sits only on extended grapheme cluster boundaries
+ * (docs/m3-contract.md section 3).
  */
 
 const graphemeSegmenter = new Intl.Segmenter('und', { granularity: 'grapheme' });
 const wordSegmenter = new Intl.Segmenter('und', { granularity: 'word' });
 
 /**
- * 입력·붙여넣기 텍스트 정리: 줄바꿈은 `\n`, 탭·U+00A0(NBSP)은 공백, 그 밖 제어 문자는 제거, NFC 정규화(NFD 자모 입력 대비,
- * 계약 1.3·5.9 수정 2: 폴백 폰트 cmap 에 U+00A0 이 없어 공백으로 바꾼다).
- * 강제 줄바꿈 `\n` 만 제어 문자로 남긴다.
+ * Input/paste text cleanup: line breaks become `\n`, tabs and U+00A0 (NBSP) become spaces, other control characters are removed, NFC normalization (for NFD jamo input,
+ * contract 1.3·5.9 fix 2: the fallback font cmap has no U+00A0, so it is replaced with a space).
+ * Only the forced line break `\n` is kept as a control character.
  */
 export function normalizeInput(raw: string): string {
   let out = '';
@@ -26,7 +26,7 @@ export function normalizeInput(raw: string): string {
 
 let boundaryCache: { text: string; bounds: number[] } | null = null;
 
-/** 자소 경계 위치(0 과 text.length 포함, 오름차순). */
+/** Grapheme boundary positions (including 0 and text.length, ascending). */
 export function graphemeBoundaries(text: string): number[] {
   if (boundaryCache?.text === text) return boundaryCache.bounds;
   const bounds = [0];
@@ -38,7 +38,7 @@ export function graphemeBoundaries(text: string): number[] {
   return bounds;
 }
 
-/** pos 이하에서 가장 가까운 경계. */
+/** Nearest boundary at or below pos. */
 export function snapBoundary(text: string, pos: number): number {
   const bounds = graphemeBoundaries(text);
   let best = 0;
@@ -49,7 +49,7 @@ export function snapBoundary(text: string, pos: number): number {
   return best;
 }
 
-/** pos 보다 작은 가장 가까운 경계(없으면 0). */
+/** Nearest boundary smaller than pos (0 if none). */
 export function prevBoundary(text: string, pos: number): number {
   const bounds = graphemeBoundaries(text);
   let best = 0;
@@ -60,13 +60,13 @@ export function prevBoundary(text: string, pos: number): number {
   return best;
 }
 
-/** pos 보다 큰 가장 가까운 경계(없으면 text.length). */
+/** Nearest boundary larger than pos (text.length if none). */
 export function nextBoundary(text: string, pos: number): number {
   for (const b of graphemeBoundaries(text)) if (b > pos) return b;
   return text.length;
 }
 
-/** pos 이상에서 가장 가까운 경계. */
+/** Nearest boundary at or above pos. */
 export function ceilBoundary(text: string, pos: number): number {
   for (const b of graphemeBoundaries(text)) if (b >= pos) return b;
   return text.length;
@@ -90,7 +90,7 @@ function wordSegments(text: string): WordSeg[] {
   return out;
 }
 
-/** Ctrl+← : 이전 단어 시작(공백·부호는 건너뛴다). */
+/** Ctrl+← : start of the previous word (skips whitespace and punctuation). */
 export function prevWordStart(text: string, pos: number): number {
   const segs = wordSegments(text);
   let target = 0;
@@ -101,7 +101,7 @@ export function prevWordStart(text: string, pos: number): number {
   return target;
 }
 
-/** Ctrl+→ : 다음 단어 시작(없으면 끝). */
+/** Ctrl+→ : start of the next word (the end if none). */
 export function nextWordStart(text: string, pos: number): number {
   for (const s of wordSegments(text)) {
     if (s.wordLike && s.start > pos) return s.start;
@@ -109,7 +109,7 @@ export function nextWordStart(text: string, pos: number): number {
   return text.length;
 }
 
-/** pos 가 놓인 단어(또는 공백·부호 덩어리) 구간. 더블클릭 선택용. */
+/** Range of the word (or run of whitespace/punctuation) containing pos. Used for double-click selection. */
 export function wordRangeAt(text: string, pos: number): [number, number] {
   if (text.length === 0) return [0, 0];
   const at = Math.min(pos, text.length - 1);
@@ -119,7 +119,7 @@ export function wordRangeAt(text: string, pos: number): [number, number] {
   return [at, at];
 }
 
-/** 입력 뒤 되돌리기 단위를 닫는 글자(공백·문장부호, 계약 1.3 I6). */
+/** Characters that close an undo unit after input (whitespace, sentence punctuation, contract 1.3 I6). */
 export function endsUndoUnit(inserted: string): boolean {
   if (inserted === '') return false;
   const last = [...inserted].at(-1) ?? '';

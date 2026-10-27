@@ -1,10 +1,10 @@
 /**
- * 뷰어 UI 문자열 표(한국어·영어, 사용자 요청 2026-10-23). 언어는 호출자(확장)가 정해 `ViewerControllerOptions.strings` 로
- * 넣는다. 넣지 않으면 한국어. viewer-ui 는 확장 API(`chrome.i18n`)를 쓰지 않는다(하니스·Node 시험에서 그대로 동작).
+ * Viewer UI string tables (Korean and English, user request 2026-10-23). The language is decided by the caller (the extension) and passed in through `ViewerControllerOptions.strings`.
+ * Korean if not passed. viewer-ui does not use the extension API (`chrome.i18n`) (so it works as is in the harness and Node tests).
  *
- * 범위: 툴바 컨트롤(쪽 이동·찾기·레이아웃·편집 버튼)·검색창·쪽 화살표·툴바 편집 알림(2026-10-23), 쪽 위 편집 UI(편집기·
- * 편집 불가 팝오버·패스 패널·편집 가능 표시 범례·툴팁·태그 안내·편집 쪽 기록 안내·편집기 안 복구 안내)·편집 제한 사유
- * 30종·편집 경고·오류 상세(2026-10-26). 개발 표시(연결 디버그 오버레이·HUD, `debug-info.ts`)는 한국어만 있다.
+ * Scope: toolbar controls (page navigation, find, layout and edit buttons), search bar, page arrows, toolbar edit notices (2026-10-23), edit UI over the page (editor,
+ * non-editable popover, path panel, editability overlay legend, tooltips, tagged notice, edited-page record notice, in-editor recovery notice), edit-limit reasons
+ * (30 kinds), edit warnings and error details (2026-10-26). Development displays (the link debug overlay and HUD, `debug-info.ts`) are Korean only.
  */
 import type { FeatureName } from './controller.js';
 import { errorDetailEn, errorMessage } from './error-text.js';
@@ -25,8 +25,8 @@ import {
 export type UiLang = 'ko' | 'en';
 
 /**
- * 언어 태그(BCP 47, `chrome.i18n.getUILanguage()`·`navigator.language`)로 UI 언어를 정한다. 앞에서부터 비어 있지 않은
- * 첫 태그를 보고, 주 언어가 ko 이면 한국어, 그 밖(태그 없음 포함)은 영어.
+ * The UI language is decided from the language tag (BCP 47, `chrome.i18n.getUILanguage()`, `navigator.language`). Looks at the first
+ * non-empty tag from the front: Korean if the primary language is ko, English otherwise (including no tag).
  */
 export function resolveUiLang(...tags: (string | null | undefined)[]): UiLang {
   const tag = tags.find((t) => typeof t === 'string' && t.trim() !== '');
@@ -36,12 +36,12 @@ export function resolveUiLang(...tags: (string | null | undefined)[]): UiLang {
 
 export interface ViewerStrings {
   lang: UiLang;
-  /** 툴바 컨트롤 묶음(role=toolbar)의 이름. */
+  /** Name of the toolbar control group (role=toolbar). */
   controlsLabel: string;
   prevPage: string;
   nextPage: string;
   pageNumber: string;
-  /** 쪽 번호 입력 뒤 "/ N". */
+  /** "/ N" after the page number input. */
   pageCount(n: number): string;
   find: string;
   findTitle: string;
@@ -52,7 +52,7 @@ export interface ViewerStrings {
   overlayMarksReason(reason: string): string;
   overlayMarksOnly(layoutReason: string): string;
   overlayLayoutOnly(marksReason: string): string;
-  /** 편집 RPC 가 없는 호스트의 편집 가능 표시 사유. */
+  /** Editability overlay reason for a host without edit RPCs. */
   noEditHost: string;
   undo: string;
   undoTitle: string;
@@ -65,10 +65,10 @@ export interface ViewerStrings {
   blockTagged: string;
   blockTaggedTitle: string;
   dismissTitle: string;
-  /** "비활성: 기능, 기능". */
+  /** The "비활성: 기능, 기능" text (disabled: feature, feature). */
   disabledList(features: string): string;
   featureLabels: Record<FeatureName, string>;
-  // 검색창
+  // Search bar
   findPlaceholder: string;
   findPrev: string;
   findPrevTitle: string;
@@ -83,7 +83,7 @@ export interface ViewerStrings {
   findNoResults: string;
   findUnavailableWith(message: string): string;
   findFailedWith(message: string): string;
-  // 툴바 편집 알림(#pe-edit-notice)
+  // Toolbar edit notices (#pe-edit-notice)
   failureWith(prefix: string, message: string): string;
   editStartFailed: string;
   editSaveFailed: string;
@@ -91,7 +91,7 @@ export interface ViewerStrings {
   undoFailed: string;
   redoFailed: string;
   editNotApplied(error: string): string;
-  /** 되돌린 뒤 새 편집을 시작해 다시 실행 기록이 사라졌다는 안내(계약 D9). */
+  /** Notice that starting a new edit after undoing cleared the redo history (contract D9). */
   redoDiscarded: string;
   editRecoveredRestart: string;
   editRecoveredContinue: string;
@@ -103,21 +103,21 @@ export interface ViewerStrings {
   pathStartFailed: string;
   pathApplyFailed: string;
   pathRecoveredReselect: string;
-  // 오류 상세(콜론 뒤). 한국어는 메시지 그대로, 영어는 error-text.ts.
+  // Error details (after the colon). Korean uses the message as is; English uses error-text.ts.
   errorDetail(error: unknown): string;
-  // 편집 제한 사유·경고(edit-labels.ts 가 고름)
+  // Edit-limit reasons and warnings (chosen by edit-labels.ts)
   limitLabels: Record<LimitReason, string>;
-  /** 표에 없는 사유 코드. */
+  /** Reason code not in the table. */
   limitUnknown(reason: string): string;
   warningTexts: Record<WarningTextKey, WarningText>;
-  // 편집 불가 팝오버(EditEntry.tsx)
+  // Non-editable popover (EditEntry.tsx)
   paragraphNotEditableTitle: string;
   cellNotEditableTitle: string;
-  /** 사유가 없을 때 목록 한 줄. */
+  /** One list line when there is no reason. */
   paragraphNotEditable: string;
   popoverClose: string;
   taggedBlocked: string;
-  // 편집기(EditorLayer.tsx)
+  // Editor (EditorLayer.tsx)
   editorLabel: string;
   glyphMissingTitle: string;
   overflowMessage: string;
@@ -128,11 +128,11 @@ export interface ViewerStrings {
   editWarningsLabel: string;
   taggedNotice: string;
   editPagesNotice: string;
-  /** 편집기 안 복구 안내(복구 뒤 초안 다시 시작). */
+  /** In-editor recovery notice (restart the draft after recovery). */
   sessionRecovered: string;
   sessionClosed: string;
   restartNotEditable: string;
-  // 패스 패널(PathLayer.tsx)
+  // Path panel (PathLayer.tsx)
   pathsSelected(count: number): string;
   pathNotEditable: string;
   fillColor: string;
@@ -144,7 +144,7 @@ export interface ViewerStrings {
   deletePath: string;
   deletePathTitle: string;
   clearSelection: string;
-  // 편집 가능 표시 범례·툴팁(EditableMarks.tsx·edit-marks.ts)
+  // Editability overlay legend and tooltips (EditableMarks.tsx, edit-marks.ts)
   legendEditable: string;
   legendLimited: string;
   legendLines: string;
@@ -154,7 +154,7 @@ export interface ViewerStrings {
   markEditable(kind: string): string;
   markLimited(kind: string, reasons: string): string;
   markNoReason: string;
-  // 쪽 표면
+  // Page surface
   pageRenderFailed(error: string): string;
 }
 

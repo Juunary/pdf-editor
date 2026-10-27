@@ -1,10 +1,10 @@
 /**
- * 패키지 간 공통 타입과 Worker RPC 계약.
+ * Common types shared across packages and the Worker RPC contract.
  *
- * M1 계약(docs/m1-contract.md): 추출 모델·원본 연결 정보·매칭 결과·검색·저장 판정·RPC.
- * 병렬 구현은 이 계약을 고정한 커밋에서 시작하고, 변경은 메인 세션만 한다(PLAN.md 10절).
- * M2 계약(docs/m2-contract.md): 쪽 레이아웃(PageLayout·DocumentModel).
- * M3 계약(docs/m3-contract.md): 문단 편집(EditOp·편집 계획·리플로우 요약·초안·undo).
+ * M1 contract (docs/m1-contract.md): extraction model, source link info, matching results, search, save classification, RPC.
+ * Parallel implementations start from the commit that freezes this contract, and only the main session changes it (PLAN.md section 10).
+ * M2 contract (docs/m2-contract.md): page layout (PageLayout, DocumentModel).
+ * M3 contract (docs/m3-contract.md): paragraph editing (EditOp, edit plan, reflow summary, draft, undo).
  */
 export * from './geometry.js';
 export * from './page-model.js';

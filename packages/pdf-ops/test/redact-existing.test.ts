@@ -9,9 +9,9 @@ import {
 } from '../src/index.js';
 
 /**
- * 200x200pt 2쪽. 1쪽: "KEEP"(y=150) · "EDIT"(y=100) · "MARK"(y=50) 텍스트,
- * 기존 Redact 주석 2개(MARK 위, EDIT 왼쪽 일부와 겹침), 링크 1개(EDIT 위). 2쪽: Redact 주석 1개.
- * MuPDF 좌표(y 아래): KEEP≈[10,40..55], EDIT≈[10,90..105], MARK≈[10,140..155].
+ * 200x200pt, 2 pages. Page 1: "KEEP" (y=150), "EDIT" (y=100), "MARK" (y=50) text,
+ * 2 existing Redact annotations (above MARK, partly overlapping the left of EDIT), 1 link (above EDIT). Page 2: 1 Redact annotation.
+ * MuPDF coordinates (y downward): KEEP≈[10,40..55], EDIT≈[10,90..105], MARK≈[10,140..155].
  */
 function sample(): Uint8Array {
   const doc = new mupdf.PDFDocument();
@@ -49,7 +49,7 @@ const annotStrings = (doc: mupdf.PDFDocument, nums: number[]) =>
   nums.map((n) => doc.newIndirect(n).resolve().toString());
 
 describe('listRedactAnnots', () => {
-  it('문서 전체 Redact 주석 수·쪽·위치·OverlayText', () => {
+  it('number, page, position and OverlayText of Redact annotations in the whole document', () => {
     const r = listRedactAnnots(open(sample()));
     expect(r.total).toBe(3);
     expect(r.pages).toEqual([0, 1]);
@@ -67,7 +67,7 @@ describe('listRedactAnnots', () => {
 });
 
 describe('assessRedactionImpact', () => {
-  it('편집 영역과 겹치는 기존 Redact·링크가 있으면 warn', () => {
+  it('warn if an existing Redact or link overlaps the edit region', () => {
     const imp = assessRedactionImpact(open(sample()), 0, [EDIT_RECT]);
     expect(imp.preexisting.length).toBe(2);
     expect(imp.overlapping.map((a) => a.annotIndex)).toEqual([1]);
@@ -76,7 +76,7 @@ describe('assessRedactionImpact', () => {
     expect(imp.messages.length).toBe(3);
   });
 
-  it('겹침이 없으면 info, Redact 주석이 없으면 none', () => {
+  it('info if there is no overlap, none if there is no Redact annotation', () => {
     expect(assessRedactionImpact(open(sample()), 0, [[0, 35, 200, 60]]).level).toBe('info');
     const doc = new mupdf.PDFDocument();
     doc.insertPage(-1, doc.addPage([0, 0, 100, 100], 0, {}, ''));
@@ -84,8 +84,8 @@ describe('assessRedactionImpact', () => {
   });
 });
 
-describe('기존 Redact 주석이 있는 문서의 편집 redaction', () => {
-  it('주석 단위 적용: 새 영역만 지우고 기존 주석 객체는 바이트 그대로 남는다(겹친 링크는 제거)', () => {
+describe('edit redaction on a document with existing Redact annotations', () => {
+  it('per-annotation application: erases only the new region and the existing annotation object remains byte-identical (the overlapping link is removed)', () => {
     const doc = open(sample());
     const nums = listRedactAnnots(doc).annots.map((a) => a.objectNumber);
     const before = annotStrings(doc, nums);
@@ -95,13 +95,13 @@ describe('기존 Redact 주석이 있는 문서의 편집 redaction', () => {
     expect(annotStrings(doc, nums)).toEqual(before);
     const t = text(doc);
     expect(t).toContain('KEEP');
-    expect(t).toContain('MARK'); // 기존 Redact 아래 텍스트는 그대로
+    expect(t).toContain('MARK'); // text under the existing Redact stays as is
     expect(t).not.toContain('EDIT');
     const page = doc.loadPage(0);
     expect(page.getLinks().length).toBe(0);
   });
 
-  it('대조: 페이지 단위 applyRedactions 는 기존 주석까지 적용한다', () => {
+  it('control: page-level applyRedactions also applies the existing annotations', () => {
     const doc = open(sample());
     const page = doc.loadPage(0);
     page.createAnnotation('Redact').setRect(EDIT_RECT);
@@ -110,7 +110,7 @@ describe('기존 Redact 주석이 있는 문서의 편집 redaction', () => {
     expect(listRedactAnnots(doc, [0]).total).toBe(0);
   });
 
-  it('임시 분리: 페이지 단위 redaction 중 기존 주석을 빼 두고 원래 순서로 되돌린다', () => {
+  it('temporary detach: sets aside existing annotations during page-level redaction and restores them in the original order', () => {
     const doc = open(sample());
     const nums = listRedactAnnots(doc, [0]).annots.map((a) => a.objectNumber);
     const before = annotStrings(doc, nums);
@@ -126,11 +126,11 @@ describe('기존 Redact 주석이 있는 문서의 편집 redaction', () => {
     expect(text(doc)).not.toContain('EDIT');
     expect(listRedactAnnots(doc, [0]).annots.map((a) => a.objectNumber)).toEqual(nums);
     expect(annotStrings(doc, nums)).toEqual(before);
-    // 링크는 redaction 으로 제거되어 /Annots 에서 빠진다. 나머지 순서는 원래대로.
+    // The link is removed by redaction and drops out of /Annots. The remaining order is as before.
     expect(doc.findPage(0).get('Annots').toString()).toBe(annotsBefore.replace(/ \d+ 0 R\]$/, ']'));
   });
 
-  it('임시 분리: 그 페이지 객체가 열려 있으면 실패하고 /Annots 를 되돌린다', () => {
+  it('temporary detach: fails if that page object is open, and restores /Annots', () => {
     const doc = open(sample());
     const held = doc.loadPage(0);
     held.getAnnotations();

@@ -16,7 +16,7 @@ import {
   wordOrigins,
 } from './helpers/fixtures-m3.js';
 
-/** 계약 8.1 합성 PDF: 제거·삽입(D2·D3)과 V2·V3 세 엔진 확인. */
+/** Contract 8.1 synthetic PDFs: removal and insertion (D2, D3) and V2/V3 three-engine checks. */
 beforeAll(async () => {
   await loadModules();
 });
@@ -33,8 +33,8 @@ const contentOf = (doc: mupdf.PDFDocument, page = 0) => {
   return s.readStream().asString();
 };
 
-describe('V2 before-bt: 삽입점에 q /이름 Do Q', () => {
-  it('영역 밖 렌더 0 px(세 엔진), 재추출 순서는 원래 자리', async () => {
+describe('V2 before-bt: q /name Do Q at the insertion point', () => {
+  it('0 px render outside the region (three engines), re-extraction order stays in the original place', async () => {
     const doc = makeDoc([THREE]);
     const before = bytesOf(doc);
     const ctx = pageContext(doc, 0);
@@ -53,7 +53,7 @@ describe('V2 before-bt: 삽입점에 q /이름 Do Q', () => {
     await expectOrder(after, 0, 'It has two lines.', r.text, 'Charlie paragraph');
   });
 
-  it('제거·삽입으로 바뀐 객체 = 쪽 사전·콘텐츠 스트림·편집 블록', () => {
+  it('objects changed by removal and insertion = page dictionary, content stream, edit block', () => {
     const doc = makeDoc([THREE, 'BT /F1 12 Tf 50 200 Td (Other page) Tj ET']);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
@@ -69,8 +69,8 @@ describe('V2 before-bt: 삽입점에 q /이름 Do Q', () => {
   });
 });
 
-describe('V2 기하 근접: 같은 MuPDF 블록 안의 두 문단', () => {
-  it('붙어 있는 다음 문단을 길게 바꿔도 재추출 순서가 원래 자리(세 엔진)', async () => {
+describe('V2 geometric proximity: two paragraphs in the same MuPDF block', () => {
+  it('even when the adjacent next paragraph is made longer, the re-extraction order stays in the original place (three engines)', async () => {
     const doc = makeDoc([
       'BT /F1 11 Tf 13 TL 50 260 Td (First block line one,) Tj T* (first block line two.) Tj T* ' +
         '(Second part line three) Tj T* (second part line four.) Tj ET BT /F1 11 Tf 50 150 Td (Tail paragraph.) Tj ET',
@@ -96,13 +96,13 @@ describe('V2 기하 근접: 같은 MuPDF 블록 안의 두 문단', () => {
   });
 });
 
-describe('V3 split-bt: BT 나누기', () => {
+describe('V3 split-bt: BT splitting', () => {
   const ONE_BT =
     'BT /F1 11 Tf 13 TL 0.98 0 0 1.02 50.25 260.125 Tm (Kept first paragraph line.) Tj ' +
     '0 -40 Td (Target paragraph line one) Tj T* (and the target line two.) Tj ' +
     '0 -40 Td (Kept last paragraph stays.) Tj ET';
 
-  it('같은 BT 의 남은 글자 위치·모양 그대로(소수 계수 Tm, 세 엔진 0 px)', async () => {
+  it('remaining characters of the same BT keep their position and shape (fractional-coefficient Tm, three engines 0 px)', async () => {
     const doc = makeDoc([ONE_BT]);
     const before = bytesOf(doc);
     const st0 = stextChars(doc, 0);
@@ -127,7 +127,7 @@ describe('V3 split-bt: BT 나누기', () => {
     await expectOrder(after, 0, 'Kept first paragraph line.', r.text, 'Kept last paragraph stays.');
   });
 
-  it('Tm 이 마지막 줄 설정 연산이면 원 피연산자 바이트를 그대로 쓴다', () => {
+  it('if Tm is the last line-setting operation, the original operand bytes are used as is', () => {
     const doc = makeDoc([
       'BT /F1 11 Tf 50 260 Td (Kept first line here.) Tj 0.98 0 0 1.02 50.123456 200.5 Tm (Target words) Tj ET',
     ]);
@@ -140,7 +140,7 @@ describe('V3 split-bt: BT 나누기', () => {
     expect(contentOf(doc)).toContain('Do Q BT 0.98 0 0 1.02 50.123456 200.5 Tm');
   });
 
-  it('줄 행렬은 원 줄 설정 연산을 같은 순서로 다시 실행해 되돌린다(Td 누적·TD·T*, 세 엔진 0 px)', async () => {
+  it('the line matrix is restored by re-executing the original line-setting operations in the same order (Td accumulation, TD, T*, three engines 0 px)', async () => {
     const doc = makeDoc([
       'BT /F1 10 Tf 61.827 269.963 Td (Head words kept.) Tj 117.789 -13.948 Td (more) Tj ' +
         '-125.616 -23.91 TD (Target line here) Tj 12 TL T* (target second line.) Tj T* (Kept tail line after.) Tj ET',
@@ -187,7 +187,7 @@ describe('V3 split-bt: BT 나누기', () => {
       'BT 50 260 Td 0 -18 Td 0 -11 Td',
     ],
   ] as const) {
-    it(`TL 보존(계약 수정 3 확인): ${label} — 뒤 줄 위치 그대로, 세 엔진 0 px`, async () => {
+    it(`TL preservation (contract amendment 3 check): ${label} — later line positions unchanged, three engines 0 px`, async () => {
       const doc = makeDoc([content]);
       const before = bytesOf(doc);
       const st0 = stextChars(doc, 0);
@@ -198,7 +198,7 @@ describe('V3 split-bt: BT 나누기', () => {
       const fm = new FontManager(doc, fallbackFor(doc));
       const r = editParagraph(ctx, fm, 0, 'Replaced words');
       expect(r.plan.insertion?.mode).toBe('split-bt');
-      // TD 는 Td 로, T* 는 그때의 TL 로 바꿔 다시 실행한다(TL 상태는 바꾸지 않아 그 지점 TL 이 그대로 남는다).
+      // TD is rewritten as Td and T* as Td with the TL at that time, then re-executed (TL state is not changed, so the TL at that point remains).
       expect(contentOf(doc)).toContain(`ET q /PEB0 Do Q ${replay}`);
       const st1 = stextChars(doc, 0);
       expectSameOrigins(
@@ -237,7 +237,7 @@ describe('V3 split-bt: BT 나누기', () => {
       'gamma',
     ],
   ] as const) {
-    it(`연산 일부만 지우기·연산 안 나누기: ${label}`, async () => {
+    it(`erasing only part of an operation and splitting inside an operation: ${label}`, async () => {
       const doc = makeDoc([content]);
       const before = bytesOf(doc);
       const st0 = stextChars(doc, 0);
@@ -261,7 +261,7 @@ describe('V3 split-bt: BT 나누기', () => {
   }
 });
 
-describe('Form 안 텍스트: 사용 경로 바이트 복제(D2)', () => {
+describe('text inside a Form: byte duplication of the used path (D2)', () => {
   const formDoc = (nested: boolean) =>
     makeDoc(
       [
@@ -291,7 +291,7 @@ describe('Form 안 텍스트: 사용 경로 바이트 복제(D2)', () => {
     );
 
   for (const nested of [false, true]) {
-    it(`${nested ? '중첩 Form(상위 체인 포함)' : '공유 Form'}: 복제본에서 제거, 다른 쪽·원 Form 불변, /StructParents 제거`, async () => {
+    it(`${nested ? '중첩 Form(상위 체인 포함)' : '공유 Form'}: removed from the duplicate, other pages and the original Form unchanged, /StructParents removed`, async () => {
       const doc = formDoc(nested);
       const before = bytesOf(doc);
       const page1 = doc.findPage(1).toString();
@@ -306,7 +306,7 @@ describe('Form 안 텍스트: 사용 경로 바이트 복제(D2)', () => {
       expect(r.plan.insertion?.container).toBe('form-clone');
       expect(r.plan.removal.formInstances).toBe(nested ? 2 : 1);
       expect(r.plan.warnings.map((w) => w.kind)).toContain('tagged-structure-unlinked');
-      // 원 Form 스트림·다른 쪽은 그대로.
+      // The original Form stream and other pages stay as they are.
       formNums.forEach((n, i) =>
         expect(doc.newIndirect(n).readStream().asString()).toBe(formBytes[i]),
       );
@@ -330,7 +330,7 @@ describe('Form 안 텍스트: 사용 경로 바이트 복제(D2)', () => {
     });
   }
 
-  it('공유 콘텐츠 스트림: 사본을 만들어 이 쪽 칸만 바꾼다', async () => {
+  it('shared content stream: makes a copy and changes only the slot of this page', async () => {
     const src = new mupdf.PDFDocument();
     const F1 = src.addSimpleFont(new mupdf.Font('Helvetica'));
     src.insertPage(-1, src.addPage([0, 0, 400, 300], 0, { Font: { F1 } }, THREE));
@@ -351,8 +351,8 @@ describe('Form 안 텍스트: 사용 경로 바이트 복제(D2)', () => {
   });
 });
 
-describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () => {
-  it('y 반전 CTM: 블록 /Matrix 가 상쇄해 새 텍스트가 바로 선다', async () => {
+describe('coordinates: y-flipped CTM, /Rotate 90 and 270, Tr 3 of a preceding BT, clip', () => {
+  it('y-flipped CTM: the block /Matrix cancels it so the new text stands upright', async () => {
     const doc = makeDoc([
       'q 1 0 0 -1 0 300 cm BT /F1 12 Tf 1 0 0 -1 50 40 Tm (Upright flipped paragraph.) Tj ET ' +
         'BT /F1 12 Tf 1 0 0 -1 50 120 Tm (Second flipped paragraph.) Tj ET Q',
@@ -368,8 +368,8 @@ describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () =>
   });
 
   for (const rotate of [90, 270] as const) {
-    it(`/Rotate ${rotate}: 화면 가로 문단 편집`, async () => {
-      // 화면(페이지 공간)에서 가로가 되도록 사용자 공간 Tm 을 만든다.
+    it(`/Rotate ${rotate}: editing a horizontal paragraph on screen`, async () => {
+      // Build the user-space Tm so that the text is horizontal on screen (page space).
       const probe = makeDoc([{ content: '', rotate }]);
       const u2p = probe.loadPage(0).getTransform();
       const inv = mupdf.Matrix.invert(u2p);
@@ -397,13 +397,13 @@ describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () =>
       await expectOrder(after, 0, null, r.text, 'Rotated page second paragraph.');
       const st = stextChars(doc, 0);
       const w = wordOrigins(st, 'Rotated page text edited.')!;
-      // 새 글자는 화면 가로(같은 y, x 증가).
+      // New characters are horizontal on screen (same y, increasing x).
       expect(Math.abs(w.at(-1)!.y - w[0]!.y)).toBeLessThan(0.01);
       expect(w.at(-1)!.x).toBeGreaterThan(w[0]!.x);
     });
   }
 
-  it('앞 BT 가 남긴 Tr 3 을 물려받지 않는다(블록이 Tr 을 명시)', async () => {
+  it('does not inherit the Tr 3 left by a preceding BT (the block specifies Tr)', async () => {
     const doc = makeDoc([
       'BT 3 Tr /F1 12 Tf 50 270 Td (hidden ocr layer) Tj ET BT /F1 12 Tf 50 200 Td 0 Tr (Visible paragraph text.) Tj ET',
     ]);
@@ -420,7 +420,7 @@ describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () =>
     }
   });
 
-  it('직사각형 클립은 영역 상한(areaLimit)에 들어간다', () => {
+  it('a rectangular clip goes into the region limit (areaLimit)', () => {
     const doc = makeDoc([
       'q 40 150 300 80 re W n BT /F1 12 Tf 50 200 Td (Clipped paragraph text.) Tj ET Q',
     ]);
@@ -435,7 +435,7 @@ describe('좌표: y 반전 CTM, /Rotate 90·270, 앞 BT 의 Tr 3, 클립', () =>
 });
 
 describe('V5 marked content·ActualText', () => {
-  it('BT 바깥 MCID BDC: 블록 호출이 그 MC 안에 들어간다(pdf.js includeMarkedContent)', async () => {
+  it('MCID BDC outside BT: the block call goes inside that MC (pdf.js includeMarkedContent)', async () => {
     const doc = makeDoc([
       '/P <</MCID 0>> BDC BT /F1 12 Tf 50 230 Td (Tagged paragraph zero.) Tj ET EMC ' +
         '/P <</MCID 1>> BDC BT /F1 12 Tf 50 160 Td (Tagged paragraph one.) Tj ET EMC',
@@ -452,7 +452,7 @@ describe('V5 marked content·ActualText', () => {
     expect(marked.get(1)?.replace(/\s+/g, '')).toBe('Taggedparagraphone.');
   });
 
-  it('BT 안에서 열린 MC: 규칙 3 으로 BDC 앞으로 옮기고, 사이에 남길 글자가 있으면 reading-order-approximate', () => {
+  it('MC opened inside BT: moved before the BDC by rule 3, and reading-order-approximate if characters to keep lie in between', () => {
     const doc = makeDoc([
       'BT /F1 12 Tf 50 250 Td (Kept line before.) Tj 0 -40 Td /Span <</MCID 0>> BDC (Kept in mc. ) Tj (Target words here) Tj EMC ET',
     ]);
@@ -469,7 +469,7 @@ describe('V5 marked content·ActualText', () => {
     expect(contentOf(doc)).toMatch(/ET q \/PEB0 Do Q BT [^]*?\/Span <<\/MCID 0>> BDC/);
   });
 
-  it('BT 안 BMC(태그 없음)도 규칙 3 대상: BMC 앞으로 옮긴다', async () => {
+  it('a BMC inside BT (no tag) is also subject to rule 3: moved before the BMC', async () => {
     const doc = makeDoc([
       'BT /F1 12 Tf 50 250 Td (Kept line before.) Tj 0 -40 Td /Artifact BMC (Target in bmc) Tj EMC (after) Tj ET',
     ]);
@@ -487,7 +487,7 @@ describe('V5 marked content·ActualText', () => {
   });
 
   for (const viaProperties of [false, true]) {
-    it(`ActualText 를 모두 지우면 뺀다(${viaProperties ? '/Properties 이름' : '인라인 사전'}), 세 엔진 복사에 옛 텍스트 없음`, async () => {
+    it(`removes ActualText when all of it is erased (${viaProperties ? '/Properties 이름' : '인라인 사전'}), no old text in three-engine copies`, async () => {
       const bdc = viaProperties ? '/Span /AT0 BDC' : '/Span <</ActualText (OLDACTUAL)>> BDC';
       const doc = makeDoc(
         [
@@ -529,13 +529,13 @@ describe('V5 marked content·ActualText', () => {
   }
 });
 
-describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () => {
-  it('endOperation → undo 로 원상태, redo 로 편집 상태', async () => {
+describe('journal (MuPDF undo/redo): removal, insertion and writing inside an operation', () => {
+  it('endOperation -> undo restores the original state, redo the edited state', async () => {
     const doc = makeDoc([THREE]);
     const before = bytesOf(doc);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
-    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
+    // As in core, the fallback font and Info are created before the journal is turned on (contract D4/D9 amendment 1).
     doc.enableJournal();
     const p = findParagraph(ctx, 'Bravo paragraph');
     doc.beginOperation('edit');
@@ -549,12 +549,12 @@ describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () 
     expect(r.warnings.map((w) => w.kind)).toContain('font-fallback');
   });
 
-  it('abandonOperation 으로 초안 취소, 작업 밖에서 넣은 폴백 폰트는 남아 다음 편집이 같은 객체를 쓴다', async () => {
+  it('abandonOperation cancels the draft, the fallback font added outside the operation remains and the next edit uses the same object', async () => {
     const doc = makeDoc([THREE]);
     const before = bytesOf(doc);
     const source = fallbackFor(doc);
     const fm = new FontManager(doc, source);
-    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
+    // As in core, the fallback font and Info are created before the journal is turned on (contract D4/D9 amendment 1).
     doc.enableJournal();
     const ctx = pageContext(doc, 0);
     const p = findParagraph(ctx, 'Bravo paragraph');
@@ -567,7 +567,7 @@ describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () 
     doc.endOperation();
     const { pageText } = await import('./helpers/engines.js');
     expect((await pageText('mupdf', bytesOf(doc), 0)).replace(/\s+/g, '')).toContain('새편집한글');
-    // 편집 블록은 core 가 넣어 둔 폴백 폰트 객체를 참조한다(FontManager 는 폰트를 넣지 않는다).
+    // The edit block references the fallback font object that core put in (FontManager does not add fonts).
     const font = doc.newIndirect(r.prepared.block.objectNumber).get('Resources').get('Font');
     const refs: number[] = [];
     font.forEach((v) => void refs.push(v.asIndirect()));
@@ -575,10 +575,10 @@ describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () 
     expect(source.ref()!.resolve().get('Subtype').asName()).toBe('Type0');
   });
 
-  it('폴백을 쓴 편집 undo 뒤 새 편집: 폴백 폰트 객체가 그대로 남아 다시 쓴다', async () => {
+  it('new edit after undoing an edit that used the fallback: the fallback font object remains and is reused', async () => {
     const doc = makeDoc([THREE]);
     const fm = new FontManager(doc, fallbackFor(doc));
-    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
+    // As in core, the fallback font and Info are created before the journal is turned on (contract D4/D9 amendment 1).
     doc.enableJournal();
     const p = findParagraph(pageContext(doc, 0), 'Bravo paragraph');
     doc.beginOperation('edit1');
@@ -593,8 +593,8 @@ describe('저널(MuPDF undo/redo): 작업 안에서 제거·삽입·쓰기', () 
   });
 });
 
-describe('재편집(rewrite-block)과 편집 블록 목록', () => {
-  it('같은 세션: 블록 글자를 포함한 문단 → 블록만 다시 쓴다(Form 중첩 없음)', async () => {
+describe('re-editing (rewrite-block) and the edit block list', () => {
+  it('same session: a paragraph containing block characters -> only the block is rewritten (no Form nesting)', async () => {
     const doc = makeDoc([THREE]);
     const fm = new FontManager(doc, fallbackFor(doc));
     const ctx = pageContext(doc, 0);
@@ -619,7 +619,7 @@ describe('재편집(rewrite-block)과 편집 블록 목록', () => {
     await expectOrder(bytesOf(doc), 0, 'It has two lines.', 'Second rewrite.', 'Charlie paragraph');
   });
 
-  it('재열기 뒤 새 세션: /PdfEditorFormat 으로 시작 상태(모양·형식)를 복원한다', () => {
+  it('new session after reopening: restores the start state (shape, format) from /PdfEditorFormat', () => {
     const doc = makeDoc([THREE]);
     const fm = new FontManager(doc, fallbackFor(doc));
     const ctx = pageContext(doc, 0);
@@ -634,19 +634,19 @@ describe('재편집(rewrite-block)과 편집 블록 목록', () => {
     expect(plan.insertion?.mode).toBe('rewrite-block');
     expect(plan.runs.map((x) => x.text).join('')).toBe(r1.text);
     expect(plan.format.area).toEqual(r1.plan.format.area);
-    // sourceChar 는 블록 안 글자(현재 PageModel)로 다시 정해진다.
+    // sourceChar is determined again from the characters inside the block (current PageModel).
     const sc = plan.runs[0]!.style.sourceChar;
     expect(ctx2.model.chars[sc]!.text).toBe('S');
     expect(plan.charIndexOfOffset.filter((c) => c >= 0).length).toBeGreaterThan(10);
   });
 
-  it('이전 빌드의 /PdfEditorFormat(overflow shrink·fontScale 0.85)도 읽고, 그 필드는 버린다', () => {
+  it('also reads /PdfEditorFormat from an earlier build (overflow shrink, fontScale 0.85) and discards those fields', () => {
     const doc = makeDoc([THREE]);
     const fm = new FontManager(doc, fallbackFor(doc));
     const ctx = pageContext(doc, 0);
     const p = findParagraph(ctx, 'Bravo paragraph');
     const r1 = editParagraph(ctx, fm, p.id, 'Legacy block text 이전 블록.');
-    // 이전 빌드가 쓴 모양으로 고친다: format.overflow 'shrink', 축소 배율 0.85.
+    // Fix it to the shape written by the earlier build: format.overflow 'shrink', shrink ratio 0.85.
     const block = doc.newIndirect(r1.prepared.block.objectNumber);
     const json = JSON.parse(block.get('PdfEditorFormat').asString()) as Record<string, unknown> & {
       format: Record<string, unknown>;
@@ -661,19 +661,19 @@ describe('재편집(rewrite-block)과 편집 블록 목록', () => {
     const fm2 = new FontManager(doc2, fallbackFor(doc2));
     const p2 = findParagraph(ctx2, 'Legacy block text');
     const r2 = editParagraph(ctx2, fm2, p2.id);
-    // 블록 형식을 그대로 쓰고(추출 텍스트로 떨어지지 않음), 이전 필드는 없다.
+    // The block format is used as is (does not fall back to extracted text), and the old fields are absent.
     expect(r2.plan.insertion?.mode).toBe('rewrite-block');
     expect(r2.plan.runs.map((x) => x.text).join('')).toBe(r1.text);
     expect(r2.plan.format).toEqual(r1.plan.format);
     expect(r2.plan.format).not.toHaveProperty('overflow');
     expect(r2.plan.format).not.toHaveProperty('fontScale');
-    // 다시 쓴 블록의 /PdfEditorFormat 에도 남지 않는다.
+    // They also do not remain in the /PdfEditorFormat of the rewritten block.
     const rewritten = JSON.parse(
       doc2.newIndirect(r2.prepared.block.objectNumber).get('PdfEditorFormat').asString(),
     ) as { format: Record<string, unknown> };
     expect(rewritten.format).not.toHaveProperty('overflow');
     expect(rewritten.format).not.toHaveProperty('fontScale');
-    // 영역이 깨진 형식이면 추출 텍스트 + 블록 상자로 시작한다.
+    // If the region has a broken format, start with extracted text + block box.
     const block2 = doc2.newIndirect(r2.prepared.block.objectNumber);
     const broken = JSON.parse(block2.get('PdfEditorFormat').asString()) as {
       format: Record<string, unknown>;
@@ -685,7 +685,7 @@ describe('재편집(rewrite-block)과 편집 블록 목록', () => {
     expect(plan3.format.lineHeight).toBeCloseTo(plan3.runs[0]!.style.size * 1.2, 6);
   });
 
-  it('다른 도구가 블록 스트림을 고쳤으면 추출 텍스트 + 블록 상자로 시작한다', () => {
+  it('if another tool modified the block stream, start with extracted text + block box', () => {
     const doc = makeDoc([THREE]);
     const fm = new FontManager(doc, fallbackFor(doc));
     const ctx = pageContext(doc, 0);

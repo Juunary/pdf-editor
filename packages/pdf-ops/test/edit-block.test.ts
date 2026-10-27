@@ -8,7 +8,7 @@ import { editParagraph, fallbackFor } from './helpers/edit-driver.js';
 import { inkInside, raster } from './helpers/engines.js';
 import { bytesOf, engines, makeDoc, stextChars, wordOrigins } from './helpers/fixtures-m3.js';
 
-/** 계약 5.5 쓰기·5.6 메타. */
+/** Contract 5.5 write, 5.6 meta. */
 beforeAll(async () => {
   await loadModules();
 });
@@ -17,7 +17,7 @@ const blockStream = (doc: mupdf.PDFDocument, num: number) =>
   doc.newIndirect(num).readStream().asString();
 
 describe('writeEditBlock(5.5)', () => {
-  it('텍스트 상태를 모두 명시하고 BT·ET 를 q·Q 로 감싼다', () => {
+  it('specifies all text state and wraps BT/ET in q/Q', () => {
     const doc = makeDoc(['BT /F1 12 Tf 2 Tc 3 Tw 80 Tz 5 Ts 50 200 Td (State paragraph.) Tj ET']);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
@@ -32,7 +32,7 @@ describe('writeEditBlock(5.5)', () => {
     );
   });
 
-  it('채움 색을 원래 색공간 그대로 쓴다(CMYK·CalRGB 리소스 복사)', () => {
+  it('uses the fill color in its original color space (copies CMYK/CalRGB resources)', () => {
     const doc = makeDoc(
       [
         'BT /F1 12 Tf 0.1 0.2 0.3 0.4 k 50 240 Td (Cmyk paragraph text.) Tj ET ' +
@@ -61,7 +61,7 @@ describe('writeEditBlock(5.5)', () => {
     expect(cs.resolve().get(0).asName()).toBe('CalRGB');
   });
 
-  it('원 글자의 ExtGState 가 삽입점과 다르면 블록 안에서 gs 로 재현한다', async () => {
+  it('if the ExtGState of the original character differs from the insertion point, reproduces it with gs inside the block', async () => {
     const doc = makeDoc(['BT /GS1 gs /F1 24 Tf 50 200 Td (Halfalpha) Tj ET'], (src) => ({
       ExtGState: { GS1: src.addObject({ Type: 'ExtGState', ca: 0.5 }) },
     }));
@@ -79,7 +79,7 @@ describe('writeEditBlock(5.5)', () => {
       .get('ExtGState')
       .get('GS0');
     expect(gs.get('ca').asNumber()).toBe(0.5);
-    // 같은 텍스트·같은 알파: 렌더가 원본과 같다(MuPDF).
+    // Same text, same alpha: the render matches the original (MuPDF).
     const a = await raster('mupdf', before, 0);
     const b = await raster('mupdf', bytesOf(doc), 0);
     expect(Math.abs(inkInside(a, p.bbox) - inkInside(b, p.bbox))).toBeLessThan(
@@ -87,12 +87,12 @@ describe('writeEditBlock(5.5)', () => {
     );
   });
 
-  it('글리프 위치 = 배치 결과(TJ 숫자 보정), 줄 끝 공백 글리프를 쓴다', () => {
+  it('glyph positions = layout result (TJ number correction), writes the trailing-space glyph at line end', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 230 Td (Position check paragraph.) Tj ET']);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
     const p = findParagraph(ctx, 'Position check');
-    // 좁은 영역으로 줄 나눔을 만든다.
+    // Create line breaks with a narrow region.
     const plan0 = { ...p, bbox: [50, p.bbox[1], 130, p.bbox[3]] as typeof p.bbox };
     const ctxN = { ...ctx, layout: { ...ctx.layout, paragraphs: [plan0] } };
     const r = editParagraph(ctxN, fm, p.id, 'alpha beta gamma delta epsilon zeta');
@@ -115,7 +115,7 @@ describe('writeEditBlock(5.5)', () => {
     expect(words).toMatch(/beta\s/);
   });
 
-  it('폴백 폰트 굵게·기울임 구간은 합성(2 Tr·선 두께, Tm 기울기)과 경고', async () => {
+  it('fallback font bold/italic spans are synthesized (2 Tr + line width, Tm slant) with a warning', async () => {
     const doc = makeDoc(['BT /F1 14 Tf 50 200 Td (Styled paragraph.) Tj ET']);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
@@ -142,8 +142,8 @@ describe('writeEditBlock(5.5)', () => {
   });
 });
 
-describe('저장 메타(5.6)', () => {
-  it('Info /PdfEditorEdits 합집합, /ModDate 갱신, /Producer 유지', () => {
+describe('save meta (5.6)', () => {
+  it('Info /PdfEditorEdits union, /ModDate updated, /Producer kept', () => {
     const doc = makeDoc(['', '', '']);
     const info = doc.addObject(doc.newDictionary());
     info.put('Producer', doc.newString('Original producer'));
@@ -158,7 +158,7 @@ describe('저장 메타(5.6)', () => {
     expect(parseEditsInfo('pages=2,5; structure=n/a')).toEqual({ pages: [2, 5], structure: 'n/a' });
   });
 
-  it('계약 수정 4: 활성 편집 쪽 전체로 멱등, 이전 세션 쪽 번호와 합집합', () => {
+  it('contract amendment 4: idempotent over all active edit pages, union with previous-session page numbers', () => {
     const doc = makeDoc(['', '', '']);
     const info = doc.addObject(doc.newDictionary());
     info.put('PdfEditorEdits', doc.newString('pages=5; structure=not-updated'));
@@ -168,15 +168,15 @@ describe('저장 메타(5.6)', () => {
     expect(value()).toBe('pages=1,3,5; structure=not-updated');
     recordEditMetadata(doc, { pages: [2, 0], structureNotUpdated: false });
     expect(value()).toBe('pages=1,3,5; structure=not-updated');
-    // 활성 편집이 줄면(undo 뒤 다른 편집 커밋) 이번 세션 쪽 번호도 준다. 이전 세션 쪽 번호는 남는다.
+    // If active edits shrink (another edit commits after undo), this session's page numbers shrink too. Previous-session page numbers remain.
     recordEditMetadata(doc, { pages: [0], structureNotUpdated: false });
     expect(value()).toBe('pages=1,5; structure=not-updated');
   });
 
-  it('계약 수정 4: 커밋 작업 안 기록은 저널에 남아 undo·redo 와 함께 움직이고, 변경 없는 감싼 저장은 redo 를 유지한다', () => {
+  it('contract amendment 4: records made inside a commit operation stay in the journal and move with undo/redo, and a wrapped save with no changes keeps redo', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Meta paragraph.) Tj ET']);
     const fm = new FontManager(doc, fallbackFor(doc));
-    // core 와 같이 Info·폴백은 저널을 켜기 전에 만든다(계약 수정 1).
+    // As in core, Info and the fallback are created before the journal is turned on (contract amendment 1).
     doc.getTrailer().put('Info', doc.addObject(doc.newDictionary()));
     doc.enableJournal();
     const value = () => {
@@ -191,7 +191,7 @@ describe('저장 메타(5.6)', () => {
     expect(value()).toBe('pages=1; structure=n/a');
     doc.undo();
     expect(value()).toBeNull();
-    // 폴백을 쓰지 않은 편집: 저장 작업은 서브셋 교체 없이 감싸기만 한다.
+    // Edit that used no fallback: the save operation only wraps, with no subset replacement.
     doc.beginOperation('save');
     doc.saveToBuffer('garbage=yes,compress,objstms');
     doc.abandonOperation();
@@ -200,7 +200,7 @@ describe('저장 메타(5.6)', () => {
     expect(value()).toBe('pages=1; structure=n/a');
   });
 
-  it('PDF/A 선언(XMP pdfaid:part) 확인', () => {
+  it('check the PDF/A declaration (XMP pdfaid:part)', () => {
     const doc = makeDoc(['']);
     expect(pdfaDeclared(doc)).toBe(false);
     const xmp =

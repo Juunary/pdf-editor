@@ -1,10 +1,10 @@
 /**
- * pdf-fonts.ts 의 데이터 표. MuPDF 1.28 의 인코딩 표(fz_glyph_name_from_*)·사전 정의 CMap 코드스페이스를
- * 같은 값으로 재현한다. 글리프 이름 → 유니코드는 Adobe Glyph List 일부(인코딩 표에 쓰이는 이름 전부 +
- * 흔한 Differences 이름)이며 전체 AGL 이 아니다.
+ * Data tables for pdf-fonts.ts. Reproduces MuPDF 1.28's encoding tables (fz_glyph_name_from_*) and predefined CMap codespaces
+ * with the same values. Glyph name → Unicode is a subset of the Adobe Glyph List (all names used in the encoding tables +
+ * common Differences names), not the full AGL.
  */
 
-/** 코드 → 글리프 이름(256칸, 정의 없음 = null) */
+/** Code → glyph name (256 slots, undefined = null) */
 export type EncodingTable = readonly (string | null)[];
 
 type Segment = readonly [start: number, names: string];
@@ -24,7 +24,7 @@ const range = (from: number, to: number, f: (c: number) => string): string =>
 const UPPER = range(65, 90, (c) => String.fromCharCode(c));
 const LOWER = range(97, 122, (c) => String.fromCharCode(c));
 const DIGITS = 'zero one two three four five six seven eight nine';
-/** 코드 32–126. 39·96 만 인코딩마다 다르다. */
+/** Codes 32–126. Only 39 and 96 differ between encodings. */
 const ascii = (c39: string, c96: string): string =>
   `space exclam quotedbl numbersign dollar percent ampersand ${c39} parenleft parenright asterisk plus comma hyphen period slash ` +
   `${DIGITS} colon semicolon less equal greater question at ${UPPER} bracketleft backslash bracketright asciicircum underscore ${c96} ` +
@@ -89,7 +89,7 @@ export const WIN_ANSI_ENCODING: EncodingTable = table([
   ],
 ]);
 
-/** PDF 부록 D 의 MacRomanEncoding(수학 기호 칸은 비어 있다). */
+/** MacRomanEncoding from PDF Appendix D (the math symbol slots are empty). */
 export const MAC_ROMAN_ENCODING: EncodingTable = table([
   [32, ascii('quotesingle', 'grave')],
   [
@@ -123,7 +123,7 @@ export const MAC_ROMAN_ENCODING: EncodingTable = table([
   ],
 ]);
 
-/** 글리프 이름 → 유니코드(16진). 한 줄에 `이름 값` 쌍을 공백으로 나열한다. */
+/** Glyph name → Unicode (hex). Each line lists `name value` pairs separated by spaces. */
 const AGL = `
 space 20 exclam 21 quotedbl 22 numbersign 23 dollar 24 percent 25 ampersand 26 quotesingle 27 quoteright 2019
 parenleft 28 parenright 29 asterisk 2A plus 2B comma 2C hyphen 2D period 2E slash 2F
@@ -185,13 +185,13 @@ const NAME_TO_UNICODE: ReadonlyMap<string, number> = (() => {
   return m;
 })();
 
-/** 표에 있는 글리프 이름 전체(테스트·진단용) */
+/** All glyph names in the table (for tests and diagnostics) */
 export const KNOWN_GLYPH_NAMES: readonly string[] = [...NAME_TO_UNICODE.keys()];
 
 /**
- * 글리프 이름 → 유니코드(표에 있는 이름만). 1.28.1 에서 내장 글꼴 Differences 를 실측하면 이름은 글꼴의 글리프 이름과
- * 정확히 일치할 때(또는 AGL 중복 이름·`uniXXXX` 글리프가 있을 때)만 찾아지고, `A.alt`·`u2022`·`uni00E9` 같은 합성
- * 이름은 대개 못 찾아 내장 인코딩 글리프로 되돌아간다. 따라서 표 밖 이름은 null(호출 측이 unresolved 로 표시)로 둔다.
+ * Glyph name → Unicode (only names in the table). Measuring the built-in font Differences on 1.28.1 shows that a name is found only when it matches the font's glyph name
+ * exactly (or when an AGL duplicate name or a `uniXXXX` glyph exists), and synthesized names like `A.alt`, `u2022` and `uni00E9` are mostly
+ * not found and fall back to the built-in encoding glyph. So names outside the table are null (the caller marks them unresolved).
  */
 export function glyphNameToUnicode(name: string): number | null {
   return NAME_TO_UNICODE.get(name) ?? null;
@@ -200,8 +200,8 @@ export function glyphNameToUnicode(name: string): number | null {
 type Run = readonly [lo: number, hi: number, firstGid: number];
 
 /**
- * MuPDF 내장 Symbol·ZapfDingbats 의 내장 인코딩(코드 → 글리프 인덱스). Device 콜백 gid 를 1.28.1 에서 실측한 값이며,
- * 정의된 코드는 연속 구간마다 gid 가 1씩 증가한다. 표에 없는 코드는 .notdef(0).
+ * Built-in encoding of MuPDF's built-in Symbol and ZapfDingbats (code → glyph index). Values measured from the Device callback gid on 1.28.1,
+ * and the gid increases by 1 within each contiguous run of defined codes. Codes not in the table are .notdef (0).
  */
 const SYMBOL_RUNS: readonly Run[] = [
   [32, 126, 1],
@@ -225,7 +225,7 @@ function runsToTable(runs: readonly Run[]): readonly number[] {
 export const SYMBOL_BUILTIN_GIDS: readonly number[] = runsToTable(SYMBOL_RUNS);
 export const ZAPF_BUILTIN_GIDS: readonly number[] = runsToTable(ZAPF_RUNS);
 
-/** 코드스페이스 범위. n = 바이트 수 */
+/** Codespace ranges. n = number of bytes */
 export interface CodespaceRange {
   n: number;
   low: number;
@@ -233,7 +233,7 @@ export interface CodespaceRange {
 }
 
 const cs = (n: number, low: number, high: number): CodespaceRange => ({ n, low, high });
-// Adobe cmap-resources 의 UCS2 계열은 서로게이트 영역을 뺀 두 구간(1.28.1 에서 D800 이 2바이트 코드가 아님을 확인)
+// The UCS2 family in Adobe cmap-resources has two ranges excluding the surrogate area (confirmed on 1.28.1 that D800 is not a 2-byte code)
 const UCS2 = [cs(2, 0x0000, 0xd7ff), cs(2, 0xe000, 0xffff)];
 const UTF16 = [cs(2, 0x0000, 0xd7ff), cs(4, 0xd800dc00, 0xdbffdfff), cs(2, 0xe000, 0xffff)];
 const EUC_A1 = [cs(1, 0x00, 0x80), cs(2, 0xa1a1, 0xfefe)];
@@ -243,9 +243,9 @@ const RKSJ_PV = [...RKSJ, cs(1, 0xfd, 0xff)];
 const B5_A1 = [cs(1, 0x00, 0x80), cs(2, 0xa140, 0xfefe)];
 
 /**
- * 사전 정의 CMap 이름(-H/-V 접미 제거한 기본 이름) → 코드스페이스. Adobe cmap-resources(Ghostscript·poppler 배포본)의
- * codespacerange 이며 CID 매핑은 포함하지 않는다. 키 집합은 MuPDF 1.28.1(WASM)이 실제로 읽는 사전 정의 CMap(실측 56개 중 Identity 제외).
- * guessed: 배포본과 MuPDF 가 다른 것으로 관측되어 일부를 추정한 항목(CNS-EUC: MuPDF 는 8EA4·8EA7 평면도 받는다).
+ * Predefined CMap name (base name with the -H/-V suffix removed) → codespace. The codespacerange of Adobe cmap-resources (Ghostscript and poppler distributions),
+ * and it does not include CID mapping. The key set is the predefined CMaps MuPDF 1.28.1 (WASM) actually reads (56 measured, excluding Identity).
+ * guessed: entries partly estimated because the distribution and MuPDF were observed to differ (CNS-EUC: MuPDF also accepts the 8EA4 and 8EA7 planes).
  */
 export const PREDEFINED_CMAP_CODESPACES: Readonly<
   Record<string, { codespaces: readonly CodespaceRange[]; guessed?: boolean }>
@@ -296,12 +296,12 @@ export const PREDEFINED_CMAP_CODESPACES: Readonly<
   'UniKS-UTF16': { codespaces: UTF16 },
 };
 
-/** MuPDF 1.28.1 이 읽지 못하는 -V 조합(실측). 이 이름은 로드 실패 → hail-mary. */
+/** -V combinations MuPDF 1.28.1 cannot read (measured). These names fail to load → hail-mary. */
 const NO_V_VARIANT = new Set(['83pv-RKSJ', '90pv-RKSJ', 'KSCpc-EUC']);
 
 /**
- * 사전 정의 CMap 이름 해석. 'H' 와 'V' 는 기본 이름이 빈 문자열인 일본어 JIS CMap.
- * MuPDF 가 모르는 이름이면 null.
+ * Predefined CMap name resolution. 'H' and 'V' are Japanese JIS CMaps whose base name is an empty string.
+ * null if MuPDF does not know the name.
  */
 export function lookupPredefinedCMap(
   name: string,

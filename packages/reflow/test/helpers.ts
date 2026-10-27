@@ -8,14 +8,14 @@ import type {
   ReflowResult,
 } from '../src/index.js';
 
-/** 시험용 원본 폰트 폭(1/1000 em): 공백 250, U+1100 이상(한글·CJK) 1000, 그 밖 500. null 이면 글리프 없음. */
+/** Original-font width for tests (1/1000 em): space 250, U+1100 and above (Hangul, CJK) 1000, everything else 500. null means no glyph. */
 export function defaultWidth(ch: string): number | null {
   const cp = ch.codePointAt(0) ?? 0;
   if (ch === ' ') return 250;
   return cp >= 0x1100 ? 1000 : 500;
 }
 
-/** 원본 폰트(pdf-widths). 클러스터의 코드 포인트마다 글리프 하나. */
+/** Original font (pdf-widths). One glyph per code point of the cluster. */
 export function pdfFace(
   key = 'orig',
   width: (ch: string) => number | null = defaultWidth,
@@ -55,7 +55,7 @@ export function notoBytes(): Uint8Array {
   return fontBytes;
 }
 
-/** 폴백 폰트(opentype). pdfWidth 는 기본으로 hmtx 와 같다고 둔다(V6 에서 /W 와 같음을 확인). */
+/** Fallback font (opentype). pdfWidth defaults to the same as hmtx (V6 confirms it equals /W). */
 export function notoFace(pdfWidth?: (gid: number) => number): FontFace {
   return {
     key: 'fallback',
@@ -96,7 +96,7 @@ export function format(over: Partial<ParagraphFormat> = {}): ParagraphFormat {
   };
 }
 
-/** text 전체를 한 구간(face, 크기 10)으로 덮는 입력. */
+/** Input that covers all of text with one segment (face, size 10). */
 export function input(
   text: string,
   fmt: Partial<ParagraphFormat> = {},
@@ -111,12 +111,12 @@ export function input(
   };
 }
 
-/** 줄별 텍스트 [start, end). */
+/** Per-line text [start, end). */
 export function lineTexts(r: ReflowResult, text: string): string[] {
   return r.summary.lines.map((l) => text.slice(l.start, l.end));
 }
 
-/** reflowMs 를 뺀 결과(결정성 비교용). */
+/** Result without reflowMs (for determinism comparison). */
 export function stable(r: ReflowResult): unknown {
   const summary = { ...r.summary, reflowMs: 0 };
   return { summary, lines: r.lines.map((l) => l.map((g) => ({ ...g, code: [...g.code] }))) };

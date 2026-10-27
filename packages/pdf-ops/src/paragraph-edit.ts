@@ -1,12 +1,12 @@
 /**
- * 문단 편집(M3, docs/m3-contract.md): 편집 가능 판정(5.1), 제거(D2·5.2), 편집 블록 삽입(D3), 폰트 배정(D4),
- * 편집 블록 쓰기(5.5), 저장 메타(5.6). core 편집 세션이 아래 순서로 부른다.
+ * Paragraph editing (M3, docs/m3-contract.md): editability classification (5.1), removal (D2, 5.2), edit block insertion (D3), font assignment (D4),
+ * edit block writing (5.5), save metadata (5.6). The core edit session calls them in the order below.
  *
- *   planParagraphEdit → (FontManager.assign → reflow.layoutParagraph → writeEditBlock)* → 커밋
- *   prepareParagraphEdit 는 초안 시작 때 한 번(제거 + 빈 편집 블록 삽입). 저널 작업 열기·닫기는 core 가 한다.
+ *   planParagraphEdit → (FontManager.assign → reflow.layoutParagraph → writeEditBlock)* → commit
+ *   prepareParagraphEdit is called once at draft start (removal + empty edit block insertion). core opens and closes the journal operation.
  *
- * 계약 커밋의 연결부다. 시그니처는 고정이다. 구현: edit-plan.ts(판정), edit-apply.ts(제거·삽입),
- * font-assign.ts(폰트 배정), edit-block.ts(쓰기·목록), edit-meta.ts(저장 메타).
+ * The joint of the contract commit. Signatures are fixed. Implementation: edit-plan.ts (classification), edit-apply.ts (removal, insertion),
+ * font-assign.ts (font assignment), edit-block.ts (writing, listing), edit-meta.ts (save metadata).
  */
 import type * as mupdf from 'mupdf';
 import type {
@@ -46,7 +46,7 @@ import { FontState } from './font-assign.js';
 import { FontCache } from './pdf-fonts.js';
 import { decideSaveMethod } from './save-method.js';
 
-/** 문서별 PdfFont 캐시(판정·적용 공용). 폴백 폰트는 FontState 가 따로 읽는다. */
+/** Per-document PdfFont cache (shared by classification and apply). The fallback font is read separately by FontState. */
 const docFonts = new WeakMap<mupdf.PDFDocument, FontCache>();
 function fontCacheOf(doc: mupdf.PDFDocument): FontCache {
   let c = docFonts.get(doc);
@@ -133,7 +133,7 @@ function planWith(
   return { plan, analysis: a };
 }
 
-/** 셀 시작 형식(D5): 가로 = 셀 − 여백(정렬한 변은 원 간격), 세로 = 글자 상자, 셀 정렬, 들여쓰기 0. */
+/** Cell start format (D5): horizontal = cell − margin (original gap on the aligned side), vertical = character box, cell alignment, indent 0. */
 function cellStart(state: StartState, a: EditAnalysis): StartState {
   const c = a.cell;
   if (!c) return state;
@@ -150,7 +150,7 @@ function cellStart(state: StartState, a: EditAnalysis): StartState {
   };
 }
 
-/** 판정·제거에 쓰는 쪽 상태(core 캐시에서 가져온다). */
+/** Page state used for classification and removal (taken from the core cache). */
 export interface ParagraphEditContext {
   doc: mupdf.PDFDocument;
   pageIndex: number;
@@ -158,14 +158,14 @@ export interface ParagraphEditContext {
   map: SourceMap;
   linkage: PageLinkage;
   layout: PageLayout;
-  /** 이 쪽의 편집 블록(listEditBlocks 결과). */
+  /** Edit blocks of this page (listEditBlocks result). */
   editBlocks: EditBlockRef[];
 }
 
-/** 문서 안 편집 블록(전용 Form XObject, 스트림 사전 /PdfEditorEdit). */
+/** Edit block in the document (dedicated Form XObject, stream dictionary /PdfEditorEdit). */
 export interface EditBlockRef {
   editId: string;
-  /** 편집 블록 Form XObject 객체 번호. */
+  /** Edit block Form XObject object number. */
   objectNumber: number;
 }
 
@@ -173,26 +173,26 @@ export interface PreparedEdit {
   editId: string;
   target: ParagraphTarget;
   block: EditBlockRef;
-  /** 제거·삽입으로 바뀌거나 새로 생긴 객체 번호(객체 diff 기대값). */
+  /** Object numbers changed or newly created by removal and insertion (expected value for the object diff). */
   changedObjects: number[];
 }
 
 export interface WriteResult {
-  /** 편집 블록 스트림 길이(byte, 압축 전). */
+  /** Edit block stream length (bytes, before compression). */
   streamBytes: number;
-  /** 이 쓰기로 추가한 폰트·색공간 리소스 이름. */
+  /** Font and color-space resource names added by this write. */
   resources: string[];
   writeMs: number;
 }
 
 /**
- * 쪽의 흐름 문단별 편집 가능 여부(계약 5.1 일괄 판정). revision·ms 는 호출자가 채운다.
+ * Editability per flow paragraph of a page (contract 5.1 batch classification). revision and ms are filled in by the caller.
  *
- * 편집 블록은 한 항목이다. 커밋 뒤 레이아웃 복원은 블록의 줄을 다른 문단처럼 다시 나누거나(줄 간격·짧은 줄·강제
- * 줄바꿈·양쪽 정렬 간격) 이웃 문단 줄과 합칠 수 있다. 그런 레이아웃 문단은 어느 것을 편집해도 대상이 블록 전체이므로
- * (계약 D3) 블록마다 첫 문단 id 하나만 남기고, 상자는 블록 글자 상자(analyzeBlock)로 한다. 레이아웃 문단 상자를
- * 그대로 쓰면 한 블록이 여러 테두리로 갈라져 보이거나 이웃 문단까지 덮는다(2026-10-20 사용자 보고, docs/m3-integration.md 9절).
- * 표 셀은 셀마다 한 항목(첫 문단 id, 상자 = 셀 상자, M4 4.1). paths 는 planPathEditability(M4 4.2).
+ * An edit block is one item. Layout reconstruction after a commit may split the block's lines like other paragraphs (line spacing, short lines, forced
+ * line breaks, justified spacing) or merge them with neighbor paragraph lines. Since the target is the whole block whichever such layout paragraph is edited
+ * (contract D3), only one first paragraph id is kept per block, and the box is the block's character box (analyzeBlock). Using the layout paragraph box
+ * as is would make one block look split into several borders or cover neighbor paragraphs (user report 2026-10-20, docs/m3-integration.md section 9).
+ * A table cell is one item per cell (first paragraph id, box = cell box, M4 4.1). paths comes from planPathEditability (M4 4.2).
  */
 export function planPageEditability(
   ctx: ParagraphEditContext,
@@ -204,7 +204,7 @@ export function planPageEditability(
   const blocks = new Set<string>();
   const cells = new Set<string>();
   for (const p of ctx.layout.paragraphs) {
-    // 셀은 한 항목(첫 문단 id, 상자 = 셀 상자, 계약 4.1).
+    // A cell is one item (first paragraph id, box = cell box, contract 4.1).
     const found = p.table !== null ? cellOfParagraph(ctx.layout, p.id) : null;
     if (found) {
       const key = `${found.table.id}:${found.cell.row}:${found.cell.col}`;
@@ -231,7 +231,7 @@ export function planPageEditability(
   return { pageIndex: ctx.pageIndex, paragraphs, paths: planPathEditability(ctx) };
 }
 
-/** 편집 가능 판정·시작 텍스트·영역(계약 5.1·5.3). 문서를 바꾸지 않는다. revision 은 호출자가 채운다. */
+/** Editability, start text and area (contract 5.1, 5.3). Does not change the document. revision is filled in by the caller. */
 export function planParagraphEdit(
   ctx: ParagraphEditContext,
   fonts: FontManager,
@@ -245,10 +245,10 @@ export function planParagraphEdit(
 }
 
 /**
- * 시작 영역 가로 보정(docs/m3-integration.md 10.4 제안 2): 원 줄마다 리플로우 셰이퍼로 잰 자연 폭(줄 끝 공백 제외, 첫 줄
- * 들여쓰기 포함)의 최댓값이 영역 폭보다 크면 영역을 그 폭까지 넓힌다(정렬한 변 반대쪽으로, 가운데는 양쪽, areaLimit 안).
- * 원본 TJ 커닝·합자 등으로 원 줄이 셰이퍼 폭보다 좁게 놓여 같은 텍스트가 더 일찍 줄바뀌는 것을 막는다. 넓힐 필요가 없으면
- * 같은 객체를 돌려준다. 측정은 원 줄 경계마다 강제 줄바꿈을 넣은 텍스트를 넓은 영역에 배치해 한다(문서를 바꾸지 않는다).
+ * Start-area horizontal correction (docs/m3-integration.md 10.4 proposal 2): if the maximum natural width measured per original line with the reflow shaper
+ * (excluding trailing line-end spaces, including the first-line indent) is larger than the area width, the area is widened to that width (opposite the aligned side, both sides for center, within areaLimit).
+ * This prevents the same text from wrapping earlier because original lines sit narrower than the shaper width due to original TJ kerning, ligatures, etc. If no widening is needed,
+ * the same object is returned. Measurement lays out text with a forced line break at each original line boundary in a wide area (the document is not changed).
  */
 function fitAreaToNaturalLines(
   ctx: ParagraphEditContext,
@@ -281,7 +281,7 @@ function fitAreaToNaturalLines(
   }
   const text = runs.map((r) => r.text).join('');
   if (text.trim() === '') return format;
-  // 판정 시점 해석으로 배정한다(지난 초안의 WriteContext 를 쓰지 않게 FontManager.assign 을 거치지 않는다).
+  // Assign using the classification-time resolution (do not go through FontManager.assign, so a past draft's WriteContext is not used).
   const { segments } = fontStateOf(fonts).assign(
     text,
     runs,
@@ -302,10 +302,10 @@ function fitAreaToNaturalLines(
   }
   const width = x1 - x0;
   if (!(need > width + 1e-3)) return format;
-  // 줄 폭 판정 여유(FIT_EPSILON 0.01pt) 안에 들도록 조금 더 넓힌다. 로그에 남는 값이라 소수 3자리로 고정한다.
+  // Widen a little more so it falls within the line-width check slack (FIT_EPSILON 0.01pt). The value is logged, so it is fixed at 3 decimals.
   const grow = Math.ceil((need - width) * 1000 + 1) / 1000;
-  // 넓히는 쪽은 상한과 함께 이웃 내용(다른 문단·이미지·패스 중 원 영역과 겹치지 않고 세로로 걸치는 것) 앞 0.5pt 에서
-  // 멈춘다. 이웃 위로 넓히면 같은 텍스트가 다른 내용과 겹치거나 뒤에 그려진 내용에 가려진다(M3 코퍼스 측정 nasa-eo 2건).
+  // The widened side stops at 0.5pt before neighbor content (other paragraphs, images, paths that do not overlap the original area and straddle it vertically), together with the limit.
+  // Widening over a neighbor makes the same text overlap other content or get hidden by content drawn later (M3 corpus measurement, 2 nasa-eo cases).
   const [left, right] = neighbourBounds(ctx, plan, format.area);
   const lim: Rect = [
     Math.max(plan.areaLimit[0], left),
@@ -326,8 +326,8 @@ function fitAreaToNaturalLines(
 }
 
 /**
- * 영역 왼쪽·오른쪽으로 가장 가까운 이웃 내용의 변(0.5pt 띄움). 이웃 = 대상 밖 문단·이미지·칠하기 패스 중 영역과 세로로
- * 걸치고 영역과 겹치지 않는 것(영역을 덮는 배경은 세지 않는다). 없으면 ±Infinity.
+ * The edges of the nearest neighbor content to the left and right of the area (0.5pt gap). Neighbor = a paragraph, image or fill path outside the target that overlaps the area vertically
+ * and does not overlap it horizontally (a background covering the area is not counted). ±Infinity if none.
  */
 function neighbourBounds(
   ctx: ParagraphEditContext,
@@ -350,8 +350,8 @@ function neighbourBounds(
 }
 
 /**
- * 원 문단 제거(D2) + 삽입점에 빈 편집 블록 호출 삽입(D3). plan.editable 이 false 이면 예외.
- * 대상이 편집 블록이면(target.editedBlock) 제거 없이 그 블록을 돌려준다.
+ * Removal of the original paragraph (D2) + insertion of a call to an empty edit block at the insertion point (D3). Throws if plan.editable is false.
+ * If the target is an edit block (target.editedBlock), returns that block without removal.
  */
 export function prepareParagraphEdit(
   ctx: ParagraphEditContext,
@@ -362,8 +362,8 @@ export function prepareParagraphEdit(
 }
 
 /**
- * 리플로우 결과로 편집 블록 스트림과 /PdfEditorFormat 을 다시 쓴다(계약 5.5·D3). runs 는 result 의
- * WritableGlyph.runIndex 가 가리키는 배열이고, 모양 원천(sourceChar)의 폰트·채움 색·ExtGState 는 ctx 에서 찾는다.
+ * Rewrites the edit block stream and /PdfEditorFormat from the reflow result (contract 5.5, D3). runs is the array the result's
+ * WritableGlyph.runIndex points to, and the font, fill color and ExtGState of the style source (sourceChar) are found in ctx.
  */
 export function writeEditBlock(
   ctx: ParagraphEditContext,
@@ -377,12 +377,12 @@ export function writeEditBlock(
 }
 
 /**
- * 편집 블록마다 그 블록 글자가 있는 PageModel 줄 인덱스(오름차순). 레이아웃 복원 힌트
- * (`ReconOptions.fixedGroups`, docs/m3-integration.md 9.6)용 순수 함수(문서를 읽지 않는다).
+ * Per edit block, the PageModel line indices that contain that block's characters (ascending). A pure function (does not read the document) for the layout reconstruction hint
+ * (`ReconOptions.fixedGroups`, docs/m3-integration.md 9.6).
  *
- * 글자의 소속은 원본 연결(`linkage.charOp` → `SourceOp.formPath`)에 블록 Form 객체 번호가 있는지로 정한다
- * (analyzeBlock 과 같은 규칙). 줄 하나에 블록 글자와 다른 글자가 섞이면 보이는 글자의 과반(절반 초과)이 속한
- * 블록에 준다. 과반이 없으면 어느 묶음에도 넣지 않는다(보통의 레이아웃 복원). 결과는 `blocks` 순서이고 빈 묶음은 뺀다.
+ * A character's membership is decided by whether the block Form object number is in the original linkage (`linkage.charOp` → `SourceOp.formPath`)
+ * (same rule as analyzeBlock). If a line mixes block characters and other characters, it goes to the block that holds the majority (more than half) of the visible characters.
+ * With no majority it goes into no group (ordinary layout reconstruction). The result is in `blocks` order, and empty groups are dropped.
  */
 export function editBlockLineGroups(
   model: PageModel,
@@ -430,14 +430,14 @@ export function editBlockLineGroups(
   return groups.filter((g) => g.length > 0);
 }
 
-/** 쪽 콘텐츠·Form 에서 /PdfEditorEdit 편집 블록을 찾는다(undo/redo 뒤 목록 재구성, 계약 5.7). */
+/** Finds /PdfEditorEdit edit blocks in page content and Forms (list rebuild after undo/redo, contract 5.7). */
 export function listEditBlocks(doc: mupdf.PDFDocument, pageIndex: number): EditBlockRef[] {
   return listBlocks(doc, pageIndex);
 }
 
 /**
- * 커밋 작업 안에서 Info /PdfEditorEdits 를 기록한다(계약 5.6·D1 수정 4). pages 는 활성 편집 전체의 쪽 인덱스(0부터),
- * 같은 입력이면 멱등, 이전 세션 쪽 번호와 합집합. Info 사전은 core 가 저널을 켜기 전에 만들어 둔다(계약 수정 1).
+ * Records Info /PdfEditorEdits inside the commit operation (contract 5.6, D1 amendment 4). pages is the page index (from 0) of all active edits,
+ * idempotent for the same input, union with the previous session's page numbers. core creates the Info dictionary before turning on the journal (contract amendment 1).
  */
 export function recordEditMetadata(
   doc: mupdf.PDFDocument,
@@ -447,17 +447,17 @@ export function recordEditMetadata(
 }
 
 /**
- * 폴백 폰트(계약 D4 수정 1). core 가 저널을 켜기 직전(작업 밖)에 한 번 embedFont 해 둔다. 저널 밖 객체라 편집
- * 취소·undo 로 사라지지 않는다. FontManager 는 직접 embedFont 하지 않는다.
+ * Fallback font (contract D4 amendment 1). core runs embedFont once just before turning on the journal (outside the operation). Being an object outside the journal, it
+ * does not disappear on edit cancel or undo. FontManager does not call embedFont directly.
  */
 export interface FallbackFontSource {
-  /** 폰트 바이트(커버리지 판정·셰이핑). core 가 미리 await 해 둔다. */
+  /** Font bytes (coverage check, shaping). core awaits them in advance. */
   bytes(): Uint8Array;
-  /** 임베딩한 폴백 폰트 객체(Type0). 저널을 켜기 전(판정 단계)에는 null. */
+  /** Embedded fallback font object (Type0). null before the journal is turned on (classification stage). */
   ref(): mupdf.PDFObject | null;
 }
 
-/** 폰트 배정(계약 D4). 문서당 하나. */
+/** Font assignment (contract D4). One per document. */
 export class FontManager {
   readonly #doc: mupdf.PDFDocument;
   readonly #fallback: FallbackFontSource;
@@ -469,8 +469,8 @@ export class FontManager {
   }
 
   /**
-   * 텍스트를 글자(클러스터) 단위로 원본/폴백 폰트에 배정한다. segments 는 텍스트를 빈틈 없이 덮는다.
-   * runs 의 sourceChar 는 그 초안의 판정 시점 PageModel 인덱스다(prepareParagraphEdit 가 해석을 보관한다).
+   * Assigns text to the original/fallback font per character (cluster). segments cover the text without gaps.
+   * sourceChar of runs is the classification-time PageModel index of that draft (prepareParagraphEdit keeps the resolution).
    */
   assign(
     ctx: ParagraphEditContext,
@@ -487,14 +487,14 @@ export class FontManager {
     );
   }
 
-  /** 저장 작업(계약 D9) 안에서만: 폴백 폰트를 쓴 글리프만 남긴 서브셋으로 바꾼다(A7-1). 작업을 버리면 되돌아간다. */
+  /** Only inside a save operation (contract D9): replaces the font with a subset that keeps only the glyphs that used the fallback font (A7-1). Discarding the operation reverts it. */
   finalizeForSave(): void {
     fontStateOf(this).finalizeForSave();
   }
 
   /**
-   * 원본 폰트 탐침·폴백 `mupdf.Font` 를 해제한다(R-L3, `FontState.dispose`). 여러 번 불러도 된다. 해제 뒤 assign 등은
-   * 예외. 문서·편집 블록 객체는 건드리지 않는다. core 가 문서를 닫을 때·FontManager 를 바꿀 때 부른다.
+   * Releases the original font probe and the fallback `mupdf.Font` (R-L3, `FontState.dispose`). Safe to call repeatedly. After release, assign etc.
+   * throw. Document and edit block objects are not touched. core calls it when closing the document or replacing the FontManager.
    */
   dispose(): void {
     fontStateOf(this).dispose();
@@ -502,8 +502,8 @@ export class FontManager {
 }
 
 /**
- * 편집 하나(editId) 또는 문서 전체(editId 생략)의 pdf-ops 초안 상태(문단 WriteContext·패스 준비 상태)를 버린다(R-L3).
- * core 가 커밋·취소·재적용 뒤와 문서를 닫을 때 부른다. 문서 내용은 바꾸지 않는다.
+ * Discards the pdf-ops draft state (paragraph WriteContext, path preparation state) of one edit (editId) or the whole document (editId omitted) (R-L3).
+ * core calls it after commit, cancel and reapply and when closing the document. Does not change the document contents.
  */
 export function releaseEdit(doc: mupdf.PDFDocument, editId?: string): void {
   releaseWriteContext(doc, editId);

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "description": "M0 실제 코퍼스(A7). PDF 는 커밋하지 않는다. scripts/corpus/fetch-corpus.mjs 로 url 에서 받아 sha256 을 검증한다. 유형 정의는 PLAN.md 8절, 결과는 docs/m0-corpus-recheck.md",
+  "description": "M0 real corpus (A7). PDFs are not committed. They are downloaded from url with scripts/corpus/fetch-corpus.mjs and verified by sha256. Type definitions are in PLAN.md section 8, results in docs/m0-corpus-recheck.md",
   "selectionDate": "2026-10-19",
-  "licensePolicy": "공공영역(미국 연방 저작물), CC0, CC BY, CC BY-SA, 공공누리 제1유형만. 라이선스 근거(licenseEvidence)를 확인하지 못한 문서는 넣지 않는다. Zenodo 의 라이선스는 업로더 지정값이다",
+  "licensePolicy": "Only public domain (US federal works), CC0, CC BY, CC BY-SA, and KOGL Type 1 (공공누리 제1유형). Documents whose license basis (licenseEvidence) could not be confirmed are not included. The license on Zenodo is the value assigned by the uploader",
   "documents": [
     {
       "id": "zen-ko-kimtw-23386644",
@@ -12,7 +12,7 @@
       "landingUrl": "https://zenodo.org/records/23386644",
       "license": "CC BY 4.0",
       "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader-asserted; uploader is the author). Landing page license field: 'Creative Commons Attribution 4.0 International'. DOI 10.5281/zenodo.23386644.",
-      "notes": "Zenodo 업로더(저자) 지정 CC BY 4.0. Word 출력, 태그 PDF",
+      "notes": "CC BY 4.0 assigned by the Zenodo uploader (author). Word output, tagged PDF",
       "sha256": "a9b413127a798b4a1646fc336fb9170435ece4a3f25626c1d3768a65ad937c0b",
       "bytes": 554309,
       "pages": 18,
@@ -28,7 +28,7 @@
       "landingUrl": "https://zenodo.org/records/21496576",
       "license": "CC BY 4.0",
       "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader-asserted; uploader is the author). DOI 10.5281/zenodo.21496576.",
-      "notes": "Zenodo 업로더(저자) 지정 CC BY 4.0. pdfTeX, Type1(나눔명조) 소수 /Widths",
+      "notes": "CC BY 4.0 assigned by the Zenodo uploader (author). pdfTeX, Type1 (Nanum Myeongjo) fractional /Widths",
       "sha256": "f8cb04f00ce8bee9ef9a379d7e9f29348dcffb95557b2c299cd88ab8187712d7",
       "bytes": 3990614,
       "pages": 49,
@@ -44,7 +44,7 @@
       "landingUrl": "https://zenodo.org/records/21973474",
       "license": "CC BY 4.0",
       "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader-asserted; uploader is the author). DOI 10.5281/zenodo.21973474.",
-      "notes": "Zenodo 업로더(저자) 지정 CC BY 4.0. 학술 발표 자료(학술지 논문 아님), Hancom PDF, Type3 글꼴",
+      "notes": "CC BY 4.0 assigned by the Zenodo uploader (author). Academic presentation material (not a journal paper), Hancom PDF, Type3 fonts",
       "sha256": "d9314b02a4bd1b0b54418ddac91786a8754dd80ad4fd9611442d30459d2d38bf",
       "bytes": 1456497,
       "pages": 22,
@@ -60,7 +60,7 @@
       "landingUrl": "https://doi.org/10.6028/NIST.AI.100-1",
       "license": "Public domain (US federal work, 17 USC 105)",
       "licenseEvidence": "PDF cover: \"This publication is available free of charge from: https://doi.org/10.6028/NIST.AI.100-1\" (no explicit copyright sentence in this PDF). NIST Technical Series Publications policy page: \"Works authored by NIST employees are not subject to Copyright protection within the United States; foreign rights are reserved. To the extent NIST may assert rights outside of the United States, the public is granted the non-exclusive, perpetual, paid-up, royalty-free, worldwide right to reprint works in all formats...\" (https://www.nist.gov/director/copyright-fair-use-and-licensing-statements-srd-data-and-software)",
-      "notes": "미국 연방 저작물(17 U.S.C. 105). PDF 안 저작권 문구 없음, NIST 정책으로 근거",
+      "notes": "US federal work (17 U.S.C. 105). No copyright notice in the PDF; basis is NIST policy",
       "sha256": "7576edb531d9848825814ee88e28b1795d3a84b435b4b797d3670eafdc4a89f1",
       "bytes": 1946127,
       "pages": 48,
@@ -76,7 +76,7 @@
       "landingUrl": "https://doi.org/10.6028/NIST.CSWP.29",
       "license": "Public domain (US federal work, 17 USC 105)",
       "licenseEvidence": "PDF cover: \"This publication is available free of charge from: https://doi.org/10.6028/NIST.CSWP.29\"; page 2 references \"NIST Technical Series Policies: Copyright, Use, and Licensing Statements\". NIST Technical Series Publications policy page: \"Works authored by NIST employees are not subject to Copyright protection within the United States; foreign rights are reserved. To the extent NIST may assert rights outside of the United States, the public is granted the non-exclusive, perpetual, paid-up, royalty-free, worldwide right to reprint works in all formats...\" (https://www.nist.gov/director/copyright-fair-use-and-licensing-statements-srd-data-and-software)",
-      "notes": "미국 연방 저작물(17 U.S.C. 105). Word 출력, 태그 PDF",
+      "notes": "US federal work (17 U.S.C. 105). Word output, tagged PDF",
       "sha256": "3c31f46fee98cac0c4323453e5109291a213b4de7fef8c058af9bf67f717433c",
       "bytes": 1518858,
       "pages": 32,
@@ -92,7 +92,7 @@
       "landingUrl": "https://eospso.nasa.gov/earth-observer-archive",
       "license": "NASA content, generally not subject to copyright in the US (public domain; per-image third-party credits possible)",
       "licenseEvidence": "NASA Images and Media Usage Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/): \"NASA content ... generally are not subject to copyright in the United States.\" No license statement inside the PDF; newsletter is NASA-published (EOS Project Science Office, GSFC); individual photo/figure credits may name third parties.",
-      "notes": "NASA 일반 공공영역(사진 등 개별 제3자 크레딧 가능, 신뢰도 중간). 2단 25/40쪽",
+      "notes": "NASA general public domain (individual third-party credits such as photos are possible, medium confidence). Two columns, 25/40 pages",
       "sha256": "d7e55de12b380260dc22c4db5ffccb26630d6b45e76837011323ac23418418fb",
       "bytes": 6317940,
       "pages": 40,
@@ -108,7 +108,7 @@
       "landingUrl": "https://eospso.nasa.gov/earth-observer-archive",
       "license": "NASA content, generally not subject to copyright in the US (public domain; per-image third-party credits possible)",
       "licenseEvidence": "NASA Images and Media Usage Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/): \"NASA content ... generally are not subject to copyright in the United States.\" No license statement inside the PDF; newsletter is NASA-published (EOS Project Science Office, GSFC); individual photo/figure credits may name third parties.",
-      "notes": "NASA 일반 공공영역(신뢰도 중간). 2단, 텍스트 있는 공유 Form(러닝헤드) 32쪽",
+      "notes": "NASA general public domain (medium confidence). Two columns, shared Form with text (running head) on 32 pages",
       "sha256": "4441d485578e0bab572c4210dd0e8d05cf5b9524f600ebf03efa78878ddbf6ea",
       "bytes": 6812844,
       "pages": 34,
@@ -124,7 +124,7 @@
       "landingUrl": "https://fiscaldata.treasury.gov/datasets/monthly-treasury-statement/",
       "license": "Public domain (US Treasury / Bureau of the Fiscal Service work); Fiscal Data open-data terms",
       "licenseEvidence": "https://fiscaldata.treasury.gov/api-documentation/ ('License and Authorization'): \"The data is offered free, without restriction, and available to copy, adapt, redistribute, or otherwise use for non-commercial or commercial purposes.\" plus 17 U.S.C. section 105 (work of a US federal agency).",
-      "notes": "미국 재무부 Fiscal Data 문구 'free, without restriction'. OpenPDF, 표 위주",
+      "notes": "US Treasury Fiscal Data wording 'free, without restriction'. OpenPDF, mostly tables",
       "sha256": "2a975e8f8d145ef18f53de2dc60c6cb265892cd500e8d725f6297726c78605e8",
       "bytes": 3966081,
       "pages": 40,
@@ -140,7 +140,7 @@
       "landingUrl": "https://www.federalreserve.gov/releases/h41/20261015/",
       "license": "Public domain (Federal Reserve Board work)",
       "licenseEvidence": "Fed Board disclaimer page (https://www.federalreserve.gov/disclaimer.htm): \"Unless otherwise indicated, information on Board's website is in the public domain and may be copied and distributed without permission.\" No third-party notices found in this release.",
-      "notes": "Fed 이사회 공공영역 고지. 날짜 고정 URL(/releases/h41/20261015/)",
+      "notes": "Fed Board public domain notice. Date-fixed URL (/releases/h41/20261015/)",
       "sha256": "f2a78fc4656f00c9b67a060484132f8c664cda41e8b07be21df49c2db550d3c4",
       "bytes": 191085,
       "pages": 11,
@@ -156,7 +156,7 @@
       "landingUrl": "https://www.federalreserve.gov/monetarypolicy/bst_fedfinancials.htm",
       "license": "Public domain (Federal Reserve Board/Banks publication)",
       "licenseEvidence": "Fed Board disclaimer page (https://www.federalreserve.gov/disclaimer.htm): \"Unless otherwise indicated, information on Board's website is in the public domain and may be copied and distributed without permission.\" No copyright notice found in the PDF text (it contains an independent auditors' report; auditor-copyright not stated).",
-      "notes": "Fed 이사회 공공영역 고지. Workiva, 태그 PDF",
+      "notes": "Fed Board public domain notice. Workiva, tagged PDF",
       "sha256": "3989982bc83546f15747ac86e98b695be0894d2fbd8d829b3000f3a9dcfd1ada",
       "bytes": 4249784,
       "pages": 63,
@@ -172,7 +172,7 @@
       "landingUrl": "https://arxiv.org/abs/2609.09268v1",
       "license": "CC BY 4.0",
       "licenseEvidence": "arXiv abs page license link (checked): http://creativecommons.org/licenses/by/4.0/ (rel title 'Rights to this article').",
-      "notes": "arXiv abs 라이선스 링크 CC BY 4.0. 래스터 이미지 0개, 벡터 플롯. v1 URL 고정(arXiv 재생성 시 해시 변경 가능)",
+      "notes": "arXiv abs license link CC BY 4.0. No raster images, vector plots. v1 URL fixed (hash may change if arXiv regenerates)",
       "sha256": "ff3a9c5dcc458be0bb51d480b90dea7ff8575eaff1ae550834f10962e637599d",
       "bytes": 538839,
       "pages": 16,
@@ -188,7 +188,7 @@
       "landingUrl": "https://arxiv.org/abs/2609.10511v1",
       "license": "CC BY 4.0",
       "licenseEvidence": "arXiv abs page license link (checked): http://creativecommons.org/licenses/by/4.0/ (rel title 'Rights to this article').",
-      "notes": "arXiv abs 라이선스 링크 CC BY 4.0. 2단, 벡터 플롯. v1 URL 고정",
+      "notes": "arXiv abs license link CC BY 4.0. Two columns, vector plots. v1 URL fixed",
       "sha256": "4465865acc1e8193a3031c2e637a9e207479213d2b88d09d8b38269b4c45d240",
       "bytes": 1201156,
       "pages": 15,
@@ -204,7 +204,7 @@
       "landingUrl": "https://csrc.nist.gov/pubs/sp/800/171/r3/final",
       "license": "Public domain (US federal work, 17 USC 105)",
       "licenseEvidence": "In the PDF (front matter): \"This publication may be used by nongovernmental organizations on a voluntary basis and is not subject to copyright in the United States. Attribution would, however, be appreciated by NIST.\" Also: NIST Technical Series Publications policy page: \"Works authored by NIST employees are not subject to Copyright protection within the United States; foreign rights are reserved. To the extent NIST may assert rights outside of the United States, the public is granted the non-exclusive, perpetual, paid-up, royalty-free, worldwide right to reprint works in all formats...\" (https://www.nist.gov/director/copyright-fair-use-and-licensing-statements-srd-data-and-software)",
-      "notes": "미국 연방 저작물. PDF 본문 'not subject to copyright in the United States'. Word 출력, 태그 PDF",
+      "notes": "US federal work. PDF body 'not subject to copyright in the United States'. Word output, tagged PDF",
       "sha256": "3e4631df8b5d61f40a6e542b52779ef30ddbbfff31e09214fa94ad6e6f5e6d08",
       "bytes": 1593213,
       "pages": 120,
@@ -220,7 +220,7 @@
       "landingUrl": "https://zenodo.org/records/21333257",
       "license": "CC BY 4.0",
       "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader-asserted; creators are KCOC staff: 국제개발협력민간협의회). DOI 10.5281/zenodo.21333257. PDF p.2: '발행처 국제개발협력민간협의회 ... 본 연구는 KOICA DAK 정책협력사업 ... 의 일환으로 진행되었습니다' (no license text inside the PDF). Whether KOICA funding imposes extra terms is not verified.",
-      "notes": "Zenodo 업로더(작성 기관 직원) 지정 CC BY 4.0. KOICA 지원 사업 결과물로 지원기관 조건 미확인. InDesign, 태그 PDF, 한글 텍스트 공유 Form",
+      "notes": "CC BY 4.0 assigned by the Zenodo uploader (staff of the authoring organization). Output of a KOICA-funded project; funder conditions unverified. InDesign, tagged PDF, Korean-text shared Form",
       "sha256": "e8d298692bf68e4a177f8b8418db3adc3666e2c408df0cc1a28cdab07813041c",
       "bytes": 2637669,
       "pages": 152,
@@ -236,7 +236,7 @@
       "landingUrl": "https://zenodo.org/records/10545284",
       "license": "CC BY 4.0",
       "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0 (uploader = author). DOI 10.5281/zenodo.10545284.",
-      "notes": "Zenodo CC BY 4.0. pdfTeX beamer, 삽입 PDF 그림이 여러 쪽 공유 Form",
+      "notes": "Zenodo CC BY 4.0. pdfTeX beamer, embedded PDF figures are Forms shared across several pages",
       "sha256": "8ef8022753993ae8d7aec46f844f5f45486f4c7057a66320311602807654a28c",
       "bytes": 2631100,
       "pages": 54,
@@ -252,7 +252,7 @@
       "landingUrl": "https://zenodo.org/records/7535020",
       "license": "CC BY 4.0",
       "licenseEvidence": "Zenodo record metadata license id = cc-by-4.0. PDF page 2 (verbatim): \"Licences (compatibles) d'utilisation de ce document : Creative Commons CC-BY, Etalab\". DOI 10.5281/zenodo.7535020.",
-      "notes": "Zenodo CC BY 4.0 + PDF 2쪽 'Creative Commons CC-BY, Etalab'. xdvipdfmx beamer",
+      "notes": "Zenodo CC BY 4.0 + PDF page 2 'Creative Commons CC-BY, Etalab'. xdvipdfmx beamer",
       "sha256": "cade4aff074c710f50c3b541d296e6aeb99eadb6c3e09042dca628f9ceb3c6ec",
       "bytes": 11820367,
       "pages": 81,
@@ -268,7 +268,7 @@
       "landingUrl": "https://eospso.nasa.gov/earth-observer-archive",
       "license": "NASA content, generally not subject to copyright in the US (public domain; per-image third-party credits possible)",
       "licenseEvidence": "NASA Images and Media Usage Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/): \"NASA content ... generally are not subject to copyright in the United States.\" No license statement inside the PDF; newsletter is NASA-published (EOS Project Science Office, GSFC); individual photo/figure credits may name third parties.",
-      "notes": "NASA 일반 공공영역(신뢰도 중간). 텍스트 있는 러닝헤드 Form 이 58쪽 공유",
+      "notes": "NASA general public domain (medium confidence). A running-head Form with text is shared across 58 pages",
       "sha256": "b6d29535a98dd764bbcb7f72e16d9e2d6b6dd79a1f25da988ea125b3fdc73b46",
       "bytes": 5191307,
       "pages": 63,
@@ -284,7 +284,7 @@
       "landingUrl": "https://doi.org/10.6028/NIST.SP.800-53r5",
       "license": "Public domain (US federal work, 17 USC 105)",
       "licenseEvidence": "In the PDF: \"This publication may be used by nongovernmental organizations on a voluntary basis and is not subject to copyright in the United States. Attribution would, however, be appreciated by NIST.\" Also: NIST Technical Series Publications policy page: \"Works authored by NIST employees are not subject to Copyright protection within the United States; foreign rights are reserved. To the extent NIST may assert rights outside of the United States, the public is granted the non-exclusive, perpetual, paid-up, royalty-free, worldwide right to reprint works in all formats...\" (https://www.nist.gov/director/copyright-fair-use-and-licensing-statements-srd-data-and-software)",
-      "notes": "미국 연방 저작물. PDF 본문 'not subject to copyright in the United States'. 492쪽",
+      "notes": "US federal work. PDF body 'not subject to copyright in the United States'. 492 pages",
       "sha256": "fc63bcd61715d0181dd8e85998b1e6201ae3515fc6626102101cab1841e11ec6",
       "bytes": 6073678,
       "pages": 492,
@@ -300,7 +300,7 @@
       "landingUrl": "https://www.nasa.gov/reference/systems-engineering-handbook/",
       "license": "NASA content, generally not subject to copyright in the US (public domain; per-image third-party credits possible)",
       "licenseEvidence": "NASA Images and Media Usage Guidelines (https://www.nasa.gov/nasa-brand-center/images-and-media/): \"NASA content ... generally are not subject to copyright in the United States.\" No license statement inside the PDF; newsletter is NASA-published (EOS Project Science Office, GSFC); individual photo/figure credits may name third parties. Cover text lists photo credits.",
-      "notes": "NASA 일반 공공영역(신뢰도 중간). 297쪽, 태그 PDF, 텍스트 공유 Form",
+      "notes": "NASA general public domain (medium confidence). 297 pages, tagged PDF, shared Form with text",
       "sha256": "8eeb4887a4dc57a23049da7dd2ed556833cf98e214b240468d987873164ff688",
       "bytes": 3773440,
       "pages": 297,
@@ -316,7 +316,7 @@
       "landingUrl": "https://www.nabo.go.kr/ko/report/outlookAllView.do?idx=9147&key=2507040041",
       "license": "KOGL Type 1 (공공누리 제1유형: 출처표시)",
       "licenseEvidence": "Item page (landingUrl) KOGL block: '본 저작물은 [공공누리 제1유형] 출처표시 조건에 따라 이용할 수 있습니다.' (mark image alt 'OPEN 출처표시 공공누리 공공저작물 자유이용허락'). NABO copyright policy (https://www.nabo.go.kr/ko/content.do?key=2509260003): '공공누리가 부착되어 있지 않은 자료는 제3자의 권리가 포함되어 있거나 권리관계를 확인 중에 있는 저작물입니다.' The KOGL block is per item (e.g. outlookAllView idx=9435, 경제현안분석 제110호, shows no KOGL block). No license or restriction wording inside the PDF.",
-      "notes": "게시 페이지 공공누리 제1유형. 한글 → PScript5 → Acrobat Distiller 출력, Type1 글꼴 144개(TT…o00 분할), StructTreeRoot 있음·MarkInfo 없음. 테두리 BOX·□/○ 개조식·흐름도·수식·병합 머리글 표",
+      "notes": "KOGL Type 1 on the posting page. Hangul → PScript5 → Acrobat Distiller output, 144 Type1 fonts (TT…o00 split), StructTreeRoot present, no MarkInfo. Bordered BOX, □/○ outline-style bullets, flowcharts, equations, table with merged headers",
       "sha256": "e32a7ca38d3dce4f35d4bee150fb7749c3c41e247b38253183a1e9e3dadcb1b7",
       "bytes": 8036791,
       "pages": 103,
@@ -332,7 +332,7 @@
       "landingUrl": "https://www.nabo.go.kr/ko/report/budgetAllView.do?idx=9371&key=2509090001",
       "license": "KOGL Type 1 (공공누리 제1유형: 출처표시)",
       "licenseEvidence": "Item page (landingUrl) KOGL block: '본 저작물은 [공공누리 제1유형] 출처표시 조건에 따라 이용할 수 있습니다.' (mark image alt 'OPEN 출처표시 공공누리 공공저작물 자유이용허락'). NABO copyright policy (https://www.nabo.go.kr/ko/content.do?key=2509260003): '공공누리가 부착되어 있지 않은 자료는 제3자의 권리가 포함되어 있거나 권리관계를 확인 중에 있는 저작물입니다.' The KOGL block is per item (e.g. outlookAllView idx=9435, 경제현안분석 제110호, shows no KOGL block). No license or restriction wording inside the PDF.",
-      "notes": "게시 페이지 공공누리 제1유형. 한국어 재무제표 표(병합 열·행 머리글, △ 음수 표기, 단위 줄). 한글 → PScript5 → Acrobat Distiller 출력, Type1 글꼴 93개, StructTreeRoot 있음·MarkInfo 없음",
+      "notes": "KOGL Type 1 on the posting page. Korean financial statement tables (merged column·row headers, △ negative notation, unit line). Hangul → PScript5 → Acrobat Distiller output, 93 Type1 fonts, StructTreeRoot present, no MarkInfo",
       "sha256": "f90c3e0ca3b17351e4c98e93ae420eb2367a7926a95fd0b25afa1b3c27d552b1",
       "bytes": 3967101,
       "pages": 179,
@@ -348,7 +348,7 @@
       "landingUrl": "https://mods.go.kr/board.es?mid=a10301010000&bid=213&act=view&list_no=447322",
       "license": "KOGL Type 1 (공공누리 제1유형: 출처표시)",
       "licenseEvidence": "Item page (landingUrl) KOGL block: '국가데이터처 \"2026년 9월 소비자물가동향\" 저작물은 \"공공누리 1유형(출처표시) 공공저작물 자유이용허락\" 조건에 따라 이용할 수 있습니다.' (mark image alt '공공누리 1유형(출처표시) 공공저작물 자유이용허락'). The type is per item on this site (same board: 2026년 9월 고용동향 = 2유형, 2026년 8월 온라인쇼핑동향 = 4유형). PDF p.1 (cover) carries the KOGL 'OPEN 출처표시' mark image; no text license statement in the PDF.",
-      "notes": "게시 페이지 공공누리 제1유형. Hancom PDF(Hwp 2022), Type3 글꼴 10개. □/○ 개조식, 월별 괘선 표, 병합 머리글 통계표, 차트. 표지에 정책브리핑·슬로건 로고",
+      "notes": "KOGL Type 1 on the posting page. Hancom PDF (Hwp 2022), 10 Type3 fonts. □/○ outline-style bullets, monthly ruled tables, statistics table with merged headers, charts. Cover has the Policy Briefing and slogan logos",
       "sha256": "23260c8169d54f1e1058eb43f8e475527c5438e0e545b7e7dc876b646bc162c5",
       "bytes": 3165170,
       "pages": 26,
@@ -364,7 +364,7 @@
       "landingUrl": "https://doi.org/10.56786/phwr.2025.18.36.1",
       "license": "CC BY 4.0",
       "licenseEvidence": "Article page (https://www.phwr.org/journal/view.html?doi=10.56786/PHWR.2025.18.36.1) and PDF p.1: 'Copyright Ⓒ Korea Disease Control and Prevention Agency. This is an Open Access aritcle distributed under the terms of the Creative Commons Attribution License (https://creativecommons.org/licenses/by/4.0/) which permits unrestricted distribution, and reproduction in any medium, provided the original work is properly cited.' Journal page (https://www.phwr.org/content/about/about_the_journal.html): 'Open Access https://creativecommons.org/licenses/by/4.0/'.",
-      "notes": "질병관리청 공식 학술지(PubMed·PMC 색인, KCI 등재 여부 미확인) 게재 논문. InDesign 2단 조판, 국문 0~7쪽·영문 8~16쪽, 핵심요약 음영 박스, 단 걸친 표·그림",
+      "notes": "Paper in the official journal of the Korea Disease Control and Prevention Agency (indexed in PubMed·PMC, KCI listing unverified). InDesign two-column layout, Korean pages 0–7 and English pages 8–16, shaded key-summary box, tables and figures spanning columns",
       "sha256": "12d83a840495715bee621e6eaf8ce92e5e0fd7cbee2723bf93260be23f587200",
       "bytes": 2190503,
       "pages": 17,
@@ -380,7 +380,7 @@
       "landingUrl": "https://doi.org/10.64227/jdis.2026.2.2.7",
       "license": "CC BY 4.0",
       "licenseEvidence": "Article page (https://www.jdis.or.kr/0202-07/) and PDF p.1: 'Copyright © 2026 Author(s). This is an Open Access article distributed under the terms of the Creative Commons CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/) which permits unrestricted use, distribution, and reproduction in any medium, provided the original work is properly cited.' Publisher: 방산안보연구소 (Institute for Defense Industrial Security), pISSN 3091-5546, eISSN 3091-5554.",
-      "notes": "저자 저작권 보유·CC BY 4.0 학술지 논문(2025 창간, KCI 등재 여부 미확인). 한글 → PScript5 → Acrobat Distiller 출력. 첫 쪽 좌측 사이드바(소속·Open Access·일자), 괘선 표·수식·각주",
+      "notes": "Journal paper with author-held copyright under CC BY 4.0 (founded 2025, KCI listing unverified). Hangul → PScript5 → Acrobat Distiller output. Left sidebar on the first page (affiliation·Open Access·date), ruled tables, equations, footnotes",
       "sha256": "0a868703cd6a2d9e32c90d9118ebbf1f2d05618c66cf23b7932f35ab404db664",
       "bytes": 1039766,
       "pages": 20,
@@ -429,95 +429,95 @@
   "rejected": [
     {
       "id": "nih-catalyst-2025-julaug",
-      "reason": "라이선스 명시 문구 없음(미국 연방 저작물로 보이나 근거 미확보)"
+      "reason": "No explicit license wording (appears to be a US federal work but the basis was not obtained)"
     },
     {
       "id": "gpo-911-commission-report",
-      "reason": "benchmark 2건으로 충분. govinfo 일반 고지만 있고 문서별 근거가 약해 제외"
+      "reason": "Two benchmark documents are enough. Only the general govinfo notice exists and per-document basis is weak, so excluded"
     },
     {
       "id": "ustreas-frusg-fy2025",
-      "reason": "245쪽(수백 쪽 benchmark 기준 미달), 표 문서는 3건 확보"
+      "reason": "245 pages (below the benchmark criterion of several hundred pages); 3 table documents already obtained"
     },
     {
       "id": "arxiv-2609.09305",
-      "reason": "vector-charts 2건으로 충분(예비)"
+      "reason": "Two vector-charts documents are enough (spare)"
     },
     {
       "id": "zen-ko-lee-22195074",
-      "reason": "korean-paper 3건으로 충분(예비, LibreOffice 출력)"
+      "reason": "Three korean-paper documents are enough (spare, LibreOffice output)"
     },
     {
       "id": "usgs-fs-2023-3020",
-      "reason": "4쪽 팩트시트, 유형 부적합(예비)"
+      "reason": "4-page fact sheet, unsuitable type (spare)"
     },
     {
       "id": "eia-steo-2026-10",
-      "reason": "차트가 래스터 이미지(유형 부적합)"
+      "reason": "Charts are raster images (unsuitable type)"
     },
     {
       "id": "fed-mpr-2026-07",
-      "reason": "본문 제3자 저작권 고지(S&P Dow Jones Indices 재배포 금지 등)"
+      "reason": "Third-party copyright notice in the body (redistribution prohibited by S&P Dow Jones Indices, etc.)"
     },
     {
       "id": "fed-z1-current",
-      "reason": "본문 제3자 저작권 고지, /current/ URL 이 분기마다 바뀌어 해시 고정 불가"
+      "reason": "Third-party copyright notice in the body; the /current/ URL changes every quarter, so the hash cannot be pinned"
     },
     {
       "id": "usgs-fs-2022-3015",
-      "reason": "사진 제3자 크레딧('used with permission')"
+      "reason": "Third-party photo credit ('used with permission')"
     },
     {
       "id": "zen-ko-ipbes-5846543",
-      "reason": "PDF 안 'Copyright © 2021, IPBES' 와 Zenodo CC BY 표기 대조 미완료"
+      "reason": "Comparison between 'Copyright © 2021, IPBES' in the PDF and the Zenodo CC BY label not completed"
     },
     {
       "id": "zen-ko-kim-10199268",
-      "reason": "학회 논문집 수록본을 저자가 재업로드, 발행처 권리 미확인"
+      "reason": "Author re-upload of a version included in conference proceedings; publisher rights unverified"
     },
     {
       "id": "zen-ko-lee-18513021",
-      "reason": "학술지 출판사 조판본(ezPDF)을 저자가 업로드, 저작권 이전 여부 미확인"
+      "reason": "Author upload of the journal publisher's typeset version (ezPDF); whether copyright was transferred is unverified"
     },
     {
       "id": "zen-ko-srivastava-20203999",
-      "reason": "국제 학술지 조판본, 권리 미확인·영어 앞부분"
+      "reason": "Typeset version of an international journal, rights unverified, English front matter"
     },
     {
       "id": "kogl-pipc-synthetic-data",
-      "reason": "PDF 2쪽 '무단전재를 금하며' — 공공누리 제1유형 확인 불가"
+      "reason": "PDF page 2 '무단전재를 금하며' (reproduction without permission prohibited) — KOGL Type 1 cannot be confirmed"
     },
     {
       "id": "kci-kjiop-35-3-385",
-      "reason": "OpenAlex 는 cc-by 로 표기하나 게재 페이지(accesson.kr) 라이선스는 CC BY-NC 4.0"
+      "reason": "OpenAlex labels it cc-by, but the license on the posting page (accesson.kr) is CC BY-NC 4.0"
     },
     {
       "id": "kci-jams-8-2-281",
-      "reason": "CC BY 4.0 이 OJS 메타(DC.Rights)에만 있고 게재 페이지가 HTTP 500 으로 본문 문구 확인 불가"
+      "reason": "CC BY 4.0 appears only in OJS metadata (DC.Rights) and the posting page returns HTTP 500, so the wording in the body cannot be confirmed"
     },
     {
       "id": "kogl-kdi-report-19282",
-      "reason": "KDI 게시 페이지 '공공누리 제3유형: 출처표시 + 변경금지'"
+      "reason": "KDI posting page 'KOGL Type 3: attribution + no derivatives'"
     },
     {
       "id": "kogl-mods-ssec2609",
-      "reason": "국가데이터처 고용동향 게시 페이지 공공누리 2유형(상업적 이용금지). 같은 게시판 고령자 통계 2유형, 온라인쇼핑동향 4유형"
+      "reason": "The Statistics Korea employment trends posting page is KOGL Type 2 (no commercial use). On the same board, statistics on the elderly are Type 2 and online shopping trends Type 4"
     },
     {
       "id": "kogl-mods-social-indicators-2025",
-      "reason": "게시 페이지 '첨부파일 안의 공공누리유형', PDF 안 공공누리 문구 없음(유형 확인 불가)"
+      "reason": "Posting page says '첨부파일 안의 공공누리유형' (KOGL type inside the attachment), and the PDF has no KOGL wording (type cannot be confirmed)"
     },
     {
       "id": "kogl-moj-uncat-6th",
-      "reason": "법무부 게시 페이지 공공누리 1유형이나 내려받기가 봇 차단 쿠키(307) 필요, Node fetch 실패, 82.8 MB"
+      "reason": "Ministry of Justice posting page is KOGL Type 1, but downloading needs a bot-blocking cookie (307), Node fetch fails, 82.8 MB"
     },
     {
       "id": "kogl-nabo-kecon2026",
-      "reason": "공공누리 1유형이나 51.2 MB·577쪽, PyPDF2 재저장본"
+      "reason": "KOGL Type 1, but 51.2 MB·577 pages, a PyPDF2 re-saved copy"
     },
     {
       "id": "kogl-koreakr-press",
-      "reason": "정책브리핑 게시 페이지 '텍스트에 한하여 공공누리 제1유형', 사진·이미지 제외(부분 허락)"
+      "reason": "Policy Briefing posting page '텍스트에 한하여 공공누리 제1유형' (KOGL Type 1 for text only), photos·images excluded (partial permission)"
     }
   ]
 }

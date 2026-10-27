@@ -16,7 +16,7 @@ const HANGUL = /[ᄀ-ᇿ㄰-㆏가-힣]/;
 const MIB = 2 ** 20;
 const EN = APP_STRINGS.en;
 
-/** 표의 값을 모두 글자로 펼친다(함수는 인수 1 로 부른다). viewer-ui 표는 viewer-ui 시험이 본다. */
+/** Expands every table value into text (functions are called with argument 1). The viewer-ui table is covered by the viewer-ui tests. */
 function texts(t: AppStrings): string[] {
   const out: string[] = [];
   const walk = (v: unknown) => {
@@ -39,7 +39,7 @@ const heap = (
   limitBytes: 2048 * MIB,
   fraction: 0.78,
   level,
-  // core 문구는 한국어다(pdf-ops save-method.ts).
+  // core text is Korean (pdf-ops save-method.ts).
   message: '예상 피크 WASM 힙 1600 MiB 가 상한 2048 MiB 의 78% 입니다.',
   ...extra,
 });
@@ -54,8 +54,8 @@ const plan = (extra: Partial<SavePlan> = {}): SavePlan => ({
   ...extra,
 });
 
-describe('언어 판정(사용자 요청 2026-10-23)', () => {
-  it('브라우저 UI 언어를 먼저 보고, 없으면 navigator.language', () => {
+describe('language decision (user request 2026-10-23)', () => {
+  it('looks at the browser UI language first, otherwise navigator.language', () => {
     expect(detectLang({ uiLanguage: 'ko', navigatorLanguage: 'en-US' })).toBe('ko');
     expect(detectLang({ uiLanguage: 'ko-KR', navigatorLanguage: null })).toBe('ko');
     expect(detectLang({ uiLanguage: 'en-US', navigatorLanguage: 'ko-KR' })).toBe('en');
@@ -66,8 +66,8 @@ describe('언어 판정(사용자 요청 2026-10-23)', () => {
   });
 });
 
-describe('확장 문자열 표', () => {
-  it('한국어·영어 키가 같고 각자 같은 언어의 viewer-ui 표를 가리킨다', () => {
+describe('extension string table', () => {
+  it('Korean and English keys are the same, and each points to the viewer-ui table of the same language', () => {
     expect(Object.keys(EN).sort()).toEqual(Object.keys(APP_STRINGS.ko).sort());
     expect(Object.keys(EN.saveErrors).sort()).toEqual(
       Object.keys(APP_STRINGS.ko.saveErrors).sort(),
@@ -80,7 +80,7 @@ describe('확장 문자열 표', () => {
     expect(EN.saveFailedLines).toHaveLength(APP_STRINGS.ko.saveFailedLines.length);
   });
 
-  it('영어 표에는 한글이 없고 빈 문자열이 없다', () => {
+  it('the English table has no Hangul and no empty strings', () => {
     for (const s of texts(EN)) {
       expect(s).not.toMatch(HANGUL);
       expect(s.trim()).not.toBe('');
@@ -88,7 +88,7 @@ describe('확장 문자열 표', () => {
     for (const s of texts(APP_STRINGS.ko)) expect(s.trim()).not.toBe('');
   });
 
-  it('알림 줄 문구는 표를 따른다', () => {
+  it('notice row text follows the table', () => {
     expect(redactNotice({ total: 2, pages: [0, 3] }, EN)).toContain('2 unapplied Redact');
     expect(redactNotice({ total: 2, pages: [0, 3] }, EN)).toContain('page 1, 4');
     expect(sizeLimitNotice(heap('over-limit'), EN)).toBe(
@@ -107,7 +107,7 @@ describe('확장 문자열 표', () => {
     expect(recoveredNotice(1, true, EN)).toContain('1 edit(s) re-applied from the last save');
   });
 
-  it('영어 저장 전 판정은 core 한국어 문구 대신 수치로 문구를 만든다', () => {
+  it('English pre-save check builds text from figures instead of the core Korean text', () => {
     const warn = decideSave(plan({ heap: heap('warn') }), null, EN);
     expect(warn.warnings).toEqual([EN.heapWarn('1600 MiB', '2048 MiB')]);
     const blocked = decideSave(plan({ heap: heap('over-limit') }), null, EN);
@@ -130,11 +130,11 @@ describe('확장 문자열 표', () => {
     for (const s of [...warn.warnings, blocked.block!, ...edits.warnings, ...edits.infos]) {
       expect(s).not.toMatch(HANGUL);
     }
-    // 한국어는 core 문구를 그대로 쓴다(이전과 같음).
+    // Korean uses the core text as is (same as before).
     expect(decideSave(plan({ heap: heap('warn') })).warnings).toEqual([heap('warn').message]);
   });
 
-  it('core 저장 경고: 한국어는 core 문장, 영어는 원인 코드로(코드가 없으면 일반 문장)', () => {
+  it('core save warning: Korean uses the core sentence, English uses the cause code (a generic sentence if there is no code)', () => {
     const core = ['편집 엔진 오류(x) 상태에서 저장합니다.', '마지막 편집이 빠졌을 수 있습니다.'];
     const failed = plan({ warnings: core, warningCodes: ['edit-engine-failed'] });
     expect(decideSave(failed).warnings).toEqual(core);
@@ -145,7 +145,7 @@ describe('확장 문자열 표', () => {
     expect(decideSave(plan({ warnings: [] }), null, EN).warnings).toEqual([]);
   });
 
-  it('상태 줄 오류 상세: 한국어는 String(e), 영어는 오류 이름·알려진 형태로', () => {
+  it('status line error detail: Korean uses String(e), English uses the error name and known shape', () => {
     const e = new Error('PDF 요청 실패: HTTP 404');
     e.name = 'PdfRequestError';
     expect(APP_STRINGS.ko.errorText(e)).toBe('PdfRequestError: PDF 요청 실패: HTTP 404');
@@ -156,7 +156,7 @@ describe('확장 문자열 표', () => {
     expect(EN.errorText(new Error('초안 상태 이상'))).toBe('An internal error occurred.');
   });
 
-  it('정보 대화상자도 표를 따른다', () => {
+  it('the About dialog also follows the table', () => {
     const c = aboutContent(
       {
         version: '1.0.0',
@@ -178,7 +178,7 @@ describe('확장 문자열 표', () => {
   });
 });
 
-describe('진단 표시 켜기(사용자 요청 2026-10-23)', () => {
+describe('diagnostics display toggle (user request 2026-10-23)', () => {
   const key = (extra: Partial<ShortcutKeyLike> = {}): ShortcutKeyLike => ({
     code: 'KeyD',
     ctrlKey: true,
@@ -188,7 +188,7 @@ describe('진단 표시 켜기(사용자 요청 2026-10-23)', () => {
     ...extra,
   });
 
-  it('주소에 diag 매개변수가 있으면 켠다', () => {
+  it('turns on when the address has a diag parameter', () => {
     expect(diagRequested('?diag')).toBe(true);
     expect(diagRequested('?file=http%3A%2F%2Fx%2Fa.pdf&diag')).toBe(true);
     expect(diagRequested('?e2e&diag=1')).toBe(true);
@@ -197,7 +197,7 @@ describe('진단 표시 켜기(사용자 요청 2026-10-23)', () => {
     expect(diagRequested('?file=diag.pdf')).toBe(false);
   });
 
-  it('단축키는 Ctrl+Alt+Shift+D(물리 키), 조합 중·다른 조합은 아니다', () => {
+  it('the shortcut is Ctrl+Alt+Shift+D (physical key); during composition and other combinations it is not', () => {
     expect(isDiagShortcut(key())).toBe(true);
     expect(isDiagShortcut(key({ shiftKey: false }))).toBe(false);
     expect(isDiagShortcut(key({ altKey: false }))).toBe(false);

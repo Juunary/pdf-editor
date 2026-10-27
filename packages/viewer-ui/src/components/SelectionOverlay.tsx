@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { cssBoxStyle, type CssBox } from '../layout.js';
 
-/** 선택 하이라이트 상자를 TextLayer(명령형 이벤트 처리)에서 오버레이(Preact)로 전달하는 작은 저장소. */
+/** A small store that passes the selection highlight boxes from TextLayer (imperative event handling) to the overlay (Preact). */
 export interface RectsStore {
   get(): CssBox[];
   set(rects: CssBox[]): void;
@@ -14,7 +14,7 @@ export function createRectsStore(): RectsStore {
   return {
     get: () => rects,
     set(next) {
-      // 빈 선택이 반복해서 들어올 때 다시 그리지 않는다.
+      // Do not redraw when empty selections arrive repeatedly.
       if (next.length === 0 && rects.length === 0) return;
       rects = next;
       for (const listener of [...listeners]) listener();
@@ -26,7 +26,7 @@ export function createRectsStore(): RectsStore {
   };
 }
 
-/** 선택 영역 하이라이트. 글자 span 수천 개를 다시 비교하지 않도록 자체 상태만 갱신한다. */
+/** Selection highlight. Updates only its own state so that thousands of character spans are not compared again. */
 export function SelectionOverlay({ store }: { store: RectsStore }) {
   const [rects, setRects] = useState(store.get());
   useEffect(() => {

@@ -43,7 +43,7 @@ function byId<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
-/** 화면 언어(사용자 요청 2026-10-23): 브라우저 UI 언어가 ko 계열이면 한국어, 그 밖은 영어. */
+/** Display language (user request 2026-10-23): Korean if the browser UI language is in the ko family, otherwise English. */
 const lang = detectLang(readLanguageSources());
 const t = APP_STRINGS[lang];
 document.documentElement.lang = lang;
@@ -53,7 +53,7 @@ const statusEl = byId<HTMLSpanElement>('status');
 const openLabel = byId<HTMLLabelElement>('open-label');
 const openInput = byId<HTMLInputElement>('open-file');
 const diagLogEl = byId<HTMLPreElement>('diag-log');
-/** 저장 메뉴 버튼(프린터 아이콘). 문서를 그리기 전에는 비활성(이전 저장 버튼들과 같은 조건). */
+/** Save menu button (printer icon). Disabled until a document has been drawn (same condition as the former save buttons). */
 const saveMenuButton = byId<HTMLButtonElement>('save-menu-button');
 
 const diag = new DiagLog((log) => {
@@ -64,9 +64,9 @@ byId<HTMLButtonElement>('copy-diag').addEventListener('click', () => {
 });
 
 /**
- * 개발 표시(진단 패널·downloads 저장·렌더 경과 상태 줄, 사용자 요청 2026-10-23): 기본은 숨기고 `html[data-diag]` 일 때만
- * 보인다(viewer.css). 개발 빌드에서 주소에 `?diag` 를 붙여 열거나 Ctrl+Alt+Shift+D 로 켜고 끈다. 스토어 빌드에는 이 코드가
- * 없고 진단 패널은 늘 숨긴다(계약 D6). 진단 기록 수집(`diag.add`)과 `#diag-log` 내용은 숨겨져 있어도 그대로다.
+ * Dev indicators (diagnostics panel, downloads save, render-elapsed status line; user request 2026-10-23): hidden by default and shown only when `html[data-diag]`
+ * is set (viewer.css). In dev builds, open with `?diag` in the address or toggle with Ctrl+Alt+Shift+D. The store build does not contain this code
+ * and always hides the diagnostics panel (contract D6). Collection of diagnostic records (`diag.add`) and the `#diag-log` content are unchanged even while hidden.
  */
 if (__BUILD_KIND__ !== 'store') {
   const setDiagVisible = (on: boolean) => {
@@ -81,7 +81,7 @@ if (__BUILD_KIND__ !== 'store') {
   });
 }
 
-/** 상태 줄. `dev` 면 개발 표시(렌더 경과 등)라 진단 표시를 켰을 때만 보인다. */
+/** Status line. If `dev`, it is a dev indicator (render elapsed, etc.), so it shows only when diagnostics display is on. */
 function setStatus(state: string, text: string, dev = false): void {
   statusEl.dataset.state = state;
   statusEl.toggleAttribute('data-dev', dev);
@@ -93,12 +93,12 @@ const pageContainerEl = byId<HTMLElement>('page-container');
 const dialogEl = byId<HTMLDialogElement>('app-dialog');
 
 const toolbarEl = byId<HTMLElement>('toolbar');
-/** 머리 영역 확대 보정 배율 f(header-zoom.ts). 머리 영역(툴바·알림 줄)의 CSS zoom 은 1/f. */
+/** Header zoom compensation factor f (header-zoom.ts). The CSS zoom of the header (toolbar and notice row) is 1/f. */
 let headerFactor = 1;
 
 /**
- * 검색창(position: fixed)이 툴바·알림 줄 바로 아래에 오도록, 둘의 실제 높이로 CSS 변수를 갱신한다.
- * 검색창은 툴바 안(CSS zoom 1/f)에 그려지므로 top 은 머리 영역 px(화면 px × f)로 준다.
+ * Updates the CSS variable with the actual heights of the toolbar and notice row so that the search box (position: fixed) sits right below them.
+ * The search box is drawn inside the toolbar (CSS zoom 1/f), so top is given in header px (screen px × f).
  */
 function syncFindTop(): void {
   const bottom = Math.max(
@@ -114,7 +114,7 @@ const toolbarObserver = new ResizeObserver(syncFindTop);
 toolbarObserver.observe(toolbarEl);
 toolbarObserver.observe(noticeBar);
 
-/** 머리 영역 확대 보정 결과를 반영한다. `data-zoom`·`data-zoom-mode` 는 시험·진단용. */
+/** Applies the header zoom compensation result. `data-zoom` and `data-zoom-mode` are for tests and diagnostics. */
 function applyHeaderZoom(state: HeaderZoomState): void {
   headerFactor = state.factor;
   const root = document.documentElement;
@@ -126,8 +126,8 @@ function applyHeaderZoom(state: HeaderZoomState): void {
 }
 
 /**
- * 브라우저 확대·축소에도 머리 영역 크기를 100% 때와 같게 둔다(사용자 요청 2026-10-22). 문맥을 알기 전에는 보정 없이
- * 좁은 배치만 판정한다(이전 미디어 쿼리와 같다). resize 와 dpr 변화는 같은 프레임 안에서 바로 반영한다.
+ * Keeps the header size the same as at 100% even under browser zoom in/out (user request 2026-10-22). Before the context is known, only the narrow layout
+ * is decided, without compensation (same as the former media query). resize and dpr changes are applied immediately within the same frame.
  */
 const headerZoom = new HeaderZoom({
   cssWidth: () => window.innerWidth,
@@ -138,7 +138,7 @@ const headerZoom = new HeaderZoom({
 window.addEventListener('resize', () => headerZoom.onViewportChange());
 watchDevicePixelRatio(window, () => headerZoom.onViewportChange());
 
-/** 문맥을 안 뒤: 탭 최상위 뷰어만 탭 배율로 보정하고, 임베디드 문맥은 바깥 페이지 확대를 따른다. */
+/** After the context is known: only the tab's top-level viewer is compensated with the tab zoom; embedded contexts follow the outer page's zoom. */
 async function attachHeaderZoom(
   kind: ViewerContextKind,
   streamInfo: chrome.mimeHandler.StreamInfo | null,
@@ -153,7 +153,7 @@ async function attachHeaderZoom(
   await headerZoom.attach(tabId === null ? null : chromeTabZoom(tabId), true);
 }
 
-/** 알림 줄(열기 시 보고·안내·복구). text 가 null 이면 그 id 의 알림을 지운다. */
+/** Notice row (reports, guidance and recovery on open). If text is null, clears the notice with that id. */
 function setNotice(id: string, text: string | null): void {
   noticeBar.querySelector(`[data-notice="${id}"]`)?.remove();
   if (text) {
@@ -174,7 +174,7 @@ function setNotice(id: string, text: string | null): void {
   noticeBar.hidden = noticeBar.childElementCount === 0;
 }
 
-/** 뷰어 소유 module Worker 하나를 만든다. 죽으면(`error`·`messageerror`) `dead` 가 reject 된다(복구 계층이 감지). */
+/** Creates one viewer-owned module Worker. If it dies (`error`, `messageerror`), `dead` rejects (detected by the recovery layer). */
 function spawnWorker(): WorkerHandle {
   const worker = new Worker(new URL('../worker/pdf-worker.ts', import.meta.url), {
     type: 'module',
@@ -205,7 +205,7 @@ byId<HTMLButtonElement>('about').addEventListener('click', () => {
     {
       version: __APP_VERSION__,
       sourceUrl: __SOURCE_URL__,
-      // 고지 파일은 스토어 빌드 패키지에만 들어간다(scripts/release/package.mjs).
+      // The notices file is included only in the store build package (scripts/release/package.mjs).
       noticesUrl:
         __BUILD_KIND__ === 'store' ? chrome.runtime.getURL('THIRD_PARTY_NOTICES.txt') : null,
       heap: lastHeap,
@@ -218,11 +218,11 @@ byId<HTMLButtonElement>('about').addEventListener('click', () => {
   });
 });
 
-/** 복구용 편집 로그(계약 D6): 커밋한 EditOp 와 지금 문서에 반영된 편집 id. */
+/** Edit log for recovery (contract D6): committed EditOps and the edit ids reflected in the current document. */
 const editLog = new EditLog();
-/** 최근 저장 전 판정의 힙 추정(지원 크기 안내·정보 대화상자용). */
+/** Heap estimate from the latest pre-save check (for the supported-size notice and the About dialog). */
 let lastHeap: SaveHeapEstimate | null = null;
-/** 편집이 있는 문서를 저장한 뒤 되돌리기 안내를 문서당 한 번만 보인다. */
+/** After saving a document with edits, shows the undo notice only once per document. */
 let historyNoticeShown = false;
 let lastPlanHadEdits = false;
 let controllerRef: ViewerController | null = null;
@@ -233,7 +233,7 @@ const pdf = new ResilientPdf({
   editLog: () => editLog.snapshot(),
   log: (event, data) => diag.add(event, data),
   onProgress: (done, total) => {
-    // 계약 D4(사용자 결정 2026-10-21): 복구 중 진행 n/N.
+    // Contract D4 (user decision 2026-10-21): progress n/N during recovery.
     setNotice('recovered', recoveryProgressNotice(done, total, t));
     setStatus('opening', t.statusRecovering(done, total));
   },
@@ -243,7 +243,7 @@ const pdf = new ResilientPdf({
   },
 });
 
-// e2e 시험 이음매: `viewer.html?e2e` 로 열었을 때만 내부 객체를 노출한다(저장 판정·복구 오류 주입용).
+// e2e test seam: exposes internal objects only when opened as `viewer.html?e2e` (for injecting save checks and recovery errors).
 if (new URLSearchParams(location.search).has('e2e')) {
   Object.assign(window, {
     __pe: {
@@ -272,7 +272,7 @@ async function environmentInfo(): Promise<Record<string, unknown>> {
     chromeFullVersion =
       values?.fullVersionList?.find((b) => /Chrom/.test(b.brand))?.version ?? null;
   } catch {
-    // 일부 문맥에서는 high entropy 값을 줄 수 없다.
+    // Some contexts cannot provide high entropy values.
   }
   let dynamicRuleIds: number[] | string;
   try {
@@ -311,7 +311,7 @@ const saveTarget = new SaveTarget({
   now: () => performance.now(),
 });
 
-/** Worker 에서 저장 바이트를 만든다. 변경 유형은 core 가 편집 로그에서 더한다(계약 D9). */
+/** Builds the bytes to save in the Worker. The change type is added by core from the edit log (contract D9). */
 async function documentBytes(): Promise<Uint8Array<ArrayBuffer>> {
   const r = await pdf.save({ changes: [] });
   diag.add('worker-save', {
@@ -328,8 +328,8 @@ async function documentBytes(): Promise<Uint8Array<ArrayBuffer>> {
 type SaveTrigger = 'save-as' | 'save' | 'ctrl+s' | 'downloads';
 
 /**
- * 저장 전 준비(계약 5.8): 초안이 있으면 먼저 커밋 → planSave → over-limit 은 중단 안내, 경고는 확인 창.
- * 저장해도 되면 true.
+ * Pre-save preparation (contract 5.8): commit the draft first if there is one → planSave → abort notice for over-limit, confirmation dialog for warnings.
+ * Returns true if saving may proceed.
  */
 async function prepareSave(): Promise<boolean> {
   const edit = controllerRef?.edit;
@@ -382,14 +382,14 @@ async function prepareSave(): Promise<boolean> {
 }
 
 /**
- * 크기 알림 칸 하나(I3): 저장 전 판정이 warn·over-limit 이면 그 문구로 바꾸고, ok 면 열 때 바이트 기준 안내를 그대로 둔다.
+ * One size notice slot (I3): if the pre-save check is warn or over-limit, replace with that text; if ok, keep the byte-based notice from open as is.
  */
 function updateSizeNotice(heap: SaveHeapEstimate): void {
   const text = sizeLimitNotice(heap, t);
   if (text) setNotice('size', text);
 }
 
-/** core 저널 상한 판정(계약 D4). 받지 못하면 진단 로그만 남기고 null(권고 없음). */
+/** core journal limit check (contract D4). If not received, only a diagnostic log is left and null is returned (no recommendation). */
 async function queryJournalAdvice(): Promise<JournalAdvice | null> {
   try {
     return await pdf.journalAdvice();
@@ -399,7 +399,7 @@ async function queryJournalAdvice(): Promise<JournalAdvice | null> {
   }
 }
 
-/** 편집 커밋 뒤 저널 상한을 물어 "저장 후 다시 열기" 안내를 갱신한다(계약 D4, docs/m5-heap.md 5.3). */
+/** After an edit commit, queries the journal limit and updates the "저장 후 다시 열기" (save and reopen) notice (contract D4, docs/m5-heap.md 5.3). */
 async function reportJournal(): Promise<void> {
   const advice = await queryJournalAdvice();
   if (!advice) return;
@@ -407,13 +407,13 @@ async function reportJournal(): Promise<void> {
   setNotice('journal', journalNotice(advice, t));
 }
 
-/** 커밋 RPC 결과를 그대로 돌려주고, 저널 판정은 기다리지 않고 뒤에서 한다. */
+/** Returns the commit RPC result as is, and does the journal check afterward without waiting for it. */
 function afterCommit(result: CommitResult): CommitResult {
   void reportJournal();
   return result;
 }
 
-/** 복구 알림 오류(저장 중 Worker 가 죽어 복구됨)인지. 저장 대상이 오류를 문자열로 감싸 돌려주는 경우도 본다. */
+/** Whether this is a recovery notice error (the Worker died during a save and was recovered). Also handles the save target returning the error wrapped in a string. */
 function isRecoveredSave(error: unknown): boolean {
   if (classifyFailure(error).kind === 'recovered') return true;
   return typeof error === 'string' && error.includes('WorkerRecoveredError');
@@ -447,7 +447,7 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
     ...outcome,
   });
   const where = outcome.channel === 'fsa' ? t.savedToFile(outcome.fileName) : t.savedToDownloads;
-  // 계약 D4: 사용자 저장이 성공하면 그 바이트가 복구 기준점이다.
+  // Contract D4: if the user save succeeds, those bytes become the recovery checkpoint.
   if (outcome.status === 'saved') pdf.confirmSaved();
   else pdf.discardPendingSave();
   setStatus(
@@ -470,7 +470,7 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
   }
 }
 
-/** 저장 중 Worker 가 죽어 복구한 뒤(계약 5.8, A3-3): 다시 저장할지 묻는다. */
+/** After recovery from a Worker dying during a save (contract 5.8, A3-3): asks whether to save again. */
 async function askSaveAgain(trigger: SaveTrigger): Promise<void> {
   setStatus('error', t.statusRecoveredDuringSave);
   const again = await confirmDialog(
@@ -483,11 +483,11 @@ async function askSaveAgain(trigger: SaveTrigger): Promise<void> {
   if (again) await runSave(trigger);
 }
 
-/** M0 진단: 브라우저 Worker 에서 전체 저장 시간·WASM 힙 측정(파일은 저장하지 않음). */
+/** M0 diagnostics: measures full-save time and WASM heap in the browser Worker (the file is not saved). */
 async function benchFullSave(): Promise<void> {
   setStatus('saving', t.statusBenchSaving, true);
   const r = await pdf.save({ changes: ['content-stream'] });
-  pdf.discardPendingSave(); // 측정 저장은 복구 기준점이 아니다
+  pdf.discardPendingSave(); // the measurement save is not a recovery checkpoint
   const result = {
     method: r.method,
     options: r.options,
@@ -501,8 +501,8 @@ async function benchFullSave(): Promise<void> {
 }
 
 /**
- * 저장 메뉴(사용자 요청 2026-10-22): 저장 / 다른 이름으로 저장 / (개발 빌드만) downloads 저장.
- * downloads 저장(M0 진단)은 스토어 빌드의 viewer.html 에서 빠지고(vite.config.ts), 아래 분기도 스토어 번들에서 사라진다.
+ * Save menu (user request 2026-10-22): "저장" (Save) / "다른 이름으로 저장" (Save As) / (dev builds only) downloads save.
+ * The downloads save (M0 diagnostics) is dropped from the store build's viewer.html (vite.config.ts), and the branch below also disappears from the store bundle.
  */
 const saveMenu = setupSaveMenu({
   button: saveMenuButton,
@@ -521,7 +521,7 @@ function enableSave(): void {
   bench.addEventListener('click', () => {
     void benchFullSave().catch((e: unknown) => diag.add('bench-error', String(e)));
   });
-  // Ctrl+S 는 메뉴 없이 바로 저장한다(Ctrl+Shift+S 는 다른 이름으로 저장).
+  // Ctrl+S saves directly without the menu (Ctrl+Shift+S is Save As).
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
@@ -535,7 +535,7 @@ let saveEnabled = false;
 let firstPaintAnnounced = false;
 let unmountViewer: (() => void) | null = null;
 
-/** 첫 페이지가 캔버스에 그려진 뒤: 상태 표시와 저장 활성화. 이후 페이지는 진단 기록만 남긴다. */
+/** After the first page is drawn on the canvas: status display and enabling save. Later pages only leave diagnostic records. */
 function onPagePainted(e: PagePaintedEvent): void {
   diag.add('render', {
     pageIndex: e.pageIndex,
@@ -550,14 +550,14 @@ function onPagePainted(e: PagePaintedEvent): void {
     saveEnabled = true;
     enableSave();
   }
-  // 렌더 경과는 개발 표시다(쪽 수는 툴바 "/ N" 에 있다).
+  // Render elapsed is a dev indicator (the page count is in the toolbar "/ N").
   setStatus('rendered', t.statusRendered(e.pageCount, e.pageIndex + 1), true);
 }
 
 async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   setStatus('opening', t.statusOpening(label));
-  // 이전에 연 문서의 뷰어를 먼저 정리한다. Worker 세션은 open 에서 이전 문서를 닫으므로, 그 사이 이전 뷰어가
-  // 렌더·추출을 요청하면 새 문서(또는 닫힌 문서)에 대한 호출이 된다.
+  // Clean up the previous document's viewer first. The Worker session closes the previous document in open, so if the previous viewer
+  // requests render or extract in between, the call targets the new document (or a closed one).
   if (unmountViewer) {
     unmountViewer();
     unmountViewer = null;
@@ -573,10 +573,10 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   lastHeap = null;
   lastPlanHadEdits = false;
   historyNoticeShown = false;
-  // 원본은 복구 계층이 open 전에 Blob 으로 보관한 뒤 Worker 로 넘긴다(계약 D6).
+  // The original is kept as a Blob by the recovery layer before open, then handed to the Worker (contract D6).
   const info = await pdf.open(bytes);
   diag.add('open', info);
-  // 크기 알림(I3, 사용자 결정 2026-10-21): 열 때 바이트 기준 안내를 한 번 띄우고, 저장 전 판정은 같은 칸을 바꾼다.
+  // Size notice (I3, user decision 2026-10-21): show the byte-based notice once on open; the pre-save check changes the same slot.
   setNotice('size', supportedSizeNotice(info.byteLength, undefined, t));
   documentName = label;
   document.title = `${label} - PDF Editor`;
@@ -609,8 +609,8 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
     pageCount: info.pageCount,
     getEnvironment: () => ({
       devicePixelRatio: window.devicePixelRatio || 1,
-      // 쪽 좌우 화살표 칸을 뺀 너비에 맞춘다(화살표가 쪽을 가리지 않게). 좁은 창은 화살표가 쪽 가장자리 위에 겹치고 칸
-      // 몫을 빼지 않는다(viewer-ui `pageArrowLayout`, 마운트의 data-pe-arrows 와 같은 판정).
+      // Fit to the width minus the left/right page arrow slots (so arrows do not cover the page). In a narrow window the arrows overlap the page edge and
+      // the slot share is not subtracted (viewer-ui `pageArrowLayout`, same decision as data-pe-arrows on the mount).
       availableWidth: pageArrowLayout(pageContainerEl.clientWidth).availableWidth,
     }),
     onPagePainted,
@@ -624,13 +624,13 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   );
   await controller.start();
   const { view, renderError } = controller.getState();
-  // 첫 페이지를 그리지 못하면 열기 실패로 본다(MIME handler 에서는 Chrome 기본 뷰어로 넘긴다).
+  // If the first page cannot be drawn, treat it as an open failure (in the MIME handler, hand off to Chrome's default viewer).
   if (!view) throw new Error(renderError ?? '첫 페이지 렌더 실패');
   void reportRedactAnnots();
   void reportSizeLimit();
 }
 
-/** 열기 직후 저장 전 판정으로 지원 크기 안내를 낸다(편집 전 추정). 판정을 못 받으면 진단 로그만 남긴다. */
+/** Right after open, issues the supported-size notice from the pre-save check (pre-edit estimate). If the check is not received, only a diagnostic log is left. */
 async function reportSizeLimit(): Promise<void> {
   try {
     const plan = await pdf.planSave({ changes: [] });
@@ -642,7 +642,7 @@ async function reportSizeLimit(): Promise<void> {
   }
 }
 
-/** 열기 시 Redact 주석 보고(A2-2). 보고를 받지 못하면 진단 로그만 남긴다. */
+/** Redact annotation report on open (A2-2). If the report is not received, only a diagnostic log is left. */
 async function reportRedactAnnots(): Promise<void> {
   const report = await pdf.tryListRedactAnnots();
   if (report === null) {
@@ -653,7 +653,7 @@ async function reportRedactAnnots(): Promise<void> {
   setNotice('redact', redactNotice(report, t));
 }
 
-/** DNR 폴백 경로에서 file:// 접근이 꺼져 있으면 안내한다(A5-3). */
+/** If file:// access is off on the DNR fallback path, shows guidance (A5-3). */
 async function reportFileAccess(displayUrl: string | null, mode: string): Promise<void> {
   let allowed: boolean | null;
   try {
@@ -708,7 +708,7 @@ async function main(): Promise<void> {
     mimeHandler: 'mimeHandler' in chrome ? chrome.mimeHandler : undefined,
     fetch: (input, init) => fetch(input, init),
     now: () => performance.now(),
-    // 머리 영역 확대 보정은 문서 수신을 기다리지 않는다.
+    // Header zoom compensation does not wait for the document to arrive.
     onContext: (kind, streamInfo) => {
       attachHeaderZoom(kind, streamInfo).catch((e: unknown) =>
         diag.add('header-zoom-error', String(e)),
@@ -716,7 +716,7 @@ async function main(): Promise<void> {
     },
   });
   contextKind = source.kind;
-  // 문맥 이름은 화면에 보이지 않고 시험·진단용으로 body 에 남긴다.
+  // The context name is not shown on screen; it is left on body for tests and diagnostics.
   document.body.dataset.context = source.kind;
   void reportFileAccess(
     source.displayUrl,
@@ -729,10 +729,10 @@ async function main(): Promise<void> {
   diag.add('source', describeSource(source));
 
   if (source.bytes) {
-    // Chrome 기본 PDF 뷰어처럼 열자마자 Ctrl+A·C·F 가 뷰어로 오게 한다. MIME handler 뷰어는 PDF URL
-    // 페이지의 하위 프레임이라 포커스를 직접 가져와야 한다. 임베디드 문맥은 바깥 페이지 포커스를 빼앗지 않는다.
-    // 열기 전에 가져온다: controller.start() 는 편집 가능 판정(폴백 폰트 적재 포함)까지 기다려 늦게 끝나므로,
-    // 그 뒤에 포커스를 가져오면 텍스트 층이 뜬 직후의 단축키를 놓친다(M3 통합 e2e, 2026-10-20).
+    // Like Chrome's default PDF viewer, make Ctrl+A, C and F reach the viewer right after opening. The MIME handler viewer is a child frame of the PDF URL
+    // page, so it must take focus directly. Embedded contexts do not steal the outer page's focus.
+    // Take it before opening: controller.start() waits for the editability check (including fallback font loading) and finishes late,
+    // so taking focus after that would miss shortcuts pressed right after the text layer appears (M3 integration e2e, 2026-10-20).
     if (source.kind === 'mime-handler-top') window.focus();
     try {
       await openBytes(source.bytes, fileLabel(source.displayUrl));
@@ -740,7 +740,7 @@ async function main(): Promise<void> {
     } catch (e) {
       diag.add('open-error', String(e));
       if (source.streamInfo) {
-        // 지원하지 않는 문서: Chrome 기본 뷰어로 넘긴다. 이후 코드는 실행되지 않는다.
+        // Unsupported document: hand off to Chrome's default viewer. Later code is not executed.
         await chrome.mimeHandler.abortAndFallbackToNativeHandler();
         return;
       }

@@ -4,7 +4,7 @@ import { pageTransform, readStreamBytes, releaseBorrowedShade } from '../src/mup
 import { recordDevice } from './helpers/device-log.js';
 import { buildTestPageModel } from './helpers/page-model.js';
 
-/** M1 리뷰 반영: WASM 래퍼(쪽·버퍼)를 쓰고 바로 해제하는 도구와, 빌린 Shade 래퍼의 종료자 해제. */
+/** M1 review fixes: tools that use a WASM wrapper (page, buffer) and release it immediately, and finalizer release of borrowed Shade wrappers. */
 function shadedDoc(): mupdf.PDFDocument {
   const src = new mupdf.PDFDocument();
   const shading = src.addObject({
@@ -26,7 +26,7 @@ function shadedDoc(): mupdf.PDFDocument {
 afterEach(() => vi.restoreAllMocks());
 
 describe('mupdf-util', () => {
-  it('readStreamBytes: 디코드 바이트의 JS 복사본(WASM 메모리 뷰가 아님)', () => {
+  it('readStreamBytes: a JS copy of the decoded bytes (not a WASM memory view)', () => {
     const doc = shadedDoc();
     const contents = doc.findPage(0).get('Contents');
     const bytes = readStreamBytes(contents);
@@ -35,7 +35,7 @@ describe('mupdf-util', () => {
     expect(bytes.buffer.byteLength).toBe(bytes.byteLength);
   });
 
-  it('pageTransform: PDFPage.getTransform() 과 같다(/Rotate 90)', () => {
+  it('pageTransform: same as PDFPage.getTransform() (/Rotate 90)', () => {
     const doc = shadedDoc();
     const page = doc.loadPage(0);
     const expected = page.getTransform();
@@ -43,10 +43,10 @@ describe('mupdf-util', () => {
     expect(pageTransform(doc, 0)).toEqual(expected);
   });
 
-  it('releaseBorrowedShade: 테스트 헬퍼의 fillShade 가 빌린 Shade 래퍼의 종료자를 해제한다', () => {
+  it('releaseBorrowedShade: fillShade of the test helper releases the finalizer of the borrowed Shade wrapper', () => {
     const doc = shadedDoc();
     const page = doc.loadPage(0);
-    // 첫 실행에서 Shade 종료자 레지스트리가 생긴다.
+    // The first run creates the Shade finalizer registry.
     expect(recordDevice(page).some((e) => e.kind === 'fillShade')).toBe(true);
     const registry = (mupdf.Shade as unknown as { _finalizer?: FinalizationRegistry<unknown> })
       ._finalizer!;
@@ -60,7 +60,7 @@ describe('mupdf-util', () => {
     page.destroy();
   });
 
-  it('releaseBorrowedShade: 레지스트리가 없는 래퍼도 예외 없이 지나간다', () => {
+  it('releaseBorrowedShade: a wrapper without a registry also passes without an exception', () => {
     const fake = { constructor: {} } as unknown as mupdf.Shade;
     expect(() => releaseBorrowedShade(fake)).not.toThrow();
   });

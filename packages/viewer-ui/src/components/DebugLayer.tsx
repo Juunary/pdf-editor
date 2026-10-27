@@ -20,7 +20,7 @@ interface LayerProps {
 
 const MATCH_KINDS: CharMatch[] = ['matched', 'limited', 'unmatched'];
 
-/** 글자 quad 를 매칭 여부(성공/편집 제한/실패)로 색칠하는 캔버스. 마우스 이벤트는 받지 않는다. */
+/** Canvas that colors character quads by match status (success / edit-limited / failed). It does not receive mouse events. */
 export function DebugLayer({ model, linkage, map, layout }: LayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const classes = useMemo(
@@ -78,7 +78,7 @@ interface Hover {
   y: number;
 }
 
-/** 요약 HUD 와 마우스 위치 글자의 SourceOp 툴팁. 이벤트는 페이지 컨테이너에서 받는다. */
+/** Summary HUD and the SourceOp tooltip of the character under the mouse. Events are received at the page container. */
 export function DebugInspector({ model, order, linkage, map, layout, pageRef }: InspectorProps) {
   const [hover, setHover] = useState<Hover | null>(null);
 

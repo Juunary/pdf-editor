@@ -1,13 +1,13 @@
 /**
- * 패스 편집 동작 하나(DOM 비의존, M4 계약 4.5): 끌기·색 선택·두께·삭제 한 번 = 초안 1개 = 편집 1개.
+ * One path edit action (DOM-independent, M4 contract 4.5): one drag, color pick, width change or delete = one draft = one edit.
  *
- * - 시작하면 `beginPathEdit` 를 비동기로 열고, `update()` 는 최신 편집만 보관한다. 서버 갱신(`updatePathDraft`)은
- *   마지막 갱신 뒤 `debounceMs`(200 ms) 정지 때와 `flush()`(놓을 때)만 보낸다.
- * - `commit()` 은 열린 초안에 최신 편집을 보내고 커밋한다. 편집이 없거나 바뀌는 것이 없는 편집(제자리 끌기 등)이면
- *   취소와 같다(변경 없는 편집을 저널에 남기지 않는다).
- * - Worker 복구(`WorkerRecoveredError`)가 나면 같은 대상으로 다시 계획·시작하고 최신 편집을 다시 보낸다.
- * - 다시 계획(revision 재시도·복구 재시작)한 결과의 대상 지문(`target.fingerprints`)이 직전 계획과 다르면 같은 paintSeq 가
- *   다른 패스를 가리키는 것이므로 시작하지 않고 `PathTargetChangedError` 로 끝낸다(선택은 호출자가 푼다).
+ * - On start, opens `beginPathEdit` asynchronously, and `update()` keeps only the latest edit. Server updates (`updatePathDraft`) are
+ *   sent only after `debounceMs` (200 ms) of idle time since the last update and on `flush()` (on release).
+ * - `commit()` sends the latest edit to the open draft and commits. If there is no edit, or the edit changes nothing (such as dragging in place),
+ *   it is the same as cancel (an unchanged edit is not left in the journal).
+ * - On Worker recovery (`WorkerRecoveredError`), replans and restarts with the same target and resends the latest edit.
+ * - If the target fingerprints (`target.fingerprints`) of the replan (revision retry or recovery restart) differ from the previous plan, the same paintSeq
+ *   points at a different path, so it does not start and ends with `PathTargetChangedError` (the caller clears the selection).
  */
 import type {
   CommitResult,
@@ -28,15 +28,15 @@ export interface PathRegion {
 }
 
 export interface PathGestureView {
-  /** 열린 초안 id(시작 전이면 null). */
+  /** Open draft id (null before start). */
   draftId: string | null;
-  /** 최신 편집(미리보기 기준). */
+  /** Latest edit (basis of the preview). */
   edit: PathEdit | null;
-  /** 서버가 합성한 변경 영역(최신 편집이 반영된 것이 아닐 수 있다 — `pending` 참고). */
+  /** Changed region composited by the server (may not reflect the latest edit — see `pending`). */
   region: PathRegion | null;
-  /** 최신 편집이 아직 변경 영역에 반영되지 않았다(클라이언트 미리보기를 보여야 한다). */
+  /** The latest edit is not yet reflected in the changed region (the client preview must be shown). */
   pending: boolean;
-  /** 서버 갱신 요청 중. */
+  /** Server update request in flight. */
   updating: boolean;
   committing: boolean;
   error: string | null;
@@ -57,7 +57,7 @@ export type PathCommitOutcome =
   | { kind: 'cancelled'; history: EditHistoryState | null }
   | { kind: 'failed'; error: string; targetChanged?: boolean };
 
-/** 바꾸는 것이 없는 편집(변환 없음·항등, 속성 없음, 점 없음, 삭제 아님). */
+/** An edit that changes nothing (no transform or identity, no properties, no points, not a delete). */
 export function isNoopPathEdit(edit: PathEdit): boolean {
   const t = edit.transform;
   const identity =
@@ -73,7 +73,7 @@ export function isNoopPathEdit(edit: PathEdit): boolean {
   );
 }
 
-/** 다시 계획한 대상이 처음 선택한 패스와 다르다(같은 paintSeq 가 다른 패스를 가리킴). */
+/** The replanned target differs from the originally selected path (the same paintSeq points at a different path). */
 export class PathTargetChangedError extends Error {
   constructor() {
     super('그 사이 문서가 바뀌어 선택한 패스가 달라졌습니다. 패스를 다시 선택하세요.');
@@ -81,7 +81,7 @@ export class PathTargetChangedError extends Error {
   }
 }
 
-/** 지문 비교(pdf-ops `sameFingerprint` 와 같은 규칙: 상자는 2e-3 까지 허용). */
+/** Fingerprint comparison (same rule as pdf-ops `sameFingerprint`: boxes are allowed up to 2e-3). */
 function sameFingerprint(a: PathFingerprint, b: PathFingerprint): boolean {
   return (
     a.paintOp === b.paintOp &&
@@ -91,7 +91,7 @@ function sameFingerprint(a: PathFingerprint, b: PathFingerprint): boolean {
   );
 }
 
-/** 두 계획의 대상(paintSeqs·지문)이 같은지. */
+/** Whether the targets (paintSeqs, fingerprints) of two plans are the same. */
 export function sameTarget(a: PathEditPlan, b: PathEditPlan): boolean {
   const x = a.target;
   const y = b.target;
@@ -108,7 +108,7 @@ const isRevisionError = (e: unknown): boolean => /revision/i.test(classifyFailur
 export class PathGesture {
   private draftId: string | null = null;
   private latest: PathEdit | null = null;
-  /** 서버에 마지막으로 보낸(처리된) 편집. */
+  /** The edit last sent to (and processed by) the server. */
   private sent: PathEdit | null = null;
   private region: PathRegion | null = null;
   private seq = 0;
@@ -118,7 +118,7 @@ export class PathGesture {
   private closed = false;
   private committing = false;
   private error: string | null = null;
-  /** 다시 계획한 대상이 달라 이 동작을 끝냈다(`PathTargetChangedError`). */
+  /** This action ended because the replanned target differed (`PathTargetChangedError`). */
   private targetChanged = false;
   private plan: PathEditPlan;
 
@@ -127,7 +127,7 @@ export class PathGesture {
     private readonly pageIndex: number,
     private readonly paintSeqs: number[],
     plan: PathEditPlan,
-    /** revision 이 낡았을 때(그 사이 문서가 바뀜) 다시 판정한다. */
+    /** When the revision is stale (the document changed in between), classify again. */
     private readonly replan: () => Promise<PathEditPlan>,
   ) {
     this.plan = plan;
@@ -163,7 +163,7 @@ export class PathGesture {
     }
   }
 
-  /** 다시 계획한다. 대상 지문이 직전 계획과 다르면 `PathTargetChangedError`. */
+  /** Replans. `PathTargetChangedError` if the target fingerprints differ from the previous plan. */
   private async replanSameTarget(): Promise<void> {
     const next = await this.replan();
     if (!sameTarget(this.plan, next)) {
@@ -174,7 +174,7 @@ export class PathGesture {
     this.plan = next;
   }
 
-  /** 시작이 끝날 때까지 기다린다(실패하면 던진다). */
+  /** Waits until the start finishes (throws on failure). */
   ready(): Promise<void> {
     return this.begun;
   }
@@ -195,7 +195,7 @@ export class PathGesture {
     if (!this.closed) this.deps.onChange(this.view());
   }
 
-  /** 최신 편집을 기록한다. 서버 갱신은 정지 뒤(`debounceMs`)에 보낸다. */
+  /** Records the latest edit. The server update is sent after idle time (`debounceMs`). */
   update(edit: PathEdit): void {
     if (this.closed) return;
     this.latest = edit;
@@ -207,7 +207,7 @@ export class PathGesture {
     this.emit();
   }
 
-  /** 최신 편집을 지금 보낸다(포인터를 놓을 때). 처리가 끝나면 풀린다. */
+  /** Sends the latest edit now (on pointer release). Resolves when processing finishes. */
   async flush(): Promise<void> {
     if (this.timer !== null) {
       this.deps.clearTimer(this.timer);
@@ -261,14 +261,14 @@ export class PathGesture {
         }
         this.error = classifyFailure(e).message;
         this.deps.log('path-update-error', { error: this.error });
-        this.sent = edit; // 같은 편집을 무한히 다시 보내지 않는다(다음 update 에서 재시도)
+        this.sent = edit; // do not resend the same edit forever (retried on the next update)
         return;
       }
       this.emit();
     }
   }
 
-  /** Worker 복구 뒤: 같은 대상을 다시 계획·시작하고 최신 편집을 다시 보낸다. */
+  /** After Worker recovery: replans and restarts with the same target and resends the latest edit. */
   private async restart(): Promise<void> {
     this.draftId = null;
     this.sent = null;
@@ -282,7 +282,7 @@ export class PathGesture {
     this.plan = begun.plan;
   }
 
-  /** 커밋한다. 편집이 없었으면 취소와 같다. 실패하면 초안을 취소해 문서를 원래대로 둔다. */
+  /** Commits. If there was no edit, it is the same as cancel. On failure, cancels the draft and leaves the document as it was. */
   async commit(): Promise<PathCommitOutcome> {
     if (this.closed) return { kind: 'cancelled', history: null };
     this.committing = true;
@@ -295,7 +295,7 @@ export class PathGesture {
       }
       await this.flush();
       if (this.targetChanged) throw new PathTargetChangedError();
-      // 마지막 갱신이 실패했으면 커밋하지 않는다(화면과 다른 결과가 저장되는 것을 막는다).
+      // If the last update failed, do not commit (prevents saving a result that differs from the screen).
       if (this.error !== null) throw new Error(this.error);
       const result = await this.deps.rpc.commitPathEdit(this.draftId!);
       return { kind: 'committed', result };
@@ -312,7 +312,7 @@ export class PathGesture {
     }
   }
 
-  /** 취소한다(Esc). 열린 초안이 있으면 서버에서도 버린다. */
+  /** Cancels (Esc). If there is an open draft, also discards it on the server. */
   async cancel(): Promise<EditHistoryState | null> {
     if (this.closed) return null;
     this.close();

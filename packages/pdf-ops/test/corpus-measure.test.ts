@@ -11,14 +11,14 @@ import {
 import { buildTestPageModel } from './helpers/page-model.js';
 
 /**
- * 코퍼스 매칭 측정 러너(docs/m1-pdf-ops.md 5.5절). 환경 변수가 없으면 건너뛴다.
+ * Corpus matching measurement runner (docs/m1-pdf-ops.md section 5.5). Skipped when the environment variable is absent.
  *
- *   LINK_MEASURE_DIR=<PDF 폴더>  [LINK_MEASURE_OUT=<결과 경로, 확장자 없이>]  [LINK_MEASURE_POLICIES=first-arrival,no-clip]
+ *   LINK_MEASURE_DIR=<PDF folder>  [LINK_MEASURE_OUT=<result path, without extension>]  [LINK_MEASURE_POLICIES=first-arrival,no-clip]
  *   pnpm --filter @pdf-editor/pdf-ops exec vitest run test/corpus-measure.test.ts
  *
- * 결과: <OUT>.json(문서별·정책별 요약, 실패 쪽 번호, 쪽 예외)과 <OUT>.md(표). OUT 이 없으면 표를 표준 출력에 쓴다.
- * PageModel 은 테스트 헬퍼(MuPDF Device, 계약 3.1 판정)로 만든다. core extractPage 로 측정하려면
- * `@pdf-editor/pdf-ops/measure` 의 measureDocument 에 core 를 감싼 ModelProvider 를 넘긴다.
+ * Result: <OUT>.json (per-document and per-policy summary, failed page numbers, page exceptions) and <OUT>.md (table). Without OUT, the table goes to stdout.
+ * PageModel is built by the test helper (MuPDF Device, contract 3.1 classification). To measure with core extractPage,
+ * pass a ModelProvider wrapping core to measureDocument in `@pdf-editor/pdf-ops/measure`.
  */
 const dir = process.env.LINK_MEASURE_DIR;
 const out = process.env.LINK_MEASURE_OUT;
@@ -39,8 +39,8 @@ function pdfFiles(root: string): string[] {
   return found;
 }
 
-describe.skipIf(!dir)('코퍼스 매칭 측정(LINK_MEASURE_DIR)', () => {
-  it('문서별·정책별 실패 쪽·글리프 수', () => {
+describe.skipIf(!dir)('corpus matching measurement (LINK_MEASURE_DIR)', () => {
+  it('failed pages and glyph counts per document and per policy', () => {
     const docs: DocumentMeasure[] = [];
     const openErrors: { file: string; message: string }[] = [];
     for (const path of pdfFiles(dir!)) {
@@ -55,7 +55,7 @@ describe.skipIf(!dir)('코퍼스 매칭 측정(LINK_MEASURE_DIR)', () => {
         openErrors.push({ file, message: e instanceof Error ? e.message : String(e) });
         continue;
       }
-      // doc.destroy() 는 하지 않는다: 남은 PDFObject 래퍼의 나중 정리가 해제된 문서에 접근할 수 있다.
+      // doc.destroy() is not called: later cleanup of the remaining PDFObject wrappers may touch the freed document.
       docs.push(measureDocument(file, doc, buildTestPageModel, policies));
     }
     const table = formatMeasureTable(docs);

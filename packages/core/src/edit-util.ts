@@ -1,4 +1,4 @@
-/** 편집 세션이 쓰는 순수 보조 함수(기하·경고·폴백 폰트 바이트·PDF/A 선언 검사). */
+/** Pure helper functions used by the edit session (geometry, warnings, fallback font bytes, PDF/A declaration check). */
 import * as mupdf from 'mupdf';
 import type {
   EditWarning,
@@ -21,7 +21,7 @@ export function inflateRect(r: Rect, margin: number): Rect {
   return [r[0] - margin, r[1] - margin, r[2] + margin, r[3] + margin];
 }
 
-/** 겹치지 않으면 null. */
+/** null if they do not overlap. */
 export function intersectRect(a: Rect, b: Rect): Rect | null {
   const r: Rect = [
     Math.max(a[0], b[0]),
@@ -41,25 +41,25 @@ function containsRect(outer: Rect, inner: Rect, tolerance = 0): boolean {
   );
 }
 
-/** FontManager 가 정하는 경고. 현재 글자 기준으로 매번 다시 정해지므로 계획 단계 경고를 대체한다. */
+/** Warnings decided by FontManager. They are recomputed each time from the current text, so they replace the planning-stage warnings. */
 const FONT_WARNING_KINDS: ReadonlySet<EditWarningKind> = new Set<EditWarningKind>([
   'font-fallback',
   'glyph-missing',
   'synthetic-style',
 ]);
 
-/** core 가 리플로우 결과로 직접 정하는 경고. */
+/** Warnings that core decides directly from the reflow result. */
 const CORE_WARNING_KINDS: ReadonlySet<EditWarningKind> = new Set<EditWarningKind>([
   'overflow-clipped',
   'area-overlaps-content',
 ]);
 
-/** 영역 상한 밖으로 나간 부분이 렌더에서 잘린다(계약 5.4: 자동 확장이 상한에 막힌 초과). */
+/** Part beyond the area limit is clipped in rendering (contract 5.4: overflow when automatic expansion is blocked by the limit). */
 const CLIP_TOLERANCE_PT = 0.5;
-/** 겹침으로 보는 최소 변 길이(pt). 맞닿은 테두리를 겹침으로 세지 않는다. */
+/** Minimum side length (pt) to count as an overlap. Touching borders are not counted as overlapping. */
 const OVERLAP_MIN_PT = 0.5;
 
-/** `contentBox` 가 `areaLimit` 밖으로 나간 부분(위·아래·왼쪽·오른쪽 띠). */
+/** Parts of `contentBox` that fall outside `areaLimit` (top, bottom, left and right bands). */
 function outsideStrips(box: Rect, limit: Rect): Rect[] {
   const strips: Rect[] = [];
   if (box[1] < limit[1] - CLIP_TOLERANCE_PT) strips.push([box[0], box[1], box[2], limit[1]]);
@@ -73,15 +73,15 @@ export interface CoreWarningInput {
   summary: ReflowSummary;
   areaLimit: Rect;
   layout: PageLayout;
-  /** 편집 대상 문단(레이아웃 id). 다른 내용과의 겹침 판정에서 뺀다. */
+  /** Paragraph being edited (layout id). Excluded from the overlap check against other content. */
   paragraphId: number;
-  /** 원 문단 bbox. 이 상자를 덮는 표·도형(배경)은 겹침으로 세지 않는다. */
+  /** Original paragraph bbox. Tables and shapes (backgrounds) covering this box are not counted as overlaps. */
   originalBox: Rect;
 }
 
 /**
- * 리플로우 결과로 정하는 경고(계약 5.1·5.4): `overflow-clipped`(배치 상자가 영역 상한 밖),
- * `area-overlaps-content`(쓴 영역이 다른 문단·표·도형과 겹침, 원 문단 bbox 를 덮는 표·도형은 제외).
+ * Warnings decided from the reflow result (contract 5.1, 5.4): `overflow-clipped` (layout box outside the area limit),
+ * `area-overlaps-content` (the written area overlaps another paragraph, table or shape; tables and shapes covering the original paragraph bbox are excluded).
  */
 export function coreWarnings(input: CoreWarningInput): EditWarning[] {
   const { summary, areaLimit, layout, paragraphId, originalBox } = input;
@@ -103,7 +103,7 @@ export function coreWarnings(input: CoreWarningInput): EditWarning[] {
     r !== null && r[2] - r[0] > OVERLAP_MIN_PT && r[3] - r[1] > OVERLAP_MIN_PT;
   const overlaps: Rect[] = [];
   for (const box of others) {
-    // 원 문단이 이미 겹쳐 있던 상자(좁은 행간·그림 위 글)는 영역을 넓혀서 생긴 겹침이 아니다.
+    // A box the original paragraph already overlapped (tight line spacing, text over a picture) is not an overlap created by enlarging the area.
     if (significant(intersectRect(originalBox, box))) continue;
     const hit = intersectRect(summary.area, box);
     if (significant(hit)) overlaps.push(hit);
@@ -119,8 +119,8 @@ export function coreWarnings(input: CoreWarningInput): EditWarning[] {
 }
 
 /**
- * 초안 경고 목록. 계획 단계 경고 중 폰트·core 판정 종류는 현재 글자 기준의 새 결과로 바꾼다
- * (글자를 지우면 `glyph-missing` 이 사라진다). 같은 종류는 하나로 합친다.
+ * Draft warning list. Among planning-stage warnings, the font and core-classified kinds are replaced with fresh results based on the current text
+ * (deleting the text removes `glyph-missing`). Warnings of the same kind are merged into one.
  */
 export function mergeWarnings(
   planWarnings: EditWarning[],
@@ -138,7 +138,7 @@ export function mergeWarnings(
   return [...merged.values()];
 }
 
-/** /Metadata(XMP)에 PDF/A 선언(`pdfaid:part`)이 있는지(계약 5.6). 읽지 못하면 false. */
+/** Whether /Metadata (XMP) has a PDF/A declaration (`pdfaid:part`) (contract 5.6). false if it cannot be read. */
 export function declaresPdfA(doc: mupdf.PDFDocument): boolean {
   try {
     const metadata = doc.getTrailer().get('Root', 'Metadata');
@@ -155,15 +155,15 @@ export function declaresPdfA(doc: mupdf.PDFDocument): boolean {
 }
 
 /**
- * trailer /Info 가 해석되는 사전이 아니면 새 빈 사전을 만든다. 작업(저널) 밖에서만 부른다(계약 D9, docs/m3-core.md 2.2).
- * 객체를 추가하면 MuPDF 가 새 xref 구간을 만들어 trailer 도 새 사전이 되므로, 객체를 먼저 만들고 `getTrailer()` 를
- * 그 뒤에 부른다(먼저 받아 둔 trailer 에 넣으면 현재 trailer 에 반영되지 않는다, docs/m3-core.md 2.2).
+ * If trailer /Info is not a resolvable dictionary, creates a new empty dictionary. Call only outside an operation (journal) (contract D9, docs/m3-core.md 2.2).
+ * Adding an object makes MuPDF create a new xref section, and the trailer becomes a new dictionary too, so create the object first and call `getTrailer()`
+ * afterwards (putting it into a trailer obtained earlier does not reflect in the current trailer, docs/m3-core.md 2.2).
  */
 export function ensureInfoDictionary(doc: mupdf.PDFDocument): void {
-  // isDictionary 는 간접 참조를 따라간다. 끊긴 참조·null 이면 false.
+  // isDictionary follows indirect references. false for a broken reference or null.
   const info = doc.getTrailer().get('Info');
   if (info.isDictionary()) {
-    // 직접 사전이면 trailer 변경이 저널에 기록되지 않아 undo 가 닿지 않는다. 간접 객체로 바꿔 둔다.
+    // For a direct dictionary, trailer changes are not recorded in the journal and undo cannot reach them. Convert it to an indirect object.
     if (!info.isIndirect()) {
       const ref = doc.addObject(info);
       doc.getTrailer().put('Info', ref);
@@ -174,9 +174,9 @@ export function ensureInfoDictionary(doc: mupdf.PDFDocument): void {
   doc.getTrailer().put('Info', created);
 }
 
-/** 표 괘선으로 볼 수 있는 가는 패스의 짧은 변 상한(pt). */
+/** Upper bound (pt) on the short side of a thin path that can be taken as a table rule. */
 const RULE_MAX_THICKNESS_PT = 3;
-/** 색 채널을 "같다"로 보는 8비트 반올림 오차. */
+/** 8-bit rounding tolerance for treating color channels as "equal". */
 const RGB_EPSILON = 0.5 / 255;
 
 function sameRgb(a: RGB, b: RGB): boolean {
@@ -184,9 +184,9 @@ function sameRgb(a: RGB, b: RGB): boolean {
 }
 
 /**
- * 새 색을 원래 색공간 계열로 쓸 수 없어 DeviceRGB 로 바꿔야 하는가(계약 D3). 성분 수 1·3·4 의 Device 계열은 그대로
- * 쓰되 Gray 에 채도가 있으면 불가, Separation·DeviceN·Indexed·Lab 은 항상 불가. 원래 rgb 근사와 같은 색은 쓰지 않는
- * 채널이라 해당 없음. pdf-ops 의 실제 쓰기 결정의 근사이며, pdf-ops 가 같은 종류 경고를 주면 합쳐진다.
+ * Whether the new color cannot be written in the original color space family and must be changed to DeviceRGB (contract D3). Device families with 1, 3 or 4 components are kept as is,
+ * but a Gray with saturation cannot; Separation, DeviceN, Indexed and Lab always cannot. The same color as the original rgb approximation is a channel
+ * that is not written, so it does not apply. This approximates pdf-ops' actual write decision; if pdf-ops reports a warning of the same kind, they are merged.
  */
 function needsSpaceChange(old: PaintColor | null, next: RGB | null): boolean {
   if (!old || !next) return false;
@@ -197,8 +197,8 @@ function needsSpaceChange(old: PaintColor | null, next: RGB | null): boolean {
 }
 
 /**
- * 패스 편집 요청으로 core 가 정하는 경고(계약 4.2): `color-space-changed`(D3 근사), `table-rule-removed`(D2: 괘선 표
- * 안의 가는 패스를 지움, 레이아웃 기반 근사). `path-clipped` 는 칠하기 시점 클립을 아는 pdf-ops 만 정할 수 있다.
+ * Warnings core decides for a path edit request (contract 4.2): `color-space-changed` (D3 approximation), `table-rule-removed` (D2: erased a thin path
+ * inside a table rule, layout-based approximation). `path-clipped` can be decided only by pdf-ops, which knows the clip at paint time.
  */
 export function pathCoreWarnings(
   plan: Pick<PathEditPlan, 'fill' | 'stroke' | 'target'>,
@@ -234,9 +234,9 @@ export function pathCoreWarnings(
 }
 
 /**
- * 저장 파일에서 폴백 폰트 서브셋의 이름에 서브셋 태그(`ABCDEF+`)를 붙인다(PDF 32000 9.6.4, R-L2). 태그는 서브셋 글꼴
- * 바이트의 해시에서 정해 같은 글자 집합이면 같다(결정성). 저장 작업 안에서 서브셋 교체 뒤에 부르고, 작업을 버리면 되돌아간다.
- * 서브셋 바이트가 없으면(교체 실패·건너뜀) 아무것도 하지 않는다.
+ * In the saved file, attaches a subset tag (`ABCDEF+`) to the name of the fallback font subset (PDF 32000 9.6.4, R-L2). The tag is derived from a hash of the subset font
+ * bytes, so the same character set gives the same tag (determinism). Call it within the save operation after the subset swap; discarding the operation reverts it.
+ * If there are no subset bytes (swap failed or skipped), does nothing.
  */
 export function tagFallbackSubset(doc: mupdf.PDFDocument, fontRef: mupdf.PDFObject): void {
   const font = fontRef.resolve();

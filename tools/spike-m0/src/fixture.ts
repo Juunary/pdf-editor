@@ -2,10 +2,10 @@ import * as mupdf from 'mupdf';
 import type { Rect } from '@pdf-editor/shared-types';
 
 /**
- * M0 스파이크 샘플 PDF(A4 1쪽).
- * 교체 대상 문단이 옅은 배경 패널 위에 있고, 표 괘선(가로·세로)이 문단을 가로지르며,
- * 문단 오른쪽 redaction 영역 안에 이미지가 있다. 원본 글꼴은 Helvetica(라틴)뿐이라
- * 교체 문단의 한글은 폴백 폰트 임베딩이 필요하다.
+ * M0 spike sample PDF (A4, 1 page).
+ * The replacement target paragraph sits on a light background panel, table rules (horizontal and vertical) cross the paragraph,
+ * and an image is inside the redaction area to the right of the paragraph. The original font is only Helvetica (Latin), so
+ * the Korean in the replacement paragraph needs fallback font embedding.
  */
 
 export const PAGE_WIDTH = 595;
@@ -25,12 +25,12 @@ export const ADJACENT_LINES = [
 export const FOOTER_TEXT = 'Footer text outside the panel.';
 
 /**
- * redaction 영역(MuPDF 페이지 좌표, 원점 좌상단). PDF 좌표 [56, 650, 540, 714].
- * 이미지 보존을 확인하려고 문단 오른쪽 이미지까지 덮는다.
+ * redaction area (MuPDF page coordinates, origin at top left). PDF coordinates [56, 650, 540, 714].
+ * It also covers the image to the right of the paragraph to verify image preservation.
  */
 export const TARGET_RECT: Rect = [56, PAGE_HEIGHT - 714, 540, PAGE_HEIGHT - 650];
 
-/** 새 문단 배치 영역 = 원 문단 영역(이미지 왼쪽). PDF 좌표 [56, 650, 470, 714]. */
+/** New paragraph placement area = original paragraph area (left of the image). PDF coordinates [56, 650, 470, 714]. */
 export const TARGET_TEXT_BOX: Rect = [56, PAGE_HEIGHT - 714, 470, PAGE_HEIGHT - 650];
 
 function escapePdfString(s: string): string {
@@ -53,7 +53,7 @@ function textLines(
     .join('\n');
 }
 
-/** 결정적 그라디언트 이미지(64x64 RGB). */
+/** Deterministic gradient image (64x64 RGB). */
 function gradientImage(seed = 0): mupdf.Image {
   const size = 64;
   const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, size, size], false);
@@ -70,19 +70,19 @@ function gradientImage(seed = 0): mupdf.Image {
 }
 
 export interface SampleOptions {
-  /** false 면 교체 대상 문단을 뺀 "기대 결과" 페이지를 만든다. */
+  /** If false, creates the "expected result" page without the replacement target paragraph. */
   includeTarget?: boolean;
 }
 
 function samplePageContent(includeTarget: boolean): string {
   return [
-    // 배경 패널과 테두리
+    // Background panel and border
     '0.93 0.95 1 rg 50 560 495 160 re f',
     '0.2 0.3 0.6 RG 1 w 50 560 495 160 re S',
-    // 표 괘선: 가로 y=600/640/680, 세로 x=300 (y=680, x=300 은 대상 문단을 지난다)
+    // Table rules: horizontal y=600/640/680, vertical x=300 (y=680, x=300 pass through the target paragraph)
     '0.4 0.4 0.4 RG 0.75 w 50 600 m 545 600 l S 50 640 m 545 640 l S 50 680 m 545 680 l S',
     '300 560 m 300 720 l S',
-    // 이미지: redaction 영역 안(오른쪽)
+    // Image: inside the redaction area (right side)
     'q 56 0 0 56 478 654 cm /Im1 Do Q',
     textLines('F2', 18, 56, 780, 0, [TITLE_TEXT]),
     includeTarget ? textLines('F1', 11, 60, 700, 14, TARGET_LINES) : '',
@@ -116,8 +116,8 @@ export function buildSamplePdf(options: SampleOptions = {}): Uint8Array {
 }
 
 /**
- * 합성 벤치마크 문서: 샘플 페이지 N장, 페이지마다 고유 잡음 이미지(512x512 RGB, 압축 불가)를
- * 붙여 파일 크기를 키운다. 실제 코퍼스 벤치마크 전 상한 추정용.
+ * Synthetic benchmark document: N sample pages, each with a unique noise image (512x512 RGB, incompressible)
+ * attached to inflate the file size. For estimating limits before the real corpus benchmark.
  */
 export function buildSyntheticPdf(pages: number, noiseSize = 512): Uint8Array {
   const doc = new mupdf.PDFDocument();

@@ -1,11 +1,11 @@
 /**
- * 텍스트 표시 연산(Tj·TJ·'·")의 명세 폭 분석과 다시 쓰기(docs/m3-contract.md D2·D3).
+ * Spec-width analysis and rewriting of text-showing operations (Tj, TJ, ', ") (docs/m3-contract.md D2, D3).
  *
- * - 분석: 연산 바이트를 다시 읽어 글리프마다 코드 바이트와 가로 변위(텍스트 공간, Tc·Tw·Th 포함, 명세 폭
- *   `PdfFont.advanceSpec`)를 구한다. 계산할 수 없으면 `RemoveSkipCode`.
- * - 다시 쓰기: 지울 글리프는 같은 변위의 TJ 숫자 조정으로, 남길 글리프는 원 코드 바이트의 16진 문자열로 바꾼
- *   TJ 를 만든다(연산 일부만 지우기). `'`·`"` 는 앞 효과(`T*`·`Tw`·`Tc`)를 남긴다. 편집 블록 삽입점이 연산 안이면
- *   그 글리프 경계에서 TJ 를 둘로 나누고 사이에 삽입 텍스트를 넣는다(D3 규칙 2).
+ * - Analysis: re-reads the operation bytes and gets, per glyph, the code bytes and the horizontal displacement (text space, including Tc, Tw and Th, spec width
+ *   `PdfFont.advanceSpec`). `RemoveSkipCode` if it cannot be computed.
+ * - Rewriting: builds a TJ in which glyphs to erase become TJ number adjustments of the same displacement and glyphs to keep become hex strings of
+ *   the original code bytes (erasing only part of an operation). `'` and `"` keep their preceding effects (`T*`, `Tw`, `Tc`). If the edit block insertion point is inside an operation,
+ *   the TJ is split in two at that glyph boundary and the inserted text goes between (D3 rule 2).
  */
 import type { RemoveSkipCode, SourceOp } from '@pdf-editor/shared-types';
 import { decodeStringToken, parseContentOpsLenient, type Token } from './content-stream.js';
@@ -20,7 +20,7 @@ export interface SkipInfo {
 export const isSkip = (v: unknown): v is SkipInfo =>
   typeof v === 'object' && v !== null && 'code' in v && 'detail' in v;
 
-/** 연산 피연산자. content-interp readOperands 와 같은 선택: 최상위 숫자, 마지막 문자열, 마지막 배열. */
+/** Operation operands. Same selection as content-interp readOperands: top-level numbers, last string, last array. */
 export interface OpParts {
   nums: Token[];
   str: Token | null;
@@ -51,7 +51,7 @@ export function opParts(tokens: readonly Token[]): OpParts {
   return out;
 }
 
-/** 글리프 1개: 문자열 안 코드 바이트와 가로 변위(텍스트 공간 단위, Th 포함). */
+/** One glyph: code bytes in the string and horizontal displacement (text-space units, including Th). */
 export interface ShowGlyph {
   bytes: Uint8Array;
   tx: number;
@@ -63,13 +63,13 @@ export interface ShowAnalysis {
   parts: OpParts;
   items: ShowItem[];
   glyphs: ShowGlyph[];
-  /** 연산 전체 변위(텍스트 공간, TJ 숫자 포함). */
+  /** Total displacement of the operation (text space, including TJ numbers). */
   total: number;
   fontSize: number;
   hScale: number;
 }
 
-/** 연산 바이트(그 연산 범위만)를 다시 읽는다. 다른 연산이 섞이거나 오류면 null. */
+/** Re-reads the operation bytes (only that operation's range). null if another operation is mixed in or on error. */
 export function reparseOp(op: SourceOp, opBytes: Uint8Array): OpParts | null {
   const parsed = parseContentOpsLenient(opBytes);
   const parsedOp = parsed.ops[0];
@@ -77,13 +77,13 @@ export function reparseOp(op: SourceOp, opBytes: Uint8Array): OpParts | null {
   return opParts(parsedOp.operands);
 }
 
-/** TJ 숫자(1/1000 텍스트 공간 단위) → 가로 변위(텍스트 공간, Th 포함). */
+/** TJ number (1/1000 text-space units) → horizontal displacement (text space, including Th). */
 const numDisplacement = (n: number, size: number, th: number) => (-n / 1000) * size * th;
 
-/** 가로 변위 → 같은 변위의 TJ 숫자. */
+/** Horizontal displacement → TJ number of the same displacement. */
 export const tjNumberFor = (tx: number, size: number, th: number) => (-tx / (size * th)) * 1000;
 
-/** 연산을 명세 폭으로 분석한다. opBytes 는 그 연산 범위의 바이트. */
+/** Analyzes an operation by spec widths. opBytes are the bytes of that operation's range. */
 export function analyzeShow(
   op: SourceOp,
   opBytes: Uint8Array,
@@ -114,7 +114,7 @@ export function analyzeShow(
     for (const tok of parts.array ?? []) {
       if (tok.kind === 'string' || tok.kind === 'hexstring') tokens.push(tok);
       else if (tok.kind === 'number') tokens.push(tok.value as number);
-      // MuPDF 는 배열 안 Tw·Tc 키워드를 실행하지만 명세 밖이라 뷰어마다 다르다.
+      // MuPDF executes Tw and Tc keywords inside the array, but they are outside the spec so viewers differ.
       else return { code: 'tj-bad-token', detail: 'TJ 배열에 문자열·숫자 밖 토큰' };
     }
   } else if (parts.str) tokens.push(parts.str);
@@ -132,11 +132,11 @@ export function analyzeShow(
     const s = decodeStringToken(opBytes, tok);
     for (const c of font.decode(s.data)) {
       const cid = font.cid(c.code);
-      // MuPDF 는 전진하지 않고, 명세대로 그리는 뷰어는 CID 0 폭으로 전진한다.
+      // MuPDF does not advance, while viewers that draw per the spec advance by the CID 0 width.
       if (cid < 0) {
         return { code: 'cid-unmapped', detail: 'CID 매핑 없는 코드(뷰어마다 전진량이 다름)' };
       }
-      // Tw 는 1바이트 코드 32 에만 적용한다(MuPDF·명세 공통, 폰트 종류 무관).
+      // Tw applies only to 1-byte code 32 (common to MuPDF and the spec, regardless of font type).
       const ws = c.length === 1 && c.code === 32 ? t.wordSpacing : 0;
       const tx = ((font.advanceSpec(cid) / 1000) * size + t.charSpacing + ws) * th;
       items.push({ glyph: glyphs.length });
@@ -153,7 +153,7 @@ export function analyzeShow(
   return { parts, items, glyphs, total, fontSize: size, hScale: th };
 }
 
-/** 글리프 [0, end) 까지의 변위(그 앞 TJ 숫자 포함, end 글리프 앞 숫자도 포함). */
+/** Displacement up to glyph [0, end) (including the TJ numbers before it, and the number before the end glyph). */
 export function displacementBefore(a: ShowAnalysis, end: number): number {
   let d = 0;
   for (const item of a.items) {
@@ -169,7 +169,7 @@ const hex = (b: Uint8Array) => Array.from(b, (v) => v.toString(16).padStart(2, '
 const srcText = (bytes: Uint8Array, tok: Token) =>
   String.fromCharCode(...bytes.subarray(tok.start, tok.end));
 
-/** `'`·`"` 의 앞 효과(T*·Tw·Tc). Tj·TJ 는 빈 문자열. */
+/** Preceding effects of `'` and `"` (T*, Tw, Tc). Empty string for Tj and TJ. */
 function prefixOf(op: SourceOp, opBytes: Uint8Array, parts: OpParts): string {
   if (op.op === "'") return 'T* ';
   if (op.op === '"') {
@@ -180,8 +180,8 @@ function prefixOf(op: SourceOp, opBytes: Uint8Array, parts: OpParts): string {
 }
 
 /**
- * 연산을 다시 쓴 텍스트. remove[i] 가 true 인 글리프는 같은 변위의 숫자로 바꾼다. split 이 있으면 그 글리프 바로
- * 앞에서 TJ 를 끝내고 split.insert 를 넣은 뒤 나머지 TJ 를 잇는다(split.glyph 앞에 남길 글리프가 있어야 한다).
+ * The text with the operation rewritten. Glyphs with remove[i] true become numbers of the same displacement. If split is present, the TJ ends right before that glyph,
+ * split.insert is placed, then the rest of the TJ continues (there must be a glyph to keep before split.glyph).
  */
 export function rewriteShow(
   op: SourceOp,

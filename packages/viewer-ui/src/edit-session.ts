@@ -1,10 +1,10 @@
 /**
- * 편집 세션 하나(DOM 비의존): 초안 1개의 편집 모델·입력 전송(마지막 입력만)·미리보기 프레임·종료(커밋·취소)·복구 재시작.
+ * One edit session (DOM-independent): edit model of one draft, input sending (last input only), preview frame, end (commit/cancel), recovery restart.
  *
- * - 입력은 모델에 즉시 반영하고, Worker 로는 처리 중인 요청이 없을 때만 보낸다. 처리 중이면 마지막 입력만 남긴다(계약 D7).
- * - 캐럿·선택·조합 밑줄·초과 표시는 "마지막으로 처리된 프레임"의 `ReflowSummary` 로 그린다. 프레임은 입력 시점의
- *   텍스트·캐럿과 함께 저장해 캔버스 합성 결과와 어긋나지 않게 한다.
- * - Worker 가 복구되면(`WorkerRecoveredError`) 같은 문단 초안을 편집기 모델(텍스트·모양·형식)로 다시 시작한다(계약 D6).
+ * - Input is applied to the model immediately and sent to the Worker only when no request is in flight. While one is in flight, only the last input is kept (contract D7).
+ * - The caret, selection, composition underline and overflow indicator are drawn from the `ReflowSummary` of the "last processed frame". A frame is saved
+ *   together with the text and caret at input time so it does not diverge from the canvas compositing result.
+ * - When the Worker is recovered (`WorkerRecoveredError`), the draft of the same paragraph is restarted from the editor model (text, style, format) (contract D6).
  */
 import type {
   BeginEditResult,
@@ -34,7 +34,7 @@ import { nextBoundary, nextWordStart, prevBoundary, prevWordStart } from './edit
 import { classifyFailure } from './failure.js';
 import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 
-/** 편집 RPC 중 세션이 쓰는 것. */
+/** Part of the edit RPC that the session uses. */
 export type EditRpc = Pick<
   PdfWorkerApi,
   | 'planParagraphEdit'
@@ -44,7 +44,7 @@ export type EditRpc = Pick<
   | 'cancelParagraphEdit'
 >;
 
-/** 화면에 합성한 프레임: 입력 시점의 편집 상태와 그 결과 리플로우. */
+/** Frame composited on screen: the edit state at input time and its reflow result. */
 export interface ShownFrame {
   seq: number;
   text: string;
@@ -55,11 +55,11 @@ export interface ShownFrame {
   reflow: ReflowSummary;
 }
 
-/** 쪽 캔버스에 합성할 변경 영역(렌더 결과). seq 가 바뀌면 다시 합성한다. */
+/** Changed region (render result) to composite onto the page canvas. Recomposited when seq changes. */
 export interface DraftRegion {
   seq: number;
   rendered: RenderedPage;
-  /** 이 영역에 반영된 가장 오래된 입력의 시각(performance.now, 반응 시간 측정). */
+  /** Time of the oldest input reflected in this region (performance.now, for response time measurement). */
   t0: number;
 }
 
@@ -68,35 +68,35 @@ export interface EditSessionView {
   pageIndex: number;
   paragraphId: number;
   plan: ParagraphEditPlan;
-  /** 편집 모델(입력 즉시 반영). */
+  /** Edit model (input is applied immediately). */
   editor: EditorState;
   shown: ShownFrame;
   format: ParagraphFormat;
   warnings: EditWarning[];
   region: DraftRegion | null;
-  /** 보낸 입력의 결과를 기다리는 중. */
+  /** Waiting for the result of a sent input. */
   updating: boolean;
-  /** 커밋 처리 중. */
+  /** Commit in progress. */
   committing: boolean;
-  /** 문서 복구 뒤 초안을 다시 시작했다는 안내. */
+  /** Notice that the draft was restarted after document recovery. */
   notice: string | null;
-  /** 마지막 갱신 오류(다음 입력에서 다시 시도). */
+  /** Last update error (retried on the next input). */
   error: string | null;
   canUndo: boolean;
   canRedo: boolean;
-  /** 시작 상태와 다른지(같으면 커밋 = 취소). */
+  /** Whether it differs from the start state (if the same, commit = cancel). */
   dirty: boolean;
 }
 
 export interface EditSessionDeps {
   rpc: EditRpc;
   now(): number;
-  /** 변경 영역 렌더 배율(뷰어 scale × devicePixelRatio). */
+  /** Changed-region render scale (viewer scale × devicePixelRatio). */
   renderScale(): number;
   log(event: string, data?: unknown): void;
-  /** 세션 상태가 바뀔 때마다 호출된다. */
+  /** Called whenever the session state changes. */
   onChange(view: EditSessionView): void;
-  /** 편집기 안 안내 문자열(기본 한국어). */
+  /** In-editor guidance strings (Korean by default). */
   strings?: ViewerStrings;
 }
 
@@ -106,7 +106,7 @@ interface Frame {
   t0: number;
 }
 
-/** 반응 시간 표본 보관 상한(긴 편집에서 무한히 늘지 않게). */
+/** Upper bound on kept response-time samples (so it does not grow without limit in a long edit). */
 const MAX_LATENCY_SAMPLES = 2000;
 
 export function isWorkerRecovered(error: unknown): boolean {
@@ -174,17 +174,17 @@ export class EditSession {
       composition: null,
       reflow: begin.first.reflow,
     };
-    // R-L1(M4): beginParagraphEdit 에 뷰어 렌더 배율을 넘기므로 첫 영역을 그대로 쓴다(시작 갱신 RPC 없음).
-    // seq 0 은 입력이 아니므로 반응 시간 표본에 넣지 않는다(reportPainted).
+    // R-L1 (M4): beginParagraphEdit is given the viewer render scale, so the first region is used as is (no start-update RPC).
+    // seq 0 is not an input, so it is not added to the response-time samples (reportPainted).
     this.region = { seq: 0, rendered: begin.first.region, t0: deps.now() };
   }
 
-  /** 세션 시작 알림 자리(첫 영역은 begin 결과로 이미 받았다). 호환을 위해 남긴다. */
+  /** Placeholder for the session-start notification (the first region was already received as the begin result). Kept for compatibility. */
   start(): void {
     this.emit();
   }
 
-  /** 지금 상태의 불변 스냅샷. */
+  /** Immutable snapshot of the current state. */
   view(): EditSessionView {
     const state = this.model.state;
     return {
@@ -219,7 +219,7 @@ export class EditSession {
     return this.model.state.composition !== null;
   }
 
-  // ── 입력 전송(마지막 입력만) ─────────────────────────────────────────
+  // ── Input sending (last input only) ──────────────────────────────────
 
   private buildFrame(): Frame {
     const s = this.model.state;
@@ -243,13 +243,13 @@ export class EditSession {
     };
   }
 
-  /** 모델이 바뀌었을 때 호출한다: 화면 갱신 + 입력 전송 예약. */
+  /** Call when the model has changed: screen update + schedule an input send. */
   private touch(): void {
     if (this.closed) return;
     this.pendingT0 ??= this.deps.now();
     const frame = this.buildFrame();
     if (this.inflight) {
-      this.pending = frame; // 처리 중이면 마지막 입력만 남긴다
+      this.pending = frame; // while processing, keep only the last input
       this.emit();
       return;
     }
@@ -258,7 +258,7 @@ export class EditSession {
     this.emit();
   }
 
-  /** 선택·캐럿만 바뀐 경우: 리플로우는 그대로이므로 프레임을 새로 보내지 않고 그 프레임의 캐럿만 갱신한다. */
+  /** When only the selection/caret changed: reflow is unchanged, so do not send a new frame; just update the caret of that frame. */
   private touchSelectionOnly(): void {
     const s = this.model.state;
     if (this.inflight || this.pending || s.text !== this.shown.text) {
@@ -303,7 +303,7 @@ export class EditSession {
     }
   }
 
-  /** 갱신 실패 처리: Worker 복구면 초안을 다시 시작하고, 그 밖의 오류는 표시만 하고 다음 입력에서 다시 시도한다. */
+  /** Handle an update failure: on Worker recovery restart the draft; for other errors only show them and retry on the next input. */
   private async recoverFrom(e: unknown): Promise<void> {
     try {
       if (isWorkerRecovered(e)) {
@@ -328,13 +328,13 @@ export class EditSession {
     this.emit();
   }
 
-  /** 보낸 입력이 모두 처리될 때까지 기다린다. */
+  /** Waits until all sent inputs have been processed. */
   settle(): Promise<void> {
     if (!this.inflight && !this.pending) return Promise.resolve();
     return new Promise((resolve) => this.waiters.push(resolve));
   }
 
-  /** 컴포넌트가 변경 영역을 캔버스에 합성한 직후 호출한다(입력 → 합성 반응 시간 기록, 계약 8.4). */
+  /** Called right after a component composites the changed region onto the canvas (records input → compositing response time, contract 8.4). */
   reportPainted(seq: number): number | null {
     const region = this.region;
     if (!region || region.seq !== seq || seq === 0) return null;
@@ -344,16 +344,16 @@ export class EditSession {
     if (this.latencies.length > MAX_LATENCY_SAMPLES) this.latencies.shift();
     try {
       performance.measure('pe-edit-latency', { start: region.t0, end });
-      // M5 벤치 지표 이벤트(계약 D1): 입력 → 미리보기 합성.
+      // M5 benchmark metric event (contract D1): input → preview compositing.
       performance.mark('m5:edit:input', { startTime: region.t0 });
       performance.mark('m5:edit:preview-composited', { startTime: end });
     } catch {
-      // 측정 API 를 쓸 수 없는 환경은 배열 기록만 남긴다.
+      // In environments where the measurement API is unavailable, only the array record is kept.
     }
     return ms;
   }
 
-  // ── 순서 보장: 줄 기하가 필요한 동작은 앞선 입력 처리 뒤에 실행한다 ──────
+  // ── Ordering: actions needing line geometry run after earlier input is processed ──
 
   private run(action: () => void, needsSettle: boolean): void {
     if (!needsSettle && this.chain === null) {
@@ -371,17 +371,17 @@ export class EditSession {
     });
   }
 
-  /** 대기 중인 동작이 모두 끝날 때까지. */
+  /** Until all pending actions have finished. */
   async idle(): Promise<void> {
     while (this.chain) await this.chain;
     await this.settle();
   }
 
-  // ── 텍스트 편집 ──────────────────────────────────────────────────────
+  // ── Text editing ─────────────────────────────────────────────────────
 
   /**
-   * 커밋·취소 RPC 처리 중에는 텍스트·형식 입력을 받지 않는다(view.committing 으로 표시). 받으면 모델에만 들어가고
-   * core 초안에는 가지 않아 커밋 결과에서 빠진다. 캐럿 이동·선택은 텍스트를 바꾸지 않아 막지 않는다.
+   * While a commit/cancel RPC is in flight, text/format input is not accepted (shown via view.committing). If accepted, it would go only into the model and
+   * not the core draft, so it would be missing from the commit result. Caret moves and selection do not change text, so they are not blocked.
    */
   private busy(): boolean {
     return this.committing || this.closed;
@@ -413,12 +413,12 @@ export class EditSession {
     this.run(() => this.afterTextChange(this.model.deleteForward(byWord)), false);
   }
 
-  /** 선택 텍스트(복사). */
+  /** Selected text (copy). */
   copyText(): string {
     return selectedText(this.model.state);
   }
 
-  /** 잘라내기: 선택 텍스트를 돌려주고 지운다. */
+  /** Cut: returns the selected text and deletes it. */
   cut(): string {
     if (this.busy()) return '';
     const text = selectedText(this.model.state);
@@ -466,9 +466,9 @@ export class EditSession {
     }, false);
   }
 
-  // ── 캐럿 이동(키) ────────────────────────────────────────────────────
+  // ── Caret movement (keys) ────────────────────────────────────────────
 
-  /** 좌우 이동. 선택이 있고 Shift 가 없으면 선택 끝으로 접는다. */
+  /** Left/right move. With a selection and no Shift, collapses to the selection end. */
   moveHorizontal(dir: -1 | 1, shift: boolean, byWord: boolean): void {
     this.run(() => {
       const s = this.model.state;
@@ -491,7 +491,7 @@ export class EditSession {
     }, false);
   }
 
-  /** 위·아래 줄 이동(리플로우 줄 기준). */
+  /** Up/down line move (by reflow line). */
   moveVerticalKey(dir: -1 | 1, shift: boolean): void {
     this.run(() => {
       const s = this.model.state;
@@ -502,7 +502,7 @@ export class EditSession {
     }, true);
   }
 
-  /** Home/End. Ctrl 이면 문단 처음·끝. */
+  /** Home/End. With Ctrl, paragraph start/end. */
   moveLineBoundary(which: 'home' | 'end', shift: boolean, wholeText: boolean): void {
     this.run(() => {
       const s = this.model.state;
@@ -525,9 +525,9 @@ export class EditSession {
     }, false);
   }
 
-  // ── 포인터 ───────────────────────────────────────────────────────────
+  // ── Pointer ──────────────────────────────────────────────────────────
 
-  /** 영역 안 마우스 누름. detail 1 = 캐럿(Shift 면 선택 확장), 2 = 단어, 3 이상 = 전체. */
+  /** Mouse down inside the region. detail 1 = caret (extends the selection with Shift), 2 = word, 3 or more = everything. */
   pointerDown(point: Point, detail: number, shift: boolean): void {
     this.run(() => {
       const s = this.model.state;
@@ -563,7 +563,7 @@ export class EditSession {
     this.dragAnchor = null;
   }
 
-  // ── 형식(영역) ───────────────────────────────────────────────────────
+  // ── Format (region) ──────────────────────────────────────────────────
 
   setFormat(patch: Partial<ParagraphFormat>): void {
     if (this.busy()) return;
@@ -571,9 +571,9 @@ export class EditSession {
     this.touch();
   }
 
-  // ── 종료 ─────────────────────────────────────────────────────────────
+  // ── End ──────────────────────────────────────────────────────────────
 
-  /** 조합 중이면 현재 조합 문자열로 확정한다(바깥 클릭·저장 전 커밋, 계약 I8). */
+  /** If composing, finalizes with the current composition string (outside click or commit before save, contract I8). */
   private finishComposition(): void {
     if (this.model.state.composition) {
       this.model.compositionEnd();
@@ -582,8 +582,8 @@ export class EditSession {
   }
 
   /**
-   * 커밋. 변경이 없으면 취소와 같다. 결과의 history 는 호출자가 이력·복구 로그에 반영한다.
-   * 복구가 일어나 초안을 다시 시작했으면 편집 모드를 유지하고 'restarted' 를 돌려준다.
+   * Commit. With no changes it is the same as cancel. The caller reflects the result's history in the history/recovery log.
+   * If recovery happened and the draft was restarted, edit mode is kept and 'restarted' is returned.
    */
   async commit(): Promise<
     | { kind: 'committed'; result: CommitResult }
@@ -600,8 +600,8 @@ export class EditSession {
         const history = await this.cancelRpc();
         return { kind: 'cancelled', history };
       }
-      // 마지막 갱신이 실패했거나 마지막 입력이 아직 처리된 프레임이 아니면 core 초안은 화면 텍스트와 다르다. 현재
-      // 상태를 다시 보내고 성공해야만 커밋한다(실패하면 편집기를 열어 둔 채 오류를 표시한다).
+      // If the last update failed, or the last input is not yet a processed frame, the core draft differs from the on-screen text. Resend the current
+      // state and commit only if that succeeds (on failure, keep the editor open and show the error).
       if (this.error !== null || this.shown.seq !== this.seq) {
         const sent = await this.resend();
         if (sent === 'restarted') return { kind: 'restarted' };
@@ -622,7 +622,7 @@ export class EditSession {
     }
   }
 
-  /** 커밋 전 현재 상태 다시 보내기. Worker 복구면 초안을 다시 시작한다. */
+  /** Resend the current state before commit. On Worker recovery, restarts the draft. */
   private async resend(): Promise<'ok' | 'restarted' | { error: string }> {
     const frame = this.buildFrame();
     this.pendingT0 = null;
@@ -643,7 +643,7 @@ export class EditSession {
     }
   }
 
-  /** 취소(도구 막대 "편집 취소"). */
+  /** Cancel (toolbar "Cancel edit"). */
   async cancel(): Promise<EditHistoryState> {
     this.pending = null;
     this.committing = true;
@@ -663,7 +663,7 @@ export class EditSession {
       return history;
     } catch (e) {
       if (!isWorkerRecovered(e)) throw e;
-      // 복구된 Worker 에는 초안이 없다. 취소와 같은 상태이므로 세션만 닫는다.
+      // The recovered Worker has no draft. This is the same as cancel, so just close the session.
       this.close();
       throw e;
     }
@@ -674,14 +674,14 @@ export class EditSession {
     this.pending = null;
   }
 
-  /** 세션을 정리한다(호출자가 이미 종료를 처리한 경우). */
+  /** Cleans up the session (when the caller has already handled the end). */
   dispose(): void {
     this.close();
   }
 
-  // ── 복구 ─────────────────────────────────────────────────────────────
+  // ── Recovery ─────────────────────────────────────────────────────────
 
-  /** 복구된 Worker 에서 같은 문단 초안을 편집기 모델로 다시 시작한다(계약 D6). 동시에 여러 번 불려도 한 번만 한다. */
+  /** Restarts the draft of the same paragraph with the editor model on the recovered Worker (contract D6). Runs only once even if called several times concurrently. */
   restart(): Promise<void> {
     return (this.restartPromise ??= this.doRestart().finally(() => {
       this.restartPromise = null;

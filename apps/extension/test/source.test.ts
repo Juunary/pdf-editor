@@ -29,7 +29,7 @@ describe('resolveViewerSource', () => {
   it.each([
     [false, 'mime-handler-top'],
     [true, 'mime-handler-embedded'],
-  ] as const)('MIME handler(embedded=%s): streamUrl 만 1회 fetch', async (embedded, kind) => {
+  ] as const)('MIME handler(embedded=%s): fetches only streamUrl once', async (embedded, kind) => {
     const e = env({ mimeHandler: { getStreamInfo: async () => streamInfo(embedded) } });
     const src = await resolveViewerSource(e);
     expect(src.kind).toBe(kind);
@@ -39,7 +39,7 @@ describe('resolveViewerSource', () => {
     expect(e.fetch).toHaveBeenCalledWith('blob:chrome-extension://id/stream-1', undefined);
   });
 
-  it('getStreamInfo 실패 + ?file= → url-param, 쿠키 포함 요청', async () => {
+  it('getStreamInfo failure + ?file= → url-param, request with cookies', async () => {
     const e = env({
       href: `${VIEWER}?file=https://example.com/x.pdf?a=1&b=2`,
       mimeHandler: {
@@ -55,7 +55,7 @@ describe('resolveViewerSource', () => {
     });
   });
 
-  it('원천이 없으면 viewer-page, fetch 없음', async () => {
+  it('with no source, viewer-page, no fetch', async () => {
     const e = env({});
     const src = await resolveViewerSource(e);
     expect(src.kind).toBe('viewer-page');
@@ -63,7 +63,7 @@ describe('resolveViewerSource', () => {
     expect(e.fetch).not.toHaveBeenCalled();
   });
 
-  it('onContext: 문맥을 정한 직후, 바이트를 받기 전에 부른다(머리 영역 확대 보정용)', async () => {
+  it('onContext: called right after the context is decided, before the bytes are received (for header zoom compensation)', async () => {
     const seen: string[] = [];
     const fetchSpy = vi.fn(async () => {
       seen.push('fetch');
@@ -90,7 +90,7 @@ describe('resolveViewerSource', () => {
     expect(seen).toEqual(['viewer-page:-']);
   });
 
-  it('HTTP 오류는 예외', async () => {
+  it('HTTP errors throw', async () => {
     const e = env({
       href: `${VIEWER}?file=https://example.com/missing.pdf`,
       fetch: vi.fn(async () => new Response('x', { status: 404 })) as unknown as typeof fetch,

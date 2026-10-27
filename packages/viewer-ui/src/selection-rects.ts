@@ -1,7 +1,7 @@
 /**
- * 선택 하이라이트 사각형(순수 함수). 캐럿 구간 [from, to) 를 줄마다 하나의 CSS 상자로 만든다.
- * 글자마다 블록인 텍스트 층은 브라우저 기본 선택 표시가 줄바꿈 표식과 겹쳐 줄무늬가 지므로,
- * 하이라이트는 이 상자들로 직접 그린다(브라우저 선택은 복사·접근성을 위해 그대로 둔다).
+ * Selection highlight rectangles (pure function). Builds one CSS box per line for the caret range [from, to).
+ * In the text layer, where every character is a block, the browser's default selection rendering overlaps the line-break markers and produces stripes,
+ * so the highlight is drawn directly with these boxes (the browser selection is left as is for copying and accessibility).
  */
 import type { PageModel, Point } from '@pdf-editor/shared-types';
 import { quadFrame, round3, type CssBox } from './layout.js';
@@ -22,7 +22,7 @@ export function selectionRects(
     const start = Math.max(lo, line.start);
     const end = Math.min(hi, line.end);
     if (start >= end) continue;
-    // 줄의 첫 글자 축을 기준으로 선택된 글자 네 꼭짓점을 투영해 상자를 만든다(글자 크기가 섞여도 포함).
+    // Project the four corners of the selected characters onto the axes of the line's first character to build the box (mixed character sizes are covered too).
     const first = model.chars[order.items[start]!.charIndex]!;
     const f = quadFrame(first.quad);
     let minS = Infinity;

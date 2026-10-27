@@ -1,6 +1,6 @@
 /**
- * 테스트용 합성 PageModel. 단위 테스트와 Playwright 하니스(apps/extension/e2e)가 함께 쓴다.
- * 글자 폭 `charWidth`, 높이 `charHeight` 의 격자에 줄을 쌓는다(페이지 공간 pt, 원점 좌상단).
+ * Synthetic PageModel for tests. Shared by unit tests and the Playwright harness (apps/extension/e2e).
+ * Stacks lines on a grid with character width `charWidth` and height `charHeight` (page-space pt, origin at top left).
  */
 import type {
   CharInfo,
@@ -14,13 +14,13 @@ import type {
 
 export interface FixtureLine {
   text: string;
-  /** 줄 왼쪽 x(기본 20). */
+  /** Left x of the line (default 20). */
   x?: number;
-  /** 줄 위쪽 y(기본 20 + 줄 번호 × 줄 간격). */
+  /** Top y of the line (default 20 + line number × line spacing). */
   y?: number;
-  /** 같은 번호면 같은 블록. 기본은 줄마다 다른 블록. */
+  /** The same number means the same block. By default, each line is a different block. */
   block?: number;
-  /** 합성 공백 위치(`LineInfo.spaceAfter`): k = text 의 k번째 글자 뒤. 기본 없음. */
+  /** Synthetic whitespace positions (`LineInfo.spaceAfter`): k = after the k-th character of text. None by default. */
   spaceAfter?: number[];
 }
 
@@ -28,7 +28,7 @@ export interface FixtureOptions {
   charWidth?: number;
   charHeight?: number;
   lineGap?: number;
-  /** 구조화 텍스트에 없는(line = -1) 글자들. 줄 하나로 배치한다. */
+  /** Characters not in the structured text (line = -1). Laid out on a single line. */
   orphanText?: string;
 }
 
@@ -79,7 +79,7 @@ export function makePageModel(
       bbox: [x, y, last ? last.quad[2] : x, y + charHeight],
       wmode: 0,
       dir: [1, 0],
-      block: 0, // 아래에서 블록 번호를 매긴다.
+      block: 0, // block numbers are assigned below.
       chars: indices,
       spaceAfter: spec.spaceAfter ?? [],
     });
@@ -119,7 +119,7 @@ export function makePageModel(
   };
 }
 
-/** 글자별 연산 번호(-1 = 매칭 실패)로 만든 PageLinkage. */
+/** PageLinkage built from per-character op numbers (-1 = match failure). */
 export function makeLinkage(model: PageModel, charOp: number[]): PageLinkage {
   const matched = charOp.filter((o) => o >= 0).length;
   return {

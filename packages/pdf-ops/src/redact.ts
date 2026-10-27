@@ -1,7 +1,7 @@
 import * as mupdf from 'mupdf';
 import type { Rect } from '@pdf-editor/shared-types';
 
-/** `applyRedaction(black_boxes, image_method, line_art_method, text_method)` 인자. */
+/** Arguments of `applyRedaction(black_boxes, image_method, line_art_method, text_method)`. */
 export interface RedactionOptions {
   blackBoxes: boolean;
   imageMethod: number;
@@ -10,8 +10,8 @@ export interface RedactionOptions {
 }
 
 /**
- * 텍스트 교체용 redaction 옵션(PLAN.md 3.1): 텍스트 제거, 선화·이미지 보존, 검은 상자 없음.
- * MuPDF 기본값(black_boxes=true, 이미지 픽셀 제거, 덮인 선화 제거)은 교체 용도에 맞지 않는다.
+ * Redaction options for text replacement (PLAN.md 3.1): remove text, keep line art and images, no black boxes.
+ * MuPDF defaults (black_boxes=true, remove image pixels, remove covered line art) do not fit the replacement use case.
  */
 export const TEXT_REPLACE_REDACTION: Readonly<RedactionOptions> = Object.freeze({
   blackBoxes: false,
@@ -22,7 +22,7 @@ export const TEXT_REPLACE_REDACTION: Readonly<RedactionOptions> = Object.freeze(
 
 export interface RedactionResult {
   appliedRects: Rect[];
-  /** 적용 전부터 페이지에 있던 Redact 주석 수. 이 함수는 그 주석을 적용하지 않는다. */
+  /** Number of Redact annotations already on the page before applying. This function does not apply them. */
   preexistingRedactAnnots: number;
 }
 
@@ -31,10 +31,10 @@ export function countRedactAnnots(page: mupdf.PDFPage): number {
 }
 
 /**
- * 영역 안의 텍스트를 제거한다. `rects` 는 MuPDF 페이지 좌표(원점 좌상단).
+ * Removes text inside the regions. `rects` are in MuPDF page coordinates (origin at top left).
  *
- * 페이지 단위 `applyRedactions()` 는 문서에 원래 있던 Redact 주석까지 적용하므로,
- * 새로 만든 주석만 주석 단위 `applyRedaction()` 으로 적용한다.
+ * Page-level `applyRedactions()` also applies Redact annotations that were already in the document,
+ * so only the newly created annotations are applied via the per-annotation `applyRedaction()`.
  */
 export function redactRegions(
   page: mupdf.PDFPage,

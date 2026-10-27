@@ -1,4 +1,4 @@
-// TrueType `name` 표 읽기(OFL 예약 글꼴 이름 확인용, 외부 의존성 없음).
+// Read the TrueType `name` table (for checking OFL reserved font names; no external dependencies).
 
 /** @returns {{ nameID: number, platformID: number, value: string }[]} */
 export function readNameRecords(buf) {
@@ -34,10 +34,10 @@ export function readNameRecords(buf) {
   return records;
 }
 
-/** 글꼴 이름 계열 항목(1 패밀리, 3 고유 ID, 4 전체 이름, 6 PostScript, 16·17 타이포 패밀리·서브패밀리). */
+/** Font-name family entries (1 family, 3 unique ID, 4 full name, 6 PostScript, 16·17 typographic family·subfamily). */
 export const FONT_NAME_IDS = [1, 3, 4, 6, 16, 17];
 
-/** 예약 이름을 글꼴 이름 항목에서 쓰는 레코드(저작권 고지 항목 0 은 원문 유지 대상이라 제외). */
+/** Records that use the reserved name in font-name entries (copyright notice entry 0 is kept verbatim, so it is excluded). */
 export function findReservedNameUse(buf, reserved) {
   return readNameRecords(buf).filter(
     (r) => FONT_NAME_IDS.includes(r.nameID) && r.value.includes(reserved),

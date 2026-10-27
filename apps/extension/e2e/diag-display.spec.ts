@@ -1,8 +1,8 @@
 /**
- * 개발 표시 숨김(사용자 요청 2026-10-23): 진단 패널(#diag "M0 진단", 벤치 링크·전체 저장 측정 포함), 저장 메뉴의 downloads
- * 저장, 상태 줄의 렌더 경과("N 페이지 · 1페이지 렌더 완료")는 개발 빌드에서도 기본으로 숨긴다. `?diag` 로 열거나
- * Ctrl+Alt+Shift+D 를 누르면 보인다(다시 누르면 숨김). 진단 기록 수집과 `#diag-log` 내용은 숨겨져 있어도 그대로다.
- * 스토어 빌드에서 진단 패널이 늘 숨겨지는 것은 release-smoke.spec.ts 가 본다.
+ * Development display hiding (user request 2026-10-23): the diagnostics panel (#diag "M0 진단", including the bench link and full-save measurement), downloads save in the save menu,
+ * and the render-progress status line ("N 페이지 · 1페이지 렌더 완료") are hidden by default, even in development builds. Opening with `?diag` or
+ * pressing Ctrl+Alt+Shift+D shows them (pressing again hides them). Diagnostics log collection and the `#diag-log` content stay the same even when hidden.
+ * That the diagnostics panel is always hidden in the store build is checked by release-smoke.spec.ts.
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -51,26 +51,26 @@ const diagEvents = async (page: Page) =>
     (e) => e.event,
   );
 
-test('기본: 진단 패널·downloads 저장·렌더 경과 상태가 보이지 않고 진단 기록은 쌓인다', async () => {
+test('default: diagnostics panel, downloads save and render-progress status are not visible, and the diagnostics log accumulates', async () => {
   const page = await openViewer();
   await expect(page.locator('html')).not.toHaveAttribute('data-diag', /.*/);
   await expect(page.locator('#diag')).toBeHidden();
   await expect(page.locator('#copy-diag')).toBeHidden();
   await expect(page.locator('#open-bench')).toBeHidden();
   await expect(page.locator('#bench-full-save')).toBeHidden();
-  // 렌더 경과 상태는 자리만 차지하고(정보 버튼은 오른쪽 끝) 보이지 않는다.
+  // The render-progress status only occupies space (the info button is at the right end) and is not visible.
   await expect(page.locator('#status')).toHaveAttribute('data-dev', '');
   await expect(page.locator('#status')).toHaveCSS('visibility', 'hidden');
   await page.click('#save-menu-button');
   await expect(page.locator('#save-as')).toBeVisible();
   await expect(page.locator('#save-downloads')).toBeHidden();
   await page.keyboard.press('Escape');
-  // 진단 기록 수집은 그대로(e2e 는 숨겨진 #diag-log 를 읽는다).
+  // Diagnostics log collection is unchanged (e2e reads the hidden #diag-log).
   const events = await diagEvents(page);
   expect(events).toContain('env');
   expect(events).toContain('open');
   expect(events).toContain('render');
-  // 문서 영역이 창 아래까지 쓴다(진단 패널 자리 없음).
+  // The document area extends to the bottom of the window (no room for the diagnostics panel).
   const area = await page.evaluate(() => ({
     bottom: document.getElementById('page-container')!.getBoundingClientRect().bottom,
     vh: document.documentElement.clientHeight,
@@ -79,7 +79,7 @@ test('기본: 진단 패널·downloads 저장·렌더 경과 상태가 보이지
   await page.close();
 });
 
-test('?diag 로 열면 진단 표시가 켜진다', async () => {
+test('opening with ?diag turns the diagnostics display on', async () => {
   const page = await openViewer('?diag');
   await expect(page.locator('html')).toHaveAttribute('data-diag', '');
   await expect(page.locator('#diag')).toBeVisible();
@@ -91,7 +91,7 @@ test('?diag 로 열면 진단 표시가 켜진다', async () => {
   await page.close();
 });
 
-test('Ctrl+Alt+Shift+D 로 켜고 다시 누르면 숨긴다', async () => {
+test('Ctrl+Alt+Shift+D turns it on and pressing again hides it', async () => {
   const page = await openViewer();
   await page.locator('#page-container').click({ position: { x: 5, y: 5 } });
   await page.keyboard.press('Control+Alt+Shift+KeyD');

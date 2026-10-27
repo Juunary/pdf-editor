@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "AGPL-3.0-or-later",
-  "description": "M0 Day 1 기술 검증 스파이크(텍스트 교체·한글 폰트 임베딩·저장 방식·메모리). M0 종료 후 정리 대상.",
+  "description": "M0 Day 1 technical validation spike (text replacement, Korean font embedding, save method, memory). To be cleaned up after M0 ends.",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

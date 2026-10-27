@@ -1,7 +1,7 @@
 /**
- * 편집 메타(docs/m3-contract.md 5.6·D1 수정 4): Info /PdfEditorEdits 기록, /ModDate 갱신, PDF/A 선언 확인.
- * core 가 커밋 작업 안에서 커밋마다(재적용은 끝에서 한 번) 부른다. 기록이 저널에 남아 undo·redo 와 함께 움직인다.
- * /Producer 와 XMP ModifyDate 는 바꾸지 않는다(불일치는 기록만, docs/m3-pdf-ops.md).
+ * Edit metadata (docs/m3-contract.md 5.6, D1 amendment 4): records Info /PdfEditorEdits, updates /ModDate, checks the PDF/A declaration.
+ * core calls it inside the commit operation on every commit (once at the end for reapply). The record stays in the journal, so it moves with undo/redo.
+ * /Producer and XMP ModifyDate are not changed (a mismatch is only recorded, docs/m3-pdf-ops.md).
  */
 import type * as mupdf from 'mupdf';
 import { latin1String } from './edit-common.js';
@@ -9,7 +9,7 @@ import { readStreamBytes } from './mupdf-util.js';
 
 const KEY = 'PdfEditorEdits';
 
-/** "pages=1,3; structure=not-updated" 해석. */
+/** Parses "pages=1,3; structure=not-updated". */
 export function parseEditsInfo(s: string): { pages: number[]; structure: string | null } {
   const pages = /pages=([\d,\s]*)/.exec(s)?.[1] ?? '';
   const structure = /structure=([a-z/-]+)/.exec(s)?.[1] ?? null;
@@ -22,15 +22,15 @@ export function parseEditsInfo(s: string): { pages: number[]; structure: string 
   };
 }
 
-/** PDF 날짜 문자열(UTC). */
+/** PDF date string (UTC). */
 export function pdfDate(d: Date): string {
   const p = (n: number, w = 2) => String(n).padStart(w, '0');
   return `D:${p(d.getUTCFullYear(), 4)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z`;
 }
 
 /**
- * Info 사전. core 가 저널을 켜기 전(작업 밖)에 만들어 둔다(계약 D9 수정 1). 작업 안에서 trailer /Info 를 만들면
- * 저널에 기록되지 않아 작업을 버린 뒤 끊긴 참조가 되므로 여기서는 만들지 않는다.
+ * Info dictionary. core creates it before turning on the journal (outside the operation) (contract D9 amendment 1). Creating the trailer /Info inside the operation
+ * would not be recorded in the journal and would leave a dangling reference after the operation is discarded, so it is not created here.
  */
 function infoDict(doc: mupdf.PDFDocument): mupdf.PDFObject {
   const info = doc.getTrailer().get('Info');
@@ -40,19 +40,19 @@ function infoDict(doc: mupdf.PDFDocument): mupdf.PDFObject {
   return info;
 }
 
-/** 문서별 이전 세션 기록(이 세션의 첫 기록 직전 값). 이 세션 기록과 섞지 않으려고 한 번만 읽는다. */
+/** Previous-session record per document (the value just before this session's first record). Read only once so it is not mixed with this session's records. */
 const baselines = new WeakMap<mupdf.PDFDocument, { pages: number[]; structure: string | null }>();
 
 /**
- * pages 는 활성 편집 전체의 쪽 인덱스(0부터)이고 Info 에는 1부터 적는다. 이전 세션의 쪽 번호와 합집합으로 쓰며,
- * 같은 입력이면 같은 /PdfEditorEdits 가 된다(멱등). /ModDate 는 호출 시각. Info 사전은 core 가 만들어 둔다.
+ * pages is the page index (from 0) of all active edits and is written 1-based in Info. It is written as a union with the previous session's page numbers,
+ * so the same input gives the same /PdfEditorEdits (idempotent). /ModDate is the call time. core creates the Info dictionary beforehand.
  */
 export function recordMetadata(
   doc: mupdf.PDFDocument,
   info: { pages: number[]; structureNotUpdated: boolean },
   date: Date = new Date(),
 ): void {
-  // 객체를 더한 뒤에는 trailer 를 다시 받아야 현재 값이 나온다(계약 5.6 수정 4, S3 실측): infoDict 가 매번 받는다.
+  // After adding objects the trailer must be fetched again to get the current value (contract 5.6 amendment 4, S3 measurement): infoDict fetches it each time.
   const dict = infoDict(doc);
   let base = baselines.get(doc);
   if (!base) {
@@ -69,7 +69,7 @@ export function recordMetadata(
   dict.put('ModDate', doc.newString(pdfDate(date)));
 }
 
-/** 문서 /Metadata(XMP)에 PDF/A 선언(pdfaid:part)이 있는가. */
+/** Whether the document /Metadata (XMP) has a PDF/A declaration (pdfaid:part). */
 export function pdfaDeclared(doc: mupdf.PDFDocument): boolean {
   const meta = doc.getTrailer().get('Root').get('Metadata');
   if (!meta.isStream()) return false;

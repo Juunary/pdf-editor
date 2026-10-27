@@ -1,14 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, rmSync } from 'node:fs';
 
-/** Poppler(MuPDF 와 독립 구현) 교차 확인. 설치되지 않았으면 available=false. */
+/** Poppler (independent of MuPDF) cross-check. available=false if not installed. */
 export function popplerVersion(): string | null {
   const r = spawnSync('pdftotext', ['-v'], { encoding: 'utf8' });
   if (r.error) return null;
   return (r.stderr || r.stdout).split('\n')[0] ?? null;
 }
 
-/** 한 쪽 텍스트(UTF-8). */
+/** Text of one page (UTF-8). */
 export function popplerText(pdf: string, page: number): string {
   const r = spawnSync(
     'pdftotext',
@@ -19,7 +19,7 @@ export function popplerText(pdf: string, page: number): string {
   return r.stdout;
 }
 
-/** 한 쪽 렌더(PPM 바이트). prefix 에 임시 파일을 만들고 지운다. */
+/** Render of one page (PPM bytes). Creates and deletes a temp file under prefix. */
 export function popplerRaster(pdf: string, page: number, prefix: string, dpi = 108): Buffer {
   const r = spawnSync('pdftoppm', [
     '-r',
@@ -39,7 +39,7 @@ export function popplerRaster(pdf: string, page: number, prefix: string, dpi = 1
   return bytes;
 }
 
-/** 한 쪽 PNG 저장(시각 확인용). */
+/** Save one page as PNG (for visual checking). */
 export function popplerPng(pdf: string, page: number, prefix: string, dpi = 108): void {
   spawnSync('pdftoppm', [
     '-r',
@@ -55,7 +55,7 @@ export function popplerPng(pdf: string, page: number, prefix: string, dpi = 108)
   ]);
 }
 
-/** 두 PPM(P6) 의 다른 픽셀 수. 크기가 다르면 -1. exclude(픽셀 좌표 [x0,y0,x1,y1]) 안은 세지 않는다. */
+/** Number of differing pixels between two PPMs (P6). -1 if the sizes differ. Pixels inside exclude (pixel coordinates [x0,y0,x1,y1]) are not counted. */
 export function ppmDiff(a: Buffer, b: Buffer, exclude?: [number, number, number, number]): number {
   const parse = (buf: Buffer) => {
     const fields: string[] = [];
@@ -83,7 +83,7 @@ export function ppmDiff(a: Buffer, b: Buffer, exclude?: [number, number, number,
   return diff;
 }
 
-/** ppmDiff 의 차이 크기 지표: 다른 픽셀 수, 채널 차이가 threshold 를 넘는 수, 최대 채널 차이. */
+/** Difference-size indicators of ppmDiff: number of differing pixels, number whose channel difference exceeds threshold, maximum channel difference. */
 export function ppmDiffStats(
   a: Buffer,
   b: Buffer,
@@ -131,7 +131,7 @@ export interface PopplerWord {
   text: string;
 }
 
-/** `pdftotext -bbox` 단어 상자(pt, 페이지 좌상단 원점). */
+/** `pdftotext -bbox` word boxes (pt, origin at page top left). */
 export function popplerWords(pdf: string, page: number): PopplerWord[] {
   const r = spawnSync('pdftotext', ['-bbox', '-f', String(page), '-l', String(page), pdf, '-'], {
     encoding: 'utf8',
@@ -148,8 +148,8 @@ export function popplerWords(pdf: string, page: number): PopplerWord[] {
 }
 
 /**
- * 편집 영역(pt, 페이지 좌상단 원점) 밖 단어를 원본·편집 결과에서 같은 글자열끼리 가장 가까운 것으로 짝지어
- * 위치 이동(상자 좌표 최대 차이)과 짝이 없는 단어 수를 센다.
+ * Pairs words outside the edit area (pt, origin at page top left) between the original and the edit result, matching identical strings to the nearest one,
+ * and counts position shift (maximum difference in box coordinates) and words with no pair.
  */
 export function compareWordsOutside(
   before: PopplerWord[],

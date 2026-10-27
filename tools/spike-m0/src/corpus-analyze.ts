@@ -10,10 +10,10 @@ import {
 import type { Rect } from '@pdf-editor/shared-types';
 
 /**
- * 코퍼스 문서 구조 분석(docs/m0-corpus-recheck.md 2절·6절). M1 원본 연결(SourceMap) 난이도 근거:
- * 콘텐츠 스트림 토크나이저 실패, Form XObject 안 텍스트 비율·공유, 폰트 매핑 유형, 태그·주석.
+ * Structural analysis of corpus documents (docs/m0-corpus-recheck.md sections 2·6). Basis for the difficulty of linking M1 source (SourceMap):
+ * content stream tokenizer failures, share of text inside Form XObjects and sharing, font mapping types, tags and annotations.
  *
- * 저장하지 않는 분석 전용 문서에서만 쓴다. 이미지 XObject 는 `resolve()` 하지 않는다(MuPDF 1.28.1 F3).
+ * Used only on analysis-only documents that are not saved. Image XObjects are not `resolve()`d (MuPDF 1.28.1 F3).
  */
 
 const TEXT_SHOW = new Set(['Tj', 'TJ', "'", '"']);
@@ -23,7 +23,7 @@ export interface OpCounts {
   textShow: number;
   bt: number;
   do: number;
-  /** BDC/BMC 중 MCID 를 가진 것(태그 PDF 구조 연결) */
+  /** BDC/BMC entries that have an MCID (tagged PDF structure linkage) */
   mcid: number;
   inlineImages: number;
 }
@@ -72,13 +72,13 @@ export interface FormInfo {
   maxDepth: number;
   counts: OpCounts | null;
   parseError: string | null;
-  /** L1: 자체 /Resources 없음 */
+  /** L1: no own /Resources */
   noResources: boolean;
-  /** L2: /StructParents 또는 콘텐츠 MCID */
+  /** L2: /StructParents or content MCID */
   structParents: boolean;
   /** L7: /OC */
   optionalContent: boolean;
-  /** 페이지 사용자 공간(PDF 좌표) BBox, 쪽별 첫 사용 위치 */
+  /** BBox in page user space (PDF coordinates), first usage location per page */
   pageBoxes: { pageIndex: number; box: Rect }[];
 }
 
@@ -86,7 +86,7 @@ export interface FontInfo {
   key: string;
   subtype: string;
   baseFont: string;
-  /** Type0: CMap 이름, 단순 폰트: 인코딩 이름 또는 'dict'(Differences) */
+  /** Type0: CMap name; simple font: encoding name or 'dict' (Differences) */
   encoding: string | null;
   differences: boolean;
   descendant: string | null;
@@ -105,20 +105,20 @@ export interface DocAnalysis {
   tagged: { markInfoMarked: boolean; structTreeRoot: boolean };
   optionalContent: boolean;
   content: {
-    /** Contents 배열(스트림 2개 이상) 쪽 수 */
+    /** Number of pages with a Contents array (2 or more streams) */
     multiStreamPages: number;
-    /** 이어붙인 콘텐츠 토크나이저 실패(L6) */
+    /** Tokenizer failure on concatenated content (L6) */
     parseFailures: { pageIndex: number; error: string }[];
-    /** 스트림 단독으로는 실패하나 이어붙이면 성공: 연산자가 Contents 배열 경계에 걸침(L6) */
+    /** Fails for a single stream but succeeds when concatenated: an operator straddles a Contents array boundary (L6) */
     boundarySplitPages: number;
     page: OpCounts;
-    /** Form 안 연산(사용 위치마다 반복 계수) */
+    /** Operations inside Forms (repeat-counted per usage location) */
     inForms: OpCounts;
   };
   forms: {
     usages: number;
     unique: number;
-    /** 2곳 이상 사용 */
+    /** Used in 2 or more places */
     shared: number;
     withText: number;
     sharedWithText: number;
@@ -131,7 +131,7 @@ export interface DocAnalysis {
     L5DepthLimit: number;
     L6ParseFailures: number;
     L7OptionalContent: number;
-    /** 텍스트가 있는 공유 Form 상위 5개 */
+    /** Top 5 shared Forms with text */
     sharedTextSample: Omit<FormInfo, 'pageBoxes'>[];
   };
   fonts: {
@@ -142,11 +142,11 @@ export interface DocAnalysis {
     type3: number;
     identityH: number;
     simpleWithDifferences: number;
-    /** ToUnicode 없는 비표준 인코딩 폰트(문자 매핑 복원 곤란 후보) */
+    /** Fonts with non-standard encoding and no ToUnicode (candidates where character mapping is hard to recover) */
     mappingRisk: number;
   };
   annots: { redact: number; link: number; widget: number; other: number };
-  /** 쪽별 Form 사용 위치(텍스트 있는 Form 만, 문단 판정용) */
+  /** Per-page Form usage locations (only Forms with text, for paragraph classification) */
   textFormBoxes: Record<number, { objectNumber: number; box: Rect; depth: number }[]>;
   formTable: Record<number, FormInfo>;
   fontTable: FontInfo[];
@@ -155,14 +155,14 @@ export interface DocAnalysis {
 
 const STANDARD_ENCODINGS = ['WinAnsiEncoding', 'MacRomanEncoding', 'StandardEncoding'];
 
-/** ToUnicode 없이 비표준 인코딩(Type0·Type3·Differences·기타 CMap)인 폰트: 문자 매핑 복원 곤란 후보. */
+/** Fonts with a non-standard encoding (Type0·Type3·Differences·other CMap) and no ToUnicode: candidates where character mapping is hard to recover. */
 export function isMappingRisk(f: FontInfo): boolean {
   if (f.toUnicode) return false;
   if (f.subtype === 'Type0' || f.subtype === 'Type3' || f.differences) return true;
   return f.encoding !== null && f.encoding !== 'dict' && !STANDARD_ENCODINGS.includes(f.encoding);
 }
 
-/** 폰트 이름에서 서브셋 태그(ABCDEF+)를 뗀다. */
+/** Strips the subset tag (ABCDEF+) from a font name. */
 export const stripSubsetTag = (name: string) => name.replace(/^[A-Z]{6}\+/, '');
 
 function inspectFont(key: string, font: mupdf.PDFObject): FontInfo {
@@ -200,7 +200,7 @@ function inspectFont(key: string, font: mupdf.PDFObject): FontInfo {
   };
 }
 
-/** 리소스 사전의 Font 를 모은다(간접 객체 번호로 중복 제거). */
+/** Collects the Font entries of a resource dictionary (deduplicated by indirect object number). */
 function collectFonts(resources: mupdf.PDFObject, out: Map<string, FontInfo>): void {
   const fonts = resources.get('Font');
   if (!fonts.isDictionary()) return;
@@ -210,7 +210,7 @@ function collectFonts(resources: mupdf.PDFObject, out: Map<string, FontInfo>): v
     try {
       out.set(key, inspectFont(key, f));
     } catch {
-      // 손상된 폰트 사전은 건너뛴다(분석 전용)
+      // skip corrupted font dictionaries (analysis only)
     }
   });
 }

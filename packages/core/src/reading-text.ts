@@ -1,9 +1,9 @@
 import type { PageModel } from '@pdf-editor/shared-types';
 
 /**
- * 읽기 텍스트 조립(docs/m1-contract.md 4절 규칙의 참조 구현, 테스트·계측용).
- * 줄 순서 → 줄 안 chars 의 text 를 잇고 `spaceAfter` 위치에 공백 하나, 같은 블록 줄 사이 "\n", 블록 사이 "\n\n".
- * 줄에 속하지 않은 글자(`line` -1)는 넣지 않는다.
+ * Reading-text assembly (reference implementation of the rules in docs/m1-contract.md section 4; for tests and measurement).
+ * In line order, join the `text` of the chars in each line, put one space at each `spaceAfter` position, "\n" between lines of the same block, "\n\n" between blocks.
+ * Characters that belong to no line (`line` -1) are left out.
  */
 export function assembleReadingText(model: PageModel): string {
   const blocks = model.blocks.map((block) =>
@@ -20,7 +20,7 @@ export function assembleReadingText(model: PageModel): string {
   return blocks.join('\n\n');
 }
 
-/** 완료 기준 비교용: 연속 공백류를 공백 하나로 접고 앞뒤를 자른다. */
+/** For comparing against the completion criterion: collapse runs of whitespace to one space and trim both ends. */
 export function foldWhitespace(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }

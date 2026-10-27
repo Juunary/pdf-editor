@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import { buildSourceMap, removeTextShowOps } from '../src/index.js';
 
-/** A7-2 검증: 지운 연산 뒤의 글자 위치가 그대로이고, 스트림의 나머지 바이트가 보존된다. */
+/** A7-2 verification: the position of characters after the erased operation stays the same, and the remaining bytes of the stream are preserved. */
 const CONTENT = [
   'BT /F1 12 Tf 72 700 Td (Remove me) Tj ( keep) Tj 0 -14 Td (Second line) Tj ET',
   'BT /F1 11 Tf 1.5 Tc 2 Tw 90 Tz 72 650 Td [(Kern) -250 (ed text)] TJ (after) Tj ET',
@@ -21,7 +21,7 @@ function makeDoc(): mupdf.PDFDocument {
   ) as mupdf.PDFDocument;
 }
 
-/** 구조화 텍스트의 글자와 원점(페이지 공간). */
+/** Characters and origins of structured text (page space). */
 function charsOf(doc: mupdf.PDFDocument): { c: string; x: number; y: number }[] {
   const out: { c: string; x: number; y: number }[] = [];
   doc
@@ -34,8 +34,8 @@ function charsOf(doc: mupdf.PDFDocument): { c: string; x: number; y: number }[] 
 const opText = (op: { text?: { glyphs: { code: number }[] } }) =>
   String.fromCharCode(...(op.text?.glyphs.map((g) => g.code) ?? []));
 
-describe('removeTextShowOps(A7-2): SourceMap 기반 텍스트 제거', () => {
-  it('Tj·TJ(조정·Tc·Tw·Tz)·\'·" 를 지워도 남은 글자의 원점이 그대로다', () => {
+describe('removeTextShowOps (A7-2): SourceMap-based text removal', () => {
+  it('origins of the remaining characters stay the same even after erasing Tj, TJ (adjustment, Tc, Tw, Tz), \' and "', () => {
     const doc = makeDoc();
     const before = charsOf(doc);
     const map = buildSourceMap(doc, 0);
@@ -52,7 +52,7 @@ describe('removeTextShowOps(A7-2): SourceMap 기반 텍스트 제거', () => {
     const after = charsOf(doc);
     const text = after.map((x) => x.c).join('');
     for (const s of REMOVE) expect(text).not.toContain(s.replace(/ /g, ''));
-    // 남은 글자는 원점이 모두 같아야 한다(지운 글자만 빠짐).
+    // The origins of the remaining characters must all be the same (only the erased characters are gone).
     for (const word of KEEP) {
       const find = (list: typeof before) => {
         const s = list.map((x) => x.c).join('');
@@ -69,7 +69,7 @@ describe('removeTextShowOps(A7-2): SourceMap 기반 텍스트 제거', () => {
     }
   });
 
-  it('교체한 연산 밖의 콘텐츠 바이트는 그대로다', () => {
+  it('content bytes outside the replaced operation stay as they are', () => {
     const doc = makeDoc();
     const map = buildSourceMap(doc, 0);
     const target = map.ops.find((o) => o.kind === 'text-show' && opText(o) === 'Remove me')!;
@@ -93,7 +93,7 @@ describe('removeTextShowOps(A7-2): SourceMap 기반 텍스트 제거', () => {
   });
 });
 
-// ---------------------------------------------------------------- M1 리뷰 반영
+// ---------------------------------------------------------------- M1 review fixes
 
 type Doc = mupdf.PDFDocument;
 
@@ -104,7 +104,7 @@ function reopen(src: Doc): Doc {
   ) as Doc;
 }
 
-/** 쪽 하나에 Helvetica /F1 과 추가 리소스를 둔 문서(저장·재오픈). */
+/** A document with Helvetica /F1 and extra resources on one page (saved and reopened). */
 function onePage(content: string, extra: (src: Doc) => Record<string, unknown> = () => ({})): Doc {
   const src = new mupdf.PDFDocument();
   const F1 = src.addSimpleFont(new mupdf.Font('Helvetica'));
@@ -137,7 +137,7 @@ const streamOf = (doc: Doc, num: number) => {
 const showOps = (doc: Doc, index = 0) =>
   buildSourceMap(doc, index).ops.filter((o) => o.kind === 'text-show');
 
-/** 파란(0,0,255) 픽셀 수. */
+/** Number of blue (0,0,255) pixels. */
 function bluePixels(doc: Doc): number {
   const page = doc.loadPage(0);
   const pix = page.toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false, true);
@@ -149,8 +149,8 @@ function bluePixels(doc: Doc): number {
   return n;
 }
 
-describe('removeTextShowOps: 클립 텍스트(Tr 4–7)', () => {
-  it.each([4, 5, 6, 7])('Tr %i: 건너뛰고 스트림을 바꾸지 않는다(빈 TJ 는 클립을 없앤다)', (tr) => {
+describe('removeTextShowOps: clip text (Tr 4-7)', () => {
+  it.each([4, 5, 6, 7])('Tr %i: skipped, stream unchanged (empty TJ removes the clip)', (tr) => {
     const doc = onePage(`q BT ${tr} Tr /F1 40 Tf 20 100 Td (Hi) Tj ET 0 0 1 rg 0 0 300 200 re f Q`);
     const map = buildSourceMap(doc, 0);
     const op = map.ops.find((o) => o.op === 'Tj')!;
@@ -168,7 +168,7 @@ describe('removeTextShowOps: 클립 텍스트(Tr 4–7)', () => {
     expect(blue).toBeLessThan(300 * 200);
   });
 
-  it('Tr 3(보이지 않는 텍스트)은 지운다', () => {
+  it('Tr 3 (invisible text) is erased', () => {
     const doc = onePage('BT 3 Tr /F1 12 Tf 20 100 Td (Hidden) Tj 0 Tr (Shown) Tj ET');
     const [hidden] = showOps(doc);
     const all = pageChars(doc, 0);
@@ -184,8 +184,8 @@ describe('removeTextShowOps: 클립 텍스트(Tr 4–7)', () => {
   });
 });
 
-describe('removeTextShowOps: 공유 콘텐츠 스트림', () => {
-  it('다른 쪽 /Contents 배열과 공유한 스트림은 사본을 만들어 이 쪽 칸만 바꾼다', () => {
+describe('removeTextShowOps: shared content stream', () => {
+  it('a stream shared with the /Contents array of another page is copied and only the slot of this page is changed', () => {
     const src = new mupdf.PDFDocument();
     const F1 = src.addSimpleFont(new mupdf.Font('Helvetica'));
     const add = (c: string) =>
@@ -214,13 +214,13 @@ describe('removeTextShowOps: 공유 콘텐츠 스트림', () => {
     expect(textOf(doc, 0).trim()).toBe('');
     expect(textOf(doc, 1)).toContain('Shared header');
     expect(textOf(doc, 1)).toContain('Page two');
-    // 저장 후 다시 열어도 같다.
+    // The same holds after saving and reopening.
     const saved = reopen(doc);
     expect(textOf(saved, 0).trim()).toBe('');
     expect(textOf(saved, 1)).toContain('Shared header');
   });
 
-  it('같은 /Contents 배열에 두 번 나오는 스트림: 지운 칸만 사본으로 바꾼다', () => {
+  it('a stream appearing twice in the same /Contents array: only the erased slot is replaced with a copy', () => {
     const src = new mupdf.PDFDocument();
     const F1 = src.addSimpleFont(new mupdf.Font('Helvetica'));
     src.insertPage(-1, src.addPage([0, 0, 300, 200], 0, { Font: { F1 } }, 'q 1 0 0 1 0 50 cm'));
@@ -236,7 +236,7 @@ describe('removeTextShowOps: 공유 콘텐츠 스트림', () => {
     const before = pageChars(doc, 0);
     expect(before.map((x) => x.c).join('')).toBe('TwiceTwice');
 
-    // 첫 칸(위로 50 옮긴 것)만 지운다.
+    // Erase only the first slot (the one moved up by 50).
     const ops = showOps(doc);
     expect(ops.map((o) => o.stream.contentsIndex)).toEqual([1, 3]);
     expect(ops[0]!.stream.objectNumber).toBe(ops[1]!.stream.objectNumber);
@@ -248,13 +248,13 @@ describe('removeTextShowOps: 공유 콘텐츠 스트림', () => {
     expect(contents.get(3).asIndirect()).toBe(num);
     const after = pageChars(doc, 0);
     expect(after.map((x) => x.c).join('')).toBe('Twice');
-    // 남은 글자는 두 번째 칸이 그린 원래 위치 그대로다.
+    // The remaining characters are at the original position drawn by the second slot.
     after.forEach((x, i) => {
       expect(x.x).toBeCloseTo(before[5 + i]!.x, 3);
       expect(x.y).toBeCloseTo(before[5 + i]!.y, 3);
     });
 
-    // 이제 공유가 아니므로 남은 칸은 제자리에서 고친다.
+    // It is no longer shared, so the remaining slot is fixed in place.
     const rest = showOps(doc).find((o) => o.stream.contentsIndex === 3)!;
     const r2 = removeTextShowOps(doc, buildSourceMap(doc, 0), [rest.id]);
     expect(r2.copied).toEqual([]);
@@ -262,7 +262,7 @@ describe('removeTextShowOps: 공유 콘텐츠 스트림', () => {
     expect(textOf(doc, 0).trim()).toBe('');
   });
 
-  it('같은 스트림의 두 칸을 한 번에 지우면 칸마다 사본을 만들고 원본은 그대로 둔다', () => {
+  it('erasing two slots of the same stream at once makes a copy for each slot and leaves the original as it is', () => {
     const src = new mupdf.PDFDocument();
     const F1 = src.addSimpleFont(new mupdf.Font('Helvetica'));
     src.insertPage(-1, src.addPage([0, 0, 300, 200], 0, { Font: { F1 } }, ''));
@@ -288,7 +288,7 @@ describe('removeTextShowOps: 공유 콘텐츠 스트림', () => {
     expect(textOf(doc, 0).trim()).toBe('');
   });
 
-  it('두 쪽이 같은 간접 /Contents 배열을 쓰면 이 쪽만 새 배열로 바꾼다', () => {
+  it('if two pages use the same indirect /Contents array, only this page is switched to a new array', () => {
     const src = new mupdf.PDFDocument();
     const F1 = src.addSimpleFont(new mupdf.Font('Helvetica'));
     for (let i = 0; i < 2; i++) {
@@ -310,8 +310,8 @@ describe('removeTextShowOps: 공유 콘텐츠 스트림', () => {
   });
 });
 
-describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
-  it('소수 /Widths: TJ 숫자는 명세 폭(실수)으로 계산한다(MuPDF 정수 폭 아님)', () => {
+describe('removeTextShowOps: specified width, code and font guards', () => {
+  it('fractional /Widths: TJ numbers are computed with the specified width (real), not the MuPDF integer width', () => {
     const doc = onePage('BT /W 12 Tf 20 100 Td (aaaaaaaaaaaaaaaaaaaa) Tj (X) Tj ET', (src) => ({
       Font: {
         W: src.addObject({
@@ -332,11 +332,11 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     expect(r.removed).toEqual([op.id]);
     const n = Number(/\[(-?[\d.]+)\] TJ/.exec(streamOf(doc, op.stream.objectNumber))![1]);
     expect(n).toBeCloseTo(-20 * 556.4, 2);
-    // MuPDF 는 폭을 556 으로 반올림해 그리므로 MuPDF 렌더의 X 는 반올림 오차(20 × 0.4/1000 × 12 pt)만큼 움직인다.
+    // MuPDF draws with the width rounded to 556, so the MuPDF render X moves by the rounding error (20 x 0.4/1000 x 12 pt).
     expect(xOf() - xBefore).toBeCloseTo((20 * 0.4 * 12) / 1000, 3);
   });
 
-  it('Tw 는 1바이트 코드 32 에만 더한다(Type0 1바이트 코드스페이스 포함, 2바이트 0x0020 제외)', () => {
+  it('Tw is added only to 1-byte code 32 (including a Type0 1-byte codespace, excluding 2-byte 0x0020)', () => {
     const cmap = (src: Doc) =>
       src.addStream(
         '/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapName /One def ' +
@@ -378,7 +378,7 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
       'BT /T1 10 Tf 5 Tw 20 100 Td (A B) Tj (X) Tj ET BT /T2 10 Tf 5 Tw 20 50 Td <004100200042> Tj <0058> Tj ET',
       (src) => ({ Font: { T1: type0(src, cmap(src)), T2: type0(src, 'Identity-H') } }),
     );
-    // 뒤따르는 (X) Tj 두 개의 원점(SourceMap 은 MuPDF 와 같은 정수 폭으로 계산한다).
+    // Origins of the two (X) Tj that follow (SourceMap computes with the same integer widths as MuPDF).
     const xs = () =>
       showOps(doc)
         .filter((o) => o.text!.glyphs.length === 1 && o.text!.glyphs[0]!.code === 0x58)
@@ -398,7 +398,7 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     after.forEach((x, i) => expect(x).toBeCloseTo(before[i]!, 3));
   });
 
-  it('CID 매핑이 없는 코드가 있는 연산은 건너뛴다(MuPDF 는 전진하지 않음, 명세 뷰어는 CID 0 폭)', () => {
+  it('an operation with a code that has no CID mapping is skipped (MuPDF does not advance, spec viewers use the CID 0 width)', () => {
     const doc = onePage('BT /T 10 Tf 20 100 Td (AaB) Tj (AB) Tj ET', (src) => ({
       Font: {
         T: src.addObject({
@@ -437,7 +437,7 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     expect(r.skipped[0]!.detail).toMatch(/^CID 매핑 없는 코드/);
   });
 
-  it('MuPDF 가 로드하지 못해 대체(hail-mary)한 폰트는 건너뛴다', () => {
+  it('a font that MuPDF failed to load and replaced (hail-mary) is skipped', () => {
     const doc = onePage('BT /H 10 Tf 20 100 Td (AB) Tj ET', (src) => ({
       Font: {
         H: src.addObject({
@@ -459,7 +459,7 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
         detail: '편집 제한: font-encoding-unresolved',
       },
     ]);
-    // 제한 표시가 없어도 폰트 자체의 대체 사유로 건너뛴다.
+    // Even without a limit mark, it is skipped for the font's own substitution reason.
     op.limits = [];
     const r = removeTextShowOps(doc, map, [op.id]);
     expect(r.removed).toEqual([]);
@@ -467,7 +467,7 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     expect(r.skipped[0]!.detail).toMatch(/^MuPDF 대체 폰트/);
   });
 
-  it('/Font 가 없는 쪽·/Resources 가 없는 쪽: 예외 없이 건너뛴다', () => {
+  it('a page without /Font or without /Resources: skipped without an exception', () => {
     const src = new mupdf.PDFDocument();
     src.insertPage(-1, src.addPage([0, 0, 300, 200], 0, {}, 'BT /F1 10 Tf 20 100 Td (AB) Tj ET'));
     src.insertPage(-1, src.addPage([0, 0, 300, 200], 0, {}, 'BT /F1 10 Tf 20 100 Td (CD) Tj ET'));
@@ -485,7 +485,7 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     }
   });
 
-  it('" 피연산자가 모자라면 건너뛴다', () => {
+  it('" is skipped when it has too few operands', () => {
     const doc = onePage('BT /F1 10 Tf 14 TL 20 100 Td (zero) " 5 (one) " 1 2 (two) " ET');
     const ops = showOps(doc);
     const r = removeTextShowOps(
@@ -500,7 +500,7 @@ describe('removeTextShowOps: 명세 폭·코드·폰트 가드', () => {
     ]);
   });
 
-  it('TJ 배열 안 연산자(Tw·Tc)는 뷰어마다 달라 건너뛴다', () => {
+  it('operators inside a TJ array (Tw, Tc) differ per viewer, so they are skipped', () => {
     const doc = onePage('BT /F1 10 Tf 20 100 Td [(A) 5 Tw (B)] TJ ET');
     const op = showOps(doc)[0]!;
     const r = removeTextShowOps(doc, buildSourceMap(doc, 0), [op.id]);

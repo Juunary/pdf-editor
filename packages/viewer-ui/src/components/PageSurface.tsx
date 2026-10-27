@@ -17,7 +17,7 @@ interface Props {
   controller: ViewerController;
 }
 
-/** 현재 페이지: 캔버스와 그 위 오버레이(검색 하이라이트·디버그·텍스트 층). */
+/** Current page: the canvas and the overlays on it (search highlight, debug, text layer). */
 export function PageSurface({ controller }: Props) {
   const state = useViewerState(controller);
   const view = state.view;
@@ -27,12 +27,12 @@ export function PageSurface({ controller }: Props) {
   const session = state.edit.session;
   const pathGesture = state.edit.path.gesture;
   const region = session?.region ?? pathGesture?.region ?? null;
-  /** 마지막으로 그린 기준 비트맵과, 그 위에 합성한 변경 영역. */
+  /** The base bitmap drawn last, and the changed region composited over it. */
   const painted = useRef<{ view: PageView; token: number } | null>(null);
   const regionPainted = useRef<RenderedPage | null>(null);
 
-  // 렌더된 비트맵을 캔버스에 그린 뒤 컨트롤러에 알린다(상태 표시·진단 기록용). 편집 중이면 그 위에 변경 영역
-  // (`DraftUpdate.region`)을 합성한다(계약 D7). 기준 비트맵이 바뀌면(취소 복원·재렌더) 변경 영역도 다시 얹는다.
+  // After drawing the rendered bitmap onto the canvas, notify the controller (for status display and diagnostic logging). During editing, composite the changed region
+  // (`DraftUpdate.region`) over it (contract D7). When the base bitmap changes (cancel restore, re-render), the changed region is laid over again.
   useLayoutEffect(() => {
     if (!view) return;
     const canvas = canvasRef.current;
@@ -136,7 +136,7 @@ export function PageSurface({ controller }: Props) {
           busy={state.edit.starting || state.edit.busy}
         />
       )}
-      {/* 쪽 판정 전·재판정 중에도 둔다: 그 사이의 Alt+클릭을 받아 PathController 가 판정 뒤 처리한다(M8). */}
+      {/* Also placed before page classification and during reclassification: it receives Alt+click in the meantime and PathController handles it after classification (M8). */}
       {!session && controller.edit?.paths && !state.disabled.path && (
         <PathLayer
           controller={controller}
@@ -160,7 +160,7 @@ export function PageSurface({ controller }: Props) {
   );
 }
 
-/** 해당 페이지의 준비된 데이터만 꺼낸다(이동 중 이전 페이지 데이터는 쓰지 않는다). */
+/** Takes out only the prepared data of that page (data of the previous page is not used while navigating). */
 function readyValue<T>(loadable: Loadable<T>, pageIndex: number): T | null {
   return loadable.status === 'ready' && loadable.pageIndex === pageIndex ? loadable.value : null;
 }

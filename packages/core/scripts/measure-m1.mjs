@@ -1,11 +1,11 @@
-// M1 core 계측(docs/m1-core.md 4절). 먼저 `pnpm --filter @pdf-editor/core build` 로 dist 를 만든다.
+// M1 core measurement (docs/m1-core.md section 4). First build dist with `pnpm --filter @pdf-editor/core build`.
 //
-//   node scripts/measure-m1.mjs fixtures                 fixtures/m0 문서의 쪽별 추출 시간·근사 빈도·WASM 힙
-//   node scripts/measure-m1.mjs dir <폴더> [문서당 최대 쪽수]  폴더의 PDF 를 같은 방식으로 측정(읽기 전용)
-//   node scripts/measure-m1.mjs reading <폴더> [문서당 최대 쪽수]  spaceAfter 비율, 조립 읽기 텍스트 vs asText() (공백 접기 기준)
-//   node scripts/measure-m1.mjs gen <out.pdf> [pages]    합성 대형 PDF(쪽마다 비압축 잡음 스트림)
-//   node scripts/measure-m1.mjs open <file> <mode>       한 프로세스에서 열기(buffer|stream) 후 WASM 힙
-//   node scripts/measure-m1.mjs compare <file>           buffer 와 stream 을 별도 프로세스로 비교
+//   node scripts/measure-m1.mjs fixtures                 per-page extraction time, approximation frequency and WASM heap for the fixtures/m0 documents
+//   node scripts/measure-m1.mjs dir <folder> [max pages per doc]  measures the PDFs in a folder the same way (read-only)
+//   node scripts/measure-m1.mjs reading <folder> [max pages per doc]  spaceAfter ratio, assembled reading text vs asText() (whitespace-collapsed comparison)
+//   node scripts/measure-m1.mjs gen <out.pdf> [pages]    synthetic large PDF (uncompressed noise stream on every page)
+//   node scripts/measure-m1.mjs open <file> <mode>       open in one process (buffer|stream), then WASM heap
+//   node scripts/measure-m1.mjs compare <file>           compare buffer and stream in separate processes
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -98,7 +98,7 @@ function reading(dir, maxPages = Infinity) {
         diffAt = 0;
         while (diffAt < actual.length && actual[diffAt] === expected[diffAt]) diffAt++;
       }
-      // 공백을 뺀 글자 다중집합 차이: asText 에만 있는 글자(missing)와 조립 텍스트에만 있는 글자(extra).
+      // Difference of the character multiset with whitespace removed: characters only in asText (missing) and characters only in the assembled text (extra).
       const count = (text) => {
         const m = new Map();
         for (const ch of text.replace(/\s/g, '')) m.set(ch, (m.get(ch) ?? 0) + 1);

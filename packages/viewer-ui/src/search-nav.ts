@@ -1,6 +1,6 @@
 /**
- * 검색 탐색 상태(순수 함수). `searchText` 결과의 결과 순서는 "시작 페이지부터 문서 끝, 이어서 0 페이지부터"
- * 이므로 0번 결과가 현재 페이지에서 처음 만나는 결과다. 이전·다음은 결과 목록을 순환한다.
+ * Search navigation state (pure functions). The result order of `searchText` is "from the start page to the end of the document, then from page 0",
+ * so result 0 is the first result encountered from the current page. Previous/next cycle through the result list.
  */
 import type { SearchHit, SearchResult } from '@pdf-editor/shared-types';
 import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
@@ -14,13 +14,13 @@ export interface FindState {
   status: FindStatus;
   hits: SearchHit[];
   truncated: boolean;
-  /** hits 인덱스. 결과가 없으면 -1. */
+  /** hits index. -1 if there are no results. */
   current: number;
-  /** 마지막으로 검색을 시작한 페이지. */
+  /** The page where the search was last started. */
   startPage: number;
-  /** status 가 unavailable·error 일 때 표시 문구. */
+  /** Text to show when status is unavailable or error. */
   message: string | null;
-  /** 증가할 때마다 검색창이 입력란에 포커스·전체 선택한다(Ctrl+F 재입력 포함). */
+  /** Each time it increases, the search bar focuses and selects all of the input field (including a repeated Ctrl+F). */
   focusToken: number;
 }
 
@@ -39,7 +39,7 @@ export function initialFindState(): FindState {
   };
 }
 
-/** 검색 결과를 반영한다. 0번 결과(시작 페이지에서 처음 만나는 결과)를 현재 결과로 둔다. */
+/** Applies search results. Sets result 0 (the first result encountered from the start page) as the current result. */
 export function applySearchResult(
   state: FindState,
   result: SearchResult,
@@ -56,12 +56,12 @@ export function applySearchResult(
   };
 }
 
-/** 결과 지우기(질의 변경·창 닫기). 질의·옵션·열림 상태는 유지한다. */
+/** Clears results (query change, closing the bar). The query, options and open state are kept. */
 export function clearResults(state: FindState): FindState {
   return { ...state, status: 'idle', hits: [], truncated: false, current: -1, message: null };
 }
 
-/** 이전(-1)·다음(+1). 결과 목록을 순환한다. 결과가 없으면 그대로. */
+/** Previous (-1) / next (+1). Cycles through the result list. Unchanged if there are no results. */
 export function stepHit(state: FindState, delta: number): FindState {
   const n = state.hits.length;
   if (n === 0) return state;
@@ -75,13 +75,13 @@ export function currentHit(state: FindState): SearchHit | null {
 }
 
 export interface PageHit {
-  /** FindState.hits 인덱스. */
+  /** FindState.hits index. */
   index: number;
   hit: SearchHit;
   current: boolean;
 }
 
-/** 한 페이지에 있는 결과들(하이라이트용). */
+/** Results on one page (for highlighting). */
 export function hitsOnPage(state: FindState, pageIndex: number): PageHit[] {
   const out: PageHit[] = [];
   state.hits.forEach((hit, index) => {
@@ -90,7 +90,7 @@ export function hitsOnPage(state: FindState, pageIndex: number): PageHit[] {
   return out;
 }
 
-/** "3 / 12", 잘렸으면 "3 / 1000+", 결과가 없으면 "결과 없음"(`t.findNoResults`). */
+/** "3 / 12", "3 / 1000+" if truncated, and "결과 없음" (`t.findNoResults`) if there are no results. */
 export function findLabel(state: FindState, t: ViewerStrings = VIEWER_STRINGS.ko): string {
   switch (state.status) {
     case 'searching':

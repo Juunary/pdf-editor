@@ -16,17 +16,17 @@ function page(pageIndex: number, bytes: number, clip: RenderedPage['clip'] = nul
 }
 
 describe('RenderCache', () => {
-  it('9번째 쪽을 담으면 가장 오래 쓰지 않은 쪽을 버린다(8쪽 상한)', () => {
+  it('storing the 9th page discards the least recently used page (8-page limit)', () => {
     const cache = new RenderCache();
     for (let i = 0; i < 8; i++) cache.put(i, 1, page(i, 16));
-    expect(cache.get(0, 1)).not.toBeNull(); // 0 을 최근 사용으로 올린다
+    expect(cache.get(0, 1)).not.toBeNull(); // bump 0 to most recently used
     cache.put(8, 1, page(8, 16));
     expect(cache.size).toBe(8);
     expect(cache.has(1, 1)).toBe(false);
     expect(cache.has(0, 1)).toBe(true);
   });
 
-  it('바이트 상한(64 MiB)에 먼저 걸리면 쪽 수가 8 미만이어도 버린다', () => {
+  it('if the byte limit (64 MiB) is hit first, pages are discarded even when the page count is below 8', () => {
     const cache = new RenderCache({ maxPages: 8, maxBytes: 100 });
     cache.put(0, 1, page(0, 40));
     cache.put(1, 1, page(1, 40));
@@ -36,14 +36,14 @@ describe('RenderCache', () => {
     expect(cache.has(0, 1)).toBe(false);
   });
 
-  it('상한보다 큰 비트맵과 부분 영역 렌더는 담지 않는다', () => {
+  it('bitmaps larger than the limit and partial-region renders are not stored', () => {
     const cache = new RenderCache({ maxPages: 8, maxBytes: 100 });
     cache.put(0, 1, page(0, 200));
     cache.put(1, 1, page(1, 16, [0, 0, 1, 1]));
     expect(cache.size).toBe(0);
   });
 
-  it('무효화는 그 쪽의 모든 배율을 버리고, 이전 epoch 의 늦은 렌더는 담지 않는다', () => {
+  it('invalidation discards all scales of that page, and a late render from a previous epoch is not stored', () => {
     const cache = new RenderCache();
     cache.put(3, 1, page(3, 16));
     cache.put(3, 2, page(3, 16));
@@ -80,7 +80,7 @@ function fakeHost() {
   } as unknown as ViewerHost & { renderPage: ReturnType<typeof vi.fn> };
 }
 
-describe('ViewerController · 렌더 캐시', () => {
+describe('ViewerController · render cache', () => {
   const idle: Array<() => void> = [];
   const make = (host: ReturnType<typeof fakeHost>, prefetch = true) =>
     new ViewerController({
@@ -96,7 +96,7 @@ describe('ViewerController · 렌더 캐시', () => {
     for (let i = 0; i < 20; i++) await Promise.resolve();
   };
 
-  it('다시 방문한 쪽은 렌더를 다시 부르지 않는다', async () => {
+  it('a revisited page does not call render again', async () => {
     const host = fakeHost();
     const c = make(host, false);
     await c.goToPage(0);
@@ -106,7 +106,7 @@ describe('ViewerController · 렌더 캐시', () => {
     expect(c.getState().view?.pageIndex).toBe(0);
   });
 
-  it('유휴 시 다음 쪽을 미리 렌더하고, 그 쪽으로 이동하면 렌더를 부르지 않는다', async () => {
+  it('when idle, pre-renders the next page, and moving to that page does not call render', async () => {
     const host = fakeHost();
     const c = make(host);
     await c.goToPage(0);
@@ -118,7 +118,7 @@ describe('ViewerController · 렌더 캐시', () => {
     expect(host.renderPage).toHaveBeenCalledTimes(2);
   });
 
-  it('쪽이 바뀌었다고 알리면 그 쪽만 다시 렌더한다', async () => {
+  it('when notified that a page changed, only that page is re-rendered', async () => {
     const host = fakeHost();
     const c = make(host, false);
     await c.goToPage(0);
@@ -130,7 +130,7 @@ describe('ViewerController · 렌더 캐시', () => {
       0, 1, 0,
     ]);
   });
-  it('Worker 복구 뒤에는 모든 쪽을 새 Worker 에서 다시 렌더한다(새 세션의 첫 전체 렌더가 문서 통계를 예약한다)', async () => {
+  it('after Worker recovery, all pages are re-rendered in the new Worker (the first full render of a new session reserves the document stats)', async () => {
     const host = fakeHost();
     const c = make(host, false);
     await c.goToPage(0);
@@ -142,7 +142,7 @@ describe('ViewerController · 렌더 캐시', () => {
     ]);
   });
 
-  it('미리 렌더 중에 그 쪽이 바뀌면(편집 커밋·undo) 도착한 옛 렌더를 캐시에 넣지 않는다', async () => {
+  it('if the page changes during pre-rendering (edit commit, undo), the stale render that arrives is not put in the cache', async () => {
     const host = fakeHost();
     let release!: () => void;
     const c = make(host);

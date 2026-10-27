@@ -1,6 +1,6 @@
 /**
- * 세 엔진 비교(계약 8.3): MuPDF·pdf.js(pdfjs-dist 6.4.299, Node legacy 빌드)·Poppler(pdftoppm·pdftotext).
- * 렌더는 scale 2, 주석 제외, 채널 차 8 초과 픽셀 수. 영역은 페이지 공간(MuPDF 쪽 경계 기준).
+ * Three-engine comparison (contract 8.3): MuPDF, pdf.js (pdfjs-dist 6.4.299, Node legacy build) and Poppler (pdftoppm, pdftotext).
+ * Render at scale 2, annotations excluded, count of pixels with a channel difference above 8. Regions are in page space (relative to the MuPDF page bounds).
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -22,7 +22,7 @@ export const ENGINES: Engine[] = ['mupdf', 'pdfjs', 'poppler'];
 export interface Raster {
   width: number;
   height: number;
-  /** RGB 3채널. */
+  /** 3 RGB channels. */
   data: Uint8Array;
 }
 
@@ -95,7 +95,7 @@ async function pdfjsRaster(bytes: Uint8Array, pageIndex: number): Promise<Raster
     const rgba = context.getImageData(0, 0, w, h).data;
     const data = new Uint8Array(w * h * 3);
     for (let i = 0, j = 0; i < rgba.length; i += 4, j += 3) {
-      // 투명 배경은 흰색으로 합성한다.
+      // Transparent background is composited to white.
       const a = rgba[i + 3]! / 255;
       data[j] = Math.round(rgba[i]! * a + 255 * (1 - a));
       data[j + 1] = Math.round(rgba[i + 1]! * a + 255 * (1 - a));
@@ -162,7 +162,7 @@ export async function raster(
   return popplerRaster(bytes, pageIndex);
 }
 
-/** 두 렌더의 다른 픽셀 수(allow 밖, 페이지 공간 사각형 + margin pt). 크기가 다르면 -1. origin = 쪽 경계 왼쪽 위. */
+/** Number of differing pixels of two renders (outside allow, page-space rectangle + margin pt). -1 if the sizes differ. origin = top-left of the page bounds. */
 export function diffOutside(
   a: Raster,
   b: Raster,
@@ -194,7 +194,7 @@ export function diffOutside(
   return n;
 }
 
-/** 사각형 안 잉크(흰색과 채널 차 > 64) 픽셀 수. */
+/** Number of ink pixels inside a rectangle (channel difference from white > 64). */
 export function inkInside(a: Raster, r: Rect, origin: [number, number] = [0, 0]): number {
   const x0 = Math.max(0, Math.floor((r[0] - origin[0]) * SCALE));
   const y0 = Math.max(0, Math.floor((r[1] - origin[1]) * SCALE));
@@ -210,7 +210,7 @@ export function inkInside(a: Raster, r: Rect, origin: [number, number] = [0, 0])
   return n;
 }
 
-/** 쪽 텍스트(읽기 순서). */
+/** Page text (reading order). */
 export async function pageText(
   engine: Engine,
   bytes: Uint8Array,
@@ -249,8 +249,8 @@ export async function pageText(
 }
 
 /**
- * 상자 안 글자(계약 8.3 텍스트 판정): MuPDF 는 글자 사각형 중심, pdf.js 는 텍스트 항목 기준점(줄 왼쪽 아래),
- * Poppler 는 단어 상자 중심이 box(페이지 공간, 쪽 경계 기준 origin) 안인 것을 읽기 순서대로 잇는다.
+ * Characters inside a box (contract 8.3 text classification): MuPDF uses the glyph rectangle center, pdf.js the text item anchor (bottom-left of the line),
+ * and Poppler the word box center; those inside box (page space, origin relative to the page bounds) are joined in reading order.
  */
 export async function textInBox(
   engine: Engine,
@@ -333,7 +333,7 @@ export async function textInBox(
   });
 }
 
-/** pdf.js marked content 구조: MCID 별로 그 안에서 나온 텍스트. */
+/** pdf.js marked content structure: the text that came out inside each MCID. */
 export async function pdfjsMarkedText(
   bytes: Uint8Array,
   pageIndex: number,
@@ -349,7 +349,7 @@ export async function pdfjsMarkedText(
       if ('type' in item) {
         const it = item as { type: string; id?: string };
         if (it.type === 'beginMarkedContentProps' || it.type === 'beginMarkedContent') {
-          // pdf.js id 형식: "<pageRef>_mc<MCID>"(MCID 가 있을 때만).
+          // pdf.js id format: "<pageRef>_mc<MCID>" (only when there is an MCID).
           const m = it.id ? /mc(\d+)$/.exec(it.id) : null;
           stack.push(m ? Number(m[1]) : null);
         } else if (it.type === 'endMarkedContent') stack.pop();
@@ -365,5 +365,5 @@ export async function pdfjsMarkedText(
   }
 }
 
-/** 텍스트 판정용: 공백류와 기본 무시 문자(Default_Ignorable_Code_Point, 계약 8.3 수정 4)를 지운다. */
+/** For text classification: removes whitespace and default-ignorable characters (Default_Ignorable_Code_Point, contract 8.3 amendment 4). */
 export const squash = (s: string) => s.replace(/[\s\p{Default_Ignorable_Code_Point}]+/gu, '');

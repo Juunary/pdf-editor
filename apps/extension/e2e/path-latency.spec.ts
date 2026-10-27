@@ -1,13 +1,13 @@
 /**
- * 패스 끌기 반응 시간(docs/m4-contract.md 6.2·1.1 성능, V5). 옵트인: PATH_LATENCY_CORPUS_DIR 이 있을 때만 돈다.
+ * Path drag response time (docs/m4-contract.md 6.2·1.1 performance, V5). Opt-in: runs only when PATH_LATENCY_CORPUS_DIR is set.
  *
  *   PATH_LATENCY_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus \
  *     pnpm --filter @pdf-editor/extension exec playwright test e2e/path-latency.spec.ts
  *
- * 쪽: 코퍼스 최대 패스 쪽(kogl-mods-cpi-202609 4쪽, docs/m4-core.md 4.1). 편집 가능 패스 중 큰 것부터 10개의 상자 가운데를
- * Alt+Shift 선택 경로(`PathController.selectAt`)로 고른 뒤 선택 상자를 50 단계로 끈다(단계 사이 30 ms, 정지 갱신 200 ms 미만).
- * 단계 표본 = 입력 직전 `performance.now()` → 입력 뒤 두 번째 requestAnimationFrame(합성 뒤) 시각. CDP 왕복을 포함한다.
- * 놓은 뒤 커밋(되돌리기 버튼 활성)까지 시간도 잰다. 결과: out/m4-path-latency/latency.json.
+ * Page: the corpus page with the most paths (kogl-mods-cpi-202609 page 4, docs/m4-core.md 4.1). From the largest editable paths, the box centers of 10 are
+ * picked via the Alt+Shift selection path (`PathController.selectAt`), then the selection box is dragged in 50 steps (30 ms between steps, idle update under 200 ms).
+ * Step sample = `performance.now()` just before input -> time of the second requestAnimationFrame after input (after compositing). Includes the CDP round trip.
+ * Also measures the time until commit after release (undo button enabled). Result: out/m4-path-latency/latency.json.
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -59,7 +59,7 @@ function summarize(xs: number[]) {
   return { n: s.length, p50: at(0.5), p95: at(0.95), max: s.at(-1) ?? NaN };
 }
 
-test.describe('패스 끌기 반응 시간(계약 6.2)', () => {
+test.describe('path drag response time (contract 6.2)', () => {
   test.skip(!CORPUS, 'PATH_LATENCY_CORPUS_DIR 없음(옵트인)');
   test.setTimeout(600_000);
 
@@ -85,7 +85,7 @@ test.describe('패스 끌기 반응 시간(계약 6.2)', () => {
     rmSync(userDataDir, { recursive: true, force: true });
   });
 
-  test('최대 패스 쪽에서 고정 패스 10개 × 50 단계 끌기', async () => {
+  test('10 fixed paths × 50-step drag on the page with the most paths', async () => {
     const page: Page = await context.newPage();
     await page.goto(`chrome-extension://${extensionId}/viewer.html?e2e`);
     await page.waitForFunction(() => '__pe' in window);

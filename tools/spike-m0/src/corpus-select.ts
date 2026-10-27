@@ -2,23 +2,23 @@ import * as mupdf from 'mupdf';
 import type { Rect } from '@pdf-editor/shared-types';
 
 /**
- * 실제 문서에서 본문 문단을 자동으로 고른다(Day 1 하드코딩 좌표의 일반화, docs/m0-corpus-recheck.md 2절).
- * MuPDF stext 블록을 문단 후보로 보고, 본문 글자 크기·줄 정렬·줄 간격·글자 비율로 거른 뒤
- * 다른 블록 글자와 겹치지 않는 redaction 영역을 만든다. 좌표는 모두 MuPDF 페이지 좌표(원점 좌상단).
+ * Automatically picks body paragraphs from real documents (generalizes the Day 1 hard-coded coordinates, docs/m0-corpus-recheck.md section 2).
+ * Treats MuPDF stext blocks as paragraph candidates, filters them by body font size, line alignment, line spacing, and character ratio, then
+ * builds a redaction area that does not overlap other blocks' characters. All coordinates are MuPDF page coordinates (origin at top left).
  *
- * MuPDF redaction 은 글리프 외곽(잉크 범위)과 영역이 조금이라도 겹치면 그 글자를 지운다(실측 2026-10-19:
- * 글자 중심이 영역 밖이어도 제거, stext quad 의 위·아래 여백만 겹치면 유지). 그래서 영역과 겹침 판정은
- * quad 가 아니라 기준선 기준 추정 잉크 범위(위 0.8em, 아래 0.22em)로 한다.
+ * MuPDF redaction erases a character if its glyph outline (ink extent) overlaps the area at all (measured 2026-10-19:
+ * removed even if the character center is outside the area; kept if only the quad's top/bottom margin overlaps). So the overlap check against the area
+ * uses the estimated ink extent relative to the baseline (0.8em above, 0.22em below), not the quad.
  */
 
 export interface StextChar {
   c: string;
-  /** 기준선 원점 */
+  /** Baseline origin */
   x: number;
   y: number;
   size: number;
   font: string;
-  /** quad 외접 사각형 */
+  /** Quad bounding rectangle */
   box: Rect;
 }
 
@@ -79,7 +79,7 @@ export function readTextBlocks(page: mupdf.Page): StextBlock[] {
 export const lineText = (l: StextLine) => l.chars.map((c) => c.c).join('');
 const isSpace = (c: string) => /^\s$/u.test(c);
 
-/** 추정 잉크 범위(글자 위아래로 quad 보다 좁다). 공백은 null. */
+/** Estimated ink extent (narrower than the quad above and below the character). null for whitespace. */
 function inkBox(ch: StextChar): Rect | null {
   if (isSpace(ch.c)) return null;
   return [ch.box[0], ch.y - INK_ASCENT * ch.size, ch.box[2], ch.y + INK_DESCENT * ch.size];
@@ -105,24 +105,24 @@ function median(xs: number[]): number {
 export interface ParagraphCandidate {
   pageIndex: number;
   blockIndex: number;
-  /** stext 블록 그대로(block) 또는 연속한 한 줄 블록을 이은 것(merged-lines) */
+  /** The stext block as is (block), or consecutive single-line blocks joined (merged-lines) */
   source: 'block' | 'merged-lines';
-  /** 후보를 이루는 stext 블록 번호(인접 텍스트 판정에서 제외) */
+  /** stext block numbers forming the candidate (excluded from the adjacent-text check) */
   memberBlocks: number[];
-  /** redaction 영역 = 블록 글자 추정 잉크 범위의 합(여유 0.5pt) */
+  /** redaction area = union of the estimated ink extents of the block's characters (0.5pt margin) */
   rect: Rect;
-  /** 줄별 텍스트·기준선·가로 범위 */
+  /** Per-line text, baseline, and horizontal extent */
   lines: { text: string; baseline: number; x0: number; x1: number }[];
   text: string;
-  /** 글자 크기 중앙값(pt) */
+  /** Median font size (pt) */
   fontSize: number;
-  /** 기준선 간격 중앙값(pt) */
+  /** Median baseline spacing (pt) */
   linePitch: number;
   fonts: string[];
-  /** 공백 제외 글자 수 */
+  /** Number of non-whitespace characters */
   charCount: number;
   hangulRatio: number;
-  /** U+FFFD·사용자 정의 영역 문자 비율(문자 매핑 복원 곤란 지표) */
+  /** Ratio of U+FFFD·private-use-area characters (indicator of hard-to-recover character mapping) */
   unmappedRatio: number;
 }
 
@@ -148,14 +148,14 @@ export interface PageScan {
 export interface SelectionReport {
   pageCount: number;
   scannedPages: PageScan[];
-  /** 훑은 쪽의 글자 수 가중 최빈 글자 크기(0.5pt 단위) */
+  /** Character-count-weighted mode of font size over the scanned pages (0.5pt units) */
   bodyFontSize: number | null;
-  /** 회전(/Rotate ≠ 0)이라 건너뛴 쪽 수(훑은 쪽 중) */
+  /** Number of pages skipped because they are rotated (/Rotate ≠ 0) (among scanned pages) */
   rotatedSkipped: number;
   rejected: Partial<Record<RejectReason, number>>;
-  /** 블록 후보가 없는 쪽에서 한 줄 블록을 이은 후보의 탈락 사유 */
+  /** Reasons single-line-block-merged candidates were rejected on pages with no block candidates */
   mergedRejected: Partial<Record<RejectReason, number>>;
-  /** 훑은 쪽 중 한 줄 블록 비율(공백 아닌 줄 1개인 블록 ÷ 텍스트 블록) */
+  /** Share of single-line blocks among scanned pages (blocks with exactly one non-whitespace line ÷ text blocks) */
   singleLineBlockRatio: number | null;
   selected: ParagraphCandidate[];
 }
@@ -166,7 +166,7 @@ interface ScannedPage {
   blocks: StextBlock[];
 }
 
-/** 문단 후보 판정. null 이면 후보, 아니면 탈락 사유. */
+/** Paragraph candidate check. null means a candidate; otherwise the rejection reason. */
 export function judgeBlock(
   block: StextBlock,
   others: StextBlock[],
@@ -252,10 +252,10 @@ const MAX_MERGED_LINES = 8;
 const nonEmptyLines = (b: StextBlock) => b.lines.filter((l) => l.chars.some((c) => !isSpace(c.c)));
 
 /**
- * 보조 경로: MuPDF stext 가 줄마다 블록을 나누는 문서(실측: Word·한컴·일부 LaTeX 출력)에서 연속한 한 줄
- * 블록을 이어 문단 후보를 만든다. 같은 글자 크기(±0.6pt), 왼쪽 정렬(±2em), 기준선 간격 0.95~2.4em 이고
- * 직전 간격과 ±25% 이내면 같은 문단으로 본다. 3줄 이상인 묶음만 돌려준다. 여러 줄 블록은 묶음을 끊는다.
- * 문단 사이 간격이 없는 문서는 쪽 전체가 한 묶음이 되므로 8줄마다 끊는다(짧은 문단 교체 시나리오).
+ * Auxiliary path: for documents where MuPDF stext splits a block per line (measured: Word, Hancom, some LaTeX output), joins consecutive single-line
+ * blocks into paragraph candidates. Same font size (±0.6pt), left-aligned (±2em), baseline spacing 0.95~2.4em, and
+ * within ±25% of the previous spacing are treated as the same paragraph. Only groups of 3 or more lines are returned. Multi-line blocks break a group.
+ * Documents with no spacing between paragraphs would form one group for the whole page, so groups are split every 8 lines (short-paragraph replacement scenario).
  */
 export function mergeLineBlocks(blocks: StextBlock[]): { block: StextBlock; members: number[] }[] {
   const out: { block: StextBlock; members: number[] }[] = [];
@@ -302,8 +302,8 @@ export function mergeLineBlocks(blocks: StextBlock[]): { block: StextBlock; memb
 }
 
 /**
- * 쪽 훑기 구간: 표지(0쪽) 다음부터 문서 15%·50%·85% 지점에서 시작해 앞으로 `perStart` 쪽씩, 마지막 구간은
- * 나머지 쪽(앞에서부터, 전체 60쪽 상한). 쪽은 중복되지 않는다.
+ * Page scan ranges: starting after the cover (page 0) at 15%·50%·85% of the document, `perStart` pages each going forward; the last range is
+ * the remaining pages (from the front, capped at 60 pages total). Pages do not repeat.
  */
 export function scanSegments(pageCount: number, perStart = 12): number[][] {
   if (pageCount <= 1) return [[0]];
@@ -327,8 +327,8 @@ export function scanSegments(pageCount: number, perStart = 12): number[][] {
 }
 
 /**
- * 문서에서 본문 문단을 최대 `max` 개 고른다(서로 다른 쪽, 훑기 순서의 세 구간에서 하나씩 우선).
- * 회전된 쪽은 건너뛴다(편집 배치가 PDF 사용자 공간 가로쓰기 전제).
+ * Picks at most `max` body paragraphs from a document (from different pages, one from each of the three ranges in scan order first).
+ * Rotated pages are skipped (edit placement assumes horizontal writing in PDF user space).
  */
 export function selectParagraphs(doc: mupdf.PDFDocument, max = 3): SelectionReport {
   const pageCount = doc.countPages();
@@ -419,7 +419,7 @@ export function selectParagraphs(doc: mupdf.PDFDocument, max = 3): SelectionRepo
     });
   }
 
-  // 구간마다 하나씩 먼저 고르고, 모자라면 나머지 쪽에서 채운다. 같은 쪽에서는 하나만, 5줄 근처 우선.
+  // Pick one per range first, then fill from the remaining pages if short. Only one per page, preferring near 5 lines.
   const best = (cs: ParagraphCandidate[]) =>
     [...cs].sort((a, b) => Math.abs(a.lines.length - 5) - Math.abs(b.lines.length - 5))[0];
   const selected: ParagraphCandidate[] = [];
@@ -437,7 +437,7 @@ export function selectParagraphs(doc: mupdf.PDFDocument, max = 3): SelectionRepo
   };
   for (const seg of segments.slice(0, 3)) if (selected.length < max) pick(seg);
   while (selected.length < max && pick(order)) {
-    // 남은 쪽에서 채운다
+    // fill from the remaining pages
   }
   return {
     pageCount,

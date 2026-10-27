@@ -15,7 +15,7 @@ function open(rotate: 0 | 90 | 180 | 270 = 0): PdfSession {
   return s;
 }
 
-/** 전체 렌더의 [x0,y0,x1,y1) 정수 장치 영역을 잘라 낸다. */
+/** Crops the integer device region [x0,y0,x1,y1) out of the full render. */
 function crop(full: { width: number; rgba: Uint8ClampedArray }, rect: number[]): Uint8ClampedArray {
   const [x0, y0, x1, y1] = rect as [number, number, number, number];
   const out = new Uint8ClampedArray((x1 - x0) * (y1 - y0) * 4);
@@ -35,28 +35,31 @@ describe('PdfSession.renderPage(clip)', () => {
     [0, 2],
     [90, 2],
     [270, 1.5],
-  ] as const)('영역 픽셀 = 쪽 전체 렌더의 같은 위치 픽셀 (회전 %i, 배율 %f)', (rotate, scale) => {
-    const s = open(rotate);
-    const full = s.renderPage({ pageIndex: 0, scale });
-    expect(full.clip).toBeNull();
-    const region = s.renderPage({ pageIndex: 0, scale, clip: [10.2, 30.7, 120.4, 90.3] });
-    expect(region.clip).not.toBeNull();
-    const [cx0, cy0, cx1, cy1] = region.clip!;
-    // 픽셀 격자: clip * scale 이 정수 장치 좌표.
-    for (const v of [cx0 * scale, cy0 * scale, cx1 * scale, cy1 * scale]) {
-      expect(Math.abs(v - Math.round(v))).toBeLessThan(1e-9);
-    }
-    expect([region.width, region.height]).toEqual([
-      Math.round((cx1 - cx0) * scale),
-      Math.round((cy1 - cy0) * scale),
-    ]);
-    expect(region.rgba.length).toBe(region.width * region.height * 4);
-    const rect = [cx0 * scale, cy0 * scale, cx1 * scale, cy1 * scale].map(Math.round);
-    expect(Array.from(region.rgba)).toEqual(Array.from(crop(full, rect)));
-    s.close();
-  });
+  ] as const)(
+    'region pixels = same-position pixels of the full-page render (rotation %i, scale %f)',
+    (rotate, scale) => {
+      const s = open(rotate);
+      const full = s.renderPage({ pageIndex: 0, scale });
+      expect(full.clip).toBeNull();
+      const region = s.renderPage({ pageIndex: 0, scale, clip: [10.2, 30.7, 120.4, 90.3] });
+      expect(region.clip).not.toBeNull();
+      const [cx0, cy0, cx1, cy1] = region.clip!;
+      // Pixel grid: clip * scale gives integer device coordinates.
+      for (const v of [cx0 * scale, cy0 * scale, cx1 * scale, cy1 * scale]) {
+        expect(Math.abs(v - Math.round(v))).toBeLessThan(1e-9);
+      }
+      expect([region.width, region.height]).toEqual([
+        Math.round((cx1 - cx0) * scale),
+        Math.round((cy1 - cy0) * scale),
+      ]);
+      expect(region.rgba.length).toBe(region.width * region.height * 4);
+      const rect = [cx0 * scale, cy0 * scale, cx1 * scale, cy1 * scale].map(Math.round);
+      expect(Array.from(region.rgba)).toEqual(Array.from(crop(full, rect)));
+      s.close();
+    },
+  );
 
-  it('요청 영역을 포함하도록 바깥 정수 좌표로 넓힌다', () => {
+  it('expands to outer integer coordinates so that the requested region is included', () => {
     const s = open();
     const clip: [number, number, number, number] = [10.2, 30.7, 120.4, 90.3];
     const region = s.renderPage({ pageIndex: 0, scale: 2, clip });
@@ -69,7 +72,7 @@ describe('PdfSession.renderPage(clip)', () => {
     s.close();
   });
 
-  it('쪽 경계로 자르고, 쪽과 겹치지 않으면 RangeError', () => {
+  it('clamps to the page bounds, and throws RangeError when it does not overlap the page', () => {
     const s = open();
     const region = s.renderPage({ pageIndex: 0, scale: 2, clip: [-50, -50, 40, 30] });
     expect(region.clip).toEqual([0, 0, 40, 30]);
@@ -80,7 +83,7 @@ describe('PdfSession.renderPage(clip)', () => {
     s.close();
   });
 
-  it('쪽 전체 크기 clip 은 쪽 전체 렌더와 같다', () => {
+  it('a clip of the full page size equals the full-page render', () => {
     const s = open();
     const full = s.renderPage({ pageIndex: 0, scale: 1.5 });
     const region = s.renderPage({ pageIndex: 0, scale: 1.5, clip: [0, 0, 300, 200] });

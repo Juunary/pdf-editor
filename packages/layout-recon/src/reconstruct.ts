@@ -1,5 +1,5 @@
 /**
- * PageModel → PageLayout(계약 docs/m2-contract.md 3절).
+ * PageModel → PageLayout (contract docs/m2-contract.md section 3).
  */
 import type {
   LayoutColumn,
@@ -35,29 +35,29 @@ import { buildUnits, inlineImages, makeUnit, type Unit } from './units.js';
 import { xyCut, type CutItem } from './xycut.js';
 
 export interface ReconOptions {
-  /** ML 보조 후보(계약 3절 8단계). v1 기본 구현 없음. */
+  /** ML-assisted candidates (contract section 3, step 8). No default implementation in v1. */
   plugins?: readonly LayoutPlugin[];
   /**
-   * 이웃 쪽(앞뒤 1–2쪽) 추출 모델. 주면 같은 자리·같은 글(숫자 무시)로 반복되는 쪽 위·아래 줄을
-   * 머리·꼬리로 본다(러닝헤드·쪽 번호, 계약 2.5). 없으면 쪽 하나만 본다.
+   * Extraction models of neighboring pages (1–2 pages before and after). If given, lines at the top/bottom of the page repeated at the same position with the same text (ignoring digits) are
+   * treated as headers/footers (running heads, page numbers, contract 2.5). If absent, only the single page is considered.
    */
   neighbors?: readonly PageModel[];
   /**
-   * 한 문단으로 고정할 PageModel 줄 묶음(M3 편집 블록, docs/m3-integration.md 9.6). 묶음마다 정확히 문단 하나가
-   * 된다(줄은 위→아래). 묶음 줄도 표 감지 입력에 넣고(M4 4.1: 셀 편집 블록이 빠지면 셀이 비고 정렬 전략 표가 깨진다),
-   * 감지 뒤 묶음의 줄이 모두 한 셀에 들면 그 셀 문단 = 묶음 하나(`table` 설정, 같은 셀의 다른 줄은 보통 나누기).
-   * 그 밖의 묶음은 흐름 문단(역할은 다른 흐름 문단과 같은 규칙)이고, 그 줄은 표 셀·도형·머리·꼬리·영역 쌓기·문단
-   * 나누기에서 뺀다. 흐름 묶음 문단은 묶음 줄 상자 합으로 XY-cut 에 들어가 첫 줄 자리의 읽기 순서·열을 받는다.
-   * 보이지 않는 줄·가로가 아닌 줄·범위 밖 번호는 무시하고, 여러 묶음에 든 줄은 앞 묶음이 갖는다. 없으면 M2 결과와 같다.
+   * Groups of PageModel lines to pin as one paragraph (M3 edit blocks, docs/m3-integration.md 9.6). Each group yields exactly one paragraph
+   * (lines top→bottom). Group lines are also fed into table detection (M4 4.1: if a cell edit block is missing, the cell becomes empty and alignment-strategy tables break);
+   * after detection, if all lines of a group fall into one cell, that cell paragraph = the group (`table` set; other lines in the same cell are split normally).
+   * Any other group is a flow paragraph (role follows the same rules as other flow paragraphs), and its lines are excluded from table cells, figures, headers/footers, region stacking and paragraph
+   * splitting. A flow group paragraph enters XY-cut with the union of its line boxes and receives the reading order and column of the first line's position.
+   * Invisible lines, non-horizontal lines and out-of-range indices are ignored, and a line in several groups belongs to the earlier group. If absent, the result equals M2.
    */
   fixedGroups?: readonly (readonly number[])[];
 }
 
-/** 반복 비교용 글 정규화: 소문자, 숫자 → #, 공백 하나. */
+/** Text normalization for repetition comparison: lowercase, digits → #, single spaces. */
 const normRepeat = (t: string): string =>
   t.toLowerCase().replace(/\d+/gu, '#').replace(/\s+/gu, ' ').trim();
 
-/** 이웃 쪽에 같은 자리(위 끝 ±3pt, 왼쪽 또는 오른쪽 끝 ±3pt)·같은 정규화 글로 있는 쪽 위·아래 20% 단위. */
+/** Units in the top/bottom 20% of the page that also appear on a neighboring page at the same position (top edge ±3pt, left or right edge ±3pt) with the same normalized text. */
 function repeatedUnits(
   units: readonly Unit[],
   bounds: Rect,
@@ -90,13 +90,13 @@ export interface RegionProposal {
   score: number;
 }
 
-/** ML 플러그인 슬롯. 순수 함수여야 한다(모델 추론 결과를 미리 계산해 넘기는 어댑터 포함). */
+/** ML plugin slot. Must be a pure function (including adapters that pass precomputed model inference results). */
 export interface LayoutPlugin {
   name: string;
   proposeRegions(model: PageModel): readonly RegionProposal[];
 }
 
-/** DOM·Node 타입 없이 쓰는 시계(Worker·Node 모두 performance 가 있다). */
+/** Clock usable without DOM/Node types (both Worker and Node have performance). */
 const now = (): number =>
   (globalThis as { performance?: { now(): number } }).performance?.now() ?? Date.now();
 
@@ -107,13 +107,13 @@ interface Draft {
   column: number;
   table: number | null;
   figure: number | null;
-  /** 흐름 문단의 영역(열 넘김 연결용). */
+  /** Region of a flow paragraph (for linking across columns). */
   region: Region | null;
 }
 
 const FOOTNOTE_START = /^\s*(?:\d{1,3}|[*†‡§¶])\s?\S/u;
 
-/** 캡션 인접: 같은 가로 범위의 도형·표가 위·아래 3em 안에 있거나, 옆(세로 겹침)에 3em 안에 있다. */
+/** Caption adjacency: a figure or table with the same horizontal range lies within 3em above or below, or within 3em beside it (vertical overlap). */
 function nearObject(bbox: Rect, size: number, objects: readonly Rect[]): boolean {
   const d = 3 * size;
   return objects.some((o) => {
@@ -164,7 +164,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
   const visible = feats.filter((f) => f.chars.length > 0 && f.text.trim() !== '');
   const visibleSet = new Set(visible);
   const unassignedLines = feats.filter((f) => !visibleSet.has(f)).map((f) => f.index);
-  // 고정 묶음(편집 블록): 보이는 가로 줄만, 줄마다 첫 묶음 하나.
+  // Pinned groups (edit blocks): visible horizontal lines only, one first group per line.
   const fixedOf = new Map<number, number>();
   (options.fixedGroups ?? []).forEach((g, k) => {
     for (const li of g) {
@@ -180,8 +180,8 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
   const bounds = model.bounds;
   const pageH = height(bounds);
 
-  // 3단계: 표(고정 묶음 줄 포함). 묶음 → 그 줄을 모두 담은 셀(표 번호:셀 번호). 한 셀에 들지 않는 묶음은 빼고
-  // 다시 감지한다(그 묶음 줄이 표 감지를 바꾸지 않게, M3 9.6 결과 유지). 두 번 뒤에도 남으면 그 줄만 셀에서 뺀다.
+  // Step 3: tables (including pinned group lines). Group → the cell containing all its lines (table index:cell index). Groups that do not fit in one cell are removed and
+  // detection is rerun (so those group lines do not change table detection, preserving the M3 9.6 result). If any remain after two passes, only those lines are removed from cells.
   const excluded = new Set<number>();
   const inputOf = () =>
     horizontal.filter((f) => {
@@ -226,9 +226,9 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
   const tableLines = new Set(detected.flatMap((t) => t.cells.flatMap((c) => c.lines)));
   const excludedPaths = new Set(detected.flatMap((t) => t.paths));
 
-  // 4단계: 도형과 라벨.
+  // Step 4: figures and labels.
   const free = (f: LineFeature) => !tableLines.has(f.index) && !fixedOf.has(f.index);
-  // 표 안에 대부분(60% 이상) 들어가는 도형 후보는 표의 남은 괘선·배경이다.
+  // A figure candidate mostly (at least 60%) inside a table is the table's leftover rules or background.
   const figs = detectFigures(model, visible.filter(free), pathSummary, excludedPaths).filter(
     (f) =>
       !detected.some((t) => {
@@ -243,13 +243,13 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
       const box = expand(fig.bbox, 0.3 * f.size);
       if (!intersect(box, f.bbox) || !containsPoint(box, center(f.bbox))) continue;
       if (fig.kind === 'vector' && width(f.bbox) > width(fig.bbox)) continue;
-      // 산문 줄(6단어 이상, 도형 폭 절반 이상)은 라벨이 아니라 흐름 본문이다(사진 위 본문·사이드바).
+      // A prose line (at least 6 words, at least half the figure width) is flow body text, not a label (body text over a photo, sidebar).
       if (f.words.length >= 6 && width(f.bbox) > 0.5 * width(fig.bbox)) continue;
       labelOf.set(f.index, k);
     }
   });
 
-  // 5단계: 흐름 단위·머리·꼬리.
+  // Step 5: flow units, headers and footers.
   const flowFeats = horizontal.filter((f) => free(f) && !labelOf.has(f.index));
   const fillers = inlineImages(model, median(flowFeats.map((f) => f.size)) || 10);
   const units = buildUnits(model, flowFeats, fillers);
@@ -263,8 +263,8 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
   const bodyX0 = margins.body.reduce((m, u) => Math.min(m, u.bbox[0]), bounds[2]);
   const bodyX1 = margins.body.reduce((m, u) => Math.max(m, u.bbox[2]), bounds[0]);
   const rotatedFree = rotated.filter((f) => free(f) && !labelOf.has(f.index));
-  // 본문 가로 줄이 없으면(가로 표를 회전해 넣은 쪽, 세로쓰기 쪽) 섹션 탭 판정을 하지 않는다.
-  // 탭은 본문 가로 범위 밖이면서 쪽 좌우 여백 띠(쪽 폭 15%) 안에 있어야 한다.
+  // If there are no horizontal body lines (a page with a rotated landscape table, or vertical writing), section tab classification is skipped.
+  // A tab must be outside the body's horizontal range and inside the left/right page margin band (15% of page width).
   const sideBand = 0.15 * width(bounds);
   const sideTabs = margins.body.length
     ? rotatedFree.filter(
@@ -282,14 +282,14 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
     for (const [li, fk] of labelOf) if (fk === k) b = union(b, feats[li]!.bbox);
     return b;
   });
-  // 고정 묶음 문단: 같은 행 조각은 간격과 무관하게 잇는다(양쪽 정렬 줄의 넓은 단어 간격으로 가로로 갈라지지 않게).
+  // Pinned group paragraph: same-row fragments are joined regardless of gap (so wide word gaps in justified lines do not split them horizontally).
   const fixedUnits = fixedGroups.map((g) => buildUnits(model, g, fillers, true));
   const fixedBoxes: Rect[] = fixedUnits.map((us) =>
     us.slice(1).reduce((b, u) => union(b, u.full), us[0]!.full),
   );
   const regions = stackRegions(margins.body, [...tableBoxes, ...figBoxes, ...fixedBoxes]);
 
-  // 6단계: XY-cut.
+  // Step 6: XY-cut.
   type Item =
     | { kind: 'region'; region: Region; bbox: Rect }
     | { kind: 'table'; index: number; bbox: Rect }
@@ -315,7 +315,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
   };
   const byPos = (a: Unit, b: Unit) => a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0];
 
-  // 머리.
+  // Header.
   const headerUnits = [...margins.header, ...sideTabs.map((f) => makeUnit(model, [f]))].sort(byPos);
   for (const u of headerUnits) {
     const id = pushPara([u], {
@@ -328,7 +328,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
     readingOrder.push({ kind: 'paragraph', id });
   }
 
-  // 열 번호: 가장 안쪽 세로 자르기 묶음, 묶음 밖 항목은 연속 구간마다 새 열.
+  // Column index: the innermost vertical cut group; items outside any group get a new column for each consecutive run.
   const columnOfGroup = new Map<number, number>();
   const columnBoxes: Rect[] = [];
   let lastFullWidth = false;
@@ -399,7 +399,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
           for (const us of splitParagraphs(region)) parts.push({ top: us[0]!.bbox[1], units: us });
         }
         if (group) {
-          // 셀 편집 블록: 묶음 하나 = 셀 문단 하나(같은 행 조각은 잇는다).
+          // Cell edit block: one group = one cell paragraph (same-row fragments are joined).
           const us = buildUnits(model, group, fillers, true);
           if (us.length) parts.push({ top: us[0]!.bbox[1], units: us });
         }
@@ -463,7 +463,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
     }
   }
 
-  // 꼬리.
+  // Footer.
   for (const u of [...margins.footer].sort(byPos)) {
     const id = pushPara([u], {
       role: 'footer',
@@ -475,7 +475,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
     readingOrder.push({ kind: 'paragraph', id });
   }
 
-  // 역할(흐름 문단).
+  // Role (flow paragraphs).
   for (const d of drafts) {
     if (d.role !== 'body' || d.table !== null || d.figure !== null) continue;
     d.role = flowRole(d.units, d.body.text, body, bounds[1], pageH, d.body.bbox, [
@@ -484,7 +484,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
     ]);
   }
 
-  // 7단계: 영역 넘김 연결.
+  // Step 7: linking across regions.
   const continuesTo = drafts.map(() => null as number | null);
   const flowOrder = readingOrder
     .filter((r) => r.kind === 'paragraph')
@@ -500,7 +500,7 @@ export function reconstructPage(model: PageModel, options: ReconOptions = {}): P
     if (last.bbox[2] < colRight - 0.1 * colW) continue;
     if (SENTENCE_END.test(p.body.text)) continue;
     if (q.units.length > 1 && q.body.firstLineIndent > C.indentEm * q.units[0]!.size) continue;
-    // q 는 자기 영역의 첫 문단이어야 한다.
+    // q must be the first paragraph of its own region.
     if (q.region!.units[0] !== q.units[0]) continue;
     continuesTo[flowOrder[k]!] = flowOrder[k + 1]!;
   }

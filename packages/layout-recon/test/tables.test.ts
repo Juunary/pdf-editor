@@ -23,13 +23,13 @@ const dims = (t: DetectedTable): [number, number] => [
   t.colBounds.length - 1,
 ];
 
-/** (행, 열) 셀의 줄 텍스트. */
+/** Line text of the (row, column) cell. */
 function cellText(t: DetectedTable, spec: ModelSpec, row: number, col: number): string[] {
   const c = t.cells.find((x) => x.row === row && x.col === col);
   return (c?.lines ?? []).map((k) => spec.lines![k]!.text);
 }
 
-/** 공통 불변식: 셀이 격자를 겹침 없이 덮고, 줄은 표 전체에서 한 번만 나온다. */
+/** Common invariants: cells cover the grid without overlap, and each line appears only once in the whole table. */
 function expectInvariants(tables: DetectedTable[]): void {
   const seen = new Set<number>();
   for (const t of tables) {
@@ -53,7 +53,7 @@ function expectInvariants(tables: DetectedTable[]): void {
   }
 }
 
-/** 오른쪽 끝을 right 에 맞춘 줄(글자 폭 = 크기 × 0.5). */
+/** A line with its right end aligned to right (character width = size × 0.5). */
 const rightAt = (right: number, y: number, text: string, size = 10): LineSpec => ({
   x: right - Array.from(text).length * size * 0.5,
   y,
@@ -64,7 +64,7 @@ const rightAt = (right: number, y: number, text: string, size = 10): LineSpec =>
 const PROSE =
   'Lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi aliquip';
 
-/** 단어 경계로 자른 산문 줄(최대 n 글자). */
+/** A prose line cut at word boundaries (at most n characters). */
 function proseLines(
   x: number,
   y0: number,
@@ -86,8 +86,8 @@ function proseLines(
   return out;
 }
 
-describe('detectTables: 괘선 전략', () => {
-  it('3×3 격자 표: 행·열 경계와 셀마다 줄 하나', () => {
+describe('detectTables: ruling-line strategy', () => {
+  it('3×3 grid table: row/column boundaries and one line per cell', () => {
     const xs = [100, 200, 300, 400];
     const ys = [100, 120, 140, 160];
     const lines: LineSpec[] = [];
@@ -108,7 +108,7 @@ describe('detectTables: 괘선 전략', () => {
     expectInvariants(tables);
   });
 
-  it('병합 머리 셀: 세로선이 없는 머리 칸은 colSpan 2', () => {
+  it('merged header cell: a header cell without a vertical line has colSpan 2', () => {
     const paths: PathSpec[] = [
       ...[100, 120, 140, 160].map((y) => ({
         op: 'stroke' as const,
@@ -149,7 +149,7 @@ describe('detectTables: 괘선 전략', () => {
     expectInvariants(tables);
   });
 
-  it('줄무늬 표(채움 사각형만): 줄무늬 없는 머리·끝 행까지 한 표', () => {
+  it('striped table (fill rectangles only): one table including header and end rows without stripes', () => {
     const rows = [
       ['Item', 'Q1', 'Q2'],
       ['Alpha', '1,234', '5,678'],
@@ -181,7 +181,7 @@ describe('detectTables: 괘선 전략', () => {
     expectInvariants(tables);
   });
 
-  it('booktabs 표(가로선만): 열은 글자 정렬, 행은 기준선', () => {
+  it('booktabs table (horizontal lines only): columns by text alignment, rows by baseline', () => {
     const body = [
       ['Base', '71.3', '68.0'],
       ['Ours', '81.2', '77.0'],
@@ -220,14 +220,14 @@ describe('detectTables: 괘선 전략', () => {
     expect(cellText(t, spec, 0, 1)).toEqual(['Acc']);
     expect(cellText(t, spec, 3, 0)).toEqual(['Ours+']);
     expect(cellText(t, spec, 4, 2)).toEqual(['88.8']);
-    // 표 제목은 표 밖이다.
+    // The table title is outside the table.
     expect(t.cells.some((c) => c.lines.includes(0))).toBe(false);
     expectInvariants(tables);
   });
 });
 
-describe('detectTables: 정렬 전략', () => {
-  it('오른쪽 정렬 숫자 재무표: 구역 행 포함 3열', () => {
+describe('detectTables: alignment strategy', () => {
+  it('right-aligned numeric financial table: 3 columns including section rows', () => {
     const spec: ModelSpec = {
       lines: [
         { x: 72, y: 60, text: 'Statement of financial position' },
@@ -269,15 +269,15 @@ describe('detectTables: 정렬 전략', () => {
   });
 });
 
-describe('detectTables: 표가 아닌 것', () => {
-  it('두 단 본문', () => {
+describe('detectTables: non-tables', () => {
+  it('two-column body text', () => {
     const spec: ModelSpec = {
       lines: [...proseLines(72, 100, 30, 45), ...proseLines(320, 100, 30, 45)],
     };
     expect(detect(spec)).toEqual([]);
   });
 
-  it('두 단 일정 목록(짧은 줄)', () => {
+  it('two-column schedule list (short lines)', () => {
     const entries = [
       ['May 14–16, 2024', 'CERES Science Team Meeting', 'Hampton, VA'],
       ['June 3–6, 2024', 'OMI–TROPOMI Science Team Meeting', 'Boulder, CO'],
@@ -292,7 +292,7 @@ describe('detectTables: 표가 아닌 것', () => {
     expect(detect({ lines: [...col(72), ...col(320)] })).toEqual([]);
   });
 
-  it('격자선·눈금 라벨이 있는 차트', () => {
+  it('chart with grid lines and tick labels', () => {
     const xs = [100, 150, 200, 250, 300, 350, 400, 450, 500];
     const ys = [100, 150, 200, 250, 300, 350, 400];
     const lines: LineSpec[] = [
@@ -318,7 +318,7 @@ describe('detectTables: 표가 아닌 것', () => {
     expect(detect({ lines, paths: [...gridPaths(xs, ys, 0.3), series] })).toEqual([]);
   });
 
-  it('테두리 친 글상자 하나', () => {
+  it('a single bordered text box', () => {
     const spec: ModelSpec = {
       lines: [{ x: 100, y: 110, text: 'Note', bold: true }, ...proseLines(100, 124, 5, 58)],
       paths: [{ op: 'stroke', segments: rectSegments([90, 95, 400, 200]), lineWidth: 1 }],
@@ -326,7 +326,7 @@ describe('detectTables: 표가 아닌 것', () => {
     expect(detect(spec)).toEqual([]);
   });
 
-  it('쪽 테두리 사각형', () => {
+  it('page border rectangle', () => {
     const spec: ModelSpec = {
       lines: [
         { x: 72, y: 80, text: 'Chapter 3', size: 16, bold: true },
@@ -339,9 +339,9 @@ describe('detectTables: 표가 아닌 것', () => {
   });
 });
 
-describe('detectTables: 처리 시간', () => {
-  it('괘선 약 1,000개·줄 500개 쪽을 100 ms 안에 처리한다', () => {
-    // 셀마다 네 변을 따로 그린 25×10 격자(괘선 1,000개) + 셀 글자 250줄 + 본문 250줄.
+describe('detectTables: processing time', () => {
+  it('processes a page with about 1,000 rules and 500 lines within 100 ms', () => {
+    // A 25×10 grid with four edges drawn separately per cell (1,000 rules) + 250 cell text lines + 250 body lines.
     const paths: PathSpec[] = [];
     const lines: LineSpec[] = [];
     for (let r = 0; r < 10; r++)

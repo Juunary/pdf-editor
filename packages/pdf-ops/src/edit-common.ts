@@ -1,6 +1,6 @@
 /**
- * 문단 편집(M3) 공통 도구: 행렬·사각형, 리소스 체인, 스트림 바이트 캐시, 숫자 표기.
- * 행렬 규약은 content-interp.ts 와 같다(점 p' = p × M, concat(a, b) = a 다음 b).
+ * Common helpers for paragraph editing (M3): matrices and rectangles, resource chain, stream byte cache, number formatting.
+ * The matrix convention is the same as content-interp.ts (point p' = p × M, concat(a, b) = a then b).
  */
 import type * as mupdf from 'mupdf';
 import type { FormStep, Matrix, Point, Rect, SourceOp } from '@pdf-editor/shared-types';
@@ -23,14 +23,14 @@ export function apply(m: Matrix, x: number, y: number): Point {
   return [x * m[0] + y * m[2] + m[4], x * m[1] + y * m[3] + m[5]];
 }
 
-/** 선형 부분만 적용(방향 벡터). */
+/** Applies only the linear part (direction vector). */
 export function applyLinear(m: Matrix, x: number, y: number): Point {
   return [x * m[0] + y * m[2], x * m[1] + y * m[3]];
 }
 
 export const determinant = (m: Matrix) => m[0] * m[3] - m[1] * m[2];
 
-/** 역행렬. 특이 행렬이면 null. */
+/** Inverse matrix. null if singular. */
 export function invert(m: Matrix): Matrix | null {
   const det = determinant(m);
   if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null;
@@ -58,7 +58,7 @@ export function transformRect(r: Rect, m: Matrix): Rect {
   return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
 }
 
-/** 교집합. 겹치지 않으면 면적 0 사각형. */
+/** Intersection. A zero-area rectangle if they do not overlap. */
 export function intersect(a: Rect, b: Rect): Rect {
   const r: Rect = [
     Math.max(a[0], b[0]),
@@ -76,11 +76,11 @@ export function union(a: Rect | null, b: Rect): Rect {
   return [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
 }
 
-/** 면적이 있는 겹침. */
+/** Overlap with non-zero area. */
 export const overlaps = (a: Rect, b: Rect) =>
   a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 
-/** 유효숫자 9자리(지수 표기 없이). 계약 D3 `<Tlm>`. */
+/** 9 significant digits (no exponent notation). Contract D3 `<Tlm>`. */
 export function fmt9(v: number): string {
   if (!Number.isFinite(v) || Math.abs(v) < 1e-9) return '0';
   let s = Number(v.toPrecision(9)).toString();
@@ -89,7 +89,7 @@ export function fmt9(v: number): string {
   return s === '-0' ? '0' : s;
 }
 
-/** 왕복 정확 표기(가장 짧은 십진 표기, 지수 표기 없이). */
+/** Round-trip exact notation (shortest decimal, no exponent notation). */
 export function fmtExact(v: number): string {
   if (!Number.isFinite(v) || v === 0) return '0';
   let s = String(v);
@@ -111,7 +111,7 @@ export const latin1String = (b: Uint8Array) => {
   return s;
 };
 
-/** Form 사용 경로의 식별 키(같은 Do 사용 위치면 같다). 쪽 콘텐츠면 'page'. */
+/** Identifying key of a Form usage path (equal for the same Do usage location). 'page' for page content. */
 export function formKey(path: readonly FormStep[]): string {
   if (path.length === 0) return 'page';
   return path
@@ -122,13 +122,13 @@ export function formKey(path: readonly FormStep[]): string {
     .join('/');
 }
 
-/** 스트림 저장 키. 쪽 콘텐츠는 /Contents 칸, Form 은 객체 번호. */
+/** Stream storage key. The /Contents slot for page content, the object number for a Form. */
 export const streamKey = (op: { stream: SourceOp['stream'] }) =>
   op.stream.contentsIndex === null
     ? `f:${op.stream.objectNumber}`
     : `p:${op.stream.contentsIndex}:${op.stream.objectNumber}`;
 
-/** 스트림 디코드 바이트 캐시(한 번의 판정·적용 안에서만 쓴다). */
+/** Decoded stream byte cache (used only within a single classification/apply). */
 export class StreamCache {
   private readonly cache = new Map<number, Uint8Array>();
   constructor(private readonly doc: mupdf.PDFDocument) {}
@@ -145,7 +145,7 @@ export class StreamCache {
   }
 }
 
-/** 리소스 체인(안쪽 먼저): Form 경로의 각 /Resources, 그다음 쪽 /Resources(상속 포함). */
+/** Resource chain (innermost first): each /Resources along the Form path, then the page /Resources (including inherited). */
 export function resourceChain(
   doc: mupdf.PDFDocument,
   pageIndex: number,
@@ -161,7 +161,7 @@ export function resourceChain(
   return chain;
 }
 
-/** 체인에서 category/name 리소스(첫 번째). 없으면 null. 값은 해석하지 않은 원 객체(간접 참조 유지). */
+/** The first category/name resource in the chain. null if absent. The value is the raw, unresolved object (indirect references kept). */
 export function lookupResource(
   chain: readonly mupdf.PDFObject[],
   category: string,
@@ -176,7 +176,7 @@ export function lookupResource(
   return null;
 }
 
-/** 정규 PDF 이름 표기(구분 문자·공백·# 는 #xx). */
+/** Canonical PDF name notation (delimiters, whitespace and # become #xx). */
 export function pdfName(name: string): string {
   let out = '/';
   for (const ch of name) {
@@ -188,11 +188,11 @@ export function pdfName(name: string): string {
   return out;
 }
 
-/** 일반 문자(구분 문자·공백 아님). */
+/** Regular character (not a delimiter or whitespace). */
 const isRegular = (c: number | undefined) =>
   c !== undefined && !(c <= 0x20 || '()<>[]{}/%'.includes(String.fromCharCode(c)));
 
-/** 교체 텍스트가 앞뒤 토큰과 붙지 않게 필요한 곳에만 공백을 붙인다. */
+/** Adds whitespace only where needed so replacement text does not stick to adjacent tokens. */
 export function padReplacement(
   bytes: Uint8Array,
   start: number,

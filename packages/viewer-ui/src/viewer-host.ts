@@ -1,10 +1,10 @@
 /**
- * 뷰어 UI 가 뷰어 소유 Worker 에 요구하는 호출 집합. `PdfWorkerApi`(Comlink 원격)가 그대로 만족한다.
- * UI 패키지는 Worker·MuPDF 를 직접 알지 못하므로 테스트에서는 가짜 구현을 넘긴다.
+ * The set of calls the viewer UI requires of the viewer-owned Worker. `PdfWorkerApi` (the Comlink remote) satisfies it as is.
+ * The UI package does not know the Worker or MuPDF directly, so tests pass a fake implementation.
  */
 import type { PdfWorkerApi } from '@pdf-editor/shared-types';
 
-/** 편집(M3) RPC. 호스트가 모두 주면 편집 기능이 켜지고, 하나라도 없으면 편집만 꺼진다. */
+/** Edit (M3) RPCs. If the host provides all of them, the edit feature turns on; if any is missing, only editing turns off. */
 export type EditHostApi = Pick<
   PdfWorkerApi,
   | 'getPageEditability'
@@ -30,7 +30,7 @@ export const EDIT_HOST_METHODS = [
   'getEditHistory',
 ] as const satisfies readonly (keyof EditHostApi)[];
 
-/** 벡터 패스 편집(M4) RPC. 하나라도 없으면 패스 편집만 꺼진다(문단 편집과 별개). */
+/** Vector path editing (M4) RPCs. If any is missing, only path editing turns off (independent of paragraph editing). */
 export type PathHostApi = Pick<
   PdfWorkerApi,
   'planPathEdit' | 'beginPathEdit' | 'updatePathDraft' | 'commitPathEdit' | 'cancelPathEdit'
@@ -56,23 +56,23 @@ export type ViewerHost = Pick<
 > &
   Partial<EditHostApi> &
   Partial<PathHostApi> & {
-    /** 진단 로그(예: 확장 뷰어의 DiagLog). 기능 비활성화·오류를 여기에 남긴다. */
+    /** Diagnostic log (e.g. the extension viewer's DiagLog). Feature disablement and errors are recorded here. */
     log(event: string, data?: unknown): void;
   };
 
-/** 렌더 배율 계산에 쓰는 환경 값. */
+/** Environment values used for render scale calculation. */
 export interface ViewerEnvironment {
   devicePixelRatio: number;
-  /** 뷰어가 쓸 수 있는 CSS 폭. */
+  /** CSS width available to the viewer. */
   availableWidth: number;
 }
 
-/** 호스트가 편집 RPC 를 모두 제공하는지. */
+/** Whether the host provides all the edit RPCs. */
 export function hasEditHost(host: ViewerHost): host is ViewerHost & EditHostApi {
   return EDIT_HOST_METHODS.every((m) => typeof host[m] === 'function');
 }
 
-/** 호스트가 패스 편집 RPC 를 모두 제공하는지. */
+/** Whether the host provides all the path edit RPCs. */
 export function hasPathHost(host: ViewerHost): host is ViewerHost & PathHostApi {
   return PATH_HOST_METHODS.every((m) => typeof host[m] === 'function');
 }

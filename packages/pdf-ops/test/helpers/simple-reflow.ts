@@ -1,6 +1,6 @@
 /**
- * 테스트 전용 단순 배치(reflow 패키지 구현 전 ReflowResult 를 직접 만든다). 왼쪽 정렬, 공백 뒤 줄 나눔,
- * 폭은 원본 폰트 명세 폭·폴백 /W 그대로(셰이핑 없음). 계약 5.4 의 일부만 따른다.
+ * Test-only simple layout (builds ReflowResult directly before the reflow package is implemented). Left-aligned, line breaks after spaces,
+ * widths are the original font specified widths and fallback /W as is (no shaping). Follows only part of contract 5.4.
  */
 import * as mupdf from 'mupdf';
 import type { ParagraphFormat, PlacedGlyph, PlacedLine, Rect } from '@pdf-editor/shared-types';
@@ -73,7 +73,7 @@ export function simpleReflow(
   const width = area[2] - area[0];
   const lines: Item[][] = [[]];
   let x = format.firstLineIndent > 0 ? format.firstLineIndent : 0;
-  // 단어(공백까지) 단위로 넣는다.
+  // Insert word by word (up to the space).
   let i = 0;
   while (i < items.length) {
     const it = items[i]!;

@@ -1,4 +1,4 @@
-/** 뷰어 → 뷰어 소유 module Worker RPC 계약(Comlink, PLAN.md 5.2). */
+/** Viewer → viewer-owned module Worker RPC contract (Comlink, PLAN.md 5.2). */
 import type { Rect } from './geometry.js';
 import type {
   BeginEditResult,
@@ -28,59 +28,59 @@ export interface PageSize {
   height: number;
 }
 
-/** 원본을 WASM 에 넘긴 방식. stream 은 열기 시 WASM 힙에 입력을 복사하지 않는다(A3-1). */
+/** How the source was passed to WASM. With stream, the input is not copied into the WASM heap on open (A3-1). */
 export type InputMode = 'buffer' | 'stream';
 
 export interface OpenResult {
   pageCount: number;
-  /** 첫 페이지 크기. 나머지는 getPageInfo 로 지연 조회한다. */
+  /** First page size. The rest are looked up lazily via getPageInfo. */
   firstPage: PageSize;
   byteLength: number;
   openMs: number;
   inputMode: InputMode;
   /**
-   * 저장 힙 모델 입력(M5 D5). 첫 쪽 표시 뒤 유휴 시 계산하므로 열기 시점에는 비어 있을 수 있다(열기 시간에 넣지 않음).
+   * Save heap model input (M5 D5). Computed when idle after the first page is displayed, so it may be empty at open time (not included in open time).
    */
   documentStats?: DocumentStats;
 }
 
-/** 문서 통계(`docs/m5-contract.md` 3절). 스트림은 디코드하지 않고 /Length 만 더한다. */
+/** Document statistics (`docs/m5-contract.md` section 3). Streams are not decoded; only /Length is summed. */
 export interface DocumentStats {
   objectCount: number;
   streamCount: number;
-  /** 원(압축된) 스트림 /Length 합(byte). */
+  /** Sum of original (compressed) stream /Length (byte). */
   rawStreamBytes: number;
-  /** 1 s 넘어 고정 간격 표본으로 추정했으면 true. */
+  /** true if it exceeded 1 s and was estimated from fixed-interval samples. */
   approximate: boolean;
 }
 
-/** `replayEdits` 선택 인자(계약 D4 사용자 결정 2026-10-21: 복구 진행 표시). */
+/** Optional argument of `replayEdits` (contract D4 user decision 2026-10-21: recovery progress display). */
 export interface ReplayOptions {
-  /** true 면 적용 뒤 저널을 켜지 않고 다음 `replayEdits` 호출을 이어 받는다. 마지막 호출은 생략하거나 false. */
+  /** If true, the journal is not enabled after applying and the next `replayEdits` call continues. Omit it or use false for the last call. */
   more?: boolean;
 }
 
-/** 기존 Redact 주석 요약(pdf-ops listRedactAnnots 의 수·쪽). */
+/** Summary of existing Redact annotations (count and pages from pdf-ops listRedactAnnots). */
 export interface RedactAnnotSummary {
   total: number;
-  /** Redact 주석이 있는 쪽(0부터). */
+  /** Pages with Redact annotations (0-based). */
   pages: number[];
 }
 
 export interface PageInfo {
   pageIndex: number;
-  /** `Page.getBounds()`, 페이지 공간. */
+  /** `Page.getBounds()`, page space. */
   bounds: Rect;
   size: PageSize;
-  /** 상속 반영한 /Rotate. */
+  /** /Rotate with inheritance applied. */
   rotation: number;
 }
 
 export interface RenderRequest {
   pageIndex: number;
-  /** 1 = 72dpi. 뷰어는 devicePixelRatio 를 곱해 넘긴다. */
+  /** 1 = 72dpi. The viewer passes the value multiplied by devicePixelRatio. */
   scale: number;
-  /** 이 영역(페이지 공간)만 렌더한다(M3 편집 미리보기). 없으면 쪽 전체. */
+  /** Renders only this area (page space) (M3 edit preview). The whole page if absent. */
   clip?: Rect;
 }
 
@@ -88,10 +88,10 @@ export interface RenderedPage {
   pageIndex: number;
   width: number;
   height: number;
-  /** RGBA, 불투명 흰 배경. 길이 = width * height * 4. Worker 에서 transfer 로 넘긴다. */
+  /** RGBA, opaque white background. Length = width * height * 4. Passed from the Worker by transfer. */
   rgba: Uint8ClampedArray<ArrayBuffer>;
   renderMs: number;
-  /** 실제로 렌더한 영역(페이지 공간, 픽셀 격자에 맞춘 값). 쪽 전체면 null. */
+  /** Area actually rendered (page space, snapped to the pixel grid). null for the whole page. */
   clip: Rect | null;
 }
 
@@ -99,46 +99,46 @@ export interface PdfWorkerApi {
   open(bytes: ArrayBuffer): Promise<OpenResult>;
   getPageInfo(pageIndex: number): Promise<PageInfo>;
   renderPage(request: RenderRequest): Promise<RenderedPage>;
-  /** 추출 모델. 같은 페이지는 문서가 바뀌기 전까지 캐시해도 된다. */
+  /** Extraction model. The same page may be cached until the document changes. */
   extractPage(request: ExtractRequest): Promise<PageModel>;
-  /** 원본 연결 정보(디버그 오버레이·편집 계획용). */
+  /** Source link info (for debug overlays and edit planning). */
   getSourceMap(pageIndex: number): Promise<SourceMap>;
-  /** extractPage + getSourceMap 결과의 매칭. */
+  /** Matching of the extractPage + getSourceMap results. */
   linkPage(pageIndex: number): Promise<PageLinkage>;
   searchText(request: SearchRequest): Promise<SearchResult>;
-  /** 쪽 레이아웃(문단·열·표·도형·읽기 순서, M2). 같은 쪽은 문서가 바뀌기 전까지 캐시해도 된다. */
+  /** Page layout (paragraphs, columns, tables, figures, reading order, M2). The same page may be cached until the document changes. */
   getPageLayout(pageIndex: number): Promise<PageLayout>;
-  /** 저장 전 판정(방식·옵션·예상 피크 힙). 저장하지 않는다. */
+  /** Pre-save classification (mode, options, expected peak heap). Does not save. */
   planSave(request: SaveRequest): Promise<SavePlan>;
   save(request: SaveRequest): Promise<SaveResult>;
-  /** 저널 상한 판정(M5 D4). 문서를 바꾸지 않는다. 뷰어는 편집 커밋 뒤 물어 "저장 후 다시 열기" 안내에 쓴다. */
+  /** Journal limit check (M5 D4). Does not modify the document. The viewer asks after an edit commit and uses it for the "저장 후 다시 열기" ("save and reopen") prompt. */
   journalAdvice(): Promise<JournalAdvice>;
   close(): Promise<void>;
 
-  // M3 문단 편집(docs/m3-contract.md 4절). 초안은 문서당 최대 1개.
-  /** 쪽의 흐름 문단별 편집 가능 여부(마우스 오버 표시용 일괄 판정). */
+  // M3 paragraph editing (docs/m3-contract.md section 4). At most one draft per document.
+  /** Per-flow-paragraph editability of a page (batch classification for hover display). */
   getPageEditability(pageIndex: number): Promise<PageEditability>;
-  /** 편집 가능 판정·시작 텍스트·영역. 문서를 바꾸지 않는다. */
+  /** Editability classification, start text and area. Does not modify the document. */
   planParagraphEdit(pageIndex: number, paragraphId: number): Promise<ParagraphEditPlan>;
-  /** 이 쪽의 편집 블록. */
+  /** Edit blocks of this page. */
   getPageEdits(pageIndex: number): Promise<PageEditInfo>;
   /**
-   * 저널 작업을 열고 제거·삽입을 적용한 초안을 만든다. revision 이 현재와 다르거나 편집할 수 없으면 예외.
+   * Opens a journal operation and creates a draft with removal and insertion applied. Throws if revision differs from the current one or the paragraph cannot be edited.
    */
   beginParagraphEdit(
     pageIndex: number,
     paragraphId: number,
     revision: number,
-    /** first.region 렌더 배율. 없으면 마지막 쪽 전체 렌더 배율, 그것도 없으면 2(계약 수정 4). */
+    /** Render scale for first.region. If absent, the last whole-page render scale; if that is absent too, 2 (contract amendment 4). */
     renderScale?: number,
   ): Promise<BeginEditResult>;
-  /** 리플로우 → 편집 블록 교체 → 변경 영역 렌더. */
+  /** Reflow → replace edit block → render changed area. */
   updateParagraphDraft(draftId: string, input: DraftInput): Promise<DraftUpdate>;
-  /** 저널 작업을 닫고 EditOp 를 로그에 넣는다. */
+  /** Closes the journal operation and puts the EditOp into the log. */
   commitParagraphEdit(draftId: string): Promise<CommitResult>;
-  /** 초안을 버린다. */
+  /** Discards the draft. */
   cancelParagraphEdit(draftId: string): Promise<EditHistoryState>;
-  // M4 벡터 패스 편집(docs/m4-contract.md). 패스 초안과 문단 초안은 동시에 열 수 없다.
+  // M4 vector path editing (docs/m4-contract.md). A path draft and a paragraph draft cannot be open at the same time.
   planPathEdit(pageIndex: number, paintSeqs: number[]): Promise<PathEditPlan>;
   beginPathEdit(
     pageIndex: number,
@@ -151,11 +151,11 @@ export interface PdfWorkerApi {
   undo(): Promise<EditHistoryState>;
   redo(): Promise<EditHistoryState>;
   getEditHistory(): Promise<EditHistoryState>;
-  /** 문서의 기존 Redact 주석 수·쪽(A2-2 열기 시 보고, 계약 수정 4). */
+  /** Number and pages of the document's existing Redact annotations (A2-2, reported on open, contract amendment 4). */
   listRedactAnnots(): Promise<RedactAnnotSummary>;
   /**
-   * 새로 연 문서에 로그를 다시 적용한다(Worker 복구, 계약 D6). `options.more` 가 true 면 저널을 켜지 않고 다음
-   * `replayEdits` 를 이어 받는다(복구 진행 표시 n/N 용으로 나눠 적용, 계약 D4 사용자 결정 2026-10-21).
+   * Reapplies the log to a newly opened document (Worker recovery, contract D6). If `options.more` is true, the journal is not enabled and the next
+   * `replayEdits` continues (applied in chunks for the recovery progress display n/N, contract D4 user decision 2026-10-21).
    */
   replayEdits(ops: EditOp[], options?: ReplayOptions): Promise<EditHistoryState>;
 }

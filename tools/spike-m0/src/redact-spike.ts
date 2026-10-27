@@ -1,4 +1,4 @@
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// core must be imported before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { openPdf } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import {
@@ -58,16 +58,16 @@ export interface RedactCaseResult {
     messages: string[];
   };
   afterEdit: PageState & {
-    /** R1·R2·R3 주석 객체(사전 문자열) 불변 */
+    /** R1·R2·R3 annotation objects (dictionary strings) unchanged */
     existingObjectsUnchanged: boolean;
     changedObjects: string[];
   };
   render: { page1OutsideTargetPx: number; page2VsOriginalPx: number };
   save: { method: SaveMethod; options: string; saveMs: number; bytes: number };
   reopen: PageState & {
-    /** 저장 후 기존 Redact 주석: 쪽·위치·OverlayText 동일 */
+    /** Existing Redact annotations after save: same page, position, and OverlayText */
     reportSame: boolean;
-    /** 저장 후 R1·R2·R3 객체 트리(번호 무관, /P 제외) 동일 */
+    /** R1·R2·R3 object trees after save (independent of numbers, excluding /P) are identical */
     existingTreesSame: boolean[];
     page1OutsideTargetPx: number;
     page2VsOriginalPx: number;

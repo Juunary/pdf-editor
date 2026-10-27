@@ -1,5 +1,5 @@
 /**
- * 흐름 텍스트 복원(계약 3절 5단계): 머리·꼬리 분리, 영역 쌓기, 영역 안 문단 나누기.
+ * Flow text reconstruction (contract section 3, step 5): header/footer separation, region stacking, paragraph splitting within regions.
  */
 import type { Rect } from '@pdf-editor/shared-types';
 import { C } from './constants.js';
@@ -9,11 +9,11 @@ import { NUMBER_TAG, type Unit } from './units.js';
 
 const TOC_ENTRY = /(?:\.\s?){4,}\s*\d{1,4}\s*$|…{2,}\s*\d{1,4}\s*$/u;
 
-/** 같은 행: 기준선 차이가 글자 크기의 0.4배 이하(수식 줄은 상자 높이가 커서 상자 겹침으로 판단하지 않는다). */
+/** Same row: baseline difference is at most 0.4x the font size (math lines have tall boxes, so box overlap is not used). */
 const sameLine = (a: Unit, b: Unit): boolean =>
   Math.abs(a.baseline - b.baseline) <= 0.4 * Math.max(a.size, b.size);
 
-/** 본문 글자 크기: 보이는 글자 수로 가중한 크기 중앙값. */
+/** Body font size: median size weighted by the number of visible characters. */
 export function bodySize(units: readonly Unit[]): number {
   const sizes: number[] = [];
   for (const u of units) {
@@ -30,8 +30,8 @@ export interface MarginSplit {
 }
 
 /**
- * 머리·꼬리(계약 2.5): 위·아래 여백 띠 안에 있고 본문과 marginGapEm 이상 떨어진 단위.
- * 본문보다 많이 큰 글자(제목)는 쪽 번호 형식이 아니면 제외한다. 꼬리는 짧거나(쪽 폭 60% 이하) 쪽 번호 형식만.
+ * Header/footer (contract 2.5): units inside the top/bottom margin band and at least marginGapEm away from the body.
+ * Text much larger than body text (titles) is excluded unless it has a page number format. A footer must be short (at most 60% of page width) or only a page number format.
  */
 export function splitMargins(
   units: readonly Unit[],
@@ -46,7 +46,7 @@ export function splitMargins(
   const minGap = C.marginGapEm * body;
   const inTop = (u: Unit) => u.bbox[3] <= topLimit;
   const inBottom = (u: Unit) => u.bbox[1] >= bottomLimit;
-  // 긴 산문 줄(본문 크기의 8단어 이상, 쪽 폭 60% 이상)은 머리·꼬리가 아니다(쪽 위 강조 상자 등).
+  // A long prose line (body-sized, at least 8 words, at least 60% of page width) is not a header/footer (e.g. a highlight box at the top of the page).
   const prose = (u: Unit) =>
     u.size >= 0.8 * body &&
     u.parts.reduce((n, p) => n + p.words.length, 0) >= 8 &&
@@ -54,11 +54,11 @@ export function splitMargins(
   const eligible = (u: Unit) => PAGE_NUMBER.test(u.text) || (u.size <= body * 1.3 && !prose(u));
   const header = new Set<Unit>();
   const footer = new Set<Unit>();
-  // 본문보다 작은 글자로만 된 머리·꼬리 묶음은 간격 기준을 절반으로 둔다.
+  // A header/footer group made only of text smaller than body text uses half the gap threshold.
   const gapFor = (block: Unit[]): number =>
     block.every((u) => u.size < 0.95 * body) ? minGap / 2 : minGap;
-  // 위 띠: 자르기 위치 y(띠 안 단위의 아래 끝) 중, y 위 단위가 모두 띠 안·자격 있음이고 y 아래 가장 가까운
-  // 단위까지 minGap 이상 떨어진 가장 낮은 위치. 그 위 단위가 머리다. 아래 띠는 대칭.
+  // Top band: among cut positions y (the bottom edge of a unit in the band), the lowest one where all units above y are inside the band and eligible, and the nearest unit below y
+  // is at least minGap away. The units above it are the header. The bottom band is symmetric.
   let topCut = -Infinity;
   for (const c of units.filter(inTop)) {
     const y = c.bbox[3];
@@ -66,7 +66,7 @@ export function splitMargins(
     if (!above.every((u) => inTop(u) && eligible(u))) continue;
     const bottom = Math.max(...above.map((u) => u.bbox[3]));
     const below = units.filter((u) => u.bbox[1] >= bottom - 1 && !above.includes(u));
-    // 아래에 본문 단위가 없으면(모든 글자가 띠 안) 머리로 판정하지 않는다.
+    // If there is no body unit below (all characters are inside the band), it is not classified as a header.
     if (below.length === 0) continue;
     const next = below.reduce((m, u) => Math.min(m, u.bbox[1]), Infinity);
     if (next - bottom >= gapFor(above)) topCut = Math.max(topCut, bottom);
@@ -80,7 +80,7 @@ export function splitMargins(
       (u) =>
         inBottom(u) &&
         eligible(u) &&
-        // 넓은 줄은 본문보다 많이 작은 글자(슬라이드 하단 막대 등)일 때만 꼬리로 본다(각주와 구분).
+        // A wide line counts as a footer only if its text is much smaller than body text (e.g. a slide bottom bar), to distinguish it from footnotes.
         (width(u.bbox) <= 0.6 * W || PAGE_NUMBER.test(u.text) || u.size < 0.8 * body),
     );
     if (!ok) continue;
@@ -91,8 +91,8 @@ export function splitMargins(
     if (top - prev >= gapFor(belowSet)) bottomCut = Math.min(bottomCut, top);
   }
   for (const u of units) if (u.bbox[1] >= bottomCut) footer.add(u);
-  // 이웃 쪽에서 같은 자리·같은 글(숫자 무시)로 반복되는 단위(러닝헤드·쪽 번호): 쪽 위·아래 20% 안이고,
-  // 그보다 바깥쪽에 반복되지 않는 본문 단위가 없으면 머리·꼬리다(여백 띠·간격 조건 대신).
+  // A unit repeated at the same position with the same text (ignoring digits) on neighboring pages (running head, page number): within the top/bottom 20% of the page, and
+  // if there is no non-repeating body unit further outside, it is a header/footer (in place of the margin band and gap conditions).
   for (const u of repeated) {
     if (u.bbox[3] <= bounds[1] + 0.2 * H) {
       const outer = units.filter((v) => v.bbox[3] <= u.bbox[1] + 1);
@@ -125,8 +125,8 @@ const xFits = (a: Rect, b: Rect): boolean =>
   overlapX(a, b) >= C.stackOverlap * Math.min(width(a), width(b));
 
 /**
- * 영역 쌓기(계약 3절 5단계): 위 단위와 x 가 겹치고 세로 간격이 작으면 같은 영역.
- * 위 단위가 아래 행의 단위 둘 이상과 겹치면(여러 열에 걸친 줄) 잇지 않는다. 장애물(표·도형) 너머로는 잇지 않는다.
+ * Region stacking (contract section 3, step 5): same region if x overlaps the unit above and the vertical gap is small.
+ * Not linked if the unit above overlaps two or more units in the row below (a line spanning several columns). Not linked across obstacles (tables, figures).
  */
 export function stackRegions(units: readonly Unit[], obstacles: readonly Rect[]): Region[] {
   const sorted = [...units].sort((a, b) => a.bbox[1] - b.bbox[1] || a.bbox[0] - b.bbox[0]);
@@ -140,14 +140,14 @@ export function stackRegions(units: readonly Unit[], obstacles: readonly Rect[])
     const cands: { r: Region; gap: number }[] = [];
     for (const r of regions) {
       const last = r.units.at(-1)!;
-      // 기준선 간격으로 판단한다(줄 상자 대략 1.2em 를 빼면 상자 사이 간격).
+      // Judged by baseline spacing (subtracting the line box of about 1.2em gives the gap between boxes).
       const d = u.baseline - last.baseline;
       const size = Math.max(u.size, last.size);
       if (d > (1.2 + C.stackGapEm) * size || d < 0.5 * Math.min(u.size, last.size)) continue;
       const gap = d;
       if (!xFits(last.bbox, u.bbox)) continue;
-      // 위 단위가 u 의 같은 행 다른 단위와도 겹치면 여러 열에 걸친 줄이다.
-      // 겹침 기준은 낮게 둔다(넓은 제목이 오른쪽 열의 일부만 덮어도 걸친 줄이다).
+      // If the unit above also overlaps another unit in the same row as u, it is a line spanning several columns.
+      // The overlap threshold is kept low (a wide title is a spanning line even if it covers only part of the right column).
       if (
         rowmates.some(
           (m) =>
@@ -161,7 +161,7 @@ export function stackRegions(units: readonly Unit[], obstacles: readonly Rect[])
     }
     cands.sort((a, b) => a.gap - b.gap);
     const best = cands[0];
-    // u 가 나란한 두 영역 위에 걸쳐 있으면(아래로 여러 열을 덮는 줄) 새 영역.
+    // If u spans two side-by-side regions (a line covering several columns below), it starts a new region.
     const spans =
       best && cands.some((c) => c !== best && sameLine(c.r.units.at(-1)!, best.r.units.at(-1)!));
     if (best && !spans) {
@@ -180,24 +180,24 @@ export function stackRegions(units: readonly Unit[], obstacles: readonly Rect[])
 const firstWordAfterBullet = (u: Unit): number | null => {
   const words = u.parts.flatMap((p) => p.words);
   if (words.length < 2 || !BULLET.test(u.text)) return null;
-  // 글머리 기호가 별도 조각이거나 첫 단어면 둘째 단어 시작이 본문 시작.
+  // If the bullet marker is a separate fragment or the first word, the start of the second word is the start of the body.
   return words[1]!.x0;
 };
 
 /**
- * 영역 안 문단 나누기(계약 3절 5단계). 결과는 단위 묶음(위→아래).
+ * Paragraph splitting within a region (contract section 3, step 5). The result is groups of units (top→bottom).
  */
 export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
   const us = region.units;
   if (us.length <= 1) return us.length ? [us.slice()] : [];
-  // 줄 간격 기준: 글자 크기가 같은(±10%) 이웃 쌍의 기준선 간격 하위 30% 분위수. 한 영역에 모양이 다른
-  // 글(강조 상자 + 목차 등)이 섞여도 각자의 간격으로 판단한다.
+  // Line spacing reference: the lower 30% quantile of baseline gaps between neighbor pairs with the same font size (±10%). Even if differently shaped
+  // text (highlight box + table of contents, etc.) is mixed in one region, each is judged by its own spacing.
   const pairs: { d: number; size: number }[] = [];
   for (let i = 1; i < us.length; i++) {
     const a = us[i - 1]!;
     const b = us[i]!;
     const d = b.baseline - a.baseline;
-    // 두 배 줄 간격(Word 등)까지 포함한다. 문단 사이 간격이 섞여도 하위 분위수는 문단 안 간격이다.
+    // Includes double line spacing (Word, etc.). Even when paragraph gaps are mixed in, the lower quantile is the in-paragraph spacing.
     if (d > 0 && d < 3.5 * Math.max(a.size, b.size) && Math.abs(a.size - b.size) <= 0.1 * b.size)
       pairs.push({ d, size: b.size });
   }
@@ -221,10 +221,10 @@ export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
     0.9,
   );
   const regionW = right - left;
-  // 줄마다 국소 통계: 앞뒤 4줄 중 왼쪽 끝이 3em 안이거나 가로로 70% 이상 겹치는 줄(같은 열의 본문)로
-  // 오른쪽 끝·왼쪽 끝·양쪽 정렬 여부를 정한다. 넓은 제목·초록과 좁은 단 본문이 한 영역에 쌓여도
-  // 본문 줄을 넓은 줄 기준으로 "짧다"고 보지 않는다. 창은 영역 가장자리에서도 같은 크기(앞뒤 4줄 + 자신)로
-  // 유지한다(안쪽으로 민다): 잘리면 줄 수가 적고 짧은 줄만 남아 오른쪽 끝이 낮게 잡힌다.
+  // Local statistics per line: among the 4 lines before and after, using lines whose left edge is within 3em or that overlap horizontally by at least 70% (body text in the same column),
+  // determine the right edge, left edge and whether the text is justified. Even if a wide title or abstract and narrow-column body text are stacked in one region,
+  // body lines are not judged "short" against the wide line. The window keeps the same size (4 lines before and after + itself) even at region edges
+  // (it is shifted inward): if truncated, fewer lines remain, only short ones, and the right edge is estimated too low.
   const localSpan = 2 * C.localHalfWindow + 1;
   const localStats = us.map((u, i) => {
     const em = u.size;
@@ -233,7 +233,7 @@ export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
       if (j < lo || j >= lo + localSpan) return false;
       if (Math.abs(v.bbox[0] - u.bbox[0]) <= 3 * em) return true;
       const ov = Math.min(u.bbox[2], v.bbox[2]) - Math.max(u.bbox[0], v.bbox[0]);
-      // 넓은 쪽 폭 기준(좁은 단 줄을 감싸는 넓은 줄은 같은 열로 보지 않는다).
+      // Based on the wider width (a wide line enclosing a narrow-column line is not treated as the same column).
       return ov >= 0.7 * Math.max(u.bbox[2] - u.bbox[0], v.bbox[2] - v.bbox[0]);
     });
     const r = quantile(
@@ -252,7 +252,7 @@ export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
       justified: group.length >= 4 && flushN >= 0.6 * group.length,
     };
   });
-  // 표시 수식 줄: 수식 비율 40% 이상이고 짧은(쪽 폭 대신 영역 폭 85% 미만) 줄, 그 옆·아래의 식 번호.
+  // Display math lines: lines with a math ratio of at least 40% that are short (under 85% of the region width, not the page width), plus equation numbers beside or below them.
   const isMath = us.map(
     (u) => u.math >= 0.4 && u.bbox[2] - u.bbox[0] < 0.85 * Math.max(regionW, 1),
   );
@@ -266,7 +266,7 @@ export function splitParagraphs(region: Region, reasons?: string[]): Unit[][] {
     const cur = paras.at(-1)!;
     let why: string | null;
     if (isMath[i - 1] && isMath[i]) {
-      // 같은 표시 수식의 줄(분수·첨자·식 번호)은 간격이 크지 않으면 한 문단.
+      // Lines of the same display equation (fractions, subscripts, equation numbers) form one paragraph unless the gap is large.
       why = b.baseline - a.baseline > 3 * Math.max(a.size, b.size) ? 'math-gap' : null;
     } else if (isMath[i - 1] !== isMath[i]) {
       why = 'math-boundary';
@@ -291,38 +291,38 @@ const firstWordWidth = (u: Unit, em: number): number => {
   return w ? w.x1 - w.x0 : em;
 };
 
-/** 문단을 나눌 이유(없으면 null). */
+/** Reason to split the paragraph (null if none). */
 function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | null {
   const em = Math.max(a.size, b.size);
   const indent = C.indentEm * Math.min(a.size, b.size);
-  // 크기·굵기·색 변화.
+  // Change in size, weight or color.
   if (Math.abs(a.size - b.size) / em >= C.sizeChangeRatio) return 'size';
   if (a.bold !== b.bold) return 'bold';
   if (a.color && b.color && a.color.some((v, k) => Math.abs(v - b.color![k]!) > 0.15))
     return 'color';
-  // 간격.
+  // Spacing.
   const d = b.baseline - a.baseline;
-  // 흡수한 큰 연산자·첨자로 늘어난 줄 높이만큼은 간격에서 뺀다.
+  // Subtract from the spacing the line height added by absorbed large operators and subscripts/superscripts.
   const tall = (u: Unit) => Math.max(0, u.full[3] - u.full[1] - (u.bbox[3] - u.bbox[1]));
   const dd = d - (tall(a) + tall(b)) / 2;
   if (dd > s.pitch(b.size) * C.paraPitchRatio + 0.5 && dd > 1.05 * b.size) return 'pitch';
-  // 글머리.
-  // 가운데 정렬 줄: 중심이 같고(0.25em) 왼쪽·오른쪽 끝이 모두 다르다(들여쓰기와 구분). 캡션·제목 블록.
+  // Bullet.
+  // Center-aligned lines: same center (0.25em) and both left and right edges differ (distinguished from indentation). Caption and title blocks.
   const centered =
     Math.abs((a.bbox[0] + a.bbox[2]) / 2 - (b.bbox[0] + b.bbox[2]) / 2) <= 0.25 * em &&
     Math.abs(a.bbox[0] - b.bbox[0]) > indent &&
     Math.abs(a.bbox[2] - b.bbox[2]) > indent;
-  // 글머리: 앞 줄이 끝까지 차고 문장이 이어지며 지금 문단이 목록 항목이 아니면 본문 안의 "(b)" 같은 참조로 본다.
-  // 가운데 정렬 문단 안의 "(b)" 도 참조다.
+  // Bullet: if the previous line is full, the sentence continues and the current paragraph is not a list item, it is treated as an in-text reference like "(b)".
+  // A "(b)" inside a center-aligned paragraph is also a reference.
   if (BULLET.test(b.text) && !centered) {
     const inline =
       a.bbox[2] >= s.right - 0.5 * em && !SENTENCE_END.test(a.text) && !BULLET.test(cur[0]!.text);
     if (!inline) return 'bullet';
   }
-  // 목차 항목(점 끈 + 쪽 번호)은 줄마다 문단.
+  // Table-of-contents entries (dot leader + page number) are one paragraph per line.
   if (TOC_ENTRY.test(a.text)) return 'toc';
   const hyphen = /[-‐]$/u.test(a.text);
-  // 가운데 정렬 줄(가운데가 맞고 왼쪽이 영역 왼쪽보다 들어감)은 들여쓰기로 보지 않는다.
+  // A center-aligned line (centered, with its left edge inset from the region's left) is not treated as an indent.
   if (!centered) {
     if (cur.length === 1) {
       if (b.bbox[0] > a.bbox[0] + indent) {
@@ -331,9 +331,9 @@ function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | nu
         const hanging =
           (after !== null && Math.abs(b.bbox[0] - after) <= 0.6 * em) ||
           words.some((w) => Math.abs(w.x0 - b.bbox[0]) <= 1.5) ||
-          // 글머리 첫 줄이 오른쪽 끝까지 차고 다음 줄이 들어가 있으면 내어쓰기 이어짐.
+          // If the first bullet line fills to the right edge and the next line is inset, it is a hanging-indent continuation.
           (BULLET.test(a.text) && a.bbox[2] >= s.right - 0.5 * em) ||
-          // 글머리 첫 줄 뒤에 다음 줄 첫 단어가 들어갈 자리가 없으면 넘긴 줄이다.
+          // If there is no room for the next line's first word after the first bullet line, it is a wrapped line.
           (BULLET.test(a.text) && s.right - a.bbox[2] < firstWordWidth(b, em) + 0.3 * em);
         if (!hanging) return 'indent-first';
       }
@@ -344,7 +344,7 @@ function breakReason(a: Unit, b: Unit, cur: Unit[], s: RegionStats): string | nu
     }
   }
   if (hyphen) return null;
-  // 앞 줄이 일찍 끝남: 다음 줄 첫 단어가 앞 줄 남은 자리에 들어가면 자동 줄바꿈이 아니다.
+  // Previous line ends early: if the first word of the next line would fit in the remaining space of the previous line, it is not an automatic line wrap.
   if (s.regionW > 8 * em) {
     const firstWord = b.parts[0]?.words[0];
     const wordW = firstWord ? firstWord.x1 - firstWord.x0 : em;

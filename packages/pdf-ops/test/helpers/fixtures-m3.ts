@@ -1,5 +1,5 @@
 /**
- * M3 합성 PDF 와 공통 검사(계약 8.1·8.3).
+ * M3 synthetic PDFs and common checks (contract 8.1, 8.3).
  */
 import { expect } from 'vitest';
 import * as mupdf from 'mupdf';
@@ -26,7 +26,7 @@ export interface DocSpec {
   rotate?: 0 | 90 | 180 | 270;
 }
 
-/** Helvetica(/F1)·Times(/F2) 단순 폰트 쪽들. 리소스는 spec.resources 와 합친다. */
+/** Pages with Helvetica (/F1) and Times (/F2) simple fonts. Resources are merged with spec.resources. */
 export function makeDoc(
   pages: (DocSpec | string)[],
   build?: (
@@ -58,7 +58,7 @@ export function makeDoc(
 export const bytesOf = (doc: mupdf.PDFDocument) =>
   doc.saveToBuffer('garbage=yes,compress').asUint8Array().slice();
 
-/** 쪽 경계 왼쪽 위(페이지 공간). */
+/** Top-left of the page bounds (page space). */
 export function pageOrigin(doc: mupdf.PDFDocument, pageIndex: number): [number, number] {
   const page = doc.loadPage(pageIndex);
   try {
@@ -69,7 +69,7 @@ export function pageOrigin(doc: mupdf.PDFDocument, pageIndex: number): [number, 
   }
 }
 
-/** 편집 영역 밖 렌더 차이가 세 엔진 모두 0 이다. */
+/** The render difference outside the edit region is 0 in all three engines. */
 export async function expectNoChangeOutside(
   before: Uint8Array,
   after: Uint8Array,
@@ -87,7 +87,7 @@ export async function expectNoChangeOutside(
   return out;
 }
 
-/** 재추출 순서(계약 8.3): prev 끝 < new 처음, new 끝 < next 처음(세 엔진, 공백 제거 문자열). */
+/** Re-extraction order (contract 8.3): prev end < new start, new end < next start (three engines, whitespace-stripped strings). */
 export async function expectOrder(
   bytes: Uint8Array,
   pageIndex: number,
@@ -114,7 +114,7 @@ export async function expectOrder(
   }
 }
 
-/** 쪽 텍스트(글자 순)에서 needle 에 해당하는 PageModel 글자 인덱스. */
+/** PageModel character index corresponding to needle in the page text (character order). */
 export function charsOfText(ctx: ParagraphEditContext, needle: string, from = 0): number[] {
   const chars = ctx.model.chars;
   let s = '';
@@ -128,7 +128,7 @@ export function charsOfText(ctx: ParagraphEditContext, needle: string, from = 0)
   return [...new Set(at.slice(i, i + needle.length))];
 }
 
-/** 글자 묶음으로 문단 하나를 만든다(레이아웃 입력을 테스트가 정할 때). */
+/** Builds one paragraph from a group of characters (when the test decides the layout input). */
 export function paragraphOf(
   ctx: ParagraphEditContext,
   chars: number[],
@@ -183,7 +183,7 @@ export function paragraphOf(
   };
 }
 
-/** ctx.layout 을 주어진 문단들로 바꾼 사본. */
+/** A copy with ctx.layout replaced by the given paragraphs. */
 export function withParagraphs(
   ctx: ParagraphEditContext,
   paragraphs: LayoutParagraph[],
@@ -191,7 +191,7 @@ export function withParagraphs(
   return { ...ctx, layout: { ...ctx.layout, paragraphs, readingOrder: [] } };
 }
 
-/** MuPDF 구조화 텍스트 글자와 원점. */
+/** MuPDF structured text characters and origins. */
 export function stextChars(
   doc: mupdf.PDFDocument,
   pageIndex: number,
@@ -205,14 +205,14 @@ export function stextChars(
   return out;
 }
 
-/** 단어(연속 글자)의 글자 원점. 없으면 null. */
+/** Character origins of a word (consecutive characters). null if absent. */
 export function wordOrigins(list: { c: string; x: number; y: number }[], word: string) {
   const s = list.map((x) => x.c).join('');
   const i = s.indexOf(word);
   return i < 0 ? null : list.slice(i, i + word.length);
 }
 
-/** 두 원점 목록이 같다(허용 오차 pt). */
+/** Two origin lists are equal (tolerance in pt). */
 export function expectSameOrigins(
   a: { x: number; y: number }[] | null,
   b: { x: number; y: number }[] | null,
@@ -227,13 +227,13 @@ export function expectSameOrigins(
   });
 }
 
-/** 변경 허용 영역(계약 8.3): 원 문단 bbox ∪ 배치 상자 ∪ 영역. */
+/** Allowed change region (contract 8.3): original paragraph bbox ∪ layout box ∪ region. */
 export const allowedOf = (bbox: Rect, contentBox: Rect, area?: Rect): Rect[] =>
   area ? [bbox, contentBox, area] : [bbox, contentBox];
 
 /**
- * 3×3 괘선 표 콘텐츠(쪽 500×300, 페이지 공간 x 100–400, 행 경계 y = rows). 셀 (r, c) 글자는 "R{r}C{c}",
- * 셀 왼쪽 + 5pt, 행 위 + 14pt 기준선. text(r, c) 로 셀 글을 바꾼다(문자열 배열이면 12pt 간격 여러 줄).
+ * 3x3 ruled table content (page 500x300, page-space x 100-400, row boundaries y = rows). The characters of cell (r, c) are "R{r}C{c}",
+ * baseline at cell left + 5pt, row top + 14pt. text(r, c) changes the cell text (a string array gives several lines at 12pt spacing).
  */
 export function gridTable(
   rows: number[] = [100, 120, 140, 160],

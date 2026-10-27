@@ -115,14 +115,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('기능 격리', () => {
-  it('패스 RPC 가 없으면 패스 코디네이터를 만들지 않고 문단 편집은 그대로다', async () => {
+describe('feature isolation', () => {
+  it('without path RPCs, no path coordinator is created and paragraph editing is unchanged', async () => {
     const { controller } = setup({ withPath: false });
     expect(controller.edit).not.toBeNull();
     expect(controller.edit?.paths).toBeNull();
   });
 
-  it('planPathEdit 가 "M4 미구현" 이면 패스 편집만 끈다', async () => {
+  it('when planPathEdit gives "M4 미구현", only path editing is turned off', async () => {
     const { controller, fake } = await started();
     fake.failNext('planPathEdit', new Error('M4 미구현: core.planPathEdit'));
     await paths(controller).selectAt(0, [150, 130], 1, false);
@@ -133,8 +133,8 @@ describe('기능 격리', () => {
   });
 });
 
-describe('선택', () => {
-  it('클릭하면 모델을 읽고(includePathSegments) 가장 작은 패스를 고르며 plan 을 받는다', async () => {
+describe('selection', () => {
+  it('clicking reads the model (includePathSegments), picks the smallest path and gets a plan', async () => {
     const { controller, host } = await started();
     const sel = await paths(controller).selectAt(0, [130, 120], 1, false);
     expect(sel).toEqual([11]);
@@ -144,7 +144,7 @@ describe('선택', () => {
     expect(s.selection?.plan?.target.paintSeqs).toEqual([11]);
   });
 
-  it('Shift 는 선택에 더하고 다시 누르면 뺀다. 빈 곳 클릭은 푼다', async () => {
+  it('Shift adds to the selection and removes it when pressed again. Clicking an empty spot clears it', async () => {
     const { controller } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -155,17 +155,17 @@ describe('선택', () => {
     expect(controller.getState().edit.path.selection).toBeNull();
   });
 
-  it('선은 화면 4px(배율 반영) 안에서 맞는다', async () => {
+  it('a line hits within 4px on screen (scale taken into account)', async () => {
     const { controller } = await started();
     const p = paths(controller);
     expect(await p.selectAt(0, [420, 103], 1, false)).toEqual([13]);
     expect(await p.selectAt(0, [420, 110], 1, false)).toEqual([]);
-    // 확대(배율 2): 3.5pt(7px)는 허용(4px + 선 두께 절반) 밖이고 1.5pt 는 안이다
+    // Zoomed in (scale 2): 3.5pt (7px) is outside the tolerance (4px + half the line width) and 1.5pt is inside
     expect(await p.selectAt(0, [420, 103.5], 2, false)).toEqual([]);
     expect(await p.selectAt(0, [420, 101.5], 2, false)).toEqual([13]);
   });
 
-  it('편집할 수 없는 패스는 선택되지만 사유를 안내하고 편집 동작을 열지 않는다', async () => {
+  it('a path that cannot be edited is selected but the reason is shown and no edit action is opened', async () => {
     const { controller } = await started();
     const p = paths(controller);
     await p.selectAt(0, [310, 310], 1, false);
@@ -175,7 +175,7 @@ describe('선택', () => {
     expect(p.beginGesture()).toBeNull();
   });
 
-  it('영어 표를 주면 패스 사유는 core 설명 대신 사유 코드 문구(사용자 결정 2026-10-26)', async () => {
+  it('given the English table, the path reasons use the reason-code text instead of the core description (user decision 2026-10-26)', async () => {
     const { controller } = await started({ strings: VIEWER_STRINGS.en });
     await paths(controller).selectAt(0, [310, 310], 1, false);
     expect(controller.getState().edit.path.note).toEqual([
@@ -183,7 +183,7 @@ describe('선택', () => {
     ]);
   });
 
-  it('점 편집 모드는 편집 가능한 단일 선택에서만 켜진다', async () => {
+  it('point-edit mode turns on only for a single editable selection', async () => {
     const { controller } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -195,7 +195,7 @@ describe('선택', () => {
     expect(controller.getState().edit.path.pointMode).toBe(false);
   });
 
-  it('쪽을 옮기면 선택이 풀린다', async () => {
+  it('moving to another page clears the selection', async () => {
     const { controller } = await started();
     await paths(controller).selectAt(0, [130, 120], 1, false);
     await controller.goToPage(1);
@@ -203,8 +203,8 @@ describe('선택', () => {
   });
 });
 
-describe('편집 동작', () => {
-  it('끄는 동안 서버 갱신은 200 ms 정지 뒤에만 가고, 놓으면 즉시 보내고 커밋한다', async () => {
+describe('edit actions', () => {
+  it('while dragging, server updates go out only after a 200 ms pause, and on release it sends immediately and commits', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -214,7 +214,7 @@ describe('편집 동작', () => {
       g.update(emptyPathEdit({ transform: [1, 0, 0, 1, i, 0] }));
       await vi.advanceTimersByTimeAsync(50);
     }
-    expect(fake.count('updatePathDraft')).toBe(0); // 50 ms 간격이라 정지가 없었다
+    expect(fake.count('updatePathDraft')).toBe(0); // 50 ms intervals, so there was no pause
     await vi.advanceTimersByTimeAsync(PATH_DEBOUNCE_MS);
     expect(fake.count('updatePathDraft')).toBe(1);
     g.update(emptyPathEdit({ transform: [1, 0, 0, 1, 20, 0] }));
@@ -226,12 +226,12 @@ describe('편집 동작', () => {
     expect(s.edit.history?.edits).toBe(1);
     expect(controller.editLog.snapshot().ops[0]?.kind).toBe('edit-path');
     expect(s.edit.path.gesture).toBeNull();
-    // 쪽을 다시 읽은 뒤에도 선택이 유지되고 재판정된다
+    // The selection is kept and re-classified even after the page is read again
     expect(s.edit.path.selection?.paintSeqs).toEqual([11]);
     expect(s.edit.path.selection?.plan?.target.bbox[0]).toBe(140);
   });
 
-  it('Esc(cancelGesture)는 초안을 버리고 문서를 바꾸지 않는다', async () => {
+  it('Esc (cancelGesture) discards the draft and does not change the document', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -244,7 +244,7 @@ describe('편집 동작', () => {
     expect(controller.getState().repaintToken).toBeGreaterThan(0);
   });
 
-  it('편집 없이 놓으면 취소와 같다(편집 수 불변)', async () => {
+  it('releasing without an edit is the same as cancel (edit count unchanged)', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -254,7 +254,7 @@ describe('편집 동작', () => {
     expect(fake.count('cancelPathEdit')).toBe(1);
   });
 
-  it('속성 한 번 적용: 색은 한 번만 커밋한다', async () => {
+  it('applying a property once: a color commits only once', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -263,33 +263,33 @@ describe('편집 동작', () => {
     expect(fake.pathInfos().find((i) => i.paintSeq === 11)?.color?.rgb).toEqual([0, 1, 0]);
   });
 
-  it('바뀌는 것이 없는 속성 편집은 초안을 열지 않는다(같은 색, 채움 전용 패스의 두께, 리뷰 L6)', async () => {
+  it('a property edit that changes nothing does not open a draft (same color, width on a fill-only path, review L6)', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
     expect(p.selectionPaints()).toEqual({ fills: true, strokes: false });
-    expect(await p.applyOnce(emptyPathEdit({ fill: [1, 0, 0] }))).toBe(true); // 현재 색과 같음
-    expect(await p.applyOnce(emptyPathEdit({ lineWidth: 3 }))).toBe(true); // 긋지 않는 패스
+    expect(await p.applyOnce(emptyPathEdit({ fill: [1, 0, 0] }))).toBe(true); // same as the current color
+    expect(await p.applyOnce(emptyPathEdit({ lineWidth: 3 }))).toBe(true); // a path that is not stroked
     expect(await p.applyOnce(emptyPathEdit({ stroke: [0, 0, 1] }))).toBe(true);
     expect(fake.count('beginPathEdit')).toBe(0);
     expect(fake.count('commitPathEdit')).toBe(0);
     expect(controller.getState().edit.history?.edits ?? 0).toBe(0);
   });
 
-  it('선 두께는 긋는 패스에만 적용한다(다중 선택에 섞이면 긋는 패스가 있어 허용)', async () => {
+  it('line width applies only to stroked paths (allowed in a multi-selection because it includes stroked paths)', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [420, 100], 1, false);
     expect(p.selectionPaints()).toEqual({ fills: false, strokes: true });
     expect(p.effectiveEdit(emptyPathEdit({ fill: [0, 1, 0] }))).toBeNull();
-    expect(p.effectiveEdit(emptyPathEdit({ lineWidth: 2 }))).toBeNull(); // 현재 두께와 같음
+    expect(p.effectiveEdit(emptyPathEdit({ lineWidth: 2 }))).toBeNull(); // same as the current width
     await p.applyOnce(emptyPathEdit({ lineWidth: 4 }));
     expect(fake.count('commitPathEdit')).toBe(1);
     await p.selectAt(0, [130, 120], 1, true);
     expect(p.selectionPaints()).toEqual({ fills: true, strokes: true });
   });
 
-  it('제자리로 돌아온 끌기(항등 변환)는 커밋하지 않고 취소한다', async () => {
+  it('a drag that returns to the original place (identity transform) is cancelled, not committed', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -301,7 +301,7 @@ describe('편집 동작', () => {
     expect(fake.count('cancelPathEdit')).toBe(1);
   });
 
-  it('다중 선택은 같은 변환을 한 편집으로 적용한다', async () => {
+  it('a multi-selection applies the same transform as one edit', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -317,7 +317,7 @@ describe('편집 동작', () => {
     expect(boxes.sort()).toEqual([110, 130]);
   });
 
-  it('삭제: 선택을 풀고 패스가 사라진다(다중 선택 포함)', async () => {
+  it('delete: clears the selection and the path disappears (including a multi-selection)', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -329,7 +329,7 @@ describe('편집 동작', () => {
     expect(op?.kind === 'edit-path' && op.edit.delete).toBe(true);
   });
 
-  it('점 편집: 점 번호와 새 위치가 PathEdit.points 로 간다', async () => {
+  it('point edit: the point number and new position go to PathEdit.points', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -338,7 +338,7 @@ describe('편집 동작', () => {
     expect(fake.pathInfos().find((i) => i.paintSeq === 11)?.bbox).toEqual([120, 110, 160, 140]);
   });
 
-  it('문단 편집이 열려 있으면 패스 동작을 열지 않는다. 문단 편집을 시작하면 선택이 풀린다', async () => {
+  it('when paragraph editing is open, path actions are not opened. Starting paragraph editing clears the selection', async () => {
     const { controller, fake } = await started();
     const fp = new FakeEditHost({
       paragraphs: [{ id: 1, bbox: [20, 20, 130, 34], text: 'Hello World' }],
@@ -347,12 +347,12 @@ describe('편집 동작', () => {
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
     expect(fake.count('beginParagraphEdit')).toBe(0);
-    // 세션이 없으므로 패스 동작은 열린다
+    // There is no session, so path actions are opened
     expect(p.beginGesture()).not.toBeNull();
     await p.cancelGesture();
   });
 
-  it('문서 undo 는 선택을 푼다', async () => {
+  it('document undo clears the selection', async () => {
     const { controller } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -362,12 +362,12 @@ describe('편집 동작', () => {
   });
 });
 
-describe('오류·복구', () => {
-  it('begin 이 revision 오류를 내면 다시 판정해 한 번 더 시도한다', async () => {
+describe('errors and recovery', () => {
+  it('if begin gives a revision error, re-classifies and tries once more', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
-    fake.revision++; // 선택 뒤 문서가 바뀜
+    fake.revision++; // the document changed after selection
     const g = p.beginGesture()!;
     await g.ready();
     expect(fake.count('beginPathEdit')).toBe(2);
@@ -375,11 +375,11 @@ describe('오류·복구', () => {
     await p.cancelGesture();
   });
 
-  it('revision 재시도에서 대상 지문이 바뀌었으면 시작하지 않고 선택을 푼다', async () => {
+  it('if the target fingerprint changed on the revision retry, does not start and clears the selection', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
-    fake.shiftPath(11, 5); // 같은 paintSeq 가 다른 패스(상자)를 가리킴
+    fake.shiftPath(11, 5); // the same paintSeq points to a different path (box)
     const g = p.beginGesture()!;
     await expect(g.ready()).rejects.toThrow('다시 선택');
     expect(fake.count('beginPathEdit')).toBe(1);
@@ -388,7 +388,7 @@ describe('오류·복구', () => {
     expect(controller.getState().edit.notice).toContain('다시 선택');
   });
 
-  it('Worker 복구 재시작에서 대상 지문이 바뀌었으면 커밋하지 않고 선택을 푼다', async () => {
+  it('if the target fingerprint changed on the Worker recovery restart, does not commit and clears the selection', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -407,7 +407,7 @@ describe('오류·복구', () => {
     expect(controller.getState().edit.notice).toContain('다시 선택');
   });
 
-  it('갱신 중 Worker 복구: 같은 대상을 다시 시작하고 최신 편집을 다시 보낸다', async () => {
+  it('Worker recovery during an update: restarts the same target and resends the latest edit', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -425,7 +425,7 @@ describe('오류·복구', () => {
     expect(fake.count('commitPathEdit')).toBe(1);
   });
 
-  it('갱신이 실패하면 커밋하지 않고 초안을 취소한다', async () => {
+  it('if an update fails, does not commit and cancels the draft', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -438,7 +438,7 @@ describe('오류·복구', () => {
     expect(controller.getState().edit.notice).toContain('렌더 실패');
   });
 
-  it('Worker 복구 알림: 진행 중인 패스 동작은 취소하고 선택을 푼다', async () => {
+  it('Worker recovery notice: cancels the path action in progress and clears the selection', async () => {
     const { controller } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -451,8 +451,8 @@ describe('오류·복구', () => {
   });
 });
 
-describe('편집 가능 표시', () => {
-  it('토글하면 상태가 바뀌고 쪽을 다시 읽을 때 패스 모델도 읽는다', async () => {
+describe('editability overlay', () => {
+  it('toggling changes the state, and the path model is also read when the page is read again', async () => {
     const { controller, host } = await started();
     controller.edit!.setShowEditable(true);
     expect(controller.getState().edit.showEditable).toBe(true);
@@ -461,8 +461,8 @@ describe('편집 가능 표시', () => {
   });
 });
 
-describe('레이아웃·편집 표시 버튼(사용자 요청 2026-10-22)', () => {
-  it('한 번 누르면 레이아웃과 편집 가능 표시를 함께 켜고(패스 모델 읽기), 다시 누르면 함께 끈다', async () => {
+describe('layout and edit overlay buttons (user request 2026-10-22)', () => {
+  it('one press turns on the layout and editability overlay together (reading the path model), another press turns both off', async () => {
     const { controller, host } = await started();
     expect(overlayToggleState(controller.getState(), true).on).toBe(false);
     controller.toggleOverlays();
@@ -481,7 +481,7 @@ describe('레이아웃·편집 표시 버튼(사용자 요청 2026-10-22)', () =
     expect(controller.getState().edit.showEditable).toBe(false);
   });
 
-  it('한쪽만 켜져 있어도 눌림으로 보고, 누르면 둘 다 끈다', async () => {
+  it('even if only one is on, it counts as pressed, and pressing turns both off', async () => {
     const { controller } = await started();
     controller.edit!.setShowEditable(true);
     expect(overlayToggleState(controller.getState(), true).on).toBe(true);
@@ -490,7 +490,7 @@ describe('레이아웃·편집 표시 버튼(사용자 요청 2026-10-22)', () =
     expect(controller.getState().layoutEnabled).toBe(false);
   });
 
-  it('레이아웃이 미구현이면 편집 가능 표시만 켜고 끄며, 제목에 사유를 적는다', async () => {
+  it('if the layout is unimplemented, only the editability overlay is turned on and off, and the reason is written in the title', async () => {
     const { controller, host } = await started();
     host.getPageLayout.mockImplementation(async () => {
       throw new Error('M2 미구현: core getPageLayout');
@@ -512,18 +512,18 @@ describe('레이아웃·편집 표시 버튼(사용자 요청 2026-10-22)', () =
   });
 });
 
-describe('M4 후속 정리(M5 S5)', () => {
-  it('모델을 읽는 중에 들어온 첫 선택(Alt+클릭)은 그 읽기를 기다려 선택된다', async () => {
+describe('M4 follow-up cleanup (M5 S5)', () => {
+  it('the first selection (Alt+click) that arrives while the model is being read waits for that read and is selected', async () => {
     const { controller, host } = await started();
     const p = paths(controller);
-    void p.ensureModel(0); // 문서를 연 직후 패스 모델 재적재
+    void p.ensureModel(0); // reload the path model right after opening the document
     const sel = await p.selectAt(0, [130, 120], 1, false);
     expect(sel).toEqual([11]);
     const pathReads = host.extractPage.mock.calls.filter((c) => c[0].includePathSegments);
     expect(pathReads).toHaveLength(1);
   });
 
-  it('커밋 뒤 다시 판정이 끝나기 전에는 패스 동작을 시작하지 않는다(리뷰 L7)', async () => {
+  it('after commit, path actions do not start before re-classification finishes (review L7)', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -540,7 +540,7 @@ describe('M4 후속 정리(M5 S5)', () => {
     expect(p.beginGesture()).not.toBeNull();
   });
 
-  it('커밋 뒤 다시 판정하는 동안의 선택 클릭은 보류했다가 판정 뒤 처리한다(M5 리뷰 M8)', async () => {
+  it('a selection click during re-classification after commit is held and handled after the classification (M5 review M8)', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);
@@ -549,7 +549,7 @@ describe('M4 후속 정리(M5 S5)', () => {
     const release = fake.hold('planPathEdit');
     const done = p.commitGesture();
     await vi.waitFor(() => expect(controller.getState().edit.path.settling).toBe(true));
-    // 재판정 중 다른 패스(선, 13)를 고른다: 판정이 끝날 때까지 끝나지 않는다.
+    // Pick another path (line, 13) during re-classification: it does not finish until the classification finishes.
     let picked: number[] | null = null;
     const click = p.selectAt(0, [420, 100], 1, false).then((v) => (picked = v));
     for (let i = 0; i < 20; i++) await Promise.resolve();
@@ -558,7 +558,7 @@ describe('M4 후속 정리(M5 S5)', () => {
     release();
     await done;
     await click;
-    // 재판정이 옛 선택(11)을 다시 판정한 뒤 보류한 클릭이 반영된다(덮어쓰이지 않음).
+    // After the re-classification re-classifies the old selection (11), the held click is applied (not overwritten).
     expect(picked).toEqual([13]);
     const sel = controller.getState().edit.path.selection!;
     expect(sel.paintSeqs).toEqual([13]);
@@ -566,7 +566,7 @@ describe('M4 후속 정리(M5 S5)', () => {
     expect(controller.getState().edit.path.settling).toBe(false);
   });
 
-  it('삭제 커밋 뒤에도 다시 판정하는 동안의 클릭을 보류한다(M8)', async () => {
+  it('a click during re-classification after a delete commit is also held (M8)', async () => {
     const { controller, fake } = await started();
     const p = paths(controller);
     await p.selectAt(0, [130, 120], 1, false);

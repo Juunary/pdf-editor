@@ -4,14 +4,14 @@ import { deliveryTrace } from './helpers/device-log.js';
 import { FUZZ_SEEDS, randomDoc } from './helpers/fuzz-content.js';
 
 /**
- * 인터프리터 전달 순서열 = MuPDF Device 전달 순서열 회귀 테스트(docs/m1-pdf-ops.md 5.3).
- * 고정 시드 무작위 콘텐츠(helpers/fuzz-content.ts)마다 텍스트 도착(종류·글리프 수)과 칠하기 순서를 비교한다.
- * 정책과 무관한 비교다(번호는 이 순서열의 함수). 알려진 불일치는 타일링 패턴 색 텍스트의 타일 수 판정(R2)뿐이다.
+ * Regression test: interpreter delivery sequence = MuPDF Device delivery sequence (docs/m1-pdf-ops.md 5.3).
+ * For each fixed-seed random content (helpers/fuzz-content.ts), compares text arrivals (kind, glyph count) and paint order.
+ * The comparison is policy-independent (numbers are a function of this sequence). The only known mismatch is the tile-count check for tiling-pattern colored text (R2).
  */
 const KNOWN_R2 = [44, 132, 288, 390];
 
-describe('전달 순서열 퍼징', () => {
-  it(`고정 시드 ${FUZZ_SEEDS}쪽: 알려진 R2 외 전부 일치`, () => {
+describe('delivery sequence fuzzing', () => {
+  it(`fixed seed, ${FUZZ_SEEDS} pages: everything matches except the known R2`, () => {
     const mismatched: number[] = [];
     let aborted = 0;
     for (let seed = 1; seed <= FUZZ_SEEDS; seed++) {
@@ -22,7 +22,7 @@ describe('전달 순서열 퍼징', () => {
       try {
         dev = deliveryTrace(doc.loadPage(0));
       } catch (e) {
-        // MuPDF: 클립 텍스트 누적 중 cm 은 페이지 해석 예외. 인터프리터도 같은 지점에서 멈춘다.
+        // MuPDF: a cm while accumulating clip text is a page-interpretation exception. The interpreter also stops at the same point.
         expect(String(e)).toMatch('CTM CHANGE IN CLIP TEXT');
         expect(map.errors.map((x) => x.message)).toContain(
           'MuPDF: 클립 텍스트 누적 중 cm(해석 중단)',

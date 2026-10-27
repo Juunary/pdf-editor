@@ -1,10 +1,10 @@
-// 뷰어(메인 스레드) 쪽 진입점. MuPDF 를 import 하지 않는다.
+// Entry point on the viewer (main thread) side. Does not import MuPDF.
 import * as Comlink from 'comlink';
 import type { PdfWorkerApi } from '@pdf-editor/shared-types';
 
 /**
- * 지원 문서 크기 상한 안내 값(byte, M5 C7·리스크 8, docs/m5-heap.md 6절). 이보다 큰 문서는 열 때 "편집·저장이 실패할 수
- * 있음" 을 알린다. MuPDF 를 import 하지 않는 하위 경로(`@pdf-editor/pdf-ops/save-method`)에서 가져온다.
+ * Advisory upper bound on supported document size (bytes, M5 C7 and risk 8, docs/m5-heap.md section 6). For larger documents, opening warns that "editing and saving may
+ * fail". Imported from a subpath that does not import MuPDF (`@pdf-editor/pdf-ops/save-method`).
  */
 export {
   SUPPORTED_INPUT_BYTES,
@@ -18,7 +18,7 @@ export function wrapPdfWorker(worker: Worker): PdfWorkerClient {
   return Comlink.wrap<PdfWorkerApi>(worker);
 }
 
-/** 바이트를 복사 없이 Worker 로 넘길 때 사용한다. 호출 후 원본 ArrayBuffer 는 비워진다. */
+/** Used to hand bytes to the Worker without copying. After the call, the original ArrayBuffer is emptied. */
 export function transferBytes(bytes: ArrayBuffer): ArrayBuffer {
   return Comlink.transfer(bytes, [bytes]);
 }

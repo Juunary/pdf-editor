@@ -27,11 +27,11 @@ interface Props {
   view: PageView;
   path: PathState;
   showEditable: boolean;
-  /** 선택 후보(모델 + 쪽 판정). */
+  /** Selection candidates (model + page classification). */
   candidates: PathCandidate[];
 }
 
-/** 끌기를 시작하기 위한 최소 이동(CSS px). 클릭과 구분한다. */
+/** Minimum movement to start a drag (CSS px). Distinguishes it from a click. */
 const DRAG_THRESHOLD_PX = 3;
 
 type Drag =
@@ -50,7 +50,7 @@ type Drag =
       index: number;
       start: Point;
       at: Point;
-      /** 함께 옮길 붙은 제어점(v·y 유지, 리뷰 L3). */
+      /** Attached control points to move together (keep v and y, review L3). */
       companions: PathPoint[];
       clientX: number;
       clientY: number;
@@ -69,7 +69,7 @@ const handlePos = (h: HandleName, box: Rect): Point => [
   h.includes('n') ? box[1] : h.includes('s') ? box[3] : (box[1] + box[3]) / 2,
 ];
 
-/** 패스 선택 후 편집 UI: 선택 상자·핸들, 점 편집, 속성 패널, 끌기 미리보기. 선택·키 입력도 여기서 받는다. */
+/** Edit UI after path selection: selection box and handles, point editing, properties panel, drag preview. Selection and key input are also received here. */
 export function PathLayer({ controller, pageRef, view, path, showEditable, candidates }: Props) {
   const paths = controller.edit?.paths ?? null;
   const layout = view.layout;
@@ -78,7 +78,7 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
   const gesture = path.gesture;
   const drag = useRef<Drag | null>(null);
   const [, bump] = useState(0);
-  /** 끌기 직후 따라오는 click 이 선택을 바꾸지 않게 한다. */
+  /** Keeps the click that follows right after a drag from changing the selection. */
   const justDragged = useRef(false);
 
   const selected = useMemo(
@@ -90,7 +90,7 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     return plan ? plan.target.bbox : null;
   }, [selected, plan]);
 
-  // 클릭으로 패스 선택: 편집 가능 표시가 켜져 있거나 Alt+클릭(글자 선택과 충돌 방지, 계약 4.5).
+  // Select a path by click: when the editability overlay is on, or with Alt+click (avoids conflict with character selection, contract 4.5).
   useLayoutEffect(() => {
     const page = pageRef.current;
     if (!page || !paths) return;
@@ -103,11 +103,11 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
       const point = cssToPage(e.clientX - rect.left, e.clientY - rect.top, layout);
       const wantsPath = e.altKey || showEditable;
       if (!wantsPath) {
-        // 바깥 클릭: 선택을 푼다.
+        // Outside click: clears the selection.
         paths.clear();
         return;
       }
-      // 글자를 끌어 선택한 직후의 클릭은 패스 선택으로 보지 않는다.
+      // A click right after dragging to select characters is not treated as a path selection.
       const sel = window.getSelection();
       if (!e.altKey && sel && !sel.isCollapsed) return;
       void paths.selectAt(view.pageIndex, point, layout.cssScale, e.shiftKey);
@@ -120,7 +120,7 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     };
   }, [paths, pageRef, layout, view.pageIndex, showEditable]);
 
-  // 키: Delete/Backspace = 삭제, Esc = 끌기 취소 → 점 편집 종료 → 선택 해제.
+  // Keys: Delete/Backspace = delete, Esc = cancel drag → exit point editing → clear selection.
   useLayoutEffect(() => {
     if (!paths || !selection) return;
     const onKey = (e: KeyboardEvent) => {
@@ -149,8 +149,8 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     return () => document.removeEventListener('keydown', onKey);
   }, [paths, selection, plan, controller]);
 
-  // 커밋 뒤 재판정 중(`settling`)에는 선택 상자를 숨긴다: 옛 모델·판정의 상자라 위치가 틀릴 수 있고, 보이면 그 사이의
-  // 클릭이 반영된 것처럼 보인다(M8). 클릭 처리(위 효과)는 마운트된 채 유지하고 PathController 가 보류한다.
+  // While reclassifying after a commit (`settling`), the selection box is hidden: it is a box from the old model/classification so its position may be wrong, and if shown, the click in the meantime
+  // would look as if it had been applied (M8). The click handling (the effect above) stays mounted and PathController defers it.
   if (!paths || !selection || !baseBox || path.settling) return null;
 
   const editable = plan?.editable === true;
@@ -227,7 +227,7 @@ export function PathLayer({ controller, pageRef, view, path, showEditable, candi
     }
     if (d?.gesture) void paths.commitGesture();
   };
-  // 선택 상자 위의 Shift+클릭(다중 선택에 더하기·빼기)과 Alt+클릭은 아래 패스에 전달한다.
+  // Shift+click on the selection box (add to or remove from a multi-selection) and Alt+click are passed to the path below.
   const onBoxClick = (e: MouseEvent) => {
     if (justDragged.current || (!e.shiftKey && !e.altKey)) return;
     const page = pageRef.current;
@@ -377,7 +377,7 @@ interface PanelProps {
   error: string | null;
 }
 
-/** 속성 패널(채움 색·선 색·선 두께·점 편집·삭제). 색 선택기는 닫을 때(`change`) 한 번만 커밋한다. */
+/** Properties panel (fill color, stroke color, line width, point editing, delete). The color picker commits only once, when closed (`change`). */
 function PathPanel({
   controller,
   layout,
@@ -395,7 +395,7 @@ function PathPanel({
   const t = controller.strings;
   const editable = plan?.editable === true;
   const multi = count > 1;
-  // 채움 색은 채우는 패스, 선 색·선 두께는 긋는 패스가 선택에 있을 때만(리뷰 L6).
+  // Fill color only when a filled path is in the selection; stroke color and line width only when a stroked path is (review L6).
   const paints = paths.selectionPaints();
   const [x, y] = pageToCss([box[0], box[3]], layout);
   const [rx] = pageToCss([box[2], box[1]], layout);
@@ -492,7 +492,7 @@ function PathPanel({
   );
 }
 
-/** 끄는 동안 원 렌더 비트맵 조각을 변환해 보여 준다(서버 갱신이 오기 전 미리보기, 계약 4.5). */
+/** While dragging, shows a transformed piece of the original render bitmap (a preview before the server update arrives, contract 4.5). */
 function PathPreview({ view, from, to }: { view: PageView; from: Rect; to: Rect }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const source = useMemo(() => {

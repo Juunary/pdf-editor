@@ -1,9 +1,9 @@
 /**
- * 문단 텍스트 위치 ↔ PageModel 글자 대응(M3 시작 상태 5.3, M4 셀 줄 잇기). 문서를 읽지 않는다.
+ * Mapping between paragraph text offsets and PageModel characters (M3 start state 5.3, M4 cell line joining). Does not read the document.
  */
 import type { LayoutParagraph } from '@pdf-editor/shared-types';
 
-/** 원 문단 텍스트 위치 → 글자 인덱스(합성 공백 -1). 문단 텍스트와 글자 텍스트를 앞에서부터 맞춘다. */
+/** Original paragraph text offset → character index (synthetic space is -1). Aligns paragraph text with character text from the start. */
 export function offsetMap(
   paragraph: LayoutParagraph,
   chars: readonly { text: string }[],
@@ -16,7 +16,7 @@ export function offsetMap(
     while (k < list.length) {
       const t = chars[list[k]!]?.text ?? '';
       if (t !== '' && text.startsWith(t, o)) break;
-      // 줄 끝에서 지운 공백 글자·빈 글자는 건너뛴다.
+      // Skip whitespace characters trimmed at line ends and empty characters.
       if (t.trim() === '') {
         k++;
         continue;
@@ -32,7 +32,7 @@ export function offsetMap(
     } else if (/\s/u.test(text[o]!)) {
       o++;
     } else if (ci !== undefined) {
-      // 맞지 않는 글자(U+FFFD 등): 한 칸씩 맞춘다.
+      // Non-matching character (U+FFFD etc.): advance one position at a time.
       out[o] = ci;
       o++;
       k++;

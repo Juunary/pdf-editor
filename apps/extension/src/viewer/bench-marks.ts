@@ -1,6 +1,6 @@
 /**
- * M5 벤치마크 지표 이벤트(계약 D1). 이름은 `performance.mark` 이름과 같다.
- * 시작·끝 이벤트 사이 시간이 한 표본이다.
+ * M5 benchmark metric events (contract D1). Names are the same as the `performance.mark` names.
+ * The time between a start and an end event is one sample.
  */
 export const M5_EVENTS = {
   open: { start: 'm5:open:bytes-received', end: 'm5:open:first-page-shown' },
@@ -12,18 +12,18 @@ export const M5_EVENTS = {
   mem: { start: 'm5:mem:baseline', end: 'm5:mem:end' },
 } as const;
 
-/** 대체안(패스 판정 지연)에서 패스 판정 완료 시점. */
+/** Time at which the path classification completes in the alternative (deferred path classification). */
 export const M5_JUDGE_PATHS_READY = 'm5:judge:paths-ready';
 
 export type M5Metric = keyof typeof M5_EVENTS;
 
-/** 표식을 남기고 그 시각(performance.now)을 돌려준다. */
+/** Leaves a mark and returns its time (performance.now). */
 export function mark(name: string, startTime?: number): number {
   const at = startTime ?? performance.now();
   try {
     performance.mark(name, { startTime: at });
   } catch {
-    // 측정 API 를 쓸 수 없으면 반환값만 쓴다.
+    // If the measurement API is unavailable, use only the return value.
   }
   return at;
 }

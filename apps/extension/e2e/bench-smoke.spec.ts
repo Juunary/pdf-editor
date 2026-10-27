@@ -1,6 +1,6 @@
 /**
- * 벤치 하네스 스모크: bench.html 이 실제 확장·Worker 에서 작은 문서(m0-sample.pdf)로 지표를 낸다.
- * 값의 크기는 보지 않고(작은 문서) 형태·표식·메모리 시나리오 동작만 확인한다.
+ * Bench harness smoke: bench.html produces metrics from the real extension and Worker with a small document (m0-sample.pdf).
+ * Magnitudes are not checked (small document); only shape, markers and memory scenario behaviour are verified.
  */
 import { expect, test } from '@playwright/test';
 import {
@@ -50,7 +50,7 @@ test.afterAll(async () => {
   await b.close();
 });
 
-test('bench.html: m0-sample.pdf 로 열기·판정·저장·메모리 지표가 나온다', async () => {
+test('bench.html: open, classification, save and memory metrics come out with m0-sample.pdf', async () => {
   const page = await openBenchPage(b);
   await exposeTabMemory(b, page);
   const url = `chrome-extension://${b.extensionId}/diag/m0-sample.pdf`;
@@ -73,19 +73,19 @@ test('bench.html: m0-sample.pdf 로 열기·판정·저장·메모리 지표가 
   expect(doc.open?.samples).toHaveLength(2);
   expect(doc.judge?.first.samples.length).toBeGreaterThan(0);
   expect(doc.save?.clean.samples).toHaveLength(2);
-  // 판정값(WASM: emptyStore 뒤 사용 중 힙, 탭: 대기 뒤)과 이전 정의 값(선형 메모리, 대기 전)이 모두 나온다.
+  // Both the classification values (WASM: in-use heap after emptyStore, tab: after the wait) and the previous definition values (linear memory, before the wait) are produced.
   expect(doc.mem?.wasmHeapDeltaMiB).not.toBeNull();
   expect(doc.mem?.wasmLinearDeltaMiB).not.toBeNull();
   expect(doc.mem?.tabDeltaMiB).not.toBeNull();
   expect(doc.mem?.tabDeltaBeforeWaitMiB).not.toBeNull();
   expect(doc.mem?.settleMs).toBe(0);
-  // 첫 저장: 저장 전·뒤 선형 메모리와 D5 예상 피크(저장 뒤 값 = 기준점 값).
+  // First save: linear memory before and after save, and the D5 expected peak (value after save = checkpoint value).
   const firstSave = doc.mem!.firstSave;
   expect(firstSave.heapBeforeBytes).not.toBeNull();
   expect(firstSave.predictedPeakBytes).toBeGreaterThan(0);
   expect(firstSave.heapAfterBytes).toBe(doc.mem!.firstSavePeakHeapBytes);
   expect(firstSave.withinPrediction).toBe(true);
-  // 편집 기록·탭 입력 기록·탭 메모리 구성(서버 자동화: Worker JS 힙·WASM 선형 메모리).
+  // Edit record, tab input record, tab memory breakdown (server automation: Worker JS heap, WASM linear memory).
   expect(doc.mem!.editLog.filter((e) => e.committed)).toHaveLength(1);
   expect(doc.mem!.editLog[0]!.journalBytes).toBeGreaterThan(0);
   expect(doc.mem!.tabInputs.map((t) => t.label)).toEqual(['baseline', 'end', 'end-settled']);
@@ -95,7 +95,7 @@ test('bench.html: m0-sample.pdf 로 열기·판정·저장·메모리 지표가 
   expect(detail?.wasmLinearMiB).toBeGreaterThan(0);
   expect(Object.keys(result.p95)).toContain('m0-sample.open');
 
-  // 지표 이벤트가 performance 타임라인에 남는다.
+  // Metric events remain on the performance timeline.
   const marks = await page.evaluate(() =>
     [...new Set(performance.getEntriesByType('mark').map((m) => m.name))].filter((n) =>
       n.startsWith('m5:'),

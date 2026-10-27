@@ -1,6 +1,6 @@
 /**
- * 시험용 PageModel 생성기(MuPDF 없이). 글자 폭은 크기 × advance(기본 0.5)로 근사하고
- * 줄마다 블록 하나를 만든다. 공백은 실제 공백 글자로 넣는다.
+ * Test PageModel builder (without MuPDF). Character width is approximated as size × advance (default 0.5) and
+ * one block is created per line. Spaces are inserted as actual space characters.
  */
 import type {
   CharInfo,
@@ -17,18 +17,18 @@ import type {
 } from '@pdf-editor/shared-types';
 
 export interface LineSpec {
-  /** 첫 글자 왼쪽 x. */
+  /** Left x of the first character. */
   x: number;
-  /** 기준선 y(페이지 공간, 아래로 증가). */
+  /** Baseline y (page space, increasing downward). */
   y: number;
   text: string;
   size?: number;
   bold?: boolean;
   italic?: boolean;
   color?: RGB | null;
-  /** 글자 폭 = size × advance. */
+  /** Character width = size × advance. */
   advance?: number;
-  /** 같은 블록 번호를 주면 한 블록으로 묶는다. 없으면 줄마다 새 블록. */
+  /** Lines given the same block number are grouped into one block. Without it, each line gets a new block. */
   block?: number;
 }
 
@@ -50,7 +50,7 @@ export interface ModelSpec {
 
 const IDENTITY: Matrix = [1, 0, 0, 1, 0, 0];
 
-/** 사각형 경로 세그먼트(re 연산자와 같은 M L L L Z). */
+/** Rectangle path segments (M L L L Z, same as the re operator). */
 export function rectSegments([x0, y0, x1, y1]: Rect): PathSegment[] {
   return [
     { type: 'M', p: [x0, y0] },
@@ -68,7 +68,7 @@ export function lineSegments(a: Point, b: Point): PathSegment[] {
   ];
 }
 
-/** 격자 표 괘선(가로 ys × 세로 xs, 각 선은 stroke 경로 하나). */
+/** Grid table rules (horizontal ys × vertical xs, each line is one stroke path). */
 export function gridPaths(xs: number[], ys: number[], lineWidth = 0.5): PathSpec[] {
   const out: PathSpec[] = [];
   const x0 = xs[0]!;

@@ -1,9 +1,9 @@
 /**
- * 확장 뷰어의 전용 Worker 에서 chrome.* 가 되는지, 번들된 자산(폴백 폰트)을 fetch 할 수 있는지 확인한다
- * (계약 5.7: "전용 Worker 에서 chrome.* 사용 가능 여부는 S4 가 확인"). 결과는 docs/m3-viewer-ui.md 4절에 기록한다.
+ * Checks whether chrome.* works in the extension viewer's dedicated Worker and whether bundled assets (fallback fonts) can be fetched
+ * (contract 5.7: "whether chrome.* is usable in a dedicated Worker is confirmed by S4"). The result is recorded in docs/m3-viewer-ui.md section 4.
  *
- * 프로브: dist/diag/chrome-probe-worker.js(클래식 전용 Worker). 실제 pdf-worker 는 같은 방식(전용 module Worker,
- * 확장 페이지가 생성)이므로 같은 환경이다. 폴백 폰트는 dist/assets 의 해시 파일명으로 찾는다.
+ * Probe: dist/diag/chrome-probe-worker.js (classic dedicated Worker). The real pdf-worker uses the same approach (dedicated module Worker,
+ * created by the extension page), so the environment is the same. The fallback font is found by its hashed file name in dist/assets.
  */
 import { chromium, expect, test } from '@playwright/test';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
-test('전용 Worker: chrome.* 사용 불가, 확장 자산(폴백 폰트) fetch 가능', async () => {
+test('dedicated Worker: chrome.* unavailable, extension assets (fallback font) fetchable', async () => {
   const fontFile = readdirSync(join(DIST, 'assets')).find((f) =>
     /^NotoSansKR-Regular-subset-.*\.ttf$/.test(f),
   );
@@ -41,7 +41,7 @@ test('전용 Worker: chrome.* 사용 불가, 확장 자산(폴백 폰트) fetch 
         }),
       `assets/${fontFile}`,
     );
-    // 같은 확장 페이지에서는 chrome.* 가 된다(대조).
+    // chrome.* works in the same extension page (control).
     const pageChrome = await page.evaluate(() => ({
       typeofRuntime: typeof chrome.runtime,
       typeofStorage: typeof chrome.storage,

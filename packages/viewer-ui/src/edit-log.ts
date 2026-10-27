@@ -1,14 +1,14 @@
 /**
- * 복구용 편집 로그(계약 D6). 뷰어는 커밋 결과의 `EditOp` 를 보관하고, `EditHistoryState.activeEditIds` 로 지금 문서에
- * 반영된 편집을 안다. Worker 복구 때 원본 + 활성 로그를 `replayEdits` 로 다시 적용한다.
+ * Edit log for recovery (contract D6). The viewer keeps the `EditOp`s of commit results and uses `EditHistoryState.activeEditIds` to know which edits
+ * are applied to the document now. On Worker recovery, the original + active log are reapplied with `replayEdits`.
  *
- * - undo·redo 는 활성 id 만 바꾼다(redo 로 되살릴 수 있으므로 EditOp 는 버리지 않는다).
- * - undo 뒤 새로 커밋하면 활성 id 에 없는 EditOp 를 버린다(redo 스택이 무효가 된다).
+ * - undo/redo only change the active ids (EditOps are not discarded since redo can bring them back).
+ * - a new commit after undo discards EditOps that are not in the active ids (the redo stack becomes invalid).
  */
 import type { CommitResult, EditHistoryState, EditOp } from '@pdf-editor/shared-types';
 
 export interface EditLogSnapshot {
-  /** activeEditIds 순서(로그 순서). */
+  /** Order of activeEditIds (log order). */
   ops: EditOp[];
   activeEditIds: string[];
 }
@@ -17,19 +17,19 @@ export class EditLog {
   private readonly ops = new Map<string, EditOp>();
   private active: string[] = [];
 
-  /** 커밋 결과를 기록한다. 활성 id 에 없는 EditOp 는 버린다. */
+  /** Records a commit result. Discards EditOps not in the active ids. */
   recordCommit(result: CommitResult): void {
     this.ops.set(result.op.id, result.op);
     this.active = [...result.history.activeEditIds];
     for (const id of [...this.ops.keys()]) if (!this.active.includes(id)) this.ops.delete(id);
   }
 
-  /** undo·redo·재적용 뒤 이력 상태를 반영한다(EditOp 는 유지). */
+  /** Reflects the history state after undo/redo/reapply (EditOps are kept). */
   recordHistory(history: EditHistoryState): void {
     this.active = [...history.activeEditIds];
   }
 
-  /** 복구에 쓸 로그. 보관하지 않은 편집 id 가 있으면 그 id 는 건너뛴다. */
+  /** Log to use for recovery. Edit ids that were not kept are skipped. */
   snapshot(): EditLogSnapshot {
     const ops = this.active.flatMap((id) => {
       const op = this.ops.get(id);

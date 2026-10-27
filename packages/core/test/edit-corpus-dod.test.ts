@@ -1,35 +1,35 @@
 /**
- * 계약 8.2 코퍼스 편집 표본 + 8.3 판정(M3 DoD 1.1 의 시각·새 글자·텍스트·검색·순서·객체·저장 지표).
- * 실제 어댑터로 PdfSession 편집 흐름(판정 → 시작 → 갱신 → 커밋 → 저장 → 저장 바이트 재열기)을 돈다.
+ * Contract 8.2 corpus edit sample + 8.3 classification (the visual, new-glyph, text, search, order, object and save metrics of M3 DoD 1.1).
+ * Runs the PdfSession edit flow (classification → begin → update → commit → save → reopen the saved bytes) with the real adapter.
  *
- * 환경 변수가 없으면 건너뛴다. 결과 JSON 은 git 밖(`out/` 은 .gitignore).
- *   EDIT_CORPUS_DIR=<PDF 폴더> [EDIT_CORPUS_OUT=<json>] [EDIT_CORPUS_FILES=a.pdf,b.pdf]
- *   [EDIT_CORPUS_ENGINES=mupdf,pdfjs,poppler] [EDIT_CORPUS_KINDS=same,latin,korean] [EDIT_CORPUS_KEEP=<저장 PDF 폴더>]
- *   예: EDIT_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus NODE_OPTIONS=--max-old-space-size=12288 \
+ * Skipped when the environment variable is not set. The result JSON stays outside git (`out/` is in .gitignore).
+ *   EDIT_CORPUS_DIR=<PDF folder> [EDIT_CORPUS_OUT=<json>] [EDIT_CORPUS_FILES=a.pdf,b.pdf]
+ *   [EDIT_CORPUS_ENGINES=mupdf,pdfjs,poppler] [EDIT_CORPUS_KINDS=same,latin,korean] [EDIT_CORPUS_KEEP=<folder for saved PDFs>]
+ *   Example: EDIT_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus NODE_OPTIONS=--max-old-space-size=12288 \
  *       pnpm --filter @pdf-editor/core exec vitest run test/edit-corpus-dod.test.ts
  *
- * 표본: 문서마다 1·4쪽(없으면 마지막 쪽, 최대 2쪽). 쪽마다 PageLayout 읽기 순서 앞에서부터 getPageEditability 로
- * 편집 가능하고 공백 제외 20자 이상인 흐름 문단 최대 3개. 문단마다 편집 3종, 편집마다 원본 바이트로 새 세션.
- *   same   : 계획의 runs 그대로(텍스트·모양 구간 불변).
- *   latin  : 고정 단어 목록, 시드 = 문서 id + 문단 id, 길이 = 원 길이 × [0.7, 1.3). 첫 run 모양.
- *   korean : 원 텍스트 + " " + 고정 한글 문장(계약 8.2 "원본에 없는 한글 문장 추가"). 첫 run 모양.
- *   format 은 계획 그대로. 넘치면 리플로우가 영역 아래 변을 자동으로 내린다(계약 5.4, 2026-10-20 사용자 결정).
+ * Sample: pages 1 and 4 of each document (the last page if missing, at most 2 pages). For each page, from the front of the PageLayout reading order, up to 3
+ * flow paragraphs that are editable per getPageEditability and have at least 20 non-whitespace characters. 3 edit kinds per paragraph, a new session from the original bytes for each edit.
+ *   same   : the runs of the plan as they are (text and shape ranges unchanged).
+ *   latin  : fixed word list, seed = document id + paragraph id, length = original length × [0.7, 1.3). Shape of the first run.
+ *   korean : original text + " " + a fixed Hangul sentence (contract 8.2: add a Hangul sentence not in the original). Shape of the first run.
+ *   format is the plan as it is. On overflow the reflow automatically lowers the bottom edge of the area (contract 5.4, user decision 2026-10-20).
  *
- * 판정(계약 8.3, 과제 지시):
- *   1 영역 밖 렌더: scale 2, 주석 제외, 채널 차 > 8 픽셀 수(MuPDF·pdf.js·Poppler). 허용 영역 = 원 문단 bbox ∪ 최종
- *     contentBox ∪ 지운 글리프 잉크 상자, 여백 2pt. 잉크 상자는 근사: 원 문단 글자(PageModel.chars) quad 의 합집합을
- *     글자 크기 25% 만큼 넓힌 것(지운 글리프만 그린 렌더 방식은 쓰지 않음). 다른 쪽(앞 5쪽 중 편집 쪽 제외)은 MuPDF 렌더 전체 0.
- *   2 새 글자 잉크: 공백류가 아닌 PlacedGlyph(original·fallback)마다 상자(x..x+advance, 기준선−0.8·size..기준선+0.2·size)
- *     안 잉크(흰색과 채널 차 > 64) ≥ 1 px, 엔진별 저장 렌더.
- *   3 텍스트: contentBox(여백 1pt) 안 글자(MuPDF 구조화 텍스트 글자 중심, pdf.js 항목 기준점) 공백류·기본 무시 문자 제거
- *     = 입력 텍스트(glyph-missing 클러스터 제외).
- *   4 검색: 새 텍스트에서 한 줄에 놓인 2자 이상 단어 하나(가장 긴 것), MuPDF page.search(대소문자 구분) 결과 quad 중심이
- *     어떤 PlacedGlyph 상자 안.
- *   5 순서(A9): 같은 엔진 쪽 텍스트(NFKC + 공백류 제거)에서 읽기 순서 이웃 문단의 끝·앞부분, 새 텍스트의 앞·끝부분을
- *     유일한 부분 문자열로 찾아 이전 끝 < 새 첫 글자, 새 끝 < 다음 첫 글자. 유일하지 않거나 못 찾으면 undetermined.
- *     원본 추출에서 같은 판정(원 문단 기준)도 기록한다(baseline).
- *   6 객체: 다른 쪽(앞 30쪽 중 편집 쪽 제외)의 디코드한 콘텐츠 바이트와 Resources 키(하위 사전 키 포함) 불변.
- *   7 저장 시간·크기·SaveResult.wasmHeapBytes.
+ * Classification (contract 8.3, task instruction):
+ *   1 Render outside the area: scale 2, annotations excluded, number of pixels with channel difference > 8 (MuPDF, pdf.js, Poppler). Allowed area = original paragraph bbox ∪ final
+ *     contentBox ∪ ink box of the erased glyphs, margin 2pt. The ink box is an approximation: the union of the quads of the original paragraph characters (PageModel.chars)
+ *     expanded by 25% of the glyph size (the render method that draws only the erased glyphs is not used). Other pages (among the first 5, excluding the edited page) must have a whole MuPDF render diff of 0.
+ *   2 New glyph ink: for every PlacedGlyph (original, fallback) that is not whitespace, within its box (x..x+advance, baseline−0.8·size..baseline+0.2·size)
+ *     ink (channel difference from white > 64) ≥ 1 px, in the saved render of each engine.
+ *   3 Text: the characters inside contentBox (margin 1pt) (MuPDF structured text glyph centers, pdf.js item anchor points) with whitespace and default-ignorable characters removed
+ *     = the input text (excluding glyph-missing clusters).
+ *   4 Search: one word of 2 or more characters (the longest) placed on one line of the new text; the center of the MuPDF page.search (case-sensitive) result quad is
+ *     inside some PlacedGlyph box.
+ *   5 Order (A9): in the same-engine page text (NFKC + whitespace removed), find the end and the beginning of the reading-order neighbor paragraphs, and the beginning and end of the new text,
+ *     as unique substrings, and check previous end < new first character and new end < next first character. If not unique or not found: undetermined.
+ *     The same classification on the original extraction (relative to the original paragraph) is also recorded (baseline).
+ *   6 Objects: decoded content bytes and Resources keys (including sub-dictionary keys) of other pages (among the first 30, excluding the edited page) are unchanged.
+ *   7 Save time, size, SaveResult.wasmHeapBytes.
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
@@ -84,7 +84,7 @@ const outPath =
     `edit-corpus-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
   );
 const only = process.env.EDIT_CORPUS_FILES?.split(',');
-/** 저장 PDF 를 남길 폴더(조사용). */
+/** Folder to keep the saved PDFs in (for investigation). */
 const keepDir = process.env.EDIT_CORPUS_KEEP;
 const engines =
   (process.env.EDIT_CORPUS_ENGINES?.split(',') as Engine[] | undefined) ??
@@ -107,7 +107,7 @@ interface OrderResult {
   newFirst?: number | string;
   newLast?: number | string;
   nextFirst?: number | string;
-  /** 원본 추출에서 원 문단으로 같은 판정. */
+  /** The same classification on the original extraction against the original paragraph. */
   baseline: OrderVerdict;
 }
 
@@ -132,7 +132,7 @@ interface EditRow {
   otherPagesDiff: Record<number, number>;
   glyphInk: Record<string, { checked: number; empty: number; examples: string[] }>;
   text: Record<string, { equal: boolean; contains?: boolean; got?: string; expected?: string }>;
-  /** 원본 쪽에서 원 문단 밖 글자 중 중심이 최종 contentBox(+1pt) 안인 것(공백 제외). 텍스트 판정 실패 분류용. */
+  /** Characters of the original page outside the original paragraph whose center is inside the final contentBox (+1pt), excluding whitespace. Used to classify text check failures. */
   foreignChars: number;
   search: { word: string | null; hits: number; inGlyph: boolean | null };
   order: Record<string, OrderResult>;
@@ -169,20 +169,20 @@ const union = (a: Rect | null, b: Rect): Rect =>
 
 const inRect = (x: number, y: number, r: Rect) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
 
-/** 입력 텍스트에서 glyph-missing 클러스터를 뺀 것. */
+/** The input text with glyph-missing clusters removed. */
 function expectedText(text: string, glyphs: PlacedGlyph[]): string {
   const drop = new Set<number>();
   for (const g of glyphs) {
     if (g.font.kind === 'missing') for (let k = 0; k < g.length; k++) drop.add(g.offset + k);
   }
-  // offset 은 UTF-16 위치.
+  // offset is a UTF-16 position.
   return text
     .split('')
     .filter((_c, i) => !drop.has(i))
     .join('');
 }
 
-/** 한 줄에 놓인 2자 이상 단어 중 가장 긴 것. */
+/** The longest word of 2 or more characters placed on one line. */
 function searchWord(text: string, glyphs: PlacedGlyph[]): string | null {
   let best: string | null = null;
   for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
@@ -225,7 +225,7 @@ function orderVerdict(
   return out;
 }
 
-/** 읽기 순서 이웃 문단(문단 항목만, 표·도형 항목은 건너뜀). */
+/** Reading-order neighbor paragraph (paragraph items only; table and shape items are skipped). */
 function neighbours(
   layout: PageLayout,
   id: number,
@@ -334,7 +334,7 @@ async function runEdit(
     const input: DraftInput = { runs, format: plan.format, composition: null, renderScale: 2 };
     update = await s.updateParagraphDraft(begin.draftId, input);
     row.timing.updateMs = update.updateMs;
-    // 자동 확장(계약 5.4): 원 영역을 넘었으면 아래 변이 내려가 있다.
+    // Automatic expansion (contract 5.4): if it exceeded the original area, the bottom edge has moved down.
     row.expanded = update.reflow.area[3] > plan.format.area[3] + 0.01;
     row.overflowInitial = row.expanded || update.reflow.overflow;
     row.overflowFinal = update.reflow.overflow;
@@ -373,7 +373,7 @@ async function runEdit(
   const allow: Rect[] = [row.bbox!, row.contentBox!, inkBox];
 
   try {
-    // 1·2 렌더(편집 쪽, 세 엔진).
+    // 1 and 2 render (edited page, three engines).
     for (const e of engines) {
       const a = await originalRaster(c, e, p);
       const b = await raster(e, saved, p);
@@ -394,13 +394,13 @@ async function runEdit(
       }
       row.glyphInk[e] = ink;
     }
-    // 1 다른 쪽(MuPDF).
+    // 1 Other pages (MuPDF).
     const others = [...c.mupdfOriginal.keys()].filter((k) => k !== p);
     const savedOthers = mupdfRasters(saved, others);
     for (const k of others)
       row.otherPagesDiff[k + 1] = diffAll(c.mupdfOriginal.get(k)!, savedOthers.get(k)!);
 
-    // 3 텍스트.
+    // 3 Text.
     const cb = row.contentBox!;
     const own = new Set(para.chars);
     row.foreignChars = pageChars.filter(
@@ -425,7 +425,7 @@ async function runEdit(
             };
     }
 
-    // 4 검색(MuPDF).
+    // 4 Search (MuPDF).
     const word = searchWord(text, glyphs);
     row.search.word = word;
     if (word) {
@@ -448,7 +448,7 @@ async function runEdit(
       }
     }
 
-    // 5 순서.
+    // 5 Order.
     const [prev, next] = neighbours(layout, para.id);
     const prevT = prev ? orderNorm(prev.text) : null;
     const nextT = next ? orderNorm(next.text) : null;
@@ -462,7 +462,7 @@ async function runEdit(
       };
     }
 
-    // 6 객체(다른 쪽).
+    // 6 Objects (other pages).
     const doc = openMupdf(saved);
     try {
       for (const [k, o] of c.objects) {
@@ -550,7 +550,7 @@ function summarize(rows: EditRow[], totals: PageTotals[]) {
         (r, e) => r.text[e]?.equal,
         (v) => v,
       ),
-      /** 보조: 같거나, 상자 안 글자에 입력이 연속으로 들어 있고 상자에 원 문단 밖 원본 글자가 있다(영역이 이웃과 겹침). */
+      /** Auxiliary: equal, or the input appears contiguously in the characters inside the box and the box contains original characters outside the original paragraph (the area overlaps a neighbor). */
       textEqualOrOverlap: pe(
         [...TEXT_ENGINES],
         (r, e) =>
@@ -568,7 +568,7 @@ function summarize(rows: EditRow[], totals: PageTotals[]) {
       ),
       orderReadingApproximate: local.filter((r) => r.warnings.includes('reading-order-approximate'))
         .length,
-      /** 계약 1.1: reading-order-approximate 경고가 붙은 편집을 뺀 판정 분포. */
+      /** Contract 1.1: classification distribution excluding edits that carry the reading-order-approximate warning. */
       orderVerdictsExact: Object.fromEntries(
         TEXT_ENGINES.map((e) => [
           e,
@@ -642,9 +642,9 @@ function count(list: string[]): Record<string, number> {
   return o;
 }
 
-describe.skipIf(!dir)('코퍼스 편집 표본 판정(계약 8.2·8.3)', () => {
+describe.skipIf(!dir)('corpus edit sample classification (contract 8.2, 8.3)', () => {
   it(
-    '문서마다 1·4쪽, 쪽마다 문단 최대 3개 × 편집 3종',
+    'pages 1 and 4 of each document, up to 3 paragraphs per page × 3 edit kinds',
     async () => {
       const files = readdirSync(dir!)
         .filter((f) => f.toLowerCase().endsWith('.pdf'))
@@ -776,18 +776,18 @@ describe.skipIf(!dir)('코퍼스 편집 표본 판정(계약 8.2·8.3)', () => {
   );
 });
 
-// ---------------------------------------------------------------- M4 표 셀·패스(계약 6.1)
+// ---------------------------------------------------------------- M4 table cells and paths (contract 6.1)
 
 /**
- * M4 코퍼스 표본(docs/m4-contract.md 6.1, docs/m4-integration.md). `EDIT_CORPUS_M4=cells,paths`(또는 그 중 하나)일 때만 돈다.
- *   EDIT_CORPUS_DIR=<PDF 폴더> EDIT_CORPUS_M4=cells,paths [EDIT_CORPUS_M4_OUT=<json>] [EDIT_CORPUS_ENGINES=...]
- * 표본 쪽은 S1 표본(docs/m4-pdf-ops.md 5.1·5.2)과 같다. 실제 core 세션 흐름(판정 → 시작 → 갱신 → 커밋 → 저장)으로 돈다.
- *   셀: 쪽마다 머리 행 셀·숫자 셀·글자 셀 최대 3개 × 같은 텍스트·숫자 자릿수 +1(앞에 "1")·한글 덧붙이기(" 수정").
- *   패스: 쪽마다 편집 가능 패스 큰 것부터 5개 × 채움 색(채움 있는 패스)·선 두께 ×2(선 있는 패스, 0 이면 0.5pt)·10pt 이동.
- * 지표: 허용 영역 밖 렌더 차이(세 엔진, 셀 = 셀 상자 ∪ 원 문단 상자 ∪ 배치 상자 ∪ 원 글자 잉크, 패스 = 편집 전 ∪ 후 상자,
- *   여백 2pt), 다른 쪽 렌더(MuPDF), 텍스트(셀: 배치 상자 안 = 입력, 패스: 쪽 텍스트 불변), 다른 쪽 객체 불변, 같은 텍스트
- *   셀의 글리프 원점 이동 ≤ 0.5pt(1.1), V4(셀 커밋 뒤 표 모양 유지·셀 문단 하나), 재적용 결정성(로그를 새 세션에
- *   replayEdits 한 저장 렌더 = 원래 저장 렌더, MuPDF), 쪽 판정의 편집 가능 비율·사유 분포.
+ * M4 corpus sample (docs/m4-contract.md 6.1, docs/m4-integration.md). Runs only when `EDIT_CORPUS_M4=cells,paths` (or one of them) is set.
+ *   EDIT_CORPUS_DIR=<PDF folder> EDIT_CORPUS_M4=cells,paths [EDIT_CORPUS_M4_OUT=<json>] [EDIT_CORPUS_ENGINES=...]
+ * The sample pages are the same as the S1 sample (docs/m4-pdf-ops.md 5.1, 5.2). Runs the real core session flow (classification → begin → update → commit → save).
+ *   Cells: up to 3 cells per page (header-row cell, number cell, text cell) × same text, number digits +1 ("1" prepended), Hangul appended (" 수정").
+ *   Paths: per page the 5 largest editable paths × fill color (paths with a fill), line width ×2 (paths with a stroke; 0.5pt if 0), 10pt move.
+ * Metrics: render difference outside the allowed area (three engines; cell = cell box ∪ original paragraph box ∪ placed box ∪ original glyph ink, path = box before ∪ after the edit,
+ *   margin 2pt), other-page render (MuPDF), text (cell: inside the placed box = input; path: page text unchanged), other-page objects unchanged, glyph origin shift of a same-text
+ *   cell ≤ 0.5pt (1.1), V4 (table shape kept after a cell commit, one cell paragraph), reapply determinism (saved render after
+ *   replayEdits of the log into a new session = original saved render, MuPDF), editable ratio and reason distribution of the page classification.
  */
 const m4Kinds = process.env.EDIT_CORPUS_M4?.split(',') ?? [];
 const m4Out =
@@ -797,7 +797,7 @@ const m4Out =
     'out/m4-edit-corpus',
     `m4-edit-corpus-${new Date().toISOString().replace(/[:.]/g, '-')}.json`,
   );
-/** 표 쪽(1부터, docs/m4-pdf-ops.md 5.2 표본). */
+/** Table pages (1-based, docs/m4-pdf-ops.md 5.2 sample). */
 const M4_TABLE_PAGES: Record<string, number[]> = {
   'ustreas-mts-202509.pdf': [35, 17],
   'fed-h41-current.pdf': [9, 8],
@@ -805,7 +805,7 @@ const M4_TABLE_PAGES: Record<string, number[]> = {
   'kogl-nabo-finstmt2025.pdf': [107, 85],
   'kogl-mods-cpi-202609.pdf': [17, 18],
 };
-/** 도표 쪽(1부터, docs/m4-pdf-ops.md 5.1 표본). */
+/** Diagram pages (1-based, docs/m4-pdf-ops.md 5.1 sample). */
 const M4_PATH_PAGES: Record<string, number[]> = {
   'arxiv-2609.09268.pdf': [10, 14],
   'arxiv-2609.10511.pdf': [7, 3],
@@ -862,7 +862,7 @@ function inkOf(model: ReturnType<PdfSession['extractPage']>, chars: number[]): R
   return ink;
 }
 
-/** 저장 결과를 판정한다(렌더·다른 쪽·객체·재적용). 텍스트·이동은 호출자가. */
+/** Classifies the save result (render, other pages, objects, reapply). Text and shift are the caller's job. */
 async function judgeSaved(
   c: DocCache,
   p: number,
@@ -1243,58 +1243,61 @@ function m4Summary(rows: M4Row[], totals: M4PageTotals[]) {
   };
 }
 
-describe.skipIf(!dir || m4Kinds.length === 0)('M4 코퍼스 표본(계약 6.1: 표 셀·패스)', () => {
-  it(
-    '표 쪽 셀 3개 × 3종, 도표 쪽 패스 5개 × 3종',
-    async () => {
-      const rows: M4Row[] = [];
-      const totals: M4PageTotals[] = [];
-      const files = [
-        ...new Set([
-          ...(m4Kinds.includes('cells') ? Object.keys(M4_TABLE_PAGES) : []),
-          ...(m4Kinds.includes('paths') ? Object.keys(M4_PATH_PAGES) : []),
-        ]),
-      ]
-        .filter((f) => !only || only.includes(f))
-        .sort();
-      for (const file of files) {
-        const t0 = performance.now();
-        const bytes = new Uint8Array(readFileSync(join(dir!, file)));
-        const probe = openMupdf(bytes);
-        const pageCount = probe.countPages();
-        const objects = new Map<number, PageObjects>();
-        for (let k = 0; k < Math.min(pageCount, OBJECT_PAGES); k++)
-          objects.set(k, pageObjects(probe, k));
-        probe.destroy();
-        const cellPages = m4Kinds.includes('cells') ? (M4_TABLE_PAGES[file] ?? []) : [];
-        const pathPages = m4Kinds.includes('paths') ? (M4_PATH_PAGES[file] ?? []) : [];
-        const edited = [...cellPages, ...pathPages].map((q) => q - 1);
-        const renderPages = [
+describe.skipIf(!dir || m4Kinds.length === 0)(
+  'M4 corpus sample (contract 6.1: table cells and paths)',
+  () => {
+    it(
+      '3 cells × 3 kinds on table pages, 5 paths × 3 kinds on diagram pages',
+      async () => {
+        const rows: M4Row[] = [];
+        const totals: M4PageTotals[] = [];
+        const files = [
           ...new Set([
-            ...Array.from({ length: Math.min(pageCount, OTHER_RENDER_PAGES) }, (_v, k) => k),
-            ...edited,
+            ...(m4Kinds.includes('cells') ? Object.keys(M4_TABLE_PAGES) : []),
+            ...(m4Kinds.includes('paths') ? Object.keys(M4_PATH_PAGES) : []),
           ]),
-        ];
-        const c: DocCache = {
-          bytes,
-          pageCount,
-          mupdfOriginal: mupdfRasters(bytes, renderPages),
-          objects,
-          engineOriginal: new Map(),
-          textOriginal: new Map(),
-        };
-        for (const q of cellPages) await m4Cells(c, file, q - 1, totals, rows);
-        for (const q of pathPages) await m4Paths(c, file, q - 1, totals, rows);
-        console.log(
-          `${file}: ${rows.filter((r) => r.file === file).length} edits ${((performance.now() - t0) / 1000).toFixed(1)} s`,
-        );
-      }
-      const summary = m4Summary(rows, totals);
-      mkdirSync(dirname(m4Out), { recursive: true });
-      writeFileSync(m4Out, JSON.stringify({ summary, totals, rows }, null, 1));
-      console.log(JSON.stringify(summary, null, 1));
-      expect(rows.length).toBeGreaterThan(0);
-    },
-    6 * 3_600_000,
-  );
-});
+        ]
+          .filter((f) => !only || only.includes(f))
+          .sort();
+        for (const file of files) {
+          const t0 = performance.now();
+          const bytes = new Uint8Array(readFileSync(join(dir!, file)));
+          const probe = openMupdf(bytes);
+          const pageCount = probe.countPages();
+          const objects = new Map<number, PageObjects>();
+          for (let k = 0; k < Math.min(pageCount, OBJECT_PAGES); k++)
+            objects.set(k, pageObjects(probe, k));
+          probe.destroy();
+          const cellPages = m4Kinds.includes('cells') ? (M4_TABLE_PAGES[file] ?? []) : [];
+          const pathPages = m4Kinds.includes('paths') ? (M4_PATH_PAGES[file] ?? []) : [];
+          const edited = [...cellPages, ...pathPages].map((q) => q - 1);
+          const renderPages = [
+            ...new Set([
+              ...Array.from({ length: Math.min(pageCount, OTHER_RENDER_PAGES) }, (_v, k) => k),
+              ...edited,
+            ]),
+          ];
+          const c: DocCache = {
+            bytes,
+            pageCount,
+            mupdfOriginal: mupdfRasters(bytes, renderPages),
+            objects,
+            engineOriginal: new Map(),
+            textOriginal: new Map(),
+          };
+          for (const q of cellPages) await m4Cells(c, file, q - 1, totals, rows);
+          for (const q of pathPages) await m4Paths(c, file, q - 1, totals, rows);
+          console.log(
+            `${file}: ${rows.filter((r) => r.file === file).length} edits ${((performance.now() - t0) / 1000).toFixed(1)} s`,
+          );
+        }
+        const summary = m4Summary(rows, totals);
+        mkdirSync(dirname(m4Out), { recursive: true });
+        writeFileSync(m4Out, JSON.stringify({ summary, totals, rows }, null, 1));
+        console.log(JSON.stringify(summary, null, 1));
+        expect(rows.length).toBeGreaterThan(0);
+      },
+      6 * 3_600_000,
+    );
+  },
+);

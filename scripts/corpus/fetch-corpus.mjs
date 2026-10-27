@@ -1,11 +1,11 @@
-// 실제 코퍼스(fixtures/corpus/manifest.json) 내려받기·SHA-256 검증. PDF 는 커밋하지 않는다(.gitignore).
+// Download the real corpus (fixtures/corpus/manifest.json) and verify SHA-256. PDFs are not committed (.gitignore).
 //
-//   node scripts/corpus/fetch-corpus.mjs            # 없는 문서만 받고 전부 검증
-//   node scripts/corpus/fetch-corpus.mjs --check    # 받지 않고 검증만
+//   node scripts/corpus/fetch-corpus.mjs            # download only missing documents and verify all
+//   node scripts/corpus/fetch-corpus.mjs --check    # verify only, without downloading
 //   node scripts/corpus/fetch-corpus.mjs --only id1,id2
 //
-// 해시가 다르면 파일을 남기지 않고(.part 삭제) 실패로 끝난다. 출처가 같은 URL 로 다른 판을 배포하면
-// manifest 의 sha256 을 갱신하기 전에 라이선스·내용을 다시 확인한다.
+// If the hash differs, no file is left behind (.part deleted) and it ends as a failure. If the source distributes a different edition at the same URL,
+// re-check the license·content before updating the manifest sha256.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

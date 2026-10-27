@@ -1,21 +1,21 @@
 /**
- * 표 검출(계약 3절 3단계). 괘선 전략과 정렬 전략.
+ * Table detection (contract section 3, step 3). Ruling-line strategy and alignment strategy.
  *
- * 괘선 전략(PyMuPDF·pdfplumber `find_tables` lines 전략 포팅 + 글자 보정)
- *   1. 선분: 괘선(Rule) + 채움 사각형 4변. 스냅(3pt) → 이음(3pt) → 3pt 미만 버림.
- *   2. 띠 닫기: 양 끝이 같은 가로선 쌍(booktabs 위·가운데·아래 줄, 줄무늬 행, 바깥 세로선 없는 표) 사이
- *      띠에 글자가 표처럼 놓이면 양 끝에 가상 세로선을 넣는다. 가로선만 있는 표가 이 경로로 들어온다.
- *   3. 교차점(3pt) → 최소 셀(네 모서리가 교차점이고 네 변이 선분으로 이어진 사각형) → 모서리를 공유하는
- *      셀 묶음 = 표 후보. 행·열 경계 = 셀 변의 서로 다른 값.
- *   4. 글자 보정(가장 잘게 나뉜 격자): 괘선 열 안의 투영 빈틈을 열 경계로 더하고, 괘선 행 안에서 여러 열이
- *      같은 기준선으로 이어지면(행 괘선 없는 본문) 기준선 행으로 나눈다.
- *   5. 유지 조건: 2행·2열 이상, 글자 있는 셀 2개 이상·30% 이상. 안쪽 세로 괘선이 없는 띠 표는 글자 정렬
- *      검사(여러 셀 행, 산문 아님)를 더 거친다. 복잡 도형이 덮은 영역(차트)은 버린다.
- * 정렬 전략(괘선 표 밖 줄)
- *   기준선 행 → 짧은 조각 둘 이상인 행이 이어지는 구간 → 투영 빈틈 열 → 정렬·산문·숫자 열·도형 검사.
- * 조각: 줄의 단어 상자를 간격 기준으로 합친 것. MuPDF 가 공백 글자로 채운 숫자 줄(한 줄에 여러 열)도
- *   조각으로는 열마다 나뉜다. 줄 배정은 줄 단위(줄 상자 중심, 여러 셀에 걸치면 글자 중심 다수결)이고
- *   줄 하나는 표 하나·셀 하나에만 든다.
+ * Ruling-line strategy (port of the PyMuPDF/pdfplumber `find_tables` lines strategy + text correction)
+ *   1. Segments: rules (Rule) + the 4 edges of fill rectangles. Snap (3pt) → join (3pt) → drop under 3pt.
+ *   2. Band closing: between pairs of horizontal lines with matching ends (booktabs top/mid/bottom rules, striped rows, tables without outer vertical lines)
+ *      if the text in the band is laid out like a table, virtual vertical lines are added at both ends. Tables with only horizontal lines enter through this path.
+ *   3. Intersections (3pt) → minimal cells (rectangles whose four corners are intersections and whose four edges are covered by segments) → groups of cells sharing corners
+ *      = table candidate. Row/column boundaries = distinct values of cell edges.
+ *   4. Text correction (finest grid): add projection gaps inside ruled columns as column boundaries, and split into baseline rows when several columns inside a ruled row
+ *      share the same baseline (body without row rules).
+ *   5. Keep conditions: at least 2 rows and 2 columns, at least 2 cells with text and at least 30%. Band tables without inner vertical rules additionally go through a text alignment
+ *      check (multi-cell rows, not prose). Areas covered by complex shapes (charts) are discarded.
+ * Alignment strategy (lines outside ruled tables)
+ *   Baseline rows → runs of consecutive rows with two or more short fragments → projection gap columns → alignment, prose, numeric column and figure checks.
+ * Fragment: a line's word boxes merged by gap threshold. Number lines that MuPDF filled with space characters (several columns in one line) are also
+ *   split per column as fragments. Line assignment is per line (line box center; if spanning several cells, majority vote of character centers), and
+ *   one line belongs to only one table and one cell.
  */
 import type { PageModel, Rect } from '@pdf-editor/shared-types';
 import type { LineFeature } from './features.js';
@@ -29,119 +29,119 @@ export interface DetectedCell {
   rowSpan: number;
   colSpan: number;
   bbox: Rect;
-  /** 셀 안 줄(LineFeature.index = PageModel.lines 인덱스), 위→아래·왼쪽→오른쪽. */
+  /** Lines in the cell (LineFeature.index = PageModel.lines index), top→bottom, left→right. */
   lines: number[];
 }
 
 export interface DetectedTable {
   bbox: Rect;
-  /** rows+1 개, 위→아래. */
+  /** rows+1 entries, top→bottom. */
   rowBounds: number[];
-  /** cols+1 개, 왼쪽→오른쪽. */
+  /** cols+1 entries, left→right. */
   colBounds: number[];
-  /** 덮는 셀만(병합 셀은 하나). 빈 셀도 넣는다. */
+  /** Covering cells only (a merged cell counts once). Empty cells are included. */
   cells: DetectedCell[];
   strategy: 'lines' | 'text';
-  /** 표 괘선·배경으로 쓴 PageModel.paths 인덱스(도형 검출에서 뺀다). */
+  /** PageModel.paths indices used as table rules or background (excluded from figure detection). */
   paths: number[];
 }
 
 /**
- * 표 검출 상수(계약 3절 3단계). 길이는 pt, *Em 은 글자 크기 배수, *Ratio 는 비율.
- * constants.ts 의 C 와 같은 규칙으로 정확도 하네스 dev 세트로만 조정한다.
+ * Table detection constants (contract section 3, step 3). Lengths are in pt, *Em is a multiple of font size, *Ratio is a ratio.
+ * Tuned only against the accuracy harness dev set, under the same rule as C in constants.ts.
  */
 export const T = {
-  // ── 괘선 전략 ──
-  /** 같은 선 위 선분 스냅 허용. */
+  // ── Ruling-line strategy ──
+  /** Snap tolerance for segments on the same line. */
   snap: 3,
-  /** 끊긴 선분 이음 간격. */
+  /** Join gap for broken segments. */
   join: 3,
-  /** 이보다 짧은 선분은 버린다. */
+  /** Segments shorter than this are dropped. */
   minEdge: 3,
-  /** 교차점 허용. */
+  /** Intersection tolerance. */
   intersect: 3,
-  /** 셀 경계가 이 거리 이내로 붙으면 한 경계로 모은다(가는 빈 행·열 방지). */
+  /** Cell boundaries within this distance are merged into one (prevents thin empty rows and columns). */
   minCell: 6,
-  /** 쪽 배경으로 보고 버리는 채움 사각형(쪽 폭·높이 대비). */
+  /** Fill rectangles dropped as page background (relative to page width/height). */
   pageBoxRatio: 0.9,
-  /** 띠 닫기: 가로선 양 끝 일치 허용. */
+  /** Band closing: tolerance for matching horizontal line ends. */
   closeEnd: 6,
-  /** 띠 닫기: 이보다 짧은 가로선은 쓰지 않는다. */
+  /** Band closing: horizontal lines shorter than this are not used. */
   closeMinWidth: 30,
-  /** 띠 닫기: 글자 없는 띠를 닫는 최대 높이. */
+  /** Band closing: maximum height for closing a band without text. */
   closeEmptyMax: 20,
-  /** 띠 닫기: 한두 행짜리 얇은 띠(머리 행·구역 행)로 보는 최대 높이(행 수 × 줄 높이 배수). */
+  /** Band closing: maximum height treated as a thin one- or two-row band (header row, section row) (number of rows × line height multiple). */
   thinBandRatio: 2.2,
-  /** 괘선에서 이 거리(snap 초과) 안쪽에 평행한 채움 사각형 변은 셀 배경 여백으로 보고 버린다. */
+  /** Fill rectangle edges parallel to a rule and within this distance (above snap) of it are treated as cell background margin and dropped. */
   boxInset: 8,
-  /** 채움 색 성분이 모두 이 값 이상이면 흰 배경 사각형으로 보고 변을 쓰지 않는다. */
+  /** If all fill color components are at least this value, the rectangle is treated as a white background and its edges are not used. */
   whiteBox: 0.97,
-  /** 조각 합치기(열 투영용): 단어 간격이 이 배수 미만이면 한 조각. 열 빈틈 최소 폭도 같다. */
+  /** Fragment merging (for column projection): a word gap below this multiple makes one fragment. The minimum column gap width is the same. */
   colGapEm: 0.8,
-  /** 열 빈틈 최소 폭 하한. */
+  /** Lower bound of the minimum column gap width. */
   colGapMin: 2,
-  /** 열 빈틈을 가로질러도 되는 행 비율(여러 열에 걸친 머리 셀 허용). */
+  /** Ratio of rows allowed to cross a column gap (permits header cells spanning several columns). */
   colCrossRatio: 0.15,
-  /** 괘선 표 글자 열 경계: 빈틈 양쪽에 조각이 있는 최소 행 수. */
+  /** Text column boundaries in ruled tables: minimum number of rows with fragments on both sides of a gap. */
   gapSupport: 2,
-  /** 괘선 행 나누기: 기준선 행의 찬 열 수 중앙값이 행 안 글자 있는 열 수의 이 비율 이상. */
+  /** Ruled-row splitting: the median number of filled columns in baseline rows is at least this ratio of the number of columns with text in the row. */
   splitFillRatio: 0.6,
-  /** 괘선 행 나누기: 기준선 행 중앙값과 줄 기준선 차이 허용(글자 크기 배수). */
+  /** Ruled-row splitting: tolerance between the baseline row median and a line's baseline (multiple of font size). */
   alignBaseEm: 0.25,
-  /** 괘선 행 나누기: 기준선이 맞는 줄 비율 하한. */
+  /** Ruled-row splitting: lower bound of the ratio of lines whose baselines match. */
   alignBaseRatio: 0.8,
-  /** 줄바꿈 문단 열(셀 안 여러 줄 문장): 조각 단어 수 중앙값 하한. */
+  /** Wrapped paragraph column (multi-line sentences in a cell): lower bound of the median fragment word count. */
   wrapWords: 3,
-  /** 줄바꿈 문단 열: 조각 폭 / 열 폭 중앙값 하한. */
+  /** Wrapped paragraph column: lower bound of the median fragment width / column width. */
   wrapFill: 0.6,
-  /** 셀 경계를 가로지른 줄 판정 여유. */
+  /** Slack for detecting a line that crosses a cell boundary. */
   crossEps: 1,
-  /** 표 유지: 글자 있는 셀 최소 비율. */
+  /** Table keep: minimum ratio of cells with text. */
   minFilledRatio: 0.3,
-  /** 표 유지: 글자 있는 행의 이 비율 이상(최소 2행)에 글자가 있는 열이 둘 이상이어야 한다(도식 거부). */
+  /** Table keep: at least this ratio of rows with text (minimum 2 rows) must have two or more columns with text (rejects diagrams). */
   richColRatio: 0.3,
-  /** 격자 표 유지: 두 셀 이상 찬 행 비율 하한(글자 있는 행 대비). */
+  /** Grid table keep: lower bound of the ratio of rows with two or more filled cells (relative to rows with text). */
   gridMultiRatio: 0.3,
-  /** 띠 표 유지: 두 셀 이상 찬 행 비율 하한(글자 있는 행 대비). */
+  /** Band table keep: lower bound of the ratio of rows with two or more filled cells (relative to rows with text). */
   bandMultiRatio: 0.5,
-  /** 산문 열: 조각 단어 수 중앙값 하한. */
+  /** Prose column: lower bound of the median fragment word count. */
   proseWords: 5,
-  /** 산문 열: 조각 폭 / 열 폭 중앙값 하한. */
+  /** Prose column: lower bound of the median fragment width / column width. */
   proseFill: 0.6,
-  /** 차트: 복잡 도형(곡선·사선)이 표 상자의 이 비율 이상을 덮으면 버린다. */
+  /** Chart: discarded if complex shapes (curves, diagonals) cover at least this ratio of the table box. */
   chartCover: 0.4,
-  /** 띠 표 확장: 위·아래 행을 붙이는 최대 기준선 간격(행 간격 중앙값 배수). */
+  /** Band table extension: maximum baseline gap for attaching rows above/below (multiple of the median row gap). */
   extendPitchRatio: 1.6,
-  // ── 정렬 전략 ──
-  /** 한 행 안 조각을 나누는 간격(글자 크기 배수). */
+  // ── Alignment strategy ──
+  /** Gap that splits fragments within one row (multiple of font size). */
   fragGapEm: 1.5,
-  /** 짧은 조각(셀 후보) 단어 수 상한. */
+  /** Upper bound of the word count of a short fragment (cell candidate). */
   shortWords: 6,
-  /** 짧은 조각 폭 상한(글자 크기 배수). */
+  /** Upper bound of the width of a short fragment (multiple of font size). */
   shortWidthEm: 18,
-  /** 구간 잇기: 기준선 간격이 전형 간격의 이 배수 이하. */
+  /** Run linking: baseline gap is at most this multiple of the typical gap. */
   runPitchRatio: 2,
-  /** 구간 안에 둘 수 있는 연속 한 조각 행 수. */
+  /** Number of consecutive single-fragment rows allowed inside a run. */
   runSingles: 2,
-  /** 정렬 전략: 최소 여러 조각 행 수·열 지지 행 수·정렬 조각 수. */
+  /** Alignment strategy: minimum number of multi-fragment rows, column-supporting rows and aligned fragments. */
   textMinRows: 3,
-  /** 정렬 허용(왼쪽·오른쪽·가운데). */
+  /** Alignment tolerance (left, right, center). */
   alignTol: 2,
-  /** 정렬된 열 비율 하한. */
+  /** Lower bound of the ratio of aligned columns. */
   alignRatio: 0.6,
-  /** 산문 거부: 조각 폭 중앙값 / 구역 폭 상한. */
+  /** Prose rejection: upper bound of median fragment width / region width. */
   textMaxFragRatio: 0.3,
-  /** 산문 거부: 조각 단어 수 중앙값 상한. */
+  /** Prose rejection: upper bound of the median fragment word count. */
   textMaxWords: 4,
-  /** 두 열 표: 오른쪽 열 숫자 조각 비율 하한. */
+  /** Two-column table: lower bound of the ratio of numeric fragments in the right column. */
   numericRatio: 0.6,
-  /** 정렬 전략 거부: 구역 안 그래픽(세로선·도형·좁은 상자) 수 상한. */
+  /** Alignment strategy rejection: upper bound of graphics (vertical lines, shapes, narrow boxes) in the region. */
   textMaxGraphics: 4,
 } as const;
 
-// ───────────────────────── 공통 자료형 ─────────────────────────
+// ───────────────────────── Common types ─────────────────────────
 
-/** 표 판정용 줄(보이는 글자가 있는 가로 줄). */
+/** Line used for table classification (horizontal line with visible characters). */
 interface TLine {
   f: LineFeature;
   x0: number;
@@ -153,23 +153,23 @@ interface TLine {
   size: number;
 }
 
-/** 한 행 안의 글자 조각(단어 상자를 간격 기준으로 합친 x 구간). */
+/** Character fragment within one row (an x range made by merging word boxes by gap). */
 interface Frag {
   x0: number;
   x1: number;
-  /** 첫 단어 줄의 y 중심(셀 채움 판정용). */
+  /** y center of the first word line (for cell fill checks). */
   cy: number;
   text: string;
   words: number;
   size: number;
 }
 
-/** 기준선 행. */
+/** Baseline row. */
 interface Row {
   lines: TLine[];
   y0: number;
   y1: number;
-  /** 같은 행 판정 기준 상자(글자가 가장 많은 줄). */
+  /** Reference box for the same-row check (the line with the most characters). */
   ref0: number;
   ref1: number;
   refChars: number;
@@ -180,7 +180,7 @@ interface Gap {
   x1: number;
 }
 
-/** 표 후보의 셀(가장 잘게 나뉜 격자 인덱스). */
+/** Cell of a table candidate (index in the finest grid). */
 interface GridCell {
   r: number;
   c: number;
@@ -193,13 +193,13 @@ interface Candidate {
   rowBounds: number[];
   colBounds: number[];
   cells: GridCell[];
-  /** 줄 → 셀 인덱스. */
+  /** Line → cell index. */
   assign: Map<TLine, number>;
   paths: number[];
 }
 
 const NUMERIC_RE = /^[\s$€£¥₩+\-–—−(]*(?:\d[\d,.\s]*|\.\d+)[%)*]*$|^[\s.…–—-]+$|^n\/?a$/iu;
-/** 혼자서는 열이 되지 않는 기호(통화·부호). 오른쪽 숫자 셀에 붙는다. */
+/** Symbols that cannot form a column alone (currency, signs). They attach to the numeric cell on the right. */
 const SYMBOL_RE = /^[$€£¥₩+\-–—−±]$/u;
 
 const centerIn = (l: TLine, x0: number, y0: number, x1: number, y1: number): boolean =>
@@ -207,7 +207,7 @@ const centerIn = (l: TLine, x0: number, y0: number, x1: number, y1: number): boo
 
 const fragCx = (f: Frag): number => (f.x0 + f.x1) / 2;
 
-/** 정렬된 경계 배열에서 v 가 드는 칸(0..n-1, 바깥은 끝 칸으로 붙인다). */
+/** The cell of the sorted boundary array that v falls into (0..n-1; values outside are clamped to the end cells). */
 function locate(bounds: readonly number[], v: number): number {
   let lo = 0;
   let hi = bounds.length - 2;
@@ -232,7 +232,7 @@ function pushTo<K, V>(m: Map<K, V[]>, k: K, v: V): void {
   else m.set(k, [v]);
 }
 
-// ───────────────────────── 줄·행·조각 ─────────────────────────
+// ───────────────────────── Lines, rows and fragments ─────────────────────────
 
 function prepareLines(lines: readonly LineFeature[]): TLine[] {
   const out: TLine[] = [];
@@ -245,8 +245,8 @@ function prepareLines(lines: readonly LineFeature[]): TLine[] {
 }
 
 /**
- * 기준선 행 묶기: y 중심 순으로 훑으며, 최근 두 행의 기준 상자와 세로 겹침이 낮은 쪽 높이의
- * 50% 이상이면 그 행에 넣는다. 행 안 줄은 x 순, 행은 위→아래.
+ * Baseline row grouping: scans in y-center order and puts a line into a row if its vertical overlap with the reference box of either of the last two rows is at least
+ * 50% of the shorter height. Lines within a row are in x order; rows are top→bottom.
  */
 function clusterRows(ls: readonly TLine[]): Row[] {
   const sorted = [...ls].sort((a, b) => a.cy - b.cy || a.x0 - b.x0);
@@ -282,7 +282,7 @@ function clusterRows(ls: readonly TLine[]): Row[] {
 
 const rowBaseline = (r: Row): number => median(r.lines.map((l) => l.f.baseline));
 
-/** 줄들의 단어 상자를 x 순으로 모아 간격이 gapEm × 글자 크기 미만이면 한 조각으로 합친다. */
+/** Collects the word boxes of lines in x order and merges them into one fragment if the gap is below gapEm × font size. */
 function fragsOf(lines: readonly TLine[], gapEm: number): Frag[] {
   const ws: Frag[] = [];
   for (const l of lines) {
@@ -305,12 +305,12 @@ function fragsOf(lines: readonly TLine[], gapEm: number): Frag[] {
   return out;
 }
 
-// ───────────────────────── 투영 빈틈(열) ─────────────────────────
+// ───────────────────────── Projection gaps (columns) ─────────────────────────
 
 /**
- * 행별 조각 x 구간을 투영해 안쪽 빈틈을 찾는다. 빈틈은 (a) 어느 행도 덮지 않은 구간, 또는 (b) 덮는 행이
- * allowance 개 이하이고 그 조각들이 모두 구간 밖으로 삐져나가는(여러 열에 걸친 머리 셀) 구간이다.
- * (b) 에서 구간 안에 갇힌 조각이 있으면(드문드문 찬 열) 빈틈이 아니다. 폭 minWidth 미만은 버린다.
+ * Projects the per-row fragment x ranges to find inner gaps. A gap is (a) a range covered by no row, or (b) a range covered by at most
+ * allowance rows whose fragments all extend beyond the range (header cells spanning several columns).
+ * In (b), if a fragment is contained within the range (a sparsely filled column), it is not a gap. Gaps narrower than minWidth are dropped.
  */
 function findGaps(rows: readonly Frag[][], minWidth: number, allowance: number): Gap[] {
   const empty = coverageGaps(rows, 0).filter((g) => g.x1 - g.x0 >= minWidth);
@@ -325,7 +325,7 @@ function findGaps(rows: readonly Frag[][], minWidth: number, allowance: number):
   return [...empty, ...bridged].sort((a, b) => a.x0 - b.x0);
 }
 
-/** 조각이 덮는 행 수가 allowance 이하인 안쪽 x 구간들(투영). */
+/** Inner x ranges (projection) covered by at most allowance rows of fragments. */
 function coverageGaps(rows: readonly Frag[][], allowance: number): Gap[] {
   const ev: [number, number][] = [];
   for (const fr of rows) {
@@ -356,7 +356,7 @@ function coverageGaps(rows: readonly Frag[][], allowance: number): Gap[] {
   return gaps;
 }
 
-/** 빈틈 양쪽(lo..hi 안)에 조각이 모두 있는 행 수. */
+/** Number of rows with fragments on both sides of the gap (within lo..hi). */
 function gapSupport(rows: readonly Frag[][], g: Gap, lo: number, hi: number): number {
   let n = 0;
   for (const fr of rows) {
@@ -369,19 +369,19 @@ function gapSupport(rows: readonly Frag[][], g: Gap, lo: number, hi: number): nu
 
 const minGapWidth = (size: number): number => Math.max(T.colGapMin, T.colGapEm * size);
 
-// ───────────────────────── 열 성격 ─────────────────────────
+// ───────────────────────── Column character ─────────────────────────
 
 interface ColStat {
   frags: Frag[];
-  /** 긴 문장 조각(산문·셀 안 줄바꿈 문단). */
+  /** Long sentence fragments (prose, wrapped paragraphs in cells). */
   prose: boolean;
-  /** 숫자 조각 비율. */
+  /** Ratio of numeric fragments. */
   numeric: number;
-  /** 통화·부호 기호만 있는 열. */
+  /** Column containing only currency or sign symbols. */
   symbolOnly: boolean;
 }
 
-/** 조각을 중심 x 로 열에 나눠 열마다 성격을 본다. */
+/** Assigns fragments to columns by center x and evaluates the character of each column. */
 function columnStats(frags: readonly Frag[], cb: readonly number[]): ColStat[] {
   const cols: Frag[][] = cb.slice(1).map(() => []);
   for (const f of frags) cols[locate(cb, fragCx(f))]!.push(f);
@@ -398,7 +398,7 @@ function columnStats(frags: readonly Frag[], cb: readonly number[]): ColStat[] {
   });
 }
 
-/** 글자 열 경계 중 왼쪽 열이 통화·부호 기호만이면 지운다(기호는 오른쪽 숫자 셀에 붙는다). */
+/** Removes a text column boundary if its left column has only currency or sign symbols (the symbol attaches to the numeric cell on the right). */
 function mergeCurrencyCols(
   cb: readonly number[],
   frags: readonly Frag[],
@@ -410,9 +410,9 @@ function mergeCurrencyCols(
   );
 }
 
-// ───────────────────────── 줄 배정 ─────────────────────────
+// ───────────────────────── Line assignment ─────────────────────────
 
-/** 줄이 드는 격자 칸. 경계를 넘는 줄은 글자 중심 다수결. */
+/** The grid cell a line falls into. A line crossing a boundary uses a majority vote of character centers. */
 function gridPosOfLine(
   model: PageModel,
   l: TLine,
@@ -446,7 +446,7 @@ function gridPosOfLine(
   return best;
 }
 
-/** 격자 칸 → 셀 인덱스 표(-1 = 빈 칸). */
+/** Grid cell → cell index table (-1 = empty cell). */
 function ownerGrid(cells: readonly GridCell[], nr: number, nc: number): Int32Array {
   const own = new Int32Array(nr * nc).fill(-1);
   cells.forEach((c, i) => {
@@ -474,14 +474,14 @@ function assignLines(
   return out;
 }
 
-/** 격자에서 어느 셀도 덮지 않은 칸을 1×1 빈 셀로 채운다. */
+/** Fills grid cells not covered by any cell with 1×1 empty cells. */
 function fillHoles(cells: GridCell[], nr: number, nc: number): void {
   const own = ownerGrid(cells, nr, nc);
   for (let r = 0; r < nr; r++)
     for (let c = 0; c < nc; c++) if (own[r * nc + c]! < 0) cells.push({ r, c, rs: 1, cs: 1 });
 }
 
-// ───────────────────────── 괘선 전략: 선분 ─────────────────────────
+// ───────────────────────── Ruling-line strategy: segments ─────────────────────────
 
 interface Edge {
   o: 'h' | 'v';
@@ -494,7 +494,7 @@ interface Edge {
   virt: boolean;
 }
 
-/** 괘선과 채움 사각형 4변을 선분으로 모은다. 쪽 전체 배경 사각형은 뺀다. */
+/** Collects rules and the 4 edges of fill rectangles as segments. Full-page background rectangles are excluded. */
 function collectEdges(model: PageModel, ps: PathSummary): Edge[] {
   const pw = model.bounds[2] - model.bounds[0];
   const ph = model.bounds[3] - model.bounds[1];
@@ -506,7 +506,7 @@ function collectEdges(model: PageModel, ps: PathSummary): Edge[] {
     if (r.orient === 'h') add('h', r.y0, r.x0, r.x1, r.path);
     else add('v', r.x0, r.y0, r.y1, r.path);
   }
-  // 두께 thinBoxMax 이하의 가는 이미지도 괘선이다(LaTeX 출력 일부는 표 괘선을 1픽셀 이미지로 그린다).
+  // A thin image of thickness at most thinBoxMax is also a rule (some LaTeX output draws table rules as 1-pixel images).
   for (const im of model.images) {
     const [x0, y0, x1, y1] = im.bbox;
     if (y1 - y0 <= RECON.thinBoxMax && x1 - x0 > RECON.thinBoxMax)
@@ -514,9 +514,9 @@ function collectEdges(model: PageModel, ps: PathSummary): Edge[] {
     else if (x1 - x0 <= RECON.thinBoxMax && y1 - y0 > RECON.thinBoxMax)
       add('v', (x0 + x1) / 2, y0, y1, null);
   }
-  // 채움 사각형 변: 보이는 변만 쓴다. (a) 흰색에 가까운 사각형, (b) 바로 바깥 띠가 같은 색 사각형으로
-  // 덮인 변(같은 색끼리 붙거나 포갠 배경), (c) 괘선 바로 안쪽(snap 초과 boxInset 이하)에 평행한 변(셀 안
-  // 배경 여백)은 버린다. 셀마다 줄여 그린 배경이 가는 빈 행·열을 만들지 않게 한다.
+  // Fill rectangle edges: only visible edges are used. Dropped are (a) near-white rectangles, (b) edges whose immediately outer band is covered by a same-color rectangle
+  // (backgrounds of the same color adjoining or overlapping), and (c) edges parallel to and just inside a rule (above snap, at most boxInset) (margin inside
+  // a cell background). This keeps backgrounds drawn shrunk per cell from creating thin empty rows and columns.
   const hRules = out.filter((e) => e.o === 'h');
   const vRules = out.filter((e) => e.o === 'v');
   const insetOfRule = (rules: readonly Edge[], pos: number, a0: number, a1: number): boolean =>
@@ -530,7 +530,7 @@ function collectEdges(model: PageModel, ps: PathSummary): Edge[] {
     if (x1 - x0 >= T.pageBoxRatio * pw && y1 - y0 >= T.pageBoxRatio * ph) return false;
     return !(b.color && b.color.every((c) => c >= T.whiteBox));
   });
-  // 색별 공간 색인(같은 색 사각형이 수천 개여도 표본점 근처만 본다).
+  // Per-color spatial index (even with thousands of same-color rectangles, only those near the sample points are checked).
   const byColor = new Map<string, { rects: Rect[]; index: GridIndex }>();
   for (const b of boxes) {
     const key = colorKey(b.color);
@@ -545,7 +545,7 @@ function collectEdges(model: PageModel, ps: PathSummary): Edge[] {
   for (const b of boxes) {
     const [x0, y0, x1, y1] = b.bbox;
     const same = b.color ? byColor.get(colorKey(b.color)) : undefined;
-    // 변 바깥 1pt 띠의 표본 5점이 모두 같은 색 사각형 안이면 보이지 않는 변이다.
+    // If all 5 sample points in the 1pt band outside the edge lie inside a same-color rectangle, the edge is invisible.
     const hidden = (pts: [number, number][]): boolean =>
       same !== undefined &&
       pts.every(([x, y]) =>
@@ -568,11 +568,11 @@ function collectEdges(model: PageModel, ps: PathSummary): Edge[] {
   return out;
 }
 
-/** 채움 색 비교 키(0.02 단위로 반올림). 색을 모르면 고유하지 않은 빈 키. */
+/** Fill color comparison key (rounded to 0.02 units). An empty, non-unique key if the color is unknown. */
 const colorKey = (c: readonly number[] | null): string =>
   c ? c.map((v) => Math.round(v * 50)).join(',') : '';
 
-/** 같은 방향 선분의 위치를 tol 이내 사슬 군집 평균으로 맞춘다(pdfplumber snap_edges). */
+/** Aligns the positions of same-direction segments to the chained cluster average within tol (pdfplumber snap_edges). */
 function snapEdges(es: readonly Edge[], tol: number): void {
   const s = [...es].sort((a, b) => a.pos - b.pos);
   let i = 0;
@@ -586,7 +586,7 @@ function snapEdges(es: readonly Edge[], tol: number): void {
   }
 }
 
-/** 같은 위치 선분을 간격 tol 이하면 잇고, 길이 minLen 미만은 버린다(pdfplumber join_edge_group). */
+/** Joins same-position segments when the gap is at most tol, and drops those shorter than minLen (pdfplumber join_edge_group). */
 function joinEdges(es: readonly Edge[], tol: number, minLen: number): Edge[] {
   const byPos = new Map<number, Edge[]>();
   for (const e of es) pushTo(byPos, e.pos, e);
@@ -610,8 +610,8 @@ function joinEdges(es: readonly Edge[], tol: number, minLen: number): Edge[] {
 }
 
 /**
- * 띠 안 글자가 표 행처럼 놓였는지(띠 닫기 판정). 빈 띠는 얇을 때만, 한두 행짜리 얇은 띠(머리 행·구역 행)는
- * 그대로, 그 밖은 열 빈틈이 두 행 이상에서 지지되고 모든 열이 산문은 아닐 때 닫는다.
+ * Whether the text in a band is laid out like table rows (band closing check). An empty band closes only when thin; a thin one- or two-row band (header row, section row)
+ * closes as is; any other band closes when column gaps are supported by two or more rows and not every column is prose.
  */
 function bandLooksTabular(
   ls: readonly TLine[],
@@ -637,8 +637,8 @@ function bandLooksTabular(
 }
 
 /**
- * 띠 닫기: 양 끝이 같은 긴 가로선끼리 묶어 위아래로 이웃한 쌍 사이 띠가 표처럼 보이면
- * 양 끝에 가상 세로선을 만든다.
+ * Band closing: groups long horizontal lines with matching ends and, if the band between a vertically adjacent pair looks like a table,
+ * creates virtual vertical lines at both ends.
  */
 function closeBands(h: readonly Edge[], ls: readonly TLine[]): Edge[] {
   const long = h.filter((e) => e.a1 - e.a0 >= T.closeMinWidth);
@@ -661,7 +661,7 @@ function closeBands(h: readonly Edge[], ls: readonly TLine[]): Edge[] {
       const a = g[i - 1]!;
       const b = g[i]!;
       if (b.pos - a.pos <= T.snap) continue;
-      // 끝이 조금 다르면 안쪽 끝에 세운다(두 가로선 모두와 교차하도록).
+      // If the ends differ slightly, the line is placed at the inner end (so it intersects both horizontal lines).
       const x0 = Math.max(a.a0, b.a0);
       const x1 = Math.min(a.a1, b.a1);
       if (!bandLooksTabular(ls, x0, x1, a.pos, b.pos)) continue;
@@ -674,24 +674,24 @@ function closeBands(h: readonly Edge[], ls: readonly TLine[]): Edge[] {
   return out;
 }
 
-// ───────────────────────── 괘선 전략: 교차점·셀 ─────────────────────────
+// ───────────────────────── Ruling-line strategy: intersections and cells ─────────────────────────
 
 interface Pt {
   x: number;
   y: number;
-  /** 지나는 가로·세로 선분 인덱스. */
+  /** Indices of the horizontal and vertical segments passing through. */
   h: Set<number>;
   v: Set<number>;
 }
 
 const ptKey = (x: number, y: number): string => `${x}|${y}`;
 
-/** 세로·가로 선분 교차점(허용 tol). 키는 (세로선 x, 가로선 y). */
+/** Intersections of vertical and horizontal segments (tolerance tol). The key is (vertical line x, horizontal line y). */
 function intersections(h: readonly Edge[], v: readonly Edge[], tol: number): Map<string, Pt> {
   const hs = h.map((e, i) => ({ e, i })).sort((a, b) => a.e.pos - b.e.pos);
   const pts = new Map<string, Pt>();
   v.forEach((ve, vi) => {
-    // 가로선 y 가 [a0 - tol, a1 + tol] 안인 것만 이분 탐색으로 고른다.
+    // Selects only horizontal lines whose y is within [a0 - tol, a1 + tol] using binary search.
     let lo = 0;
     let hi = hs.length;
     while (lo < hi) {
@@ -721,8 +721,8 @@ const shares = (a: ReadonlySet<number>, b: ReadonlySet<number>): boolean => {
 };
 
 /**
- * 최소 셀(pdfplumber intersections_to_cells): 교차점마다 아래·오른쪽 교차점을 가까운 순으로 보며
- * 왼쪽·위 변이 선분으로 이어지고 오른쪽 아래 교차점이 오른쪽·아래 변으로 이어지는 첫 사각형.
+ * Minimal cells (pdfplumber intersections_to_cells): for each intersection, examines the intersections below and to the right in order of proximity,
+ * taking the first rectangle whose left and top edges are covered by segments and whose bottom-right intersection connects via the right and bottom edges.
  */
 function findCells(pts: ReadonlyMap<string, Pt>): Rect[] {
   const byX = new Map<number, Pt[]>();
@@ -752,7 +752,7 @@ function findCells(pts: ReadonlyMap<string, Pt>): Rect[] {
   return cells;
 }
 
-/** 모서리를 공유하는 셀끼리 묶는다(pdfplumber cells_to_tables). */
+/** Groups cells that share corners (pdfplumber cells_to_tables). */
 function groupCells(cells: readonly Rect[]): Rect[][] {
   const parent = cells.map((_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
@@ -769,7 +769,7 @@ function groupCells(cells: readonly Rect[]): Rect[][] {
   return [...groups.values()];
 }
 
-// ───────────────────────── 괘선 전략: 표 후보 ─────────────────────────
+// ───────────────────────── Ruling-line strategy: table candidates ─────────────────────────
 
 interface BuildCtx {
   model: PageModel;
@@ -778,8 +778,8 @@ interface BuildCtx {
 }
 
 /**
- * 가는 틈 없애기: 셀 경계 값이 minCell 이내로 붙어 있으면(어긋난 배경 사각형·이중선) 한 값으로 모으고
- * 넓이가 없어진 셀은 버린다.
+ * Removing thin gaps: cell boundary values within minCell of each other (misaligned background rectangles, double lines) are merged into one value, and
+ * cells that lose their area are dropped.
  */
 function collapseSlivers(group: readonly Rect[]): Rect[] {
   const snapMap = (vals: number[]): Map<number, number> => {
@@ -804,7 +804,7 @@ function collapseSlivers(group: readonly Rect[]): Rect[] {
   return [...out.values()];
 }
 
-/** 괘선 셀을 괘선 격자 인덱스로 옮긴다. 겹치는 셀은 작은 것부터 자리를 차지한다. */
+/** Maps ruled cells to ruled grid indices. Overlapping cells claim positions smallest first. */
 function ruledCells(
   group: readonly Rect[],
   R0: readonly number[],
@@ -829,7 +829,7 @@ function ruledCells(
   return out;
 }
 
-/** 글자 열 경계: 괘선 열 안 투영 빈틈 중 gapSupport 행 이상이 같은 괘선 열 안 양쪽에 조각을 둔 것. */
+/** Text column boundaries: among projection gaps inside a ruled column, those where at least gapSupport rows have fragments on both sides within the same ruled column. */
 function textColumnBounds(frs: readonly Frag[][], C0: readonly number[], size: number): number[] {
   const gaps = findGaps(frs, minGapWidth(size), Math.floor(T.colCrossRatio * frs.length));
   const out: number[] = [];
@@ -842,10 +842,10 @@ function textColumnBounds(frs: readonly Frag[][], C0: readonly number[], size: n
 }
 
 /**
- * 괘선 행 하나를 기준선 행으로 나눌지: 기준선 행이 둘 이상, 두 열 이상 찬 기준선 행이 둘 이상, 찬 열 수
- * 중앙값이 행 안 글자 있는 열 수의 splitFillRatio 이상(기록 행). 여러 줄 열의 절반 이상이 줄바꿈 문단이면
- * (셀 안 긴 문장), 줄 기준선이 기준선 행과 어긋나면(세로 가운데 정렬 머리), 표 맨 위 괘선 행에 숫자 조각이
- * 없으면(여러 줄 열 제목) 나누지 않는다. 나누면 기준선 행 사이 y 들을 돌려준다.
+ * Whether to split one ruled row into baseline rows: at least two baseline rows, at least two baseline rows with two or more filled columns, and the median
+ * number of filled columns at least splitFillRatio of the number of columns with text in the row (a record row). Do not split if at least half of the multi-line columns are wrapped paragraphs
+ * (long sentences in cells), if line baselines disagree with the baseline rows (vertically centered header), or if the top ruled row of the table has no numeric fragments
+ * (multi-line column titles). When splitting, returns the y values between baseline rows.
  */
 function rowSplits(
   subs: readonly Row[],
@@ -874,13 +874,13 @@ function rowSplits(
     if (words >= T.wrapWords && fill >= T.wrapFill) wrapped++;
   }
   if (multiLine > 0 && wrapped * 2 >= multiLine) return [];
-  // 기준선 정렬: 줄 기준선이 제 기준선 행 중앙값에서 글자 크기 alignBaseEm 배 안이어야 한다. 세로 가운데
-  // 정렬된 여러 줄 머리 셀처럼 반 줄씩 어긋난 행은 기록 행이 아니다.
+  // Baseline alignment: a line's baseline must be within alignBaseEm × font size of the median of its own baseline row. Rows misaligned by half a line, like vertically centered
+  // multi-line header cells, are not record rows.
   const lines = subs.flatMap((sr) => sr.lines.map((l) => [l, rowBaseline(sr)] as const));
   const aligned = lines.filter(([l, b]) => Math.abs(l.f.baseline - b) <= T.alignBaseEm * l.size);
   if (aligned.length < T.alignBaseRatio * lines.length) return [];
-  // 이어진 줄: 첫 글자 열이 아닌 한 열에만 글자가 있는 기준선 행은 여러 줄 셀의 나머지 줄이므로 기준선이
-  // 가까운 이웃 행에 붙인다.
+  // Continuation lines: a baseline row with text in only one column other than the first text column holds the remaining lines of a multi-line cell, so it is attached to the neighboring row whose baseline is
+  // closer.
   const groups = subs.map((sr, i) => ({
     y0: sr.y0,
     y1: sr.y1,
@@ -914,8 +914,8 @@ function rowSplits(
 }
 
 /**
- * 괘선 셀 조각(가장 잘게 나뉜 격자 사각형)을 셀로 낸다. 내용 조각이 두 열 이상에 걸치면 줄이 가로지르지
- * 않는 경계에서 나눈다(줄무늬 행·행 괘선 없는 본문). 내용이 한 열뿐이거나 비면 병합 셀 그대로.
+ * Emits ruled cell pieces (rectangles of the finest grid) as cells. If content fragments span two or more columns, the cell is split at boundaries that no line crosses
+ * (striped rows, body without row rules). If the content occupies only one column or is empty, the merged cell is kept as is.
  */
 function emitPiece(
   out: GridCell[],
@@ -949,15 +949,15 @@ function emitPiece(
 }
 
 /**
- * 셀 묶음 하나를 표 후보로 만든다. 괘선 격자 → 글자 열 경계 추가 → 괘선 행 나누기 → 셀(병합 유지·분할)
- * → 줄 배정 → 유지 조건 검사. virtCols 는 가상 세로선 x 위치(띠 표 판정용).
+ * Builds one cell group into a table candidate. Ruled grid → add text column boundaries → split ruled rows → cells (keep merges / split)
+ * → line assignment → keep-condition check. virtCols holds the x positions of virtual vertical lines (for band table classification).
  */
 function buildLinesTable(
   ctx: BuildCtx,
   group: readonly Rect[],
   virtCols: ReadonlySet<number>,
 ): Candidate | null {
-  // 안쪽 세로 경계에 실제 선이 하나라도 있으면 격자 표, 아니면 띠 표(가상 변만).
+  // If any inner vertical boundary has a real line, it is a grid table; otherwise a band table (virtual edges only).
   const interiorReal = uniqSorted(group.flatMap((c) => [c[0], c[2]]))
     .slice(1, -1)
     .some((x) => !virtCols.has(x));
@@ -969,7 +969,7 @@ function buildLinesTable(
   if (ls.length === 0) return null;
   const ruled = ruledCells(group, R0, C0);
 
-  // 1) 열: 괘선 열 경계 + 글자 열 경계(통화·부호 기호 열은 오른쪽에 붙인다).
+  // 1) Columns: ruled column boundaries + text column boundaries (currency and sign symbol columns attach to the right).
   const rowsAll = clusterRows(ls);
   const frsAll = rowsAll.map((r) => fragsOf(r.lines, T.colGapEm));
   const textBounds = new Set(textColumnBounds(frsAll, C0, median(ls.map((l) => l.size))));
@@ -977,7 +977,7 @@ function buildLinesTable(
     textBounds.has(x),
   );
 
-  // 2) 행: 괘선 행 경계 + 기록 행으로 나눈 괘선 행의 기준선 행 경계.
+  // 2) Rows: ruled row boundaries + baseline row boundaries of ruled rows split into record rows.
   const splitRows = new Map<number, number[]>();
   for (let r = 0; r < R0.length - 1; r++) {
     const subs = clusterRows(ls.filter((l) => l.cy >= R0[r]! && l.cy < R0[r + 1]!));
@@ -986,7 +986,7 @@ function buildLinesTable(
   }
   const R = uniqSorted([...R0, ...[...splitRows.values()].flat()]);
 
-  // 3) 셀: 괘선 셀을 잘게 나뉜 격자로 옮긴다. 나눈 괘선 행의 한 행짜리 셀은 기준선 행마다 따로 낸다.
+  // 3) Cells: maps ruled cells onto the finer grid. One-row cells of a split ruled row are emitted separately per baseline row.
   const cells: GridCell[] = [];
   for (const rc of ruled) {
     const r0 = R.indexOf(R0[rc.r]!);
@@ -999,7 +999,7 @@ function buildLinesTable(
   }
   fillHoles(cells, R.length - 1, C.length - 1);
 
-  // 4) 유지 조건: 크기, 글자 있는 셀 비율, 두 셀 이상 찬 행(격자 30%·띠 50%), 띠 표는 산문 아님, 차트 아님.
+  // 4) Keep conditions: size, ratio of cells with text, rows with two or more filled cells (grid 30%, band 50%), band tables not prose, not a chart.
   if (R.length < 3 || C.length < 3) return null;
   const assign = assignLines(ctx.model, ls, R, C, cells);
   const fill = cellFill(cells, R, C, frsAll.flat(), assign);
@@ -1018,9 +1018,9 @@ function buildLinesTable(
 }
 
 /**
- * 셀 채움: 줄이 배정된 셀 + 조각 중심이 든 셀(공백으로 채운 숫자 줄처럼 한 줄이 여러 셀에 걸친 경우).
- * filled = 글자 있는 셀 수, textRows = 글자 있는 행 수, multiRows = 두 셀 이상 찬 행 수,
- * richCols = 글자 있는 행의 richColRatio 이상(최소 2행)에 글자가 있는 열 수.
+ * Cell filling: cells with assigned lines + cells containing fragment centers (the case where one line spans several cells, like a number line filled with spaces).
+ * filled = number of cells with text, textRows = number of rows with text, multiRows = number of rows with two or more filled cells,
+ * richCols = number of columns with text in at least richColRatio of the rows with text (minimum 2 rows).
  */
 function cellFill(
   cells: readonly GridCell[],
@@ -1056,7 +1056,7 @@ function cellFill(
   return { filled: filled.size, textRows: perRow.size, multiRows, richCols };
 }
 
-/** 복잡 도형(곡선·사선) 상자가 영역의 chartCover 이상을 덮는지(16×16 칸 근사). */
+/** Whether complex shape (curve, diagonal) boxes cover at least chartCover of the region (16×16 cell approximation). */
 function chartCovered(ps: PathSummary, r: Rect): boolean {
   const shapes = ps.shapes.filter(
     (s) =>
@@ -1077,7 +1077,7 @@ function chartCovered(ps: PathSummary, r: Rect): boolean {
   return covered >= T.chartCover * N * N;
 }
 
-/** 표 상자 안(괘선 여유 snap)의 괘선·채움 사각형 경로. */
+/** Rule and fill rectangle paths inside the table box (rule slack snap). */
 function pathsInside(ps: PathSummary, r: Rect): number[] {
   const tol = T.snap;
   const inside = (x0: number, y0: number, x1: number, y1: number): boolean =>
@@ -1089,8 +1089,8 @@ function pathsInside(ps: PathSummary, r: Rect): number[] {
 }
 
 /**
- * 띠 표 확장: 가상 변으로 닫힌 띠 표(줄무늬·booktabs) 바로 위·아래 행이 표 x 범위 안에서 두 열 이상을
- * 채우고 기준선 간격이 표 행 간격의 extendPitchRatio 배 이하이면 행으로 붙인다(줄무늬 없는 머리·끝 행).
+ * Band table extension: if the rows directly above/below a band table closed by virtual edges (striped, booktabs) fill two or more columns within the table x range
+ * and the baseline gap is at most extendPitchRatio × the table row gap, they are attached as rows (header and end rows without stripes).
  */
 function extendBand(ctx: BuildCtx, cand: Candidate, taken: ReadonlySet<TLine>): void {
   const C = cand.colBounds;
@@ -1136,7 +1136,7 @@ function extendBand(ctx: BuildCtx, cand: Candidate, taken: ReadonlySet<TLine>): 
   }
 }
 
-/** 괘선 전략 전체: 선분 → 띠 닫기 → 교차점 → 셀 → 묶음 → 후보. */
+/** Whole ruling-line strategy: segments → band closing → intersections → cells → groups → candidates. */
 function linesStrategy(ctx: BuildCtx): Candidate[] {
   const raw = collectEdges(ctx.model, ctx.ps);
   const hRaw = raw.filter((e) => e.o === 'h');
@@ -1148,14 +1148,14 @@ function linesStrategy(ctx: BuildCtx): Candidate[] {
   snapEdges(vAll, T.snap);
   const v = joinEdges(vAll, T.join, T.minEdge);
   if (h.length < 2 || v.length < 2) return [];
-  // 가상 세로선만 지나는 x(실제 선과 이어진 것은 실제로 본다).
+  // x positions crossed only by virtual vertical lines (those connected to real lines count as real).
   const virtCols = new Set(v.filter((e) => e.virt).map((e) => e.pos));
   for (const e of v) if (!e.virt) virtCols.delete(e.pos);
   const groups = groupCells(findCells(intersections(h, v, T.intersect)));
   const out: Candidate[] = [];
   for (const g of groups) {
     const C0 = uniqSorted(g.flatMap((c) => [c[0], c[2]]));
-    // 네 변이 실제 선인 1×1 상자(글상자·쪽 테두리)는 표가 아니다. 가상 변 띠는 글자 보정으로 본다.
+    // A 1×1 box whose four edges are real lines (text box, page border) is not a table. Virtual-edge bands are judged by text correction.
     if (g.length === 1 && !C0.some((x) => virtCols.has(x))) continue;
     const cand = buildLinesTable(ctx, g, virtCols);
     if (cand) out.push(cand);
@@ -1163,14 +1163,14 @@ function linesStrategy(ctx: BuildCtx): Candidate[] {
   return out;
 }
 
-// ───────────────────────── 정렬 전략 ─────────────────────────
+// ───────────────────────── Alignment strategy ─────────────────────────
 
 const isShort = (f: Frag): boolean =>
   f.words <= T.shortWords && f.x1 - f.x0 <= T.shortWidthEm * f.size;
 
 /**
- * 정렬 전략: 남은 줄의 기준선 행에서 짧은 조각이 둘 이상인 행(여러 조각 행)이 이어지는 구간을 찾고,
- * 구간 안 줄로 열(투영 빈틈)·행(기준선)을 만든 뒤 검사한다.
+ * Alignment strategy: finds runs of consecutive baseline rows of the remaining lines that have two or more short fragments (multi-fragment rows),
+ * builds columns (projection gaps) and rows (baselines) from the lines in the run, then checks them.
  */
 function textStrategy(
   ctx: BuildCtx,
@@ -1189,7 +1189,7 @@ function textStrategy(
       i++;
       continue;
     }
-    // 구간 잇기: 기준선 간격이 전형 간격의 runPitchRatio 배 이하, 한 조각 행은 연속 runSingles 개까지.
+    // Run linking: baseline gap is at most runPitchRatio × the typical gap, with up to runSingles consecutive single-fragment rows.
     const run = [i];
     const pitches: number[] = [];
     let singles = 0;
@@ -1230,7 +1230,7 @@ function buildTextTable(
   shortFrags: readonly Frag[],
   used: ReadonlySet<TLine>,
 ): Candidate | null {
-  // 구역 x 범위: 여러 조각 행의 짧은 조각. 그 안에 중심이 든 구간 줄만 쓴다.
+  // Region x range: the short fragments of multi-fragment rows. Only run lines whose center lies within it are used.
   const rx0 = Math.min(...shortFrags.map((f) => f.x0));
   const rx1 = Math.max(...shortFrags.map((f) => f.x1));
   const ls = runRows
@@ -1244,12 +1244,12 @@ function buildTextTable(
   const bx0 = Math.min(...ls.map((l) => l.x0));
   const bx1 = Math.max(...ls.map((l) => l.x1));
 
-  // 산문 거부: 조각이 구역 폭에 비해 넓거나 단어가 많다(두 단 본문·목록).
+  // Prose rejection: fragments are wide relative to the region or have many words (two-column body, lists).
   const width = Math.max(bx1 - bx0, 1);
   if (median(allFr.map((f) => (f.x1 - f.x0) / width)) > T.textMaxFragRatio) return null;
   if (median(allFr.map((f) => f.words)) > T.textMaxWords) return null;
 
-  // 열: 투영 빈틈 중 textMinRows 행 이상이 양쪽에 조각을 둔 것. 통화·부호 기호 열은 오른쪽에 붙인다.
+  // Columns: projection gaps with fragments on both sides in at least textMinRows rows. Currency and sign symbol columns attach to the right.
   const gaps = findGaps(frs, minGapWidth(size), Math.floor(T.colCrossRatio * rows.length)).filter(
     (g) => gapSupport(frs, g, bx0, bx1) >= T.textMinRows,
   );
@@ -1259,13 +1259,13 @@ function buildTextTable(
   if (nc < 2) return null;
   if (nc === 2 && stats[1]!.numeric < T.numericRatio) return null;
 
-  // 정렬: 열마다 조각 왼쪽·오른쪽·가운데 중 하나가 textMinRows 개 이상 alignTol 안에 모여야 한다.
+  // Alignment: in each column, at least textMinRows fragments must cluster within alignTol on one of left, right or center.
   const aligned = stats.filter(
     (s) => alignedCount(s.frags) >= Math.min(T.textMinRows, Math.max(s.frags.length, 1)),
   ).length;
   if (aligned < 2 || aligned < T.alignRatio * nc) return null;
 
-  // 행: 기준선 행. 두 셀 이상 찬 행이 textMinRows 개 이상.
+  // Rows: baseline rows. At least textMinRows rows with two or more filled cells.
   const R = rowBoundsOf(rows);
   const cells: GridCell[] = [];
   for (let r = 0; r < rows.length; r++)
@@ -1293,7 +1293,7 @@ function buildTextTable(
   };
 }
 
-/** 왼쪽·오른쪽·가운데 끝 중 alignTol 안에 가장 많이 모인 조각 수. */
+/** Number of fragments that cluster most within alignTol among left, right and center edges. */
 function alignedCount(fs: readonly Frag[]): number {
   let best = 0;
   for (const key of [(f: Frag) => f.x0, (f: Frag) => f.x1, fragCx]) {
@@ -1307,7 +1307,7 @@ function alignedCount(fs: readonly Frag[]): number {
   return best;
 }
 
-/** 기준선 행 경계: 위·아래는 글자 외곽, 사이는 이웃 행 상자 간격의 가운데. */
+/** Baseline row boundaries: top and bottom are the text outline, in between is the middle of the gap between neighboring row boxes. */
 function rowBoundsOf(rows: readonly Row[]): number[] {
   const R = [rows[0]!.y0];
   for (let i = 1; i < rows.length; i++) {
@@ -1320,7 +1320,7 @@ function rowBoundsOf(rows: readonly Row[]): number[] {
   return R;
 }
 
-/** 정렬 전략 구역 안 그래픽 수: 세로선, 도형, 구역 폭 80% 미만 채움 상자(줄무늬 제외). */
+/** Number of graphics in an alignment-strategy region: vertical lines, shapes, fill boxes under 80% of the region width (excluding stripes). */
 function graphicsCount(ps: PathSummary, r: Rect): number {
   const inside = (b: Rect): boolean =>
     b[0] >= r[0] - 1 && b[1] >= r[1] - 1 && b[2] <= r[2] + 1 && b[3] <= r[3] + 1;
@@ -1334,7 +1334,7 @@ function graphicsCount(ps: PathSummary, r: Rect): number {
   return n;
 }
 
-// ───────────────────────── 마무리 ─────────────────────────
+// ───────────────────────── Wrap-up ─────────────────────────
 
 const candBBox = (c: Candidate): Rect => [
   c.colBounds[0]!,
@@ -1343,7 +1343,7 @@ const candBBox = (c: Candidate): Rect => [
   c.rowBounds.at(-1)!,
 ];
 
-/** a 면적 중 b 와 겹치는 비율. */
+/** Ratio of a's area that overlaps b. */
 function overlapFrac(a: Rect, b: Rect): number {
   const w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
   const h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
@@ -1379,8 +1379,8 @@ function toDetected(c: Candidate): DetectedTable {
 }
 
 /**
- * 표를 찾는다. 반환한 표들의 셀 줄은 서로 겹치지 않는다(줄 하나는 최대 한 셀).
- * `lines` 는 가로 줄(horizontal)만 넘어온다.
+ * Finds tables. The cell lines of the returned tables do not overlap (a line belongs to at most one cell).
+ * Only horizontal lines are passed in `lines`.
  */
 export function detectTables(
   model: PageModel,
@@ -1388,7 +1388,7 @@ export function detectTables(
   paths: PathSummary,
 ): DetectedTable[] {
   const ctx: BuildCtx = { model, free: prepareLines(lines), ps: paths };
-  // 1) 괘선 전략: 격자 표 → 띠 표 순, 같은 종류는 셀 많은 것 먼저. 받은 표와 20% 넘게 겹치면 버린다.
+  // 1) Ruling-line strategy: grid tables then band tables, and within a kind, tables with more cells first. A candidate overlapping an accepted table by more than 20% is discarded.
   const order = { grid: 0, band: 1, text: 2 } as const;
   const cands = linesStrategy(ctx).sort(
     (a, b) => order[a.kind] - order[b.kind] || b.cells.length - a.cells.length,
@@ -1406,7 +1406,7 @@ export function detectTables(
     for (const l of c.assign.keys()) taken.add(l);
     accepted.push(c);
   }
-  // 2) 정렬 전략: 괘선 표 밖 줄.
+  // 2) Alignment strategy: lines outside ruled tables.
   accepted.push(...textStrategy(ctx, taken, accepted.map(candBBox)));
   const byIndex = new Map(lines.map((f) => [f.index, f]));
   return dedupeTables(
@@ -1417,9 +1417,9 @@ export function detectTables(
   );
 }
 
-// ── 후처리(라벨 격자 기준 정리) ──────────────────────────────────────
+// ── Post-processing (cleanup against the label grid) ──────────────────────────────────────
 
-/** 격자 칸 → 셀 인덱스. */
+/** Grid cell → cell index. */
 function gridOf(t: DetectedTable): number[][] {
   const rows = t.rowBounds.length - 1;
   const cols = t.colBounds.length - 1;
@@ -1431,7 +1431,7 @@ function gridOf(t: DetectedTable): number[][] {
   return g;
 }
 
-/** 격자 칸 배정에서 셀을 다시 만든다(같은 인덱스의 칸들이 사각형을 이룬다고 본다). */
+/** Rebuilds cells from the grid cell assignment (cells with the same index are assumed to form a rectangle). */
 function rebuild(
   t: DetectedTable,
   g: number[][],
@@ -1479,20 +1479,20 @@ function rebuild(
 }
 
 /**
- * 1) 맨 위·맨 아래의 "모든 열에 걸친 한 칸" 행(틀 안 제목 띠·주석 띠)은 표에서 뺀다(라벨은 캡션·각주로 본다).
- * 2) 줄바꿈된 행 제목 합치기: 첫 열만 찬 행 뒤의 행이 첫 열 줄을 0.5em 이상 들여 쓰고, 앞 줄이 첫 열 폭의
- *    60% 이상 차며 ':'·'.' 로 끝나지 않으면 두 행을 합친다.
- * 3) 어떤 행도 두 쪽에 따로 글자를 두지 않고 한 칸이 걸쳐 있는 열 경계는 지운다(글자 투영으로 생긴 경계).
+ * 1) Top and bottom rows consisting of "a single cell spanning all columns" (title band or note band inside the frame) are removed from the table (labels treat them as captions or footnotes).
+ * 2) Merging wrapped row titles: if the row after a row filled only in the first column indents its first-column line by at least 0.5em, and the previous line fills at least 60% of the first column width
+ *    and does not end with ':' or '.', the two rows are merged.
+ * 3) Removes column boundaries that no row places text on both sides of, with a single cell spanning across (boundaries created by text projection).
  */
 function normalizeTable(t: DetectedTable, byIndex: Map<number, LineFeature>): DetectedTable {
   let g = gridOf(t);
   let rowBounds = t.rowBounds.slice();
   let colBounds = t.colBounds.slice();
   const cellLines = (k: number) => t.cells[k]?.lines ?? [];
-  const merged = new Map<number, number[]>(); // 합친 셀 인덱스 → 줄
+  const merged = new Map<number, number[]>(); // merged cell index → lines
   const linesOf = (k: number) => merged.get(k) ?? cellLines(k);
   const fullSpan = (row: number[]) => row.every((k) => k === row[0]) && row[0]! >= 0;
-  // 1) 제목·주석 띠.
+  // 1) Title and note bands.
   while (g.length > 3 && fullSpan(g[0]!)) {
     g = g.slice(1);
     rowBounds = rowBounds.slice(1);
@@ -1501,7 +1501,7 @@ function normalizeTable(t: DetectedTable, byIndex: Map<number, LineFeature>): De
     g = g.slice(0, -1);
     rowBounds = rowBounds.slice(0, -1);
   }
-  // 2) 줄바꿈된 행 제목.
+  // 2) Wrapped row titles.
   const filled = (k: number) => k >= 0 && linesOf(k).length > 0;
   for (let r = 0; r + 1 < g.length; r++) {
     const a = g[r]!;
@@ -1523,10 +1523,10 @@ function normalizeTable(t: DetectedTable, byIndex: Map<number, LineFeature>): De
     const indented = first.bbox[0] >= Math.min(...la.map((f) => f.bbox[0])) + 0.5 * first.size;
     const fills = last.bbox[2] - colBounds[0]! >= 0.6 * col0W;
     if (!indented || !fills || /[:.]\s*$/u.test(last.text)) continue;
-    // a 의 첫 열 셀이 다른 행에도 걸쳐 있으면(병합 셀) 합치지 않는다(줄이 두 셀에 들어가는 것을 막는다).
+    // If a's first-column cell also spans other rows (merged cell), do not merge (prevents a line from ending up in two cells).
     const spansOther = g.some((row, i) => i !== r && row.includes(a[0]!));
     if (spansOther || g.some((row, i) => i !== r + 1 && row.includes(b[0]!))) continue;
-    // a 의 첫 열 셀을 b 의 첫 열 셀에 합치고, b 의 나머지 칸은 그대로 두며 두 행을 하나로.
+    // Merge a's first-column cell into b's first-column cell, leave the rest of b's cells as they are, and make the two rows one.
     const keep = b[0]!;
     merged.set(keep, [...linesOf(a[0]!), ...linesOf(keep)]);
     const row = b.slice();
@@ -1535,7 +1535,7 @@ function normalizeTable(t: DetectedTable, byIndex: Map<number, LineFeature>): De
     rowBounds = [...rowBounds.slice(0, r + 1), ...rowBounds.slice(r + 2)];
     r--;
   }
-  // 3) 걸친 칸만 있는 열 경계.
+  // 3) Column boundaries with only spanning cells.
   for (let q = 0; q + 1 < (g[0]?.length ?? 0); q++) {
     const distinguishes = g.some(
       (row) => row[q] !== row[q + 1] && filled(row[q]!) && filled(row[q + 1]!),
@@ -1559,8 +1559,8 @@ function normalizeTable(t: DetectedTable, byIndex: Map<number, LineFeature>): De
 }
 
 /**
- * 줄은 최대 한 셀(계약 2.1). 후처리·여러 후보 결합에서 같은 줄이 두 셀에 들어가면 앞 셀만 남긴다.
- * 줄이 남지 않은 셀이 2개 미만인 표는 버린다(줄 제거·행 제거 뒤 유지 조건 재확인).
+ * A line belongs to at most one cell (contract 2.1). If post-processing or combining several candidates puts the same line into two cells, only the earlier cell keeps it.
+ * Tables with fewer than 2 cells that retain lines are discarded (keep conditions are rechecked after removing lines and rows).
  */
 function dedupeTables(tables: DetectedTable[]): DetectedTable[] {
   const used = new Set<number>();

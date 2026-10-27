@@ -1,19 +1,19 @@
 /**
- * 메모리 왕복 회귀 감시(합성 60쪽, 서버). 계약 1.1 의 메모리 시나리오(기준점 = 첫 저장 완료 직후, 이후 50쪽 넘김 왕복·
- * 편집 20회·저장 2회)를 작은 합성 문서로 돌려 누수·급증을 잡는다. DoD 판정 시험이 아니다: DoD 는 Windows 기준 PC 의
- * 측정 페이지 결과로 판정하고(계약 D1), 서버 실제 문서 값은 docs/m5-perf.md 에 기록한다.
+ * Memory round-trip regression watch (synthetic 60 pages, server). Runs the contract 1.1 memory scenario (checkpoint = right after the first save completes, then a 50-page flip round trip,
+ * 20 edits, 2 saves) on a small synthetic document to catch leaks and spikes. This is not the DoD classification test: the DoD is decided from the measurement page results on the Windows reference PC
+ * (contract D1), and server real-document values are recorded in docs/m5-perf.md.
  *
- * 끝 측정 시점(계약 D1·4.1, 사용자 결정 2026-10-21): WASM 은 MuPDF 캐시를 비운(`emptyStore`) 뒤 사용 중 힙, 탭은 30 s 대기
- * 뒤 렌더러 VmRSS. 단언: 이 두 판정값이 각각 ≤ 64 MiB·≤ 150 MiB. 대기 전 탭 증가에는 넉넉한 상한(250 MiB)만 둔다.
+ * End measurement point (contract D1·4.1, user decision 2026-10-21): WASM is the in-use heap after clearing the MuPDF cache (`emptyStore`); the tab is the renderer VmRSS after a 30 s wait.
+ * Assertions: these two classification values are each ≤ 64 MiB and ≤ 150 MiB. Only a generous cap (250 MiB) is set on the tab increase before the wait.
  *
- * 기본 문서: 합성 60쪽(fixtures/bench/synth.mjs, 시드 고정). 옵트인: BENCH_CORPUS_DIR 가 있으면 코퍼스 nist-sp800-53r5(492쪽)도 돈다.
+ * Default document: synthetic 60 pages (fixtures/bench/synth.mjs, fixed seed). Opt-in: if BENCH_CORPUS_DIR is set, the corpus nist-sp800-53r5 (492 pages) also runs.
  *
- * 큰 쪽 콘텐츠 회귀(Windows 확인 W2, docs/m5-followup.md 5.1): 편집이 풀린 채 다시 쓴 쪽 콘텐츠를 저널이 편집마다 보관하던 경로.
- * 기본 e2e 는 합성 축소 사례(풀린 8 MiB 쪽의 문단 10건), 옵트인은 Windows 와 같은 코퍼스 kogl-mods-cpi-202609 시나리오다.
- * 두 시험 모두 판정값(WASM `emptyStore` 뒤 사용 중 힙 증가) ≤ 64 MiB 를 단언한다(탭 메모리는 기록만).
+ * Large page content regression (Windows check W2, docs/m5-followup.md 5.1): the path where the journal kept the inflated page content rewritten with editing unlocked, once per edit.
+ * The default e2e is a synthetic reduced case (10 paragraphs on an inflated 8 MiB page); the opt-in one is the same scenario as Windows with the corpus kogl-mods-cpi-202609.
+ * Both tests assert the classification value (WASM in-use heap increase after `emptyStore`) ≤ 64 MiB (tab memory is only recorded).
  */
 
-/** 대기 전 탭 메모리 증가 상한(MiB). 수거 전 JS 쓰레기 때문에 흔들리므로 넉넉하게 둔다. */
+/** Cap on the tab memory increase before the wait (MiB). It fluctuates because of uncollected JS garbage, so it is set generously. */
 const TAB_DELTA_RAW_CAP_MIB = 250;
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
@@ -62,7 +62,7 @@ async function memoryRun(
   }
 }
 
-test('메모리 왕복 회귀 감시(합성 60쪽): emptyStore 뒤 WASM 사용 중 힙 증가 ≤ 64 MiB · 30 s 뒤 탭 증가 ≤ 150 MiB', async () => {
+test('memory round-trip regression watch (synthetic 60 pages): WASM in-use heap increase after emptyStore ≤ 64 MiB · tab increase after 30 s ≤ 150 MiB', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pdf-editor-bench-mem-'));
   try {
     const path = join(dir, 'mem-60.pdf');
@@ -105,7 +105,7 @@ test('메모리 왕복 회귀 감시(합성 60쪽): emptyStore 뒤 WASM 사용 �
   }
 });
 
-test('메모리 왕복: 코퍼스 nist-sp800-53r5 492쪽(옵트인)', async () => {
+test('memory round trip: corpus nist-sp800-53r5, 492 pages (opt-in)', async () => {
   test.skip(!process.env.BENCH_CORPUS_DIR, 'BENCH_CORPUS_DIR 없음');
   const list = JSON.parse(
     execFileSync(
@@ -124,12 +124,12 @@ test('메모리 왕복: 코퍼스 nist-sp800-53r5 492쪽(옵트인)', async () =
   const mem = result.docs[0]!.mem!;
   console.log(JSON.stringify(mem));
   expect(result.docs[0]!.errors).toEqual([]);
-  // 실제 문서의 탭 메모리는 값을 기록만 한다(docs/m5-perf.md 3.3).
+  // For real documents the tab memory is only recorded (docs/m5-perf.md 3.3).
   expect(mem.wasmHeapDeltaMiB).not.toBeNull();
   expect(mem.wasmHeapDeltaMiB!).toBeLessThanOrEqual(64);
 });
 
-test('큰 쪽 콘텐츠 회귀(합성, 풀린 8 MiB 쪽의 문단 10건 첫 편집): WASM 사용 중 힙 증가 ≤ 64 MiB', async () => {
+test('large page content regression (synthetic, first edit of 10 paragraphs on an inflated 8 MiB page): WASM in-use heap increase ≤ 64 MiB', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'pdf-editor-bench-heavy-'));
   try {
     const path = join(dir, 'heavy-3.pdf');
@@ -155,11 +155,11 @@ test('큰 쪽 콘텐츠 회귀(합성, 풀린 8 MiB 쪽의 문단 10건 첫 편�
         tabDeltaMiB: mem.tabDeltaMiB,
       }),
     );
-    // 시나리오가 의도한 경로를 탔는지: 큰 쪽(0쪽) 문단 10건을 모두 처음 고쳤다(블록 재편집 아님).
+    // Whether the scenario took the intended path: all 10 paragraphs on the large page (page 0) were edited for the first time (not block re-edits).
     const committed = mem.editLog.filter((e) => e.committed);
     expect(committed).toHaveLength(10);
     expect(committed.every((e) => e.pageIndex === 0 && e.editedBlock === false)).toBe(true);
-    // 저널 보유 추정: 풀린 콘텐츠(8 MiB) × 10 이 아니라 압축 크기(약 1.7 MiB) 몫.
+    // Estimated journal holding: the compressed size (about 1.7 MiB) times 10, not inflated content (8 MiB) × 10.
     expect(committed.at(-1)!.journalBytes!).toBeLessThan(32 * MiB);
     expect(mem.wasmHeapDeltaMiB).not.toBeNull();
     expect(mem.wasmHeapDeltaMiB!).toBeLessThanOrEqual(64);
@@ -168,7 +168,7 @@ test('큰 쪽 콘텐츠 회귀(합성, 풀린 8 MiB 쪽의 문단 10건 첫 편�
   }
 });
 
-test('메모리 왕복: 코퍼스 kogl-mods-cpi-202609(옵트인, Windows W2 와 같은 시나리오)', async () => {
+test('memory round trip: corpus kogl-mods-cpi-202609 (opt-in, same scenario as Windows W2)', async () => {
   test.skip(!process.env.BENCH_CORPUS_DIR, 'BENCH_CORPUS_DIR 없음');
   test.setTimeout(20 * 60 * 1000);
   const list = JSON.parse(

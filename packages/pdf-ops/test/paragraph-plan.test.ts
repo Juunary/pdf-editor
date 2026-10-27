@@ -6,7 +6,7 @@ import { findParagraph, loadModules, pageContext } from './helpers/edit-context.
 import { fallbackFor } from './helpers/edit-driver.js';
 import { charsOfText, makeDoc, paragraphOf, withParagraphs } from './helpers/fixtures-m3.js';
 
-/** 계약 5.1 편집 가능 판정(문서를 바꾸지 않는다). */
+/** Contract 5.1 editability classification (does not change the document). */
 beforeAll(async () => {
   await loadModules();
 });
@@ -18,21 +18,21 @@ function plan(ctx: ParagraphEditContext, needle: string) {
 const reasons = (p: { limits: { reason: string }[] }) => p.limits.map((l) => l.reason);
 const kinds = (p: { warnings: { kind: string }[] }) => p.warnings.map((w) => w.kind);
 
-describe('편집 제한(5.1)', () => {
-  it('회전 줄 → vertical-or-rotated', () => {
+describe('editing limits (5.1)', () => {
+  it('rotated line -> vertical-or-rotated', () => {
     const doc = makeDoc([
       'BT /F1 12 Tf 0.866 0.5 -0.5 0.866 80 100 Tm (Rotated thirty degrees.) Tj ET',
     ]);
     expect(reasons(plan(pageContext(doc, 0), 'Rotated thirty'))).toContain('vertical-or-rotated');
   });
 
-  it('Tr 4(채움+클립) → clip-text, Tr 3 → invisible-text', () => {
+  it('Tr 4 (fill+clip) -> clip-text, Tr 3 -> invisible-text', () => {
     const doc = makeDoc([
       'BT 4 Tr /F1 12 Tf 50 240 Td (Clipping text paragraph.) Tj ET BT 3 Tr /F1 12 Tf 50 160 Td (Invisible ocr paragraph.) Tj ET',
     ]);
     const ctx = pageContext(doc, 0);
     expect(reasons(plan(ctx, 'Clipping text'))).toContain('clip-text');
-    // Tr 3(스캔 OCR 층) 줄은 레이아웃 문단이 되지 않는다. 글자로 문단을 만들어 판정만 본다.
+    // A Tr 3 (scanned OCR layer) line does not become a layout paragraph. Build a paragraph from the characters and look only at the classification.
     const ocr = withParagraphs(ctx, [
       paragraphOf(ctx, charsOfText(ctx, 'Invisible ocr paragraph.'), 0),
     ]);
@@ -41,7 +41,7 @@ describe('편집 제한(5.1)', () => {
     );
   });
 
-  it('Type3 폰트 → type3-font', () => {
+  it('Type3 font -> type3-font', () => {
     const doc = makeDoc(['BT /T3 12 Tf 50 200 Td (ab) Tj ET'], (src) => {
       const proc = src.addStream('1000 0 0 0 750 750 d1 0 0 750 750 re f', {});
       const t3 = src.addObject({
@@ -63,7 +63,7 @@ describe('편집 제한(5.1)', () => {
     expect(reasons(planParagraphEdit(ctx, fm, p.id))).toContain('type3-font');
   });
 
-  it('쪽 콘텐츠와 Form 에 걸친 문단 → mixed-content-sources', () => {
+  it('paragraph spanning page content and a Form -> mixed-content-sources', () => {
     const doc = makeDoc(
       ['BT /F1 12 Tf 50 200 Td (Page line of mixed source) Tj ET q 1 0 0 1 50 186 cm /X0 Do Q'],
       (src, { F1 }) => ({
@@ -87,8 +87,8 @@ describe('편집 제한(5.1)', () => {
     expect(reasons(planParagraphEdit(ctx, fm, 0))).toContain('mixed-content-sources');
   });
 
-  it('제거가 건너뛸 연산 → remove-skipped(code)', () => {
-    // Tf 리소스가 없으면 MuPDF 는 대체 폰트로 그린다(글자는 추출되지만 명세 폭을 알 수 없다).
+  it('operation that removal would skip -> remove-skipped(code)', () => {
+    // Without a Tf resource MuPDF draws with a substitute font (characters are extracted but the specified width is unknown).
     const doc = makeDoc(['BT /F9 12 Tf 50 200 Td (Missing font resource here.) Tj ET']);
     const p = plan(pageContext(doc, 0), 'Missing font');
     const l = p.limits.find((x) => x.reason === 'remove-skipped')!;
@@ -98,7 +98,7 @@ describe('편집 제한(5.1)', () => {
     expect(p.insertion).toBeNull();
   });
 
-  it('ActualText MC 가 다른 문단에도 걸침 → actualtext-partial', () => {
+  it('ActualText MC also spans other paragraphs -> actualtext-partial', () => {
     const doc = makeDoc([
       '/Span <</ActualText (Both paragraphs)>> BDC BT /F1 12 Tf 50 240 Td (Upper paragraph text.) Tj ET ' +
         'BT /F1 12 Tf 50 120 Td (Lower paragraph text.) Tj ET EMC',
@@ -111,7 +111,7 @@ describe('편집 제한(5.1)', () => {
     expect(reasons(planParagraphEdit(ctx, fm, 0))).toContain('actualtext-partial');
   });
 
-  it('BT 나누기 제한: 같은 BT 의 클립 텍스트, BT 안 q/cm', () => {
+  it('BT split limit: clip text in the same BT, q/cm inside BT', () => {
     const doc = makeDoc([
       'BT /F1 12 Tf 50 250 Td 5 Tr (Clip head line.) Tj 0 Tr 0 -60 Td (Target after clip) Tj ET',
       'BT /F1 12 Tf 50 250 Td (Head line kept.) Tj q 0 -60 Td (Target after q) Tj Q ET',
@@ -133,21 +133,21 @@ describe('편집 제한(5.1)', () => {
     expect(p1.limits.find((l) => l.reason === 'bt-split-unsupported')!.detail).toMatch(/q\/Q/);
   });
 
-  it('특이 CTM → singular-ctm', () => {
+  it('singular CTM -> singular-ctm', () => {
     const doc = makeDoc([
       'q 1 0 0 0.0000000000001 0 100 cm BT /F1 12 Tf 50 0 Td (Singular ctm text) Tj ET Q BT /F1 12 Tf 50 200 Td (Normal text) Tj ET',
     ]);
     expect(reasons(plan(pageContext(doc, 0), 'Singular ctm'))).toContain('singular-ctm');
   });
 
-  it('직사각형이 아닌 클립 → insertion-clipped', () => {
+  it('non-rectangular clip -> insertion-clipped', () => {
     const doc = makeDoc([
       'q 30 150 m 380 150 l 200 290 l h W n BT /F1 12 Tf 120 200 Td (Triangle clip text.) Tj ET Q',
     ]);
     expect(reasons(plan(pageContext(doc, 0), 'Triangle clip'))).toContain('insertion-clipped');
   });
 
-  it('삽입점의 직사각형 클립이 원 문단 글자를 덮지 않음 → insertion-clipped', () => {
+  it('a rectangular clip at the insertion point does not cover the original paragraph characters -> insertion-clipped', () => {
     const doc = makeDoc([
       'q 40 190 20 30 re W n BT /F1 12 Tf 45 200 Td (1.) Tj ET Q BT /F1 12 Tf 62 200 Td (rest of the clipped note.) Tj ET',
     ]);
@@ -160,7 +160,7 @@ describe('편집 제한(5.1)', () => {
     expect(l.chars.length).toBeGreaterThan(10);
   });
 
-  it('패턴 채움·SMask 차이 → graphics-state-mismatch', () => {
+  it('pattern fill / SMask difference -> graphics-state-mismatch', () => {
     const doc = makeDoc(
       [
         '/Pattern cs /P0 scn BT /F1 24 Tf 50 240 Td (Patterned) Tj ET 0 g ' +
@@ -199,7 +199,7 @@ describe('편집 제한(5.1)', () => {
     expect(reasons(plan(ctx, 'Masked text'))).toContain('graphics-state-mismatch');
   });
 
-  it('표 문단도 not-flow-paragraph 가 아니다(M4 셀 편집, 셀을 못 찾으면 흐름 문단처럼)', () => {
+  it('a table paragraph is also not not-flow-paragraph (M4 cell editing; if the cell is not found, treated like a flow paragraph)', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Cell text) Tj ET']);
     const ctx0 = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
@@ -209,7 +209,7 @@ describe('편집 제한(5.1)', () => {
     );
   });
 
-  it('도형 라벨 문단은 편집할 수 있다(도형 오검출로 일반 글자가 막히던 문제, 2026-10-21)', () => {
+  it('a shape label paragraph is editable (fixes ordinary text being blocked by shape false detection, 2026-10-21)', () => {
     const doc = makeDoc(['BT /F1 12 Tf 50 200 Td (Text over a background box) Tj ET']);
     const ctx0 = pageContext(doc, 0);
     const para = { ...ctx0.layout.paragraphs[0]!, figure: 0 };
@@ -220,8 +220,8 @@ describe('편집 제한(5.1)', () => {
   });
 });
 
-describe('경고(5.1)', () => {
-  it('링크·Redact 표시와 겹침, 선택적 콘텐츠', () => {
+describe('warnings (5.1)', () => {
+  it('overlap with link/Redact marks, optional content', () => {
     const src = new mupdf.PDFDocument();
     const F1 = src.addSimpleFont(new mupdf.Font('Helvetica'));
     const ocg = src.addObject({ Type: 'OCG', Name: 'Layer' });
@@ -262,8 +262,8 @@ describe('경고(5.1)', () => {
   });
 });
 
-describe('시작 상태(5.3)', () => {
-  it('텍스트·charIndexOfOffset(합성 공백 -1)·모양 구간·형식', () => {
+describe('start state (5.3)', () => {
+  it('text, charIndexOfOffset (synthetic space -1), shape spans, format', () => {
     const doc = makeDoc([
       'BT /F1 12 Tf 14 TL 50 250 Td [(Mixed) -300 (gap)] TJ ( and ) Tj /F2 12 Tf (times) Tj T* /F1 12 Tf (second line.) Tj ET',
     ]);
@@ -274,7 +274,7 @@ describe('시작 상태(5.3)', () => {
     const text = pl.runs.map((r) => r.text).join('');
     expect(text).toBe(p.text);
     expect(pl.charIndexOfOffset).toHaveLength(text.length);
-    // TJ 간격으로 만든 합성 공백은 -1, 그 밖은 글자 인덱스.
+    // A synthetic space made from a TJ gap is -1; everything else is the character index.
     const gap = text.indexOf('gap');
     expect(pl.charIndexOfOffset[gap - 1]).toBe(-1);
     expect(ctx.model.chars[pl.charIndexOfOffset[gap]!]!.text).toBe('g');
@@ -291,8 +291,8 @@ describe('시작 상태(5.3)', () => {
   });
 });
 
-describe('판정은 문서를 바꾸지 않는다·판정 시간', () => {
-  it('저널을 켠 문서에서 작업 밖 판정이 예외 없이 끝난다, 쪽 하나 100 ms·문단 하나 10 ms 이하(서버 Node)', () => {
+describe('classification does not change the document; classification time', () => {
+  it('classification outside an operation on a journal-enabled document finishes without exceptions, at most 100 ms per page and 10 ms per paragraph (server Node)', () => {
     const lines: string[] = [];
     for (let i = 0; i < 15; i++) {
       lines.push(
@@ -302,9 +302,9 @@ describe('판정은 문서를 바꾸지 않는다·판정 시간', () => {
     const doc = makeDoc([{ content: lines.join('\n'), mediabox: [0, 0, 400, 800] }]);
     const ctx = pageContext(doc, 0);
     const fm = new FontManager(doc, fallbackFor(doc));
-    // core 와 같이 폴백 폰트·Info 는 저널을 켜기 전에 만든다(계약 D4·D9 수정 1).
+    // As in core, the fallback font and Info are created before the journal is turned on (contract D4/D9 amendment 1).
     doc.enableJournal();
-    planPageEditability(ctx, fm); // 첫 호출(폰트 캐시 준비)
+    planPageEditability(ctx, fm); // first call (prepares the font cache)
     const t0 = performance.now();
     const pe = planPageEditability(ctx, fm);
     const pageMs = performance.now() - t0;

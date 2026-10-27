@@ -1,15 +1,15 @@
 /**
- * 편집 반응 시간 정식 측정(계약 8.4). 옵트인: 환경 변수 EDIT_LATENCY_CORPUS_DIR 이 있을 때만 돈다.
+ * Official edit response time measurement (contract 8.4). Opt-in: runs only when the environment variable EDIT_LATENCY_CORPUS_DIR is set.
  *
  *   EDIT_LATENCY_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus \
  *     pnpm --filter @pdf-editor/extension exec playwright test e2e/edit-latency.spec.ts
  *
- * 모집단: 코퍼스 5문서 × 쪽 0(표지 등으로 모자라면 앞쪽부터 처음 충족하는 쪽, 최대 쪽 7) 의 편집 가능 문단 2개(50~500자) × 고정 텍스트 3종(라틴·한글·혼합)의 글자 단위 입력 전부.
- * 종점: 뷰어 자체 표식. `EditSession.latencies` 의 한 표본 = 입력 이벤트(`pendingT0` 최초 입력 시각) → 변경 영역을
- * 캔버스에 합성한 직후(`reportPainted`)의 `deps.now()` 차이(packages/viewer-ui/src/edit-session.ts). 같은 구간이
- * `performance.measure('pe-edit-latency')` 로도 남는다. 코어 쪽 성분은 `updateParagraphDraft` 응답의 `updateMs`.
- * 결과: out/m3-edit-latency/latency.json (`EDIT_LATENCY_OUT` 으로 파일 이름 변경).
- * 환경: Playwright 번들 Chromium, viewport 1600×1500(폭 맞춤 최대 1.5 에 걸려 cssScale 1.5), dpr 1.
+ * Population: 5 corpus documents × page 0 (if short because of a cover page etc., the first page from the front that satisfies it, up to page 7), 2 editable paragraphs (50–500 characters) × 3 fixed texts (Latin, Korean, mixed), every per-character input.
+ * Endpoint: the viewer's own marker. One sample of `EditSession.latencies` = input event (`pendingT0`, time of the first input) → the difference to `deps.now()` right after the changed region is
+ * composited onto the canvas (`reportPainted`) (packages/viewer-ui/src/edit-session.ts). The same interval
+ * is also recorded as `performance.measure('pe-edit-latency')`. The core-side component is `updateMs` of the `updateParagraphDraft` response.
+ * Result: out/m3-edit-latency/latency.json (file name changeable with `EDIT_LATENCY_OUT`).
+ * Environment: Playwright bundled Chromium, viewport 1600×1500 (hits the fit-width maximum of 1.5, so cssScale 1.5), dpr 1.
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -25,7 +25,7 @@ const OUT = resolve(
   process.env.EDIT_LATENCY_OUT ?? 'latency.json',
 );
 
-// 문서 순서 고정: 라틴(arXiv·NASA·NIST), 한글(공공누리·KCI 풍 학술지). 앞에서부터 2문단이 모자라면 뒤 후보로 대체한다.
+// Fixed document order: Latin (arXiv·NASA·NIST), Korean (KOGL·KCI-style journals). If there are fewer than 2 paragraphs from the front, fall back to later candidates.
 const DOCS = [
   'arxiv-2609.09268',
   'nasa-eo-2024-janfeb',
@@ -55,7 +55,7 @@ interface Sample {
   paragraphId: number;
   paragraph: string;
   textKind: string;
-  index: number; // 텍스트 안 몇 번째 입력인지
+  index: number; // which input within the text
   ms: number;
   updateMs: number | null;
   cssScale: number;
@@ -84,7 +84,7 @@ function groupBy<T>(xs: T[], key: (x: T) => string): Record<string, T[]> {
   return o;
 }
 
-test.describe('편집 반응 시간 정식 측정(계약 8.4, 옵트인)', () => {
+test.describe('official edit response time measurement (contract 8.4, opt-in)', () => {
   test.skip(!CORPUS, 'EDIT_LATENCY_CORPUS_DIR 가 없으면 건너뛴다');
 
   let context: BrowserContext;
@@ -122,7 +122,7 @@ test.describe('편집 반응 시간 정식 측정(계약 8.4, 옵트인)', () =>
     return page;
   }
 
-  /** 주어진 쪽의 편집 가능 문단 중 글자 수 50~500 인 앞의 2개(읽기 순서). */
+  /** The first 2 editable paragraphs of the given page with 50–500 characters (reading order). */
   async function pickParagraphs(
     page: Page,
     pageIndex: number,
@@ -183,7 +183,7 @@ test.describe('편집 반응 시간 정식 측정(계약 8.4, 옵트인)', () =>
     );
   }
 
-  test('10 문단 × 3 텍스트 키 입력 지연', async () => {
+  test('key input latency for 10 paragraphs × 3 texts', async () => {
     test.setTimeout(30 * 60_000);
     const samples: Sample[] = [];
     const picks: Pick[] = [];
@@ -196,7 +196,7 @@ test.describe('편집 반응 시간 정식 측정(계약 8.4, 옵트인)', () =>
     while (usedDocs < 5 && queue.length > 0) {
       const doc = queue.shift()!;
       const page = await open(join(CORPUS!, `${doc}.pdf`));
-      // 쪽 0 이 표지 등으로 조건을 못 채우면 앞쪽부터 처음 2개 이상 나오는 쪽을 쓴다(기록에 쪽 번호를 남긴다).
+      // If page 0 cannot satisfy the condition because of a cover page etc., use the first page from the front with 2 or more (the page number is recorded).
       const pageCount = await page.evaluate(
         () =>
           (
@@ -265,7 +265,7 @@ test.describe('편집 반응 시간 정식 측정(계약 8.4, 옵트인)', () =>
           });
           await page.mouse.dblclick(pt.x, pt.y);
           await expect(page.locator('#pe-edit-layer')).toBeVisible();
-          // 열기 직후 초기 갱신이 끝나기를 기다린다.
+          // Wait for the initial update right after opening to finish.
           await page.waitForFunction(
             () => document.getElementById('pe-edit-layer')?.getAttribute('data-updating') === '0',
           );
@@ -307,7 +307,7 @@ test.describe('편집 반응 시간 정식 측정(계약 8.4, 옵트인)', () =>
               cssScale: pt.scale,
             }),
           );
-          // 취소로 문서를 그대로 둔다.
+          // Cancel, leaving the document as is.
           await page.click('#pe-edit-cancel');
           await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
         }

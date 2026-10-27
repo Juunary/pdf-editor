@@ -1,6 +1,6 @@
 /**
- * 편집 UI 하니스(M3 viewer-ui e2e 공용): viewer-ui 빌드 산출물과 가짜 편집 호스트(`packages/viewer-ui/test/fake-edit-host.ts`,
- * TypeScript `transpileModule` 로 JS 로 바꿔 서빙)를 실제 Chromium 에서 구동한다. 실제 core 편집 RPC 가 필요 없다.
+ * Edit UI harness (shared by the M3 viewer-ui e2e): runs the viewer-ui build output and the fake edit host (`packages/viewer-ui/test/fake-edit-host.ts`,
+ * served after converting TypeScript to JS with `transpileModule`) in a real Chromium. No real core edit RPC is needed.
  */
 import type { Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -25,19 +25,19 @@ const VENDOR_FILES: Record<string, string> = {
 };
 
 export interface EditHarnessConfig {
-  /** 원 문서 글자 모델(시작 캐럿 계산용). */
+  /** Glyph model of the original document (for computing the start caret). */
   model: PageModel;
   paragraphs: FakeParagraph[];
-  /** 영역 상한(기본 [0, 0, 612, 792]). */
+  /** Region upper bound (default [0, 0, 612, 792]). */
   areaLimit?: Rect;
-  /** pt → CSS px 고정 배율. */
+  /** Fixed pt → CSS px scale. */
   cssScale: number;
-  /** 가짜 호스트 리플로우의 글자 폭 등. */
+  /** Glyph widths etc. for the fake host's reflow. */
   layout?: { charWidth?: number; newlineInLine?: boolean };
   pageCount?: number;
-  /** 벡터 패스(M4). 편집은 가짜 호스트가 반영해 돌려준다. */
+  /** Vector paths (M4). The fake host applies edits and returns them. */
   paths?: FakePath[];
-  /** 표 레이아웃(getPageLayout). 없으면 미구현 예외. */
+  /** Table layout (getPageLayout). Throws a not-implemented exception if absent. */
   layout2?: unknown;
 }
 
@@ -184,7 +184,7 @@ export async function openEditHarness(page: Page, cfg: EditHarnessConfig): Promi
   return errors;
 }
 
-/** 합성 원 문서: 줄 0 "Hello World"(글자 0–10, x 20–130, y 20–34), 줄 1 "표 셀"(글자 11–13). */
+/** Synthetic original document: line 0 "Hello World" (glyphs 0–10, x 20–130, y 20–34), line 1 "표 셀" (glyphs 11–13). */
 export function editModel(): PageModel {
   return makePageModel(['Hello World', { text: '표 셀', y: 46 }]);
 }

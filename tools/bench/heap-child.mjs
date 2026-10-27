@@ -1,14 +1,14 @@
-// 저장 힙 측정 1회(docs/m5-heap.md 2절). 측정마다 새 Node 프로세스: WASM 선형 메모리는 줄지 않아 저장 직후 값이 피크다.
-// 사용: node tools/bench/heap-child.mjs <pdf> <full|none|full2|none2> [보기 쪽 수]
-//   full: 첫 편집 가능 문단에 한글을 덧붙여 커밋(폴백 폰트 임베딩) → planSave → save(전체 저장)
-//   none: 편집 없이 planSave → save(변경 없음, 증분 저장)
-//   full2·none2: 같은 세션 저장 2회(docs/m5-heap.md 4.4). 첫 저장 뒤 (full2 는 다시 편집하고) 다음 N 쪽을 더 렌더한 다음
-//     planSave → save. 결과의 plan2·peak2 가 두 번째 저장이다.
-//   보기 쪽 수(기본 0): 저장 전에 앞쪽 N 쪽을 더 렌더한다(사용자가 넘겨 본 상태, 힙 이력이 피크 계단을 바꾼다).
-// 결과 JSON 한 줄을 stdout 에 쓴다.
+// One save-heap measurement (docs/m5-heap.md section 2). A fresh Node process per measurement: WASM linear memory never shrinks, so the value right after the save is the peak.
+// Usage: node tools/bench/heap-child.mjs <pdf> <full|none|full2|none2> [pages viewed]
+//   full: append Korean text to the first editable paragraph and commit (embeds a fallback font) → planSave → save (full save)
+//   none: planSave → save with no edits (no changes, incremental save)
+//   full2·none2: two saves in the same session (docs/m5-heap.md 4.4). After the first save (full2 edits again), render the next N pages, then
+//     planSave → save. plan2·peak2 in the result belong to the second save.
+//   pages viewed (default 0): render the first N pages before saving (the user has paged through; heap history changes the peak steps).
+// Writes one line of result JSON to stdout.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-// core 를 mupdf 보다 먼저 불러야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// core must be loaded before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { PdfSession, wasmHeapBytes } from '../../packages/core/dist/index.js';
 
 const FONT = new Uint8Array(
@@ -16,7 +16,7 @@ const FONT = new Uint8Array(
     fileURLToPath(new URL('../../assets/fonts/NotoSansKR-Regular-subset.ttf', import.meta.url)),
   ),
 );
-/** 편집 문단을 찾아볼 앞쪽 수. */
+/** Number of leading pages to search for an editable paragraph. */
 const EDIT_SEARCH_PAGES = 8;
 const RENDER_SCALE = 1.5;
 

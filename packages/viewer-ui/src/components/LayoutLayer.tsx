@@ -7,7 +7,7 @@ import type {
 import type { PageLayout } from '../layout.js';
 import { gridCells } from '../table-grid.js';
 
-/** 역할별 상자 색(레이아웃 오버레이 범례와 같다). */
+/** Box colors by role (same as the layout overlay legend). */
 export const ROLE_COLORS: Record<ParagraphRole, string> = {
   body: '#1e88e5',
   heading: '#d81b60',
@@ -26,13 +26,13 @@ interface Props {
   doc: DocumentPageLayout;
   layout: PageLayout;
   /**
-   * 편집 가능 표시와 함께 그리는지(사용자 요청 2026-10-22, "레이아웃·편집 표시" 한 버튼). 그러면 상자 테두리를 얇게 그려
-   * 편집 가능 테두리(초록·주황)가 먼저 읽히게 한다. 채움·번호는 그대로.
+   * Whether it is drawn together with the editability overlay (user request 2026-10-22, the single "레이아웃·편집 표시" button). If so, the box border is drawn thin so that
+   * the editable borders (green, orange) read first. Fill and numbers are unchanged.
    */
   thin?: boolean;
 }
 
-/** 테두리 굵기(CSS px): [기본, 편집 가능 표시와 함께]. */
+/** Border widths (CSS px): [default, together with the editability overlay]. */
 const WIDTH = {
   paragraph: [1.5, 0.75],
   cellParagraph: [0.75, 0.5],
@@ -42,8 +42,8 @@ const WIDTH = {
 } as const;
 
 /**
- * 레이아웃 오버레이(M2): 문단 상자(역할별 색), 표 격자, 도형 상자(점선), 최상위 읽기 순서 번호.
- * 마우스 이벤트는 받지 않는다.
+ * Layout overlay (M2): paragraph boxes (colored by role), table grid, shape boxes (dotted), top-level reading-order numbers.
+ * Does not receive mouse events.
  */
 export function LayoutLayer({ doc, layout, thin = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -56,7 +56,7 @@ export function LayoutLayer({ doc, layout, thin = false }: Props) {
     canvas.height = layout.bitmapHeight;
     const s = layout.cssScale * layout.devicePixelRatio;
     ctx.setTransform(s, 0, 0, s, -layout.origin[0] * s, -layout.origin[1] * s);
-    const px = 1 / layout.cssScale; // CSS 1px(페이지 단위)
+    const px = 1 / layout.cssScale; // CSS 1px (in page units)
     const w = (k: keyof typeof WIDTH) => WIDTH[k][thin ? 1 : 0];
     const box = (r: Rect, color: string, width: number, dash: number[] = []) => {
       ctx.strokeStyle = color;
@@ -75,11 +75,11 @@ export function LayoutLayer({ doc, layout, thin = false }: Props) {
     }
     for (const t of doc.tables) {
       box(t.bbox, TABLE_COLOR, w('table'));
-      // 병합 셀 기준(W4-6): 행·열 경계 전체 선이 아니라 셀(병합이면 병합 범위)마다 상자를 그린다.
+      // Based on merged cells (W4-6): instead of full row/column boundary lines, a box is drawn per cell (the merged range for a merged cell).
       for (const g of gridCells(t)) box(g.rect, TABLE_COLOR, w('grid'));
     }
     for (const f of doc.figures) box(f.bbox, FIGURE_COLOR, w('figure'), [6, 4]);
-    // 읽기 순서 번호(최상위 항목 왼쪽 위).
+    // Reading-order numbers (top-left of top-level items).
     ctx.setLineDash([]);
     ctx.font = `bold ${10 * px}px system-ui, sans-serif`;
     ctx.textBaseline = 'top';
@@ -93,7 +93,7 @@ export function LayoutLayer({ doc, layout, thin = false }: Props) {
       if (!r) return;
       const label = String(k + 1);
       const w = ctx.measureText(label).width + 4 * px;
-      // 왼쪽 끝 항목은 번호가 캔버스 밖으로 나가지 않게 상자 안쪽에 그린다.
+      // For items at the left edge, draw the number inside the box so it does not go off the canvas.
       const x = r[0] - w >= layout.origin[0] ? r[0] - w : r[0];
       ctx.fillStyle = '#212121';
       ctx.fillRect(x, r[1], w, 12 * px);

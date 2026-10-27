@@ -1,9 +1,9 @@
 /**
- * 벡터 패스 편집 코디네이터(DOM 비의존, M4 계약 4.5): 패스 모델 로드·선택(Shift 다중)·점 편집 모드·편집 동작
- * (끌기·속성·삭제)·편집 가능 표시 토글. `EditController` 가 소유하고 상태는 `EditState.path` 로 전달한다.
+ * Vector path editing coordinator (DOM-independent, M4 contract 4.5): path model loading, selection (Shift for multiple), point-edit mode, edit actions
+ * (drag, properties, delete), editability overlay toggle. Owned by `EditController`; state is passed as `EditState.path`.
  *
- * 편집 동작 하나 = 초안 1개 = 편집 1개(`PathGesture`). 선택만으로는 초안을 열지 않는다(초안은 문서당 1개이므로
- * 선택이 문단 편집을 막지 않게 한다).
+ * One edit action = one draft = one edit (`PathGesture`). Selection alone does not open a draft (there is only one draft per document, so
+ * selection must not block paragraph editing).
  */
 import type {
   CommitResult,
@@ -29,29 +29,29 @@ import {
   type PathRpc,
 } from './path-gesture.js';
 
-/** 서버 갱신을 보내기 전 정지 시간(ms, 계약 4.5). */
+/** Idle time before sending a server update (ms, contract 4.5). */
 export const PATH_DEBOUNCE_MS = 200;
 
 export interface PathSelection {
   pageIndex: number;
   paintSeqs: number[];
-  /** 선택 판정(편집 가능 여부·현재 색·두께). 다시 판정하는 동안 이전 값을 유지한다. */
+  /** Selection classification (editability, current color, width). Keeps the previous value while reclassifying. */
   plan: PathEditPlan | null;
 }
 
 export interface PathState {
-  /** 선택·점 편집용 패스 모델(includePathSegments). */
+  /** Path model for selection and point editing (includePathSegments). */
   model: EditLoadable<PageModel>;
   selection: PathSelection | null;
-  /** 점 편집 모드(선택이 하나일 때만). */
+  /** Point-edit mode (only when exactly one path is selected). */
   pointMode: boolean;
-  /** 진행 중인 편집 동작. */
+  /** Edit action in progress. */
   gesture: PathGestureView | null;
-  /** 제한 사유 안내(선택한 패스가 편집 불가일 때). */
+  /** Limit-reason notice (when the selected path cannot be edited). */
   note: string[] | null;
   /**
-   * 커밋 뒤 모델·선택 판정을 다시 읽는 중. 끝나기 전의 선택 상자·계획은 옛 값이므로 동작을 막고(리뷰 L7) 선택 상자를
-   * 숨긴다. 이 동안 들어온 선택 클릭은 보류했다가 끝난 뒤 처리한다(M5 리뷰 M8).
+   * Re-reading the model and selection classification after a commit. The selection box and plan from before it finishes are stale, so actions are blocked (review L7) and the selection box
+   * is hidden. Selection clicks arriving in this period are deferred and handled afterwards (M5 review M8).
    */
   settling: boolean;
 }
@@ -69,11 +69,11 @@ export function initialPathState(): PathState {
 
 export interface PathContext extends EditContext {
   pathRpc: PathRpc;
-  /** 패스 편집 기능만 영구 비활성화한다("M4 미구현"). */
+  /** Permanently disables only the path editing feature ("M4 not implemented"). */
   disablePath(reason: string): void;
-  /** 패스 모델(includePathSegments)을 읽는다. */
+  /** Reads the path model (includePathSegments). */
   extractPaths(pageIndex: number): Promise<PageModel>;
-  /** 쪽 판정(패스 편집 가능 목록)이 도착할 때까지 기다린다. 없으면 기다리지 않는다. */
+  /** Waits until the page classification (list of editable paths) arrives. Does not wait if there is none. */
   ensureEditability?(pageIndex: number): Promise<void>;
   setTimer(fn: () => void, ms: number): unknown;
   clearTimer(handle: unknown): void;
@@ -84,9 +84,9 @@ export interface PathContext extends EditContext {
 export class PathController {
   private gesture: PathGesture | null = null;
   private ending: Promise<boolean> | null = null;
-  /** 진행 중인 모델 읽기. 같은 쪽을 다시 요청하면 이 읽기를 기다린다(첫 Alt+클릭 소실의 원인 수정). */
+  /** Model read in progress. A repeated request for the same page waits for this read (fix for the cause of the lost first Alt+click). */
   private loadingModel: { pageIndex: number; promise: Promise<void> } | null = null;
-  /** 진행 중인 커밋 뒤 재판정(`settling`). 그 사이의 선택 클릭은 이것을 기다린다. */
+  /** Reclassification after a commit in progress (`settling`). Selection clicks in the meantime wait for it. */
   private settled: Promise<void> | null = null;
 
   constructor(private readonly ctx: PathContext) {}
@@ -99,11 +99,11 @@ export class PathController {
     return this.gesture !== null;
   }
 
-  // ── 모델·후보 ────────────────────────────────────────────────────────
+  // ── Model and candidates ─────────────────────────────────────────────
 
   /**
-   * 쪽의 패스 모델이 준비될 때까지 기다린다. 같은 쪽을 이미 읽는 중이면 그 읽기를 기다린다: 읽는 중이라고 바로
-   * 돌려보내면 호출자(`selectAt`)가 빈 후보로 판정해 클릭이 선택 없이 끝난다.
+   * Waits until the page's path model is ready. If the same page is already being read, waits for that read: returning immediately
+   * because it is being read would make the caller (`selectAt`) classify with empty candidates, and the click would end with no selection.
    */
   ensureModel(pageIndex: number): Promise<void> {
     const cur = this.ctx.getPath().model;
@@ -126,7 +126,7 @@ export class PathController {
   private async loadModel(pageIndex: number, entry: object): Promise<void> {
     try {
       const value = await this.ctx.extractPaths(pageIndex);
-      // 읽는 동안 모델을 버렸거나(invalidateModel·reset) 다른 읽기로 바뀌었으면 결과를 버린다.
+      // If the model was discarded while reading (invalidateModel/reset) or replaced by another read, drop the result.
       if (this.loadingModel !== entry) return;
       if (this.ctx.isStalePage(pageIndex)) {
         this.ctx.patchPath({ model: { status: 'idle' } });
@@ -141,7 +141,7 @@ export class PathController {
     }
   }
 
-  /** 지금 쪽의 선택 후보(모델 + 쪽 판정). 준비되지 않았으면 빈 목록. */
+  /** Selection candidates for the current page (model + page classification). Empty list if not ready. */
   candidates(pageIndex: number): PathCandidate[] {
     const model = this.ctx.getPath().model;
     const edit = this.ctx.getState().editability;
@@ -156,11 +156,11 @@ export class PathController {
     return buildCandidates(model.value.paths, edit.value.paths);
   }
 
-  // ── 선택 ─────────────────────────────────────────────────────────────
+  // ── Selection ────────────────────────────────────────────────────────
 
   /**
-   * 점 p(페이지 공간)에서 패스를 고른다. additive(Shift)면 선택에 더하거나 뺀다. 맞는 패스가 없으면
-   * (additive 가 아닐 때) 선택을 푼다. 선택된 패스 목록을 돌려준다.
+   * Picks a path at point p (page space). With additive (Shift), adds to or removes from the selection. If no path matches
+   * (and not additive), clears the selection. Returns the selected path list.
    */
   async selectAt(
     pageIndex: number,
@@ -171,8 +171,8 @@ export class PathController {
     if (this.gesture || this.ctx.getState().session || this.ctx.getState().starting) {
       return this.ctx.getPath().selection?.paintSeqs ?? [];
     }
-    // 커밋 직후 재판정 중이면 끝날 때까지 보류한다. 그대로 처리하면 옛 모델·판정으로 고르거나, 재판정이 새 선택을
-    // 덮어쓴다(M8: 패스 커밋 직후 약 100 ms 의 Alt+클릭이 무시되거나 이전 선택이 다시 보임).
+    // If reclassification right after a commit is in progress, defer until it finishes. Handling it as is would pick with the old model/classification, or the reclassification would
+    // overwrite the new selection (M8: an Alt+click about 100 ms after a path commit was ignored or the previous selection reappeared).
     while (this.settled) await this.settled;
     await Promise.all([this.ensureModel(pageIndex), this.ctx.ensureEditability?.(pageIndex)]);
     const hit = pickPath(this.candidates(pageIndex), point, STROKE_HIT_PX / cssScale);
@@ -202,7 +202,7 @@ export class PathController {
     return next;
   }
 
-  /** 선택을 다시 판정한다(선택 직후·편집 뒤 쪽을 다시 읽은 뒤). */
+  /** Reclassifies the selection (right after selection, or after re-reading the page following an edit). */
   async replan(): Promise<PathEditPlan | null> {
     const sel = this.ctx.getPath().selection;
     if (!sel) return null;
@@ -245,9 +245,9 @@ export class PathController {
     this.ctx.patchPath({ pointMode: on && ok });
   }
 
-  // ── 편집 동작 ────────────────────────────────────────────────────────
+  // ── Edit actions ─────────────────────────────────────────────────────
 
-  /** 끌기 등 연속 편집을 시작한다. 선택이 편집 가능이 아니거나 다른 편집이 열려 있으면 null. */
+  /** Starts a continuous edit such as a drag. null if the selection is not editable or another edit is open. */
   beginGesture(): PathGesture | null {
     const sel = this.ctx.getPath().selection;
     const state = this.ctx.getState();
@@ -281,13 +281,13 @@ export class PathController {
       this.gesture = null;
       this.ctx.patchPath({ gesture: null });
       this.handleFailure(e, this.t.pathStartFailed);
-      // 같은 paintSeq 가 다른 패스를 가리킨다: 낡은 선택으로 다시 편집하지 않게 푼다.
+      // The same paintSeq points at a different path: clear the selection so a stale selection is not edited again.
       if (e instanceof PathTargetChangedError) this.clear();
     });
     return g;
   }
 
-  /** 놓을 때: 최신 편집을 보내고 커밋한다. 성공하면 true. */
+  /** On release: sends the latest edit and commits. true on success. */
   commitGesture(): Promise<boolean> {
     if (!this.gesture) return Promise.resolve(true);
     return (this.ending ??= this.doCommit().finally(() => {
@@ -344,7 +344,7 @@ export class PathController {
     }
   }
 
-  /** Esc: 진행 중인 동작을 취소한다. 동작이 없으면 false. */
+  /** Esc: cancels the action in progress. false if there is none. */
   async cancelGesture(): Promise<boolean> {
     const g = this.gesture;
     if (!g) return false;
@@ -357,8 +357,8 @@ export class PathController {
   }
 
   /**
-   * 선택한 패스가 채우는지·긋는지(패스 모델 PathInfo.op 기준). 모델이 아직 없으면 계획(첫 대상)으로 근사한다.
-   * 선 두께·선 색 입력은 긋는 패스가 있을 때만 쓴다(리뷰 L6).
+   * Whether the selected paths fill or stroke (by path model PathInfo.op). If the model is not available yet, approximated by the plan (first target).
+   * The stroke width and stroke color inputs are used only when there is a stroked path (review L6).
    */
   selectionPaints(): { fills: boolean; strokes: boolean } {
     const sel = this.ctx.getPath().selection;
@@ -376,8 +376,8 @@ export class PathController {
   }
 
   /**
-   * 속성 편집에서 실제로 바뀌는 부분만 남긴다. 해당하지 않는 칠하기(채움 없는 패스의 채움 색, 긋지 않는 패스의 선 두께)와
-   * 단일 선택의 현재 값과 같은 값은 뺀다. 남는 것이 없으면 null(편집을 열지 않는다, 리뷰 L6).
+   * Keeps only the parts that actually change in a property edit. Drops paints that do not apply (fill color of a path without fill, stroke width of a path that is not stroked) and
+   * values equal to the current value of a single selection. null if nothing remains (no edit is opened, review L6).
    */
   effectiveEdit(edit: PathEdit): PathEdit | null {
     const sel = this.ctx.getPath().selection;
@@ -398,7 +398,7 @@ export class PathController {
     return isNoopPathEdit(out) ? null : out;
   }
 
-  /** 속성·삭제처럼 한 번에 끝나는 편집. 바뀌는 것이 없으면 편집을 열지 않고 true. */
+  /** An edit that finishes in one step, such as properties or delete. If nothing changes, no edit is opened and true is returned. */
   async applyOnce(edit: PathEdit): Promise<boolean> {
     const effective = this.effectiveEdit(edit);
     if (!effective) {
@@ -415,9 +415,9 @@ export class PathController {
     return this.applyOnce(emptyPathEdit({ delete: true }));
   }
 
-  // ── 공통 ─────────────────────────────────────────────────────────────
+  // ── Common ───────────────────────────────────────────────────────────
 
-  /** 쪽을 바꾸거나 문서 undo/redo 를 하기 전: 선택·모델을 비운다. */
+  /** Before changing the page or doing document undo/redo: clears the selection and model. */
   reset(): void {
     this.gesture = null;
     this.loadingModel = null;
@@ -425,7 +425,7 @@ export class PathController {
     this.ctx.patchPath(initialPathState());
   }
 
-  /** 쪽 캐시를 버릴 때: 모델을 다시 읽게 하고 선택은 유지한다(편집 뒤 재판정 대상). */
+  /** When the page cache is discarded: makes the model be re-read and keeps the selection (target of reclassification after an edit). */
   invalidateModel(): void {
     this.loadingModel = null;
     this.ctx.patchPath({ model: { status: 'idle' } });
@@ -468,7 +468,7 @@ export function emptyPathEdit(partial: Partial<PathEdit> = {}): PathEdit {
   };
 }
 
-/** 8비트 반올림으로 같은 색인지(pdf-ops D3 와 같은 규칙). 현재 색을 모르면 다르다. */
+/** Whether two colors are the same after 8-bit rounding (same rule as pdf-ops D3). Different if the current color is unknown. */
 function sameColor(rgb: RGB, cur: PaintColor | null | undefined): boolean {
   const c = cur?.rgb;
   return !!c && rgb.every((v, i) => Math.round(v * 255) === Math.round(c[i]! * 255));

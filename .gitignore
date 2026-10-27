@@ -5,9 +5,9 @@ coverage/
 test-results/
 playwright-report/
 *.tsbuildinfo
-# 스파이크 실행 산출물(저장된 PDF 등). 결과 요약은 docs/ 에 기록한다.
+# Spike run outputs (saved PDFs, etc.). Result summaries are recorded in docs/.
 out/
 assets/fonts/src/
-# 실제 코퍼스 PDF(외부 배포물). 출처·라이선스·해시는 fixtures/corpus/manifest.json, 내려받기는 scripts/corpus/fetch-corpus.mjs
+# Real corpus PDFs (externally distributed). Source·license·hash are in fixtures/corpus/manifest.json; download with scripts/corpus/fetch-corpus.mjs
 fixtures/corpus/*.pdf
 fixtures/corpus/*.part

@@ -3,16 +3,16 @@ import type { Rect } from '@pdf-editor/shared-types';
 import type { TextLine } from '@pdf-editor/pdf-ops';
 
 /**
- * 스파이크용 최소 문단 배치. 정식 리플로우는 packages/reflow(M3).
- * - advance 는 PDF /W 와 같도록 1/1000 em 으로 양자화한다.
- * - 공백 단위(어절) 줄바꿈, 한 단어가 줄보다 길면 글자 단위로 끊는다.
- * - 영역을 넘으면 잘라내지 않고 overflow 로 보고한다(자동 클립 금지).
+ * Minimal paragraph layout for the spike. The real reflow is packages/reflow (M3).
+ * - advance is quantized to 1/1000 em to match the PDF /W.
+ * - Line breaks at whitespace (words); a word longer than a line is broken per character.
+ * - If the area is exceeded, it is reported as overflow instead of being clipped (no automatic clipping).
  */
 
 export interface PlacedGlyph {
   gid: number;
   unicode: number;
-  /** PDF 사용자 공간 기준선 원점 */
+  /** Baseline origin in PDF user space */
   x: number;
   y: number;
 }
@@ -22,7 +22,7 @@ export interface ParagraphLayout {
   glyphs: PlacedGlyph[];
   lineCount: number;
   overflow: boolean;
-  /** 사용 높이(pt) */
+  /** Used height (pt) */
   usedHeight: number;
 }
 
@@ -30,11 +30,11 @@ export interface LayoutParams {
   font: mupdf.Font;
   text: string;
   fontSize: number;
-  /** 줄 간격(배수) */
+  /** Line spacing (multiplier) */
   lineHeight: number;
-  /** 기준선 시작 위치 = 영역 위쪽에서 ascent 만큼 아래 */
+  /** Baseline start position = ascent below the top of the area */
   ascent: number;
-  /** PDF 사용자 공간 영역 [x0, y0, x1, y1] (y 위 방향) */
+  /** Area in PDF user space [x0, y0, x1, y1] (y up) */
   box: Rect;
 }
 
@@ -50,7 +50,7 @@ export function layoutParagraph(p: LayoutParams): ParagraphLayout {
     return { gid, unicode, adv: quantize(p.font.advanceGlyph(gid, 0)) * p.fontSize };
   };
 
-  // 단어(공백 포함 토큰) 단위로 나눈다.
+  // Split into words (tokens including whitespace).
   const tokens = p.text.split(/(\s+)/).filter((t) => t.length > 0);
   const lines: { glyphs: ReturnType<typeof glyphOf>[]; width: number }[] = [
     { glyphs: [], width: 0 },
@@ -68,7 +68,7 @@ export function layoutParagraph(p: LayoutParams): ParagraphLayout {
       continue;
     }
     if (current().width + width > maxWidth && current().glyphs.length > 0) {
-      // 줄 끝 공백 제거 후 새 줄
+      // Remove trailing whitespace, then start a new line
       const cur = current();
       while (cur.glyphs.length > 0 && /\s/.test(String.fromCodePoint(cur.glyphs.at(-1)!.unicode))) {
         cur.width -= cur.glyphs.pop()!.adv;

@@ -1,21 +1,21 @@
 /**
- * 텍스트 선택 층 배치(순수 함수). 글자마다 span 하나를 quad 위치에 두고 글자는 투명하게 그린다.
- * DOM 순서 = 읽기 순서(ReadingOrder.items 순서)이며, 줄마다 래퍼를 둬 브라우저 기본 복사에서도
- * 줄바꿈이 들어가게 한다.
+ * Text selection layer layout (pure function). Puts one span per character at the quad position and draws the characters transparent.
+ * DOM order = reading order (ReadingOrder.items order), and a wrapper is placed per line so that
+ * line breaks are included in the browser's default copy as well.
  */
 import type { PageModel } from '@pdf-editor/shared-types';
 import { quadToCssBox, round3, type PageLayout } from './layout.js';
 import type { ReadingOrder } from './reading-order.js';
 
 export interface TextLayerChar {
-  /** ReadingOrder.items 인덱스. DOM `data-i` 와 같다. */
+  /** ReadingOrder.items index. Same as DOM `data-i`. */
   item: number;
   charIndex: number;
   text: string;
   style: Record<string, string>;
   /**
-   * 이 글자 뒤 합성 공백(`LineInfo.spaceAfter`)을 DOM 에 넣을 때의 스타일. 없으면 null.
-   * 브라우저 기본 복사·드래그에서도 단어가 붙지 않게 하는 보조 요소이며, 선택 구간·캐럿 판정에는 쓰지 않는다.
+   * Style for putting the synthetic space after this character (`LineInfo.spaceAfter`) into the DOM. null if none.
+   * An auxiliary element that keeps words from running together in the browser's default copy and drag; it is not used for selection ranges or caret decisions.
    */
   space: Record<string, string> | null;
 }
@@ -26,10 +26,10 @@ export interface TextLayerLine {
   chars: TextLayerChar[];
 }
 
-/** 글자 가로 길이를 측정한다. 폰트는 텍스트 층의 CSS 폰트와 같아야 한다. */
+/** Measures the horizontal length of a character. The font must be the same as the text layer's CSS font. */
 export type MeasureText = (text: string, fontSizePx: number) => number;
 
-/** 최소 글자 크기(px). 0 에 가까운 값은 브라우저가 배치하지 못한다. */
+/** Minimum character size (px). A value close to 0 cannot be laid out by the browser. */
 const MIN_FONT_PX = 1;
 
 export function layoutTextLayer(
@@ -64,7 +64,7 @@ export function layoutTextLayer(
       if (transforms.length > 0) style.transform = transforms.join(' ');
       let space: Record<string, string> | null = null;
       if (order.items[k]!.spaceAfter) {
-        // 글자 오른쪽 끝(quad 의 ur)에 폭 없이 둔다.
+        // Placed at the right end of the character (ur of the quad) with no width.
         const rad = (box.rotation * Math.PI) / 180;
         const spaceStyle: Record<string, string> = {
           left: `${round3(box.left + box.width * Math.cos(rad))}px`,

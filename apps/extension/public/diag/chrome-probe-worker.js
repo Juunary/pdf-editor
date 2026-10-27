@@ -1,6 +1,6 @@
 /* global self, postMessage */
-// M3 진단(계약 5.7): 확장 뷰어가 만든 전용 Worker 에서 chrome.* 가 되는지, 확장 자산을 fetch 할 수 있는지 확인한다.
-// e2e(apps/extension/e2e/worker-chrome.spec.ts)가 이 Worker 를 만들고 결과를 읽어 docs/m3-viewer-ui.md 에 기록한다.
+// M3 diagnostics (contract 5.7): checks whether chrome.* works in the dedicated Worker created by the extension viewer, and whether extension assets can be fetched.
+// The e2e test (apps/extension/e2e/worker-chrome.spec.ts) creates this Worker, reads the result and records it in docs/m3-viewer-ui.md.
 self.onmessage = async (e) => {
   const c = self.chrome;
   const report = {

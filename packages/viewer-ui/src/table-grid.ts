@@ -1,6 +1,6 @@
 /**
- * 표 격자 오버레이(W4-6): 병합 셀 기준. 행·열 경계 전체 선이 아니라 셀(병합이면 병합 범위)마다 상자를 그린다.
- * 셀 상자는 `rowBounds`·`colBounds` 에서 `rowSpan`·`colSpan` 만큼 잡는다(`TableCell.bbox` 는 글자 외곽일 수 있어 쓰지 않는다).
+ * Table grid overlay (W4-6): based on merged cells. Instead of full row/column boundary lines, a box is drawn per cell (the merged range for a merged cell).
+ * A cell box spans `rowSpan`/`colSpan` from `rowBounds`/`colBounds` (`TableCell.bbox` may be the character outline, so it is not used).
  */
 import type { LayoutTable, Rect, TableCell } from '@pdf-editor/shared-types';
 
@@ -26,7 +26,7 @@ export function cellRect(
   return [x0, y0, x1, y1];
 }
 
-/** 그릴 격자 상자들. 셀 목록에 없는(빈) 칸은 1×1 칸으로 채운다. 병합 셀이 덮은 칸은 다시 그리지 않는다. */
+/** Grid boxes to draw. Slots missing from the cell list (empty) are filled with 1×1 slots. Slots covered by a merged cell are not drawn again. */
 export function gridCells(table: LayoutTable): GridCell[] {
   const covered = new Set<string>();
   const out: GridCell[] = [];

@@ -1,4 +1,4 @@
-/** M3 후속(docs/m4-contract.md 1.2): R-M4 실패 상태 저장, R-L5 폴백 로드 실패, R-L2 폴백 서브셋 이름 태그. */
+/** M3 follow-up (docs/m4-contract.md 1.2): R-M4 save in failed state, R-L5 fallback load failure, R-L2 fallback subset name tag. */
 import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 import type { EditPathOp } from '@pdf-editor/shared-types';
@@ -24,7 +24,7 @@ function reopen(bytes: Uint8Array): mupdf.PDFDocument {
   return mupdf.Document.openDocument(bytes, 'application/pdf') as mupdf.PDFDocument;
 }
 
-/** 저장 파일에서 폴백 폰트 서브셋(FontFile2 가 있는 Type0 폰트)을 모두 찾는다. */
+/** Finds all fallback font subsets (Type0 fonts with FontFile2) in the saved file. */
 function type0Fonts(doc: mupdf.PDFDocument): mupdf.PDFObject[] {
   const found: mupdf.PDFObject[] = [];
   for (let n = 1; n < doc.countObjects(); n++) {
@@ -40,7 +40,7 @@ function type0Fonts(doc: mupdf.PDFDocument): mupdf.PDFObject[] {
   return found;
 }
 
-describe('R-L5 폴백 폰트 로드 실패', () => {
+describe('R-L5 fallback font load failure', () => {
   function failing(): { s: PdfSession; loads: { count: number } } {
     const loads = { count: 0 };
     const s = new PdfSession({
@@ -54,7 +54,7 @@ describe('R-L5 폴백 폰트 로드 실패', () => {
     return { s, loads };
   }
 
-  it('판정·편집이 폴백 없이 진행되고 폴백이 필요한 글자만 glyph-missing 이다', async () => {
+  it('classification and editing proceed without the fallback, and only characters that need the fallback are glyph-missing', async () => {
     const { s } = failing();
     expect((await s.getPageEditability(0)).paragraphs.some((p) => p.editable)).toBe(true);
     const { plan, started } = await begin(s, 1);
@@ -70,12 +70,12 @@ describe('R-L5 폴백 폰트 로드 실패', () => {
     expect(latin.warnings.map((w) => w.kind)).not.toContain('glyph-missing');
     await s.commitParagraphEdit(started.draftId);
     expect(fallbackFonts(s.document)).toHaveLength(0);
-    // 저장도 된다.
+    // Saving works too.
     expect(s.save({ changes: [] }).bytes.length).toBeGreaterThan(0);
     s.close();
   });
 
-  it('저널을 켠 뒤에는 다시 시도하지 않는다(폴백 폰트를 넣을 수 없음)', async () => {
+  it('does not retry after the journal is enabled (the fallback font cannot be added)', async () => {
     const { s, loads } = failing();
     await editParagraph(s, 1, 'Latin only');
     const afterBegin = loads.count;
@@ -85,7 +85,7 @@ describe('R-L5 폴백 폰트 로드 실패', () => {
     s.close();
   });
 
-  it('저널을 켜기 전에 로드가 성공하면 그때부터 폴백을 쓴다', async () => {
+  it('if the load succeeds before the journal is enabled, the fallback is used from then on', async () => {
     let calls = 0;
     const s = new PdfSession({
       editAdapter: createFakeAdapter(),
@@ -108,8 +108,8 @@ describe('R-L5 폴백 폰트 로드 실패', () => {
   });
 });
 
-describe('R-M4 실패 상태에서의 저장', () => {
-  /** 재적용이 중간에 실패한(문서가 일부만 바뀐) 세션. */
+describe('R-M4 save in failed state', () => {
+  /** A session where reapply failed midway (the document was only partly changed). */
   async function failedSession(text = 'kept before failure'): Promise<PdfSession> {
     const source = harness();
     const edited = await editParagraph(source.s, 1, text);
@@ -129,27 +129,27 @@ describe('R-M4 실패 상태에서의 저장', () => {
     return s;
   }
 
-  it('편집 RPC 는 막히지만 저장은 저널로 감싸지 않고 경고와 함께 내보낸다', async () => {
+  it('edit RPCs are blocked, but saving is exported with warnings without being wrapped in the journal', async () => {
     const s = await failedSession();
     await expect(s.getEditHistory()).rejects.toThrow('다시 열어야');
     const plan = s.planSave({ changes: [] });
     expect(plan.warnings).toHaveLength(2);
-    expect(plan.warningCodes).toEqual(['edit-engine-failed']); // 다른 언어 화면용 코드(2026-10-26)
+    expect(plan.warningCodes).toEqual(['edit-engine-failed']); // code for screens in other languages (2026-10-26)
     expect(plan.warnings[0]).toContain('재적용 실패');
     expect(plan.warnings[1]).toContain('일부만');
     expect(plan.warnings[1]).toContain('취소한 초안');
     const saved = s.save({ changes: [] });
     expect(saved.warnings).toEqual(plan.warnings);
-    // 실패 전에 적용된 편집은 저장 파일에 들어 있다.
+    // Edits applied before the failure are in the saved file.
     const doc = reopen(saved.bytes);
     const page = doc.loadPage(0);
     expect(page.toStructuredText('preserve-whitespace').asText()).toContain('kept before failure');
-    // 저장은 저널 단계를 만들지 않는다(이 세션은 저널 보호 없이 내보냈지만 undo 불가 상태라 무해).
+    // Saving creates no journal step (this session exported without journal protection, but it cannot undo anyway, so it is harmless).
     expect(saved.method).toBe('full');
     s.close();
   });
 
-  it('실패 상태 저장도 폴백 서브셋 교체·이름 태그(R-L2)를 최선 노력으로 한다', async () => {
+  it('saving in a failed state also does the fallback subset replacement and name tagging (R-L2) on a best-effort basis', async () => {
     const s = await failedSession(HANGUL_TEXT);
     const saved = s.save({ changes: [] });
     expect(saved.warnings).toHaveLength(2);
@@ -157,7 +157,7 @@ describe('R-M4 실패 상태에서의 저장', () => {
       /^[A-Z]{6}\+NotoSansKR$/.test(f.get('BaseFont').asName()),
     );
     expect(fonts).toHaveLength(1);
-    // 서브셋: 전체 폴백 폰트(FONT_BYTES)보다 작다.
+    // Subset: smaller than the full fallback font (FONT_BYTES).
     const file = fonts[0]!.get('DescendantFonts').get(0).get('FontDescriptor').get('FontFile2');
     const buf = file.readStream();
     try {
@@ -165,7 +165,7 @@ describe('R-M4 실패 상태에서의 저장', () => {
     } finally {
       buf.destroy();
     }
-    // 다시 저장해도 같은 이름(태그를 두 번 붙이지 않음).
+    // Saving again gives the same name (the tag is not added twice).
     const again = type0Fonts(reopen(s.save({ changes: [] }).bytes)).map((f) =>
       f.get('BaseFont').asName(),
     );
@@ -173,7 +173,7 @@ describe('R-M4 실패 상태에서의 저장', () => {
     s.close();
   });
 
-  it('정상 세션의 저장 경고는 빈 배열이다', async () => {
+  it('the save warnings of a healthy session are an empty array', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'fine');
     expect(s.planSave({ changes: [] }).warnings).toEqual([]);
@@ -182,7 +182,7 @@ describe('R-M4 실패 상태에서의 저장', () => {
     s.close();
   });
 
-  it('초안이 열린 정상 세션의 저장은 여전히 거절한다', async () => {
+  it('saving a healthy session with an open draft is still rejected', async () => {
     const { s } = harness();
     const { started } = await begin(s, 1);
     expect(() => s.save({ changes: [] })).toThrow('초안');
@@ -192,8 +192,8 @@ describe('R-M4 실패 상태에서의 저장', () => {
   });
 });
 
-describe('R-L2 폴백 서브셋 이름 태그', () => {
-  it('저장 파일의 폴백 폰트 /BaseFont 와 FontName 에 서브셋 태그가 붙고 작업 문서는 그대로다', async () => {
+describe('R-L2 fallback subset name tag', () => {
+  it('the subset tag is added to the fallback font /BaseFont and FontName in the saved file, and the working document is unchanged', async () => {
     const { s } = harness();
     await editParagraph(s, 1, HANGUL_TEXT);
     const live = fallbackFonts(s.document)[0]!;
@@ -208,9 +208,9 @@ describe('R-L2 폴백 서브셋 이름 태그', () => {
     const descendant = fonts[0]!.get('DescendantFonts').get(0);
     expect(descendant.get('BaseFont').asName()).toBe(base);
     expect(descendant.get('FontDescriptor').get('FontName').asName()).toBe(base);
-    // 작업 문서는 저장 작업을 버려 원래 이름이다(전체 폰트 유지).
+    // The working document discards the save work, so it keeps the original name (full font kept).
     expect(fallbackFonts(s.document)[0]!.get('BaseFont').asName()).toBe('NotoSansKR');
-    // 같은 편집 상태의 두 번째 저장은 같은 태그(결정성).
+    // A second save of the same edit state gives the same tag (determinism).
     const again = s.save({ changes: [] });
     const f2 = type0Fonts(reopen(again.bytes)).find((f) =>
       /\+NotoSansKR$/.test(f.get('BaseFont').asName()),
@@ -219,7 +219,7 @@ describe('R-L2 폴백 서브셋 이름 태그', () => {
     s.close();
   });
 
-  it('폴백을 쓰지 않았으면 서브셋 폰트도 태그도 없다', async () => {
+  it('without using the fallback there is neither a subset font nor a tag', async () => {
     const { s } = harness();
     await editParagraph(s, 1, 'Latin only');
     const saved = s.save({ changes: [] });
@@ -231,7 +231,7 @@ describe('R-L2 폴백 서브셋 이름 태그', () => {
     s.close();
   });
 
-  it('패스 편집만 있는 세션 저장은 폴백 서브셋을 건드리지 않는다', async () => {
+  it('saving a session with only path edits does not touch the fallback subset', async () => {
     const s = new PdfSession({
       editAdapter: createFakeAdapter(),
       loadFallbackFont: async () => FONT_BYTES,

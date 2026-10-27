@@ -1,7 +1,7 @@
 /**
- * 헤더 언어(사용자 요청 2026-10-23): 브라우저 UI 언어(`chrome.i18n.getUILanguage()`)가 ko 계열이면 한국어, 그 밖은 영어.
- * 영어 로케일(en-US)과 그 밖의 언어(ja-JP)에서 툴바·검색창·저장 메뉴·상태 줄·알림 줄·정보와 저장 확인 대화상자가 영어이고,
- * 한국어 로케일은 한국어인지 확인한다. 로케일은 Playwright `locale`(Linux Chromium 은 `--lang` 을 무시한다, e2e/locale.ts).
+ * Header language (user request 2026-10-23): Korean if the browser UI language (`chrome.i18n.getUILanguage()`) is a ko variant, English otherwise.
+ * Checks that with the English locale (en-US) and another language (ja-JP) the toolbar, find bar, save menu, status line, notice line, and about and save-confirmation dialogs are in English,
+ * and that the Korean locale gives Korean. The locale is Playwright `locale` (Linux Chromium ignores `--lang`, e2e/locale.ts).
  */
 import { chromium, expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -19,8 +19,8 @@ interface Env {
 }
 
 /**
- * language 를 주면 Chromium 의 앱 언어(환경 변수 LANGUAGE)도 바꾼다. 확장 메시지(`_locales`, chrome.i18n.getMessage·매니페스트
- * 이름·설명)는 이 언어를 따르고 Playwright `locale` 은 반영되지 않는다(실측, Linux Chromium).
+ * Passing language also changes Chromium's app language (environment variable LANGUAGE). Extension messages (`_locales`, chrome.i18n.getMessage, manifest
+ * name and description) follow this language, and Playwright `locale` is not reflected (measured, Linux Chromium).
  */
 async function withLocale(
   locale: string,
@@ -45,7 +45,7 @@ async function withLocale(
   }
 }
 
-/** 문서를 연 뷰어(`?e2e`, FSA 피커 없음 → 저장은 chrome.downloads). beforeOpen 은 파일을 고르기 전 이음매 손보기. */
+/** A viewer with a document open (`?e2e`, no FSA picker → saving goes through chrome.downloads). beforeOpen is a hook to adjust the seam before picking the file. */
 async function openViewer(
   env: Env,
   width = 1280,
@@ -67,7 +67,7 @@ async function openViewer(
   return page;
 }
 
-/** 머리 영역(툴바·알림 줄·검색창·저장 메뉴)의 보이는 글자와 title·aria-label·placeholder. */
+/** Visible text and title, aria-label and placeholder of the header area (toolbar, notice line, find bar, save menu). */
 function headerTexts(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const out: string[] = [];
@@ -107,14 +107,14 @@ const plan = (heap: Record<string, unknown>) => ({
     limitBytes: 2048 * 2 ** 20,
     fraction: 0.78,
     level: 'ok',
-    // core 힙 문구는 한국어다. 영어 화면은 이 문구 대신 수치로 문구를 만든다.
+    // The core heap message is Korean. The English screen builds its text from the numbers instead of this message.
     message: '예상 피크 WASM 힙 1600 MiB 가 상한 2048 MiB 의 78% 입니다.',
     ...heap,
   },
   edits: null,
 });
 
-test('영어 로케일(en-US): 툴바·검색창·저장 메뉴·쪽 화살표가 영어이고 머리 영역에 한글이 없다', async () => {
+test('English locale (en-US): toolbar, find bar, save menu and page arrows are in English, and the header area has no Hangul', async () => {
   await withLocale('en-US', async (env) => {
     const page = await openViewer(env);
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
@@ -140,7 +140,7 @@ test('영어 로케일(en-US): 툴바·검색창·저장 메뉴·쪽 화살표�
     await expect(page.locator('#pe-arrow-prev')).toHaveAttribute('aria-label', 'Previous page');
     await expect(page.locator('#pe-arrow-next')).toHaveAttribute('aria-label', 'Next page');
 
-    // 저장 메뉴(진단 표시가 꺼져 있으면 두 항목)
+    // Save menu (two items when the diagnostics display is off)
     await page.click('#save-menu-button');
     await expect(page.locator('#save')).toHaveText(/^\s*Save\s*Ctrl\+S\s*$/);
     await expect(page.locator('#save-as')).toHaveText('Save as');
@@ -148,7 +148,7 @@ test('영어 로케일(en-US): 툴바·검색창·저장 메뉴·쪽 화살표�
     for (const s of await headerTexts(page)) expect(s, '저장 메뉴').not.toMatch(HANGUL);
     await page.keyboard.press('Escape');
 
-    // 검색창: 결과 없음·이전/다음·대소문자·닫기
+    // Find bar: no results, previous/next, case sensitivity, close
     await page.keyboard.press('Control+f');
     await expect(page.locator('#pe-find-input')).toHaveAttribute('placeholder', 'Find in document');
     await page.locator('#pe-find-input').fill('zzqqxx');
@@ -162,9 +162,9 @@ test('영어 로케일(en-US): 툴바·검색창·저장 메뉴·쪽 화살표�
   });
 });
 
-test('영어 로케일: 알림 줄·상태 줄·저장 확인·정보 대화상자가 영어다', async () => {
+test('English locale: notice line, status line, save confirmation and about dialog are in English', async () => {
   await withLocale('en-US', async (env) => {
-    // 알림 줄: 크기 안내(열린 바이트 800 MiB)·Redact 보고
+    // Notice line: size notice (opened bytes 800 MiB), Redact report
     const page = await openViewer(env, 1280, async (p) => {
       await p.evaluate(() => {
         const pdf = (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf;
@@ -180,7 +180,7 @@ test('영어 로케일: 알림 줄·상태 줄·저장 확인·정보 대화상�
     await expect(redact.locator('button')).toHaveAttribute('title', 'Close');
     for (const s of await headerTexts(page)) expect(s, '알림 줄').not.toMatch(HANGUL);
 
-    // 저장 확인 대화상자(warn): core 한국어 문구 대신 영어 문구, 버튼 Cancel·Save
+    // Save confirmation dialog (warn): English text instead of the core Korean text, buttons Cancel and Save
     await page.evaluate(
       (p) => {
         (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf.planSave =
@@ -199,7 +199,7 @@ test('영어 로케일: 알림 줄·상태 줄·저장 확인·정보 대화상�
     await dialog.locator('[data-dialog-button="cancel"]').click();
     await expect(page.locator('#status')).toHaveText('Save cancelled');
 
-    // 저장(FSA 없음 → 다운로드): 상태 줄 "Saved: Downloads"
+    // Save (no FSA → download): status line "Saved: Downloads"
     await page.evaluate((p) => {
       (window as unknown as { __pe: { pdf: Record<string, unknown> } }).__pe.pdf.planSave =
         async () => p;
@@ -212,7 +212,7 @@ test('영어 로케일: 알림 줄·상태 줄·저장 확인·정보 대화상�
     await expect(page.locator('#status')).toHaveAttribute('data-state', 'saved');
     await expect(page.locator('#status')).toHaveText('Saved: Downloads');
 
-    // 정보 대화상자
+    // About dialog
     await page.click('#about');
     await expect(dialog.locator('h2')).toHaveText('About PDF Editor');
     await expect(dialog).toContainText('Version ');
@@ -223,7 +223,7 @@ test('영어 로케일: 알림 줄·상태 줄·저장 확인·정보 대화상�
   });
 });
 
-test('그 밖의 언어(ja-JP)는 영어, 한국어 로케일(ko-KR)은 한국어', async () => {
+test('other languages (ja-JP) give English, the Korean locale (ko-KR) gives Korean', async () => {
   await withLocale('ja-JP', async (env) => {
     const page = await openViewer(env);
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
@@ -242,7 +242,7 @@ test('그 밖의 언어(ja-JP)는 영어, 한국어 로케일(ko-KR)은 한국�
   });
 });
 
-test('확장 이름·설명·툴바 제목(_locales, 사용자 결정 2026-10-26): ko 는 한국어, en·ja 는 영어(기본 en)', async () => {
+test('extension name, description and toolbar title (_locales, user decision 2026-10-26): ko is Korean, en and ja are English (default en)', async () => {
   const cases = [
     { locale: 'ko-KR', language: 'ko', ko: true },
     { locale: 'en-US', language: 'en_US', ko: false },
@@ -262,7 +262,7 @@ test('확장 이름·설명·툴바 제목(_locales, 사용자 결정 2026-10-26
             uiLanguage: chrome.i18n.getUILanguage(),
           };
         });
-        // 개발 빌드(dist)는 이름에 " (dev)" 가 붙는다(스토어 빌드는 release-smoke.spec.ts).
+        // The development build (dist) has " (dev)" appended to the name (the store build is in release-smoke.spec.ts).
         expect(m.name, c.language).toBe('PDF Editor (dev)');
         if (c.ko) {
           expect(m.description).toBe(
@@ -282,11 +282,11 @@ test('확장 이름·설명·툴바 제목(_locales, 사용자 결정 2026-10-26
   }
 });
 
-// ── 쪽 위 편집 UI·편집 제한 사유(사용자 결정 2026-10-26) ─────────────────────
+// ── Page editing UI and edit restriction reasons (user decision 2026-10-26) ──────
 
 /**
- * 1쪽 PDF: 글자 한 줄(편집 가능), 90° 돌린 글자(vertical-or-rotated), 채움 사각형(편집 가능 패스), 클립을 겸하는 칠하기
- * (clip-path). 좌표는 PDF 공간(아래 원점).
+ * 1-page PDF: one line of text (editable), text rotated 90° (vertical-or-rotated), a filled rectangle (editable path), a fill that doubles as a clip
+ * (clip-path). Coordinates are in PDF space (origin at the bottom).
  */
 function editUiPdf(): Buffer {
   const content =
@@ -314,7 +314,7 @@ function editUiPdf(): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
-/** 쪽 공간(pt, 위 원점) → 화면 좌표. */
+/** Page space (pt, origin at the top) → screen coordinates. */
 function pageAt(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
   return page.evaluate(
     ([px, py]) => {
@@ -350,7 +350,7 @@ async function openEditUiPdf(env: Env): Promise<Page> {
   return page;
 }
 
-/** 요소 안의 보이는 글자와 title·aria-label. */
+/** Visible text and title, aria-label of an element. */
 function visibleTexts(page: Page, selector: string): Promise<string[]> {
   return page.evaluate((sel) => {
     const root = document.querySelector(sel);
@@ -370,11 +370,11 @@ function visibleTexts(page: Page, selector: string): Promise<string[]> {
   }, selector);
 }
 
-test('영어 로케일: 편집 불가 팝오버·제한 사유·패스 패널·편집 가능 표시 범례·툴팁이 영어다', async () => {
+test('English locale: non-editable popover, restriction reasons, path panel, editability overlay legend and tooltips are in English', async () => {
   await withLocale('en-US', async (env) => {
     const page = await openEditUiPdf(env);
 
-    // 편집 가능 표시 범례(레이아웃과 함께)
+    // Editability overlay legend (together with the layout)
     await page.click('#pe-overlay-toggle');
     const legend = page.locator('#pe-marks-legend');
     await expect(legend).toBeVisible();
@@ -383,15 +383,15 @@ test('영어 로케일: 편집 불가 팝오버·제한 사유·패스 패널·�
     await expect(legend).toContainText('Thick line = paragraph or table cell, thin line = path');
     for (const s of await visibleTexts(page, '#pe-marks-legend')) expect(s).not.toMatch(HANGUL);
 
-    // 돌린 글자 위 툴팁: 종류·사유 영어
+    // Tooltip over rotated text: kind and reason in English
     const rotated = await pageAt(page, 513, 220);
     await page.mouse.move(rotated.x, rotated.y);
     const tip = page.locator('#pe-mark-tip');
     await expect(tip).toHaveText(/^Paragraph · Restricted: /);
     await expect(tip).toContainText('Vertical or rotated text cannot be edited.');
-    await page.click('#pe-overlay-toggle'); // 끄고 편집 진입
+    await page.click('#pe-overlay-toggle'); // turn it off and enter editing
 
-    // 편집 불가 팝오버(core 판정 vertical-or-rotated → 영어 사유)
+    // Non-editable popover (core classification vertical-or-rotated → English reason)
     await page.mouse.dblclick(rotated.x, rotated.y);
     const pop = page.locator('#pe-edit-popover');
     await expect(pop).toBeVisible();
@@ -402,7 +402,7 @@ test('영어 로케일: 편집 불가 팝오버·제한 사유·패스 패널·�
     await page.keyboard.press('Escape');
     await expect(pop).toHaveCount(0);
 
-    // 패스 패널: 편집 가능한 채움 사각형(Alt+클릭)
+    // Path panel: editable filled rectangle (Alt+click)
     const altSelect = async (x: number, y: number, panelText: RegExp) => {
       await expect(async () => {
         const p = await pageAt(page, x, y);
@@ -426,7 +426,7 @@ test('영어 로케일: 편집 불가 팝오버·제한 사유·패스 패널·�
     await expect(page.locator('#pe-path-clear')).toHaveText('Clear selection');
     for (const s of await visibleTexts(page, '#pe-path-panel')) expect(s).not.toMatch(HANGUL);
 
-    // 클립을 겸하는 칠하기: 제한 사유 영어(core 한국어 설명 대신 사유 코드 문구)
+    // Fill that doubles as a clip: restriction reason in English (reason code text instead of the core Korean description)
     await page.click('#pe-path-clear');
     await altSelect(200, 342, /clipping area/);
     await expect(page.locator('#pe-path-note li')).toHaveText([
@@ -435,7 +435,7 @@ test('영어 로케일: 편집 불가 팝오버·제한 사유·패스 패널·�
     for (const s of await visibleTexts(page, '#pe-path-panel')) expect(s).not.toMatch(HANGUL);
     await page.click('#pe-path-clear');
 
-    // 편집기 안 안내(편집 쪽 기록 안내·입력 이름)
+    // In-editor guidance (edit-page record notice and input names)
     const line = await pageAt(page, 150, 37);
     await page.mouse.dblclick(line.x, line.y);
     await expect(page.locator('#pe-edit-layer')).toBeVisible();

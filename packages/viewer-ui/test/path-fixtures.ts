@@ -1,6 +1,6 @@
 /**
- * 테스트용 합성 패스(PageModel.paths·PathEditability). 단위 시험과 Playwright 하니스가 함께 쓴다.
- * 이 파일은 타입 import 외에 다른 import 를 두지 않는다(하니스가 JS 로 바꿔 싣는다).
+ * Synthetic paths for tests (PageModel.paths, PathEditability). Shared by unit tests and the Playwright harness.
+ * This file has no imports other than type imports (the harness converts it to JS and loads it).
  */
 import type { PathEditability, PathInfo, PathSegment, Rect } from '@pdf-editor/shared-types';
 

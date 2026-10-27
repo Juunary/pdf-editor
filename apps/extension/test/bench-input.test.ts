@@ -7,8 +7,8 @@ import {
   tabInputWarnings,
 } from '../src/viewer/bench-input.js';
 
-describe('bench-input 탭 메모리 입력', () => {
-  it('작업 관리자 K 값을 MiB 로 바꾼다(쉼표·접미사 허용)', () => {
+describe('bench-input tab memory input', () => {
+  it('converts the Task Manager K value to MiB (commas and suffix allowed)', () => {
     expect(parseTabInput('272940', 'K')).toEqual({ mib: 272940 / 1024, raw: '272940', unit: 'K' });
     expect(parseTabInput('272,940K', 'MiB')).toMatchObject({ mib: 272940 / 1024, unit: 'K' });
     expect(parseTabInput(' 983.7 ', 'MiB')).toMatchObject({ mib: 983.7, unit: 'MiB' });
@@ -16,14 +16,14 @@ describe('bench-input 탭 메모리 입력', () => {
     expect(parseTabInput('266 MB', 'K')).toMatchObject({ mib: 266, unit: 'MiB' });
   });
 
-  it('숫자가 아니거나 0 이하면 null', () => {
+  it('null if not a number or 0 or less', () => {
     expect(parseTabInput('', 'K').mib).toBeNull();
     expect(parseTabInput('abc', 'K').mib).toBeNull();
     expect(parseTabInput('0', 'MiB').mib).toBeNull();
     expect(parseTabInput('-5', 'MiB').mib).toBeNull();
   });
 
-  it('Windows 1차 입력(세 시점 42420 K)은 같은 값 경고, 세 번째는 모두 같음 경고', () => {
+  it('Windows first-round input (three points at 42420 K) gives the same-value warning, and the third gives the all-same warning', () => {
     const v = 42420 / 1024;
     expect(tabInputWarnings(v, [], 32768)).toEqual([]);
     expect(tabInputWarnings(v, [v], 32768)).toEqual([
@@ -34,7 +34,7 @@ describe('bench-input 탭 메모리 입력', () => {
     ]);
   });
 
-  it('Windows 2차 입력(272940 → 10007300 → 1007300 K)은 자릿수 경고', () => {
+  it('Windows second-round input (272940 → 10007300 → 1007300 K) gives the magnitude warning', () => {
     const base = 272940 / 1024;
     const typo = 10007300 / 1024;
     const settled = 1007300 / 1024;
@@ -46,15 +46,15 @@ describe('bench-input 탭 메모리 입력', () => {
     ]);
   });
 
-  it('RAM 초과·10 MiB 미만(단위 잘못 고름)', () => {
+  it('exceeding RAM, and under 10 MiB (wrong unit chosen)', () => {
     expect(tabInputWarnings(40000, [], 32768)).toEqual(['RAM(32768 MiB)보다 큽니다']);
     expect(tabInputWarnings(0.26, [], null)).toEqual(['10 MiB 미만입니다(단위 확인)']);
     expect(tabInputWarnings(300, [280], null)).toEqual([]);
   });
 });
 
-describe('bench-input 쪽 판정 지정 쪽', () => {
-  it('fixtures/bench/manifest.json 의 judgePages 와 같다', () => {
+describe('bench-input pages designated for page classification', () => {
+  it('matches judgePages in fixtures/bench/manifest.json', () => {
     const manifest = JSON.parse(
       readFileSync(new URL('../../../fixtures/bench/manifest.json', import.meta.url), 'utf8'),
     ) as { documents: { id: string; judgePages?: number[] }[] };
@@ -64,7 +64,7 @@ describe('bench-input 쪽 판정 지정 쪽', () => {
     expect(KNOWN_JUDGE_PAGES).toEqual(fromManifest);
   });
 
-  it('파일 이름으로 문서 id·지정 쪽을 찾는다', () => {
+  it('finds the document id and designated pages from the file name', () => {
     expect(benchDocOfFile('kogl-mods-cpi-202609.pdf')).toEqual({
       id: 'kogl-mods-cpi-202609',
       judgePages: [3],

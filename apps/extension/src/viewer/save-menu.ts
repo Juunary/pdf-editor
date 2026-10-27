@@ -1,22 +1,22 @@
 /**
- * 툴바 저장 메뉴(사용자 요청 2026-10-22): 프린터 아이콘 버튼 하나가 작은 메뉴(저장 / 다른 이름으로 저장 / 개발 빌드만
- * downloads 저장)를 연다. 메뉴 버튼 패턴(WAI-ARIA APG Menu Button)을 따른다.
+ * Toolbar save menu (user request 2026-10-22): a single printer-icon button opens a small menu ("저장" (Save) / "다른 이름으로 저장" (Save As) / dev builds only
+ * downloads save). Follows the menu button pattern (WAI-ARIA APG Menu Button).
  *
- * - 버튼: 클릭·Enter·Space·↓ 는 열고 첫 항목에, ↑ 는 열고 마지막 항목에 초점.
- * - 메뉴: ↑↓(순환)·Home·End 이동, Enter·Space 실행(항목은 button), Esc 는 닫고 버튼으로, Tab 은 닫기.
- * - 바깥을 누르거나 창이 초점을 잃으면 닫는다. 열 때와 창 크기가 바뀔 때 화면 안에 들어오게 가로 위치를 맞춘다.
+ * - Button: click, Enter, Space and ↓ open and focus the first item; ↑ opens and focuses the last item.
+ * - Menu: ↑↓ (wrapping), Home and End move; Enter and Space activate (items are buttons); Esc closes and returns to the button; Tab closes.
+ * - Clicking outside or the window losing focus closes it. On open and on window resize, the horizontal position is adjusted to stay on screen.
  *
- * 메뉴는 머리 영역 안에 있어 머리 영역 확대 보정(CSS zoom)을 같이 받는다. 위치 계산은 화면 좌표와 메뉴 자체 좌표의
- * 비(`getBoundingClientRect().width / offsetWidth`)로 바꿔 쓴다.
+ * The menu is inside the header area, so it also receives the header zoom compensation (CSS zoom). Position calculation uses the ratio of screen coordinates to the menu's own coordinates
+ * (`getBoundingClientRect().width / offsetWidth`) to convert.
  */
 
-/** 화면 가장자리와 메뉴 사이 여백(머리 영역 px). */
+/** Margin between the screen edge and the menu (header-area px). */
 const EDGE_MARGIN = 4;
 
 export interface SaveMenuOptions {
   button: HTMLButtonElement;
   menu: HTMLElement;
-  /** 항목을 골랐을 때(메뉴를 닫은 뒤) 그 항목 id 로 부른다. */
+  /** Called with the item id when an item is chosen (after the menu closes). */
   onChoose(id: string): void;
 }
 
@@ -26,7 +26,7 @@ export interface SaveMenu {
   isOpen(): boolean;
 }
 
-/** 보이는(좁은 배치에서 숨긴 항목 제외) 메뉴 항목. */
+/** Visible menu items (excluding items hidden in the narrow layout). */
 function visibleItems(menu: HTMLElement): HTMLButtonElement[] {
   return [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].filter(
     (el) => !el.disabled && el.getClientRects().length > 0,
@@ -36,12 +36,12 @@ function visibleItems(menu: HTMLElement): HTMLButtonElement[] {
 export function setupSaveMenu({ button, menu, onChoose }: SaveMenuOptions): SaveMenu {
   const isOpen = () => !menu.hidden;
 
-  /** 메뉴가 화면 밖으로 나가지 않게 가로 위치(left)와 최대 높이를 맞춘다. */
+  /** Adjusts the horizontal position (left) and max height so the menu does not go off screen. */
   const place = () => {
     menu.style.left = '0px';
     menu.style.maxHeight = '';
     const r = menu.getBoundingClientRect();
-    const k = menu.offsetWidth > 0 ? r.width / menu.offsetWidth : 1; // 화면 px / 메뉴 px
+    const k = menu.offsetWidth > 0 ? r.width / menu.offsetWidth : 1; // screen px per menu px
     const vw = document.documentElement.clientWidth;
     const vh = document.documentElement.clientHeight;
     const m = EDGE_MARGIN * k;
@@ -117,7 +117,7 @@ export function setupSaveMenu({ button, menu, onChoose }: SaveMenuOptions): Save
         break;
       case 'Escape':
         e.preventDefault();
-        e.stopPropagation(); // 검색창 닫기 등 문서 단축키로 넘기지 않는다
+        e.stopPropagation(); // do not hand off to document shortcuts such as closing the search box
         close(true);
         break;
       case 'Tab':
@@ -133,7 +133,7 @@ export function setupSaveMenu({ button, menu, onChoose }: SaveMenuOptions): Save
     onChoose(item.id);
   });
 
-  // 바깥 누름: 버튼·메뉴 밖이면 닫는다(초점은 옮기지 않는다).
+  // Outside press: close if outside the button and menu (focus is not moved).
   document.addEventListener(
     'pointerdown',
     (e) => {

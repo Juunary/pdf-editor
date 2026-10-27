@@ -1,6 +1,6 @@
 /**
- * M3 통합 e2e(실제 core 편집 RPC). 2026-10-20 m3 통합에서 켰다(docs/m3-viewer-ui.md 5절, docs/m3-integration.md).
- * 본문은 가짜 호스트로 검증한 같은 DOM 식별자(`#pe-edit-*`)와 `?e2e` 이음매(`window.__pe`)를 쓴다.
+ * M3 integration e2e (real core edit RPC). Enabled in the 2026-10-20 m3 integration (docs/m3-viewer-ui.md section 5, docs/m3-integration.md).
+ * The body uses the same DOM identifiers (`#pe-edit-*`) and `?e2e` seam (`window.__pe`) as verified with the fake host.
  */
 import {
   chromium,
@@ -30,7 +30,7 @@ interface PeWindow {
   };
 }
 
-test.describe('통합(실제 core 편집 RPC 필요)', () => {
+test.describe('integration (requires real core edit RPC)', () => {
   let context: BrowserContext;
   let userDataDir: string;
   let extensionId: string;
@@ -61,12 +61,12 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await expect(page.locator('#status')).toHaveAttribute('data-state', 'rendered', {
       timeout: 30_000,
     });
-    // 편집이 켜져 있어야 한다(기능이 꺼지면 #pe-notice 에 "문단 편집" 안내가 생긴다).
+    // Editing must be on (if the feature is off, #pe-notice gets a "문단 편집" notice).
     await expect(page.locator('#pe-notice', { hasText: '문단 편집' })).toHaveCount(0);
     return page;
   }
 
-  /** 쪽 0 의 첫 편집 가능 문단의 화면 좌표(문단 가운데). */
+  /** Screen coordinates of the first editable paragraph on page 0 (paragraph center). */
   async function firstEditable(page: Page): Promise<{ x: number; y: number; id: number }> {
     const info = await page.evaluate(async () => {
       const pe = (window as unknown as PeWindow).__pe;
@@ -96,7 +96,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     return page.context().newCDPSession(page);
   }
 
-  test('DoD 흐름: 한글 조합 → 확정 → 커밋 → 저장 → 재열기 → 검색·복사 텍스트 → 같은 문단 재편집', async () => {
+  test('DoD flow: Korean composition → commit → save → reopen → search/copy text → re-edit the same paragraph', async () => {
     const page = await open(SAMPLE);
     const p = await firstEditable(page);
     await page.mouse.dblclick(p.x, p.y);
@@ -111,7 +111,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     expect(await editorText(page)).toContain('한');
     await page.keyboard.press('Escape');
     await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
-    // 저장(downloads 경로) 후 재열기
+    // Save (downloads path), then reopen
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       chooseSave(page, 'save-downloads'),
@@ -126,14 +126,14 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
       return m.chars.map((c) => c.text).join('');
     });
     expect(text).toContain('한');
-    // 같은 문단을 새 세션에서 다시 편집할 수 있다(편집 블록 재편집, /PdfEditorFormat).
+    // The same paragraph can be edited again in a new session (edit block re-edit, /PdfEditorFormat).
     const q = await firstEditable(reopened);
     await reopened.mouse.dblclick(q.x, q.y);
     await expect(reopened.locator('#pe-edit-layer')).toBeVisible();
     expect(await editorText(reopened)).toContain('한');
   });
 
-  test('편집 반응 시간(계약 8.4): 입력 → 변경 영역 합성 p95 ≤ 100 ms(잠정, 측정 뒤 사용자 확인으로 고정)', async () => {
+  test('edit response time (contract 8.4): input → changed region compositing p95 ≤ 100 ms (provisional, fixed by user confirmation after measurement)', async () => {
     const page = await open(SAMPLE);
     const p = await firstEditable(page);
     await page.mouse.dblclick(p.x, p.y);
@@ -154,19 +154,19 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     expect(p95).toBeLessThanOrEqual(100);
   });
 
-  test('폴백(한글)·없는 글자 경고가 실제 plan/draft 경고와 일치', async () => {
+  test('fallback (Korean) and missing-glyph warnings match the real plan/draft warnings', async () => {
     const page = await open(SAMPLE);
     const p = await firstEditable(page);
     await page.mouse.dblclick(p.x, p.y);
     await expect(page.locator('#pe-edit-layer')).toBeVisible();
     const client = await cdp(page);
-    await client.send('Input.insertText', { text: '한글' }); // 영문 서브셋 폰트에 없는 글자 → 폴백
+    await client.send('Input.insertText', { text: '한글' }); // a glyph absent from the English subset font → fallback
     await page.waitForFunction(
       () => document.getElementById('pe-edit-layer')?.getAttribute('data-updating') === '0',
     );
     await expect(page.locator('.pe-edit-fb')).not.toHaveCount(0);
     await expect(page.locator('#pe-edit-warnings li[data-kind="font-fallback"]')).toBeVisible();
-    await client.send('Input.insertText', { text: '' }); // 폴백에도 없는 사설 영역 글자
+    await client.send('Input.insertText', { text: '' }); // a private-use-area glyph absent even from the fallback
     await page.waitForFunction(
       () => document.getElementById('pe-edit-layer')?.getAttribute('data-updating') === '0',
     );
@@ -174,7 +174,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await expect(page.locator('#pe-edit-warnings li[data-kind="glyph-missing"]')).toBeVisible();
   });
 
-  test('저널 상한(D4, M5 C7): 커밋 뒤 journalAdvice 를 묻고, advised 이면 저장 후 다시 열기 알림을 보인다', async () => {
+  test('journal cap (D4, M5 C7): asks journalAdvice after a commit, and if advised shows the save-and-reopen notice', async () => {
     const page = await open(SAMPLE);
     const p = await firstEditable(page);
     const client = await cdp(page);
@@ -186,7 +186,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
         }[]
       ).filter((e) => e.event === 'journal-advice');
 
-    // 1) 실제 Worker 판정: 커밋 뒤 저널 보유 추정이 오고, 작은 문서라 권고는 없다.
+    // 1) Real Worker classification: after a commit the journal holding estimate arrives, and for a small document there is no advice.
     await page.mouse.dblclick(p.x, p.y);
     await expect(page.locator('#pe-edit-layer')).toBeVisible();
     await client.send('Input.insertText', { text: '저널' });
@@ -198,7 +198,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     expect(real!.data.journalBytes).toBeGreaterThan(0);
     await expect(page.locator('#notice-bar [data-notice="journal"]')).toHaveCount(0);
 
-    // 2) 값 주입: 판정이 advised 이면 알림 줄에 저널 크기·경고선과 함께 권고가 뜬다.
+    // 2) Value injection: if the classification is advised, the notice line shows the advice together with the journal size and warning line.
     await page.evaluate(() => {
       const MIB = 2 ** 20;
       (window as unknown as PeWindow).__pe.pdf.journalAdvice = async () => ({
@@ -223,9 +223,9 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await page.close();
   });
 
-  test('Worker 치명 오류 → 복구 → replayEdits 결과 = 복구 전 화면(D6, A3-3)', async () => {
-    // 복구는 활성 로그만 다시 적용하고 undo 이력은 잃는다(계약 D6). 그래서 편집 두 번 뒤 undo 의 렌더에서 트랩을 내고,
-    // 복구 결과가 첫 편집만 반영한 화면과 같은지 본다(비어 있지 않은 로그의 재적용).
+  test('Worker fatal error → recovery → replayEdits result = screen before recovery (D6, A3-3)', async () => {
+    // Recovery reapplies only the active log and loses the undo history (contract D6). So after two edits the trap is raised in the render of undo,
+    // and we check that the recovery result equals the screen reflecting only the first edit (reapply of a non-empty log).
     const page = await open(SAMPLE);
     const p = await firstEditable(page);
     const client = await cdp(page);
@@ -242,8 +242,8 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await expect(page.locator('#pe-doc-undo')).toBeEnabled();
     const afterFirst = await canvas();
 
-    // 커밋 뒤 쪽 편집 가능 정보가 다시 올 때까지 기다린다(그 전 더블클릭은 대상 문단을 모른다).
-    // 마우스가 이미 그 자리에 있으면 이동 이벤트가 없어 테두리가 갱신되지 않으므로 비켰다가 다시 올린다.
+    // Wait until the page's editable info arrives again after the commit (a double-click before that does not know the target paragraph).
+    // If the mouse is already at that spot there is no move event and the border is not refreshed, so move it away and back.
     await page.mouse.move(1, 1);
     await page.mouse.move(p.x, p.y, { steps: 3 });
     await expect(page.locator('#pe-edit-hover[data-editable="1"]')).toBeVisible();
@@ -254,7 +254,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
     expect(await canvas()).not.toBe(afterFirst);
 
-    // 다음 renderPage 가 wasm 트랩(RuntimeError)을 내도록 지금 Worker 핸들을 감싼다.
+    // Wrap the current Worker handle so that the next renderPage raises a wasm trap (RuntimeError).
     await page.evaluate(() => {
       const handle = (window as unknown as PeWindow).__pe.pdf.current as { api: unknown };
       const real = handle.api as Record<string, (...a: unknown[]) => Promise<unknown>>;
@@ -285,7 +285,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     );
     await expect.poll(canvas, { timeout: 30_000 }).toBe(afterFirst);
   });
-  test('복구 기준점(D4): 저장 → 편집 → 복구는 저장 바이트에서 저장 뒤 편집만 다시 적용하고 진행 n/N 을 보인다', async () => {
+  test('recovery checkpoint (D4): save → edit → recovery reapplies only the post-save edits on the saved bytes and shows progress n/N', async () => {
     const page = await open(SAMPLE);
     const client = await cdp(page);
     const canvas = () =>
@@ -293,7 +293,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
         (document.getElementById('page-canvas') as HTMLCanvasElement).toDataURL(),
       );
     const editOnce = async (text: string) => {
-      // 저장 뒤 알림 줄이 생기면 쪽이 내려가므로 자리를 매번 다시 잰다.
+      // A notice line appearing after save pushes the page down, so re-measure the position each time.
       const q = await firstEditable(page);
       await page.mouse.move(1, 1);
       await page.mouse.move(q.x, q.y, { steps: 3 });
@@ -326,13 +326,13 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     ]);
     await download.path();
     await expect(page.locator('#status')).toHaveAttribute('data-state', 'saved');
-    // 저장 뒤 같은 블록을 두 번 더 고치고 마지막 것을 되돌린다: 활성 = [저장 전 1건, 저장 뒤 1건].
+    // After save, edit the same block twice more and undo the last: active = [1 pre-save, 1 post-save].
     await editOnce('저장뒤');
     const afterSecond = await canvas();
     const textAfterSecond = await pageText();
     await editOnce('셋째');
 
-    // 다음 progress 표시를 모두 남겨 둔다(알림 칸은 마지막 문구로 바뀐다).
+    // Keep every following progress display (the notice slot changes to the last text).
     await page.evaluate(() => {
       const bar = document.getElementById('notice-bar')!;
       const seen: string[] = [];
@@ -370,7 +370,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
       () => (window as unknown as PeWindow).__pe.controller.getState().edit.session === null,
     );
     await expect.poll(canvas, { timeout: 30_000 }).toBe(afterSecond);
-    // 저장 전 편집은 한 번만 들어 있다(기준점 + 저장 뒤 편집만 재적용).
+    // The pre-save edit appears only once (checkpoint + reapply of only post-save edits).
     const text = await pageText();
     expect(text).toBe(textAfterSecond);
     expect(text.split('저장전').length - 1).toBe(1);
@@ -384,7 +384,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     await page.close();
   });
 
-  test('B1·9.6(docs/m3-integration.md 9절): 커밋한 블록은 레이아웃 문단 하나, 오버레이 상자 하나, 마우스 오버 테두리 하나', async () => {
+  test('B1·9.6 (docs/m3-integration.md section 9): a committed block is one layout paragraph, one overlay box, one hover border', async () => {
     const page = await open(SAMPLE);
     const geo = () =>
       page.evaluate(async () => {
@@ -406,7 +406,7 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
       });
     const before = (await geo()).paragraphs;
     const target = before.find((p) => p.text.startsWith('This paragraph'))!;
-    // 편집 판정이 올 때까지 기다린다(그 전 더블클릭은 대상 문단을 모른다).
+    // Wait until the edit classification arrives (a double-click before that does not know the target paragraph).
     await page.mouse.move(target.x, target.y, { steps: 3 });
     await expect(page.locator('#pe-edit-hover[data-editable="1"]')).toBeVisible();
     await page.mouse.dblclick(target.x, target.y);
@@ -420,14 +420,14 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     );
     await page.keyboard.press('Escape');
     await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
-    // 9.6: M2 규칙만으로는 강제 줄바꿈 뒤 짧은 줄이 다른 문단이지만, 편집 블록 힌트로 레이아웃 문단 하나다.
+    // 9.6: with M2 rules alone, the short line after a forced line break is a different paragraph, but with the edit block hint it is one layout paragraph.
     await expect
       .poll(async () =>
         (await geo()).paragraphs.filter((p) => p.text.includes('Short line')).map((p) => p.text),
       )
       .toEqual(['Short line one. Short line two.']);
     const after = (await geo()).paragraphs;
-    // 문단 하나가 문단 하나로 바뀌었다(다른 문단은 그대로).
+    // One paragraph was replaced by one paragraph (other paragraphs unchanged).
     expect(after).toHaveLength(before.length);
     const block = after.find((p) => p.text.startsWith('Short line'))!;
     const hoverAt = async (x: number, y: number) => {
@@ -445,10 +445,10 @@ test.describe('통합(실제 core 편집 RPC 필요)', () => {
     const a = await hoverAt(block.x, y1);
     const b = await hoverAt(block.x, y2);
     expect(b.id).toBe(a.id);
-    // 테두리 하나가 두 줄을 모두 덮는다.
+    // One border covers both lines.
     expect(a.box.y).toBeLessThan(y1);
     expect(a.box.y + a.box.height).toBeGreaterThan(y2);
-    // 레이아웃 오버레이: 상자 수(문단 수)가 편집 전과 같다(블록이 상자 여럿으로 갈라지지 않음).
+    // Layout overlay: the box count (paragraph count) equals that before the edit (the block is not split into multiple boxes).
     await page.mouse.move(1, 1);
     await page.locator('#pe-overlay-toggle').click();
     const canvas = page.locator('#pe-layout-canvas');

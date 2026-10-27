@@ -10,7 +10,7 @@ import {
   subsetFontBytes,
 } from '../src/index.js';
 
-/** A7-1: 폴백 폰트만 서브셋한다. 편집 중인 문서에서는 subsetFonts() 를 부르지 않는다. */
+/** A7-1: subset only the fallback font. subsetFonts() is not called on a document being edited. */
 const FONT_PATH = fileURLToPath(
   new URL('../../../assets/fonts/NotoSansKR-Regular-subset.ttf', import.meta.url),
 );
@@ -45,7 +45,7 @@ function renderWith(bytes: Uint8Array, gids: number[]): Uint8ClampedArray {
 }
 
 describe('subsetFontBytes(A7-1)', () => {
-  it('쓰는 글리프만 남겨 크게 줄이고, glyph id 를 유지해 렌더가 원래 폰트와 같다', () => {
+  it('keeps only the used glyphs to shrink greatly, and keeps glyph ids so the render matches the original font', () => {
     const gids = gidsFor(TEXT);
     expect(gids.every((g) => g > 0)).toBe(true);
     const subset = subsetFontBytes('NotoSansKR', FONT, gids);
@@ -60,8 +60,8 @@ describe('subsetFontBytes(A7-1)', () => {
   });
 });
 
-describe('embedFont(subsetGids) 는 문서의 다른 폰트를 바꾸지 않는다(C1)', () => {
-  /** 임베드된 단순 TrueType 폰트(소수 /Widths 포함)를 쓰는 1쪽 문서. */
+describe('embedFont(subsetGids) does not change other fonts in the document (C1)', () => {
+  /** A 1-page document using an embedded simple TrueType font (with fractional /Widths). */
   function docWithSimpleFont(): { doc: mupdf.PDFDocument; widths: string; fileLength: number } {
     const doc = new mupdf.PDFDocument();
     const simple = doc.addSimpleFont(new mupdf.Font('NotoSansKR', FONT), 'Latin');
@@ -80,7 +80,7 @@ describe('embedFont(subsetGids) 는 문서의 다른 폰트를 바꾸지 않는�
   const simpleOf = (doc: mupdf.PDFDocument) =>
     doc.findPage(0).get('Resources').get('Font').get('F1');
 
-  it('폴백 서브셋 임베드 후 저장해도 원본 단순 폰트의 /Widths·FontFile2 가 그대로다', () => {
+  it('after embedding the fallback subset and saving, /Widths and FontFile2 of the original simple font are unchanged', () => {
     const { doc, widths, fileLength } = docWithSimpleFont();
     embedFont(doc, 'NotoSansKR', FONT, { subsetGids: gidsFor('한글') });
     const re = mupdf.Document.openDocument(
@@ -92,23 +92,23 @@ describe('embedFont(subsetGids) 는 문서의 다른 폰트를 바꾸지 않는�
     expect(f1.get('FontDescriptor').get('FontFile2').readStream().getLength()).toBe(fileLength);
   });
 
-  it('대조: 편집 문서에서 subsetFonts() 를 부르면 원본 단순 폰트도 다시 쓴다', () => {
+  it('control: calling subsetFonts() on an edited document also rewrites the original simple font', () => {
     const { doc, widths, fileLength } = docWithSimpleFont();
     doc.subsetFonts();
     const f1 = simpleOf(doc);
     const changed =
       f1.get('Widths').toString() !== widths ||
       f1.get('FontDescriptor').get('FontFile2').readStream().getLength() !== fileLength;
-    // 이 단언이 실패하면 MuPDF 동작이 바뀐 것이다 → A7-1 재평가.
+    // If this assertion fails, MuPDF behavior changed -> reevaluate A7-1.
     expect(changed).toBe(true);
   });
 });
 
-describe('폴백 폰트는 TrueType(glyf) 전용(PLAN.md 2절 P1)', () => {
-  /** 시스템 CFF OpenType(있을 때만). M1 리뷰 재현 폰트. */
+describe('the fallback font is TrueType (glyf) only (PLAN.md section 2, P1)', () => {
+  /** System CFF OpenType (only when present). The font that reproduces the M1 review. */
   const CFF_OTF = '/usr/share/fonts/opentype/porson/GFSPorson.otf';
 
-  it('fontOutlineFormat: sfnt 머리로 TrueType·CFF·컬렉션을 가른다', () => {
+  it('fontOutlineFormat: tells TrueType, CFF and collections apart by the sfnt header', () => {
     expect(fontOutlineFormat(FONT)).toBe('truetype');
     expect(fontOutlineFormat(new TextEncoder().encode('OTTO\0\0'))).toBe('cff');
     expect(fontOutlineFormat(Uint8Array.from([1, 0, 4, 2, 0]))).toBe('cff');
@@ -117,7 +117,7 @@ describe('폴백 폰트는 TrueType(glyf) 전용(PLAN.md 2절 P1)', () => {
     expect(fontOutlineFormat(new Uint8Array(2))).toBe('unknown');
   });
 
-  it('CFF 머리면 MuPDF 를 부르기 전에 UnsupportedFontError(cff-outlines)', () => {
+  it('a CFF header throws UnsupportedFontError(cff-outlines) before calling MuPDF', () => {
     const fake = new TextEncoder().encode('OTTO not a real font');
     let error: unknown;
     try {
@@ -130,7 +130,7 @@ describe('폴백 폰트는 TrueType(glyf) 전용(PLAN.md 2절 P1)', () => {
   });
 
   it.skipIf(!existsSync(CFF_OTF))(
-    '실제 CFF OTF: embedFont(subsetGids) 가 형식 오류를 내고 편집 문서를 바꾸지 않는다',
+    'real CFF OTF: embedFont(subsetGids) raises a format error and does not change the edited document',
     () => {
       const otf = new Uint8Array(readFileSync(CFF_OTF));
       expect(fontOutlineFormat(otf)).toBe('cff');

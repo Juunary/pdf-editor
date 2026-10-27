@@ -1,10 +1,10 @@
-// Worker RPC 구현. MuPDF 를 로드한다. Worker 에서는 ./worker.ts 가 동적 import 한다.
+// Worker RPC implementation. Loads MuPDF. In the Worker, ./worker.ts imports it dynamically.
 import './wasm-module.js';
 import * as Comlink from 'comlink';
 import type { PdfWorkerApi } from '@pdf-editor/shared-types';
 import { PdfSession } from './session.js';
 
-/** Worker RPC 구현. 렌더·저장 결과의 버퍼는 복사 없이 transfer 한다. */
+/** Worker RPC implementation. Buffers of render and save results are transferred without copying. */
 export function createPdfWorkerApi(session = new PdfSession()): PdfWorkerApi {
   return {
     async open(bytes) {

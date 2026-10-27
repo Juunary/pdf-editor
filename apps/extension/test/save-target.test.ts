@@ -45,7 +45,7 @@ function env(overrides: Partial<SaveEnv> = {}): SaveEnv & { revoked: string[] } 
 }
 
 describe('SaveTarget', () => {
-  it('최초 저장은 FSA 피커, Ctrl+S 재저장은 같은 핸들에 덮어쓴다', async () => {
+  it('first save uses the FSA picker; Ctrl+S re-save overwrites the same handle', async () => {
     const handle = fakeHandle('report-edited.pdf');
     const picker = vi.fn(async () => handle);
     const e = env({ showSaveFilePicker: picker });
@@ -68,7 +68,7 @@ describe('SaveTarget', () => {
     expect(e.downloads!.download).not.toHaveBeenCalled();
   });
 
-  it('교차 출처 하위 프레임(SecurityError)은 downloads(saveAs) 로 폴백', async () => {
+  it('a cross-origin subframe (SecurityError) falls back to downloads (saveAs)', async () => {
     const e = env({
       showSaveFilePicker: async () => {
         throw domError(
@@ -89,7 +89,7 @@ describe('SaveTarget', () => {
     expect(e.revoked).toEqual(['blob:x']);
   });
 
-  it('사용자 취소(AbortError)는 폴백하지 않는다', async () => {
+  it('a user cancel (AbortError) does not fall back', async () => {
     const e = env({
       showSaveFilePicker: async () => {
         throw domError('AbortError');
@@ -100,7 +100,7 @@ describe('SaveTarget', () => {
     expect(e.downloads!.download).not.toHaveBeenCalled();
   });
 
-  it('FSA 미지원 → downloads, downloads 도 없으면 실패', async () => {
+  it('FSA unsupported → downloads; fails if downloads is also missing', async () => {
     const r1 = await new SaveTarget(env()).saveAs(BYTES, 'a');
     expect(r1).toMatchObject({
       channel: 'downloads',
@@ -117,7 +117,7 @@ describe('SaveTarget', () => {
     });
   });
 
-  it('재저장 시 권한이 거부되면 실패로 보고', async () => {
+  it('reports failure when permission is denied on re-save', async () => {
     const handle = fakeHandle('x.pdf', 'prompt');
     handle.requestPermission = vi.fn(async () => 'denied' as PermissionState);
     const t = new SaveTarget(env({ showSaveFilePicker: async () => handle }));
@@ -135,7 +135,7 @@ describe('SaveTarget', () => {
 });
 
 describe('sanitizeFileName', () => {
-  it('경로·예약 문자 제거, 확장자 보장', () => {
+  it('strips path and reserved characters, ensures the extension', () => {
     expect(sanitizeFileName('a/b\\c:d*.pdf')).toBe('a_b_c_d_.pdf');
     expect(sanitizeFileName('보고서')).toBe('보고서.pdf');
     expect(sanitizeFileName('  ')).toBe('document.pdf');

@@ -25,15 +25,15 @@ const B = style(7, { bold: true });
 const runs = (...parts: [string, RunStyle][]): TextRun[] =>
   parts.map(([text, st]) => ({ text, style: st }));
 
-/** 시각을 손으로 움직이는 모델. */
+/** A model whose time is advanced by hand. */
 function model(r: TextRun[], caret?: number) {
   const clock = { t: 1000 };
   const m = new EditorModel(r, { now: () => clock.t, ...(caret === undefined ? {} : { caret }) });
   return { m, clock };
 }
 
-describe('편집 상태', () => {
-  it('runs 를 이어 텍스트·모양 구간을 만들고 같은 모양은 합친다', () => {
+describe('edit state', () => {
+  it('joins runs to build text and style ranges, and merges identical styles', () => {
     const s = createEditorState(runs(['ab', A], ['cd', A], ['EF', B]));
     expect(s.text).toBe('abcdEF');
     expect(s.spans.map((x) => [x.start, x.end, x.style.sourceChar])).toEqual([
@@ -44,17 +44,17 @@ describe('편집 상태', () => {
     expect(() => createEditorState([])).toThrow();
   });
 
-  it('새 글자는 캐럿 앞 글자의 모양을 따르고, 맨 앞이면 뒤 글자의 모양을 따른다', () => {
+  it('new characters follow the style of the character before the caret, or of the next character if at the very start', () => {
     const s = createEditorState(runs(['ab', A], ['CD', B]), 2);
     const mid = insertText(s, 'x');
-    expect(styleAt(mid, 2)?.sourceChar).toBe(0); // 앞 글자 b(A)
+    expect(styleAt(mid, 2)?.sourceChar).toBe(0); // the previous character b(A)
     const atStart = insertText({ ...createEditorState(runs(['ab', A], ['CD', B]), 0) }, 'y');
     expect(styleAt(atStart, 0)?.sourceChar).toBe(0);
     const afterB = insertText(createEditorState(runs(['ab', A], ['CD', B]), 4), 'z');
     expect(styleAt(afterB, 4)?.sourceChar).toBe(7);
   });
 
-  it('선택을 지워 텍스트가 비어도 모양(빈 run)을 유지한다', () => {
+  it('keeps the style (empty run) even if deleting the selection leaves the text empty', () => {
     const { m } = model(runs(['ab', B]));
     m.selectAll();
     m.deleteSelection();
@@ -64,7 +64,7 @@ describe('편집 상태', () => {
     expect(toRuns(m.state)).toEqual([{ text: 'q', style: B }]);
   });
 
-  it('toRuns 는 모양 구간별 텍스트를 돌려준다', () => {
+  it('toRuns returns the text per style range', () => {
     const { m } = model(runs(['ab', A], ['CD', B]), 2);
     m.insertText('x');
     expect(toRuns(m.state)).toEqual([
@@ -74,8 +74,8 @@ describe('편집 상태', () => {
   });
 });
 
-describe('입력·삭제·선택', () => {
-  it('선택을 입력으로 바꾸고 NFC 로 정규화한다', () => {
+describe('input, deletion, selection', () => {
+  it('replaces the selection with input and normalizes to NFC', () => {
     const { m } = model(runs(['hello', A]), 5);
     m.setSelection(1, 3);
     expect(selectedText(m.state)).toBe('el');
@@ -84,7 +84,7 @@ describe('입력·삭제·선택', () => {
     expect(m.state.caret).toBe(2);
   });
 
-  it('입력·붙여넣기·조합 확정의 NBSP 는 공백이 된다', () => {
+  it('NBSP in input, paste and composition commit becomes a space', () => {
     const { m } = model(runs(['', A]));
     m.insertText('a\u00a0b');
     m.paste('c\u00a0d');
@@ -93,7 +93,7 @@ describe('입력·삭제·선택', () => {
     expect(m.state.text).toBe('a bc de f');
   });
 
-  it('분리 입력된 NFD 자모도 이웃 자소와 합쳐 NFC 로 만든다', () => {
+  it('NFD jamo input separately is also combined with neighboring graphemes into NFC', () => {
     const { m } = model(runs(['', A]));
     m.insertText('ᄒ'); // ᄒ
     m.insertText('ᅡ'); // ᅡ
@@ -101,13 +101,13 @@ describe('입력·삭제·선택', () => {
     expect(m.state.caret).toBe(1);
   });
 
-  it('Backspace·Delete 는 자소 단위, Ctrl 이면 단어 단위', () => {
+  it('Backspace and Delete work per grapheme, per word with Ctrl', () => {
     const { m } = model(runs(['aé big', A]));
     m.deleteBackward();
     expect(m.state.text).toBe('aé bi');
     m.moveTo(3);
     m.deleteBackward();
-    expect(m.state.text).toBe('a bi'); // é(결합 문자 2개)를 한 번에 지운다
+    expect(m.state.text).toBe('a bi'); // deletes é (2 combining characters) at once
     m.moveTo(0);
     m.deleteForward();
     expect(m.state.text).toBe(' bi');
@@ -116,14 +116,14 @@ describe('입력·삭제·선택', () => {
     expect(m.state.text).toBe(' ');
   });
 
-  it('줄 맨 앞 Backspace·끝 Delete 는 아무 일도 하지 않는다', () => {
+  it('Backspace at the line start and Delete at the end do nothing', () => {
     const { m } = model(runs(['ab', A]), 0);
     expect(m.deleteBackward()).toBe(false);
     m.moveTo(2);
     expect(m.deleteForward()).toBe(false);
   });
 
-  it('Shift 이동은 선택을 넓히고, 이동 없는 setSelection 은 텍스트를 바꾸지 않는다', () => {
+  it('Shift movement extends the selection, and setSelection without movement does not change the text', () => {
     const { m } = model(runs(['abcd', A]), 1);
     m.moveTo(3, true);
     expect(m.state.anchor).toBe(1);
@@ -133,8 +133,8 @@ describe('입력·삭제·선택', () => {
   });
 });
 
-describe('IME 조합', () => {
-  it('조합 문자열은 텍스트 안에서 교체되고 캐럿은 조합 끝에 있다(I1)', () => {
+describe('IME composition', () => {
+  it('the composition string is replaced within the text and the caret is at the end of the composition (I1)', () => {
     const { m } = model(runs(['ab', A]), 1);
     m.compositionStart();
     m.compositionUpdate('ㅎ');
@@ -150,7 +150,7 @@ describe('IME 조합', () => {
     expect(m.state.text).toBe('a한b');
   });
 
-  it('조합 중 Backspace(자모 삭제)는 조합 문자열만 갱신한다(I2)', () => {
+  it('Backspace during composition (jamo deletion) updates only the composition string (I2)', () => {
     const { m } = model(runs(['', A]));
     m.compositionUpdate('한');
     m.compositionUpdate('하');
@@ -161,7 +161,7 @@ describe('IME 조합', () => {
     expect(m.state.composition).toBeNull();
   });
 
-  it('조합 중에는 입력·삭제·이동·되돌리기를 무시한다(I4·I5)', () => {
+  it('input, deletion, movement and undo are ignored during composition (I4, I5)', () => {
     const { m } = model(runs(['ab', A]), 2);
     m.compositionUpdate('가');
     expect(m.insertText('x')).toBe(false);
@@ -172,7 +172,7 @@ describe('IME 조합', () => {
     expect(m.state.text).toBe('ab가');
   });
 
-  it('조합 확정 문자열도 NFC 로 정규화한다', () => {
+  it('the composition commit string is also normalized to NFC', () => {
     const { m } = model(runs(['', A]));
     m.compositionUpdate('한');
     m.compositionEnd();
@@ -180,7 +180,7 @@ describe('IME 조합', () => {
     expect(m.state.caret).toBe(1);
   });
 
-  it('선택이 있는 상태에서 조합을 시작하면 선택을 지우고 시작한다', () => {
+  it('starting a composition with a selection clears the selection and then starts', () => {
     const { m } = model(runs(['abcd', A]), 1);
     m.setSelection(1, 3);
     m.compositionStart();
@@ -188,14 +188,14 @@ describe('IME 조합', () => {
     m.compositionUpdate('가');
     m.compositionEnd();
     expect(m.state.text).toBe('a가d');
-    // 한 번의 되돌리기로 조합 전(선택 포함 원문)으로 돌아간다.
+    // One undo returns to the state before composition (the original text including the selection).
     m.undo();
     expect(m.state.text).toBe('abcd');
   });
 });
 
-describe('되돌리기 단위(I6)', () => {
-  it('연속 입력은 한 단위이고 공백 뒤에서 끊긴다', () => {
+describe('undo units (I6)', () => {
+  it('continuous input is one unit and breaks after whitespace', () => {
     const { m, clock } = model(runs(['', A]));
     for (const ch of 'hello world') {
       m.insertText(ch);
@@ -203,9 +203,9 @@ describe('되돌리기 단위(I6)', () => {
     }
     expect(m.state.text).toBe('hello world');
     m.undo();
-    expect(m.state.text).toBe('hello '); // "world" 가 한 단위
+    expect(m.state.text).toBe('hello '); // "world" is one unit
     m.undo();
-    expect(m.state.text).toBe(''); // "hello " 가 한 단위(공백까지)
+    expect(m.state.text).toBe(''); // "hello " is one unit (including the space)
     expect(m.undo()).toBe(false);
     m.redo();
     expect(m.state.text).toBe('hello ');
@@ -214,20 +214,20 @@ describe('되돌리기 단위(I6)', () => {
     expect(m.redo()).toBe(false);
   });
 
-  it('0.5초를 넘기는 정지는 단위를 끊는다', () => {
+  it('a pause longer than 0.5 s breaks the unit', () => {
     const { m, clock } = model(runs(['', A]));
     m.insertText('a');
     clock.t += UNDO_PAUSE_MS;
-    m.insertText('b'); // 정확히 0.5초: 같은 단위
+    m.insertText('b'); // exactly 0.5 s: same unit
     clock.t += UNDO_PAUSE_MS + 1;
-    m.insertText('c'); // 0.5초 초과: 새 단위
+    m.insertText('c'); // over 0.5 s: new unit
     m.undo();
     expect(m.state.text).toBe('ab');
     m.undo();
     expect(m.state.text).toBe('');
   });
 
-  it('캐럿 이동은 단위를 끊는다', () => {
+  it('caret movement breaks the unit', () => {
     const { m } = model(runs(['', A]));
     m.insertText('a');
     m.insertText('b');
@@ -240,7 +240,7 @@ describe('되돌리기 단위(I6)', () => {
     expect(m.state.text).toBe('');
   });
 
-  it('조합 확정 한 번은 앞뒤 입력과 같은 단위에 들어간다', () => {
+  it('one composition commit goes into the same unit as the input before and after it', () => {
     const { m, clock } = model(runs(['', A]));
     m.insertText('a');
     clock.t += 100;
@@ -253,7 +253,7 @@ describe('되돌리기 단위(I6)', () => {
     expect(m.state.text).toBe('');
   });
 
-  it('조합 확정 뒤 공백을 입력하면 그 공백까지가 한 단위', () => {
+  it('typing a space after a composition commit makes the text up to that space one unit', () => {
     const { m, clock } = model(runs(['', A]));
     m.compositionUpdate('안');
     m.compositionEnd('안');
@@ -269,7 +269,7 @@ describe('되돌리기 단위(I6)', () => {
     expect(m.state.text).toBe('');
   });
 
-  it('연속 Backspace 는 한 단위, 붙여넣기는 항상 별도 단위', () => {
+  it('consecutive Backspace is one unit, and paste is always a separate unit', () => {
     const { m, clock } = model(runs(['abcdef', A]));
     m.deleteBackward();
     clock.t += 50;
@@ -289,7 +289,7 @@ describe('되돌리기 단위(I6)', () => {
     expect(m.state.text).toBe('abcdef');
   });
 
-  it('되돌린 뒤 새로 입력하면 다시 실행 이력이 사라진다', () => {
+  it('typing anew after undo clears the redo history', () => {
     const { m } = model(runs(['', A]));
     m.insertText('a');
     m.moveTo(0);
@@ -300,7 +300,7 @@ describe('되돌리기 단위(I6)', () => {
     expect(m.history.canRedo).toBe(false);
   });
 
-  it('되돌리기는 캐럿·선택도 복원한다', () => {
+  it('undo also restores the caret and selection', () => {
     const { m } = model(runs(['hello', A]), 5);
     m.setSelection(0, 5);
     m.insertText('X');

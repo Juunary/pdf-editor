@@ -1,5 +1,5 @@
-// 확장 서비스 워커: 가로채기 경로 동기화(DNR 폴백 등록/해제)와 툴바 버튼만 담당한다.
-// MuPDF·문서 상태는 뷰어 소유 Worker 에 있다(PLAN.md 5.2).
+// Extension service worker: only handles syncing the interception path (registering/removing the DNR fallback) and the toolbar button.
+// MuPDF and document state live in the viewer-owned Worker (PLAN.md 5.2).
 import {
   buildPdfFallbackRules,
   decideInterceptionMode,
@@ -8,7 +8,7 @@ import {
 } from './interception.js';
 
 async function syncInterception(): Promise<void> {
-  // Web Store 빌드(Chrome 151+)는 DNR 권한이 없다. MIME handler 만 쓰므로 폴백 규칙을 관리하지 않는다.
+  // The Web Store build (Chrome 151+) has no DNR permission. It uses only the MIME handler, so it does not manage fallback rules.
   if (!chrome.declarativeNetRequest) {
     console.info('[pdf-editor] interception mode = mime-handler (DNR 권한 없는 빌드)');
     return;

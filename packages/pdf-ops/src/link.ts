@@ -1,13 +1,13 @@
 /**
- * PageModel ↔ SourceMap 매칭(docs/m1-contract.md 3절).
+ * PageModel ↔ SourceMap matching (docs/m1-contract.md section 3).
  *
- * - 글자: 같은 glyphSeq 끼리 짝짓고 원점 오차가 허용치 이하인지 확인한다. 어긋나면 번호 차이(delta)를
- *   창 안에서 원점으로 다시 찾고, 다음 글자까지 같은 delta 로 맞을 때만 재동기화한다.
- * - 도형: 같은 paintSeq 끼리 짝짓고 종류 호환·행렬(경로)·경계(이미지)로 확인한다. 재동기화는 글자와 같다.
- *   `outside-page-content` 연산(직접 실행 패턴 셀 소유)의 셀 칠하기는 현재 delta 에서만 종류 무관 인정한다.
- * - 폭 정보가 불완전한 폰트(font-encoding-unresolved) 글리프는 원점이 어긋날 수 있어, 직전 글자와 번호가
- *   이어지면 원점 확인 없이 인정한다(재동기화 기준으로는 쓰지 않는다).
- * - 실패한 글자·도형은 -1. 짝이 없는 번호를 가진 연산에는 `unmatched` 제한을 단다(map 을 고친다).
+ * - Characters: pairs those with the same glyphSeq and checks that the origin error is within tolerance. On a mismatch, the number difference (delta) is
+ *   searched again by origin within a window, and resynchronization happens only if the following character also fits with the same delta.
+ * - Shapes: pairs those with the same paintSeq and checks by kind compatibility, matrix (path) and bounds (image). Resynchronization is the same as for characters.
+ *   For `outside-page-content` operations (owned by directly executed pattern cells), cell painting is accepted regardless of kind only at the current delta.
+ * - Glyphs of fonts with incomplete width information (font-encoding-unresolved) may have a shifted origin, so if the number
+ *   continues from the previous character they are accepted without an origin check (not used as a resynchronization criterion).
+ * - Failed characters/shapes get -1. Operations with an unpaired number get an `unmatched` limit (map is modified).
  */
 import type {
   ImageInfo,
@@ -25,7 +25,7 @@ import { now } from './clock.js';
 
 export interface LinkConfig {
   originTolerance: number;
-  /** 재동기화 탐색 창(번호 차이). */
+  /** Resynchronization search window (number difference). */
   window: number;
 }
 
@@ -38,7 +38,7 @@ interface MapGlyph {
 
 interface MapPaint {
   op: SourceOp;
-  /** 같은 연산의 몇 번째 paintSeq 인지. */
+  /** Which paintSeq of the same operation this is. */
   index: number;
 }
 
@@ -72,10 +72,10 @@ function unitBox(m: Matrix): [number, number, number, number] {
 }
 
 /**
- * 순서 정렬: model[i] 의 번호 seq(i) 를 map 번호 seq(i)+delta 와 짝짓는다.
- * - map 쪽이 주인 없는 번호(구멍: 패턴 셀 내용 등)면 그 항목은 매칭하지 않고 delta 를 유지한다.
- * - 주인 있는 번호와 맞지 않으면 창 안에서 delta 를 다시 찾는다. 후보 delta 는 이어지는 항목
- *   (구멍이 아닌 것) 최대 2개가 같은 delta 로 strong 하게 맞아야 채택한다.
+ * Order alignment: pairs the model[i] number seq(i) with the map number seq(i)+delta.
+ * - If the map side has an ownerless number (hole: pattern cell content, etc.), that item is not matched and delta is kept.
+ * - If it does not match an owned number, delta is searched again within the window. A candidate delta is adopted only if up to 2 following items
+ *   (non-holes) fit strongly with the same delta.
  */
 function align(
   count: number,
@@ -146,7 +146,7 @@ export function link(model: PageModel, map: SourceMap, config: LinkConfig): Page
   const t0 = now();
   const tol = config.originTolerance;
 
-  // 글자
+  // Characters
   const glyphs: (MapGlyph | undefined)[] = new Array(map.glyphCount);
   for (const op of map.ops) {
     if (!op.text) continue;
@@ -180,7 +180,7 @@ export function link(model: PageModel, map: SourceMap, config: LinkConfig): Page
     if (e <= tol) maxErr = Math.max(maxErr, e);
   });
 
-  // 도형
+  // Shapes
   const paints: (MapPaint | undefined)[] = new Array(map.paintCount);
   for (const op of map.ops) {
     op.paintSeq?.forEach((s, index) => {
@@ -217,7 +217,7 @@ export function link(model: PageModel, map: SourceMap, config: LinkConfig): Page
     else shadeOp[mp.i] = id;
   });
 
-  // 짝이 없는 번호를 가진 연산 표시
+  // Mark operations with an unpaired number
   const matchedGlyph = new Uint8Array(glyphs.length);
   for (const j of charMatch) if (j >= 0) matchedGlyph[j] = 1;
   const matchedPaint = new Uint8Array(paints.length);
@@ -253,13 +253,13 @@ export function link(model: PageModel, map: SourceMap, config: LinkConfig): Page
 }
 
 /**
- * 모델 도형과 맵 연산의 호환. 행렬·경계로 확인되면 strong, 종류만 맞으면 loose(현재 delta 에서만 인정).
+ * Compatibility of a model shape and a map operation. Strong if confirmed by matrix/bounds, loose if only the kind matches (accepted only at the current delta).
  */
 function compatible(mp: ModelPaint, p: MapPaint, u: Matrix): 'strong' | 'loose' | null {
   const own = compatibleOwn(mp, p, u);
   if (own) return own;
-  // 직접 실행한 타일링 패턴 셀의 칠하기는 그 패턴 칠하기 연산이 소유한다(계약 3절). 종류·행렬이 셀 기준이라
-  // 현재 delta 에서만 인정한다.
+  // Painting of a directly executed tiling pattern cell is owned by that pattern-painting operation (contract section 3). Kind and matrix are cell-relative,
+  // so it is accepted only at the current delta.
   return p.op.limits.includes('outside-page-content') ? 'loose' : null;
 }
 
@@ -272,7 +272,7 @@ function compatibleOwn(mp: ModelPaint, p: MapPaint, u: Matrix): 'strong' | 'loos
       if (op.kind === 'clip' && pathOp !== 'clip') return null;
       return sameMatrix(mp.item.ctm, toPage) ? 'strong' : null;
     }
-    // Form BBox 클립(행렬은 Form /Matrix 를 포함해 비교하지 않는다).
+    // Form BBox clip (the matrix is not compared, as it includes the Form /Matrix).
     if (op.kind === 'xobject') return pathOp === 'clip' ? 'loose' : null;
     return null;
   }
@@ -283,7 +283,7 @@ function compatibleOwn(mp: ModelPaint, p: MapPaint, u: Matrix): 'strong' | 'loos
     const scale = Math.max(1, ...b.map(Math.abs));
     return a.every((v, i) => Math.abs(v - b[i]!) <= 1e-2 * scale) ? 'strong' : 'loose';
   }
-  // 셰이드: sh, 셰이딩 패턴 칠하기·텍스트·마스크 이미지.
+  // Shade: sh, shading pattern painting, text and mask images.
   if (
     op.kind === 'shading' ||
     op.kind === 'path-paint' ||

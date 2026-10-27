@@ -1,8 +1,8 @@
 import * as mupdf from 'mupdf';
 
 /**
- * 직접 객체(사전·배열)는 재귀 복사하고 간접 참조는 그대로 둔다.
- * MuPDF 는 `put` 한 직접 객체를 복사하지 않고 공유하므로, 복사 없이 옮긴 하위 사전을 고치면 원본도 바뀐다.
+ * Direct objects (dictionaries, arrays) are copied recursively; indirect references are left as they are.
+ * MuPDF shares a `put` direct object instead of copying it, so editing a child dictionary moved without a copy also changes the original.
  */
 function copyDirect(doc: mupdf.PDFDocument, obj: mupdf.PDFObject): mupdf.PDFObject {
   if (obj.isIndirect()) return obj;
@@ -19,16 +19,16 @@ function copyDirect(doc: mupdf.PDFDocument, obj: mupdf.PDFObject): mupdf.PDFObje
   return obj;
 }
 
-/** source(간접이면 해석)의 직접 사본. 하위 직접 객체까지 복사하고 간접 참조는 유지한다. */
+/** Direct copy of source (resolved if indirect). Copies down through child direct objects and keeps indirect references. */
 function shallowCopy(doc: mupdf.PDFDocument, source: mupdf.PDFObject | null): mupdf.PDFObject {
   if (!source || source.isNull()) return doc.newDictionary();
   return copyDirect(doc, source.resolve());
 }
 
 /**
- * holder(페이지 사전 또는 Form XObject 스트림)의 Resources 를 holder 전용 직접 사본으로 바꿔 돌려준다.
- * 간접 객체(다른 페이지·Form 과 공유 가능), 상속값, 다른 사전과 공유될 수 있는 직접 객체 모두 복사한다
- * (공유 리소스를 고쳐 다른 페이지가 바뀌는 일을 막는다). holder 자체가 공유되지 않는지는 호출자가 보장한다.
+ * Replaces the Resources of holder (a page dictionary or Form XObject stream) with a direct copy dedicated to the holder and returns it.
+ * Copies indirect objects (possibly shared with other pages/Forms), inherited values, and direct objects that may be shared with other dictionaries
+ * (this prevents editing shared resources from changing other pages). The caller guarantees that holder itself is not shared.
  */
 export function ownResources(
   doc: mupdf.PDFDocument,
@@ -40,7 +40,7 @@ export function ownResources(
   return holder.get('Resources');
 }
 
-/** dict[key] 하위 사전(Font, XObject 등)을 dict 전용 직접 사본으로 바꿔 돌려준다. */
+/** Replaces the dict[key] child dictionary (Font, XObject, etc.) with a direct copy dedicated to dict and returns it. */
 export function ownSubdict(
   doc: mupdf.PDFDocument,
   dict: mupdf.PDFObject,
@@ -51,14 +51,14 @@ export function ownSubdict(
   return dict.get(key);
 }
 
-/** 페이지 전용 Resources 사전(상속·공유 간접 객체면 복사, `ownResources` 참고). */
+/** Page-dedicated Resources dictionary (copied if inherited or a shared indirect object; see `ownResources`). */
 export function ownPageResources(doc: mupdf.PDFDocument, page: mupdf.PDFPage): mupdf.PDFObject {
   const pageObj = page.getObject();
   const inherited = pageObj.getInheritable('Resources');
   return ownResources(doc, pageObj, inherited.isNull() ? null : inherited);
 }
 
-/** 겹치지 않는 리소스 이름을 골라 subdict[이름] = ref 로 등록한다. */
+/** Picks a non-colliding resource name and registers it as subdict[name] = ref. */
 export function putUniqueResource(
   subdict: mupdf.PDFObject,
   ref: mupdf.PDFObject,
@@ -71,7 +71,7 @@ export function putUniqueResource(
   return name;
 }
 
-/** holder(페이지 사전 또는 Form 스트림)의 Font 리소스에 폰트를 등록하고 리소스 이름을 돌려준다. */
+/** Registers a font in the Font resource of holder (page dictionary or Form stream) and returns the resource name. */
 export function addFontResource(
   doc: mupdf.PDFDocument,
   holder: mupdf.PDFObject,
@@ -83,7 +83,7 @@ export function addFontResource(
   return putUniqueResource(ownSubdict(doc, resources, 'Font'), fontRef, prefix);
 }
 
-/** 페이지 Font 리소스에 폰트를 등록하고 겹치지 않는 리소스 이름을 돌려준다. */
+/** Registers a font in the page Font resource and returns a non-colliding resource name. */
 export function addPageFontResource(
   doc: mupdf.PDFDocument,
   page: mupdf.PDFPage,
@@ -94,9 +94,9 @@ export function addPageFontResource(
 }
 
 /**
- * 원 콘텐츠를 `q … Q` 로 감싸고 새 콘텐츠 스트림을 뒤에 붙인다.
- * 원 스트림이 남긴 그래픽 상태(CTM, 색, 클립)가 새 콘텐츠에 영향을 주지 않게 한다.
- * 새 콘텐츠는 PDF 기본 사용자 공간(원점 좌하단) 기준이다.
+ * Wraps the original content in `q … Q` and appends the new content stream after it.
+ * Keeps the graphics state left by the original streams (CTM, color, clip) from affecting the new content.
+ * The new content is relative to the PDF default user space (origin at bottom left).
  */
 export function appendPageContent(
   doc: mupdf.PDFDocument,

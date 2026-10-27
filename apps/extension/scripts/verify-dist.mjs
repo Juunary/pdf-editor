@@ -1,17 +1,17 @@
-// 빌드 산출물 검증.
-// - MuPDF wasm 이 dist 에 원본과 동일한 바이트로 1개 들어갔는지
-// - (M3) 한글 폴백 폰트 TTF 가 dist 에 원본과 동일한 바이트로 1개 있고 Worker 청크가 그 파일을 가리키는지
-// - (M3) reflow 가 harfbuzzjs 를 import 하면 harfbuzz wasm 이 원본과 동일한 바이트로 1개 들어갔는지,
-//   harfbuzz 코드가 Worker 청크에만 있는지(reflow 연결 전에는 건너뛴다)
-// - manifest 의 M0 필수 항목(CSP, mime_types_handler + can_embed, DNR 권한, 최소 버전)
-// - 이름·설명·툴바 제목 현지화(사용자 결정 2026-10-26): `default_locale` en, `__MSG_…__` 참조, `_locales/{en,ko}` 의 값
-//   (이름 = PDF Editor, 개발 빌드는 + " (dev)", 설명 132자 이하)
-// - MuPDF 코드가 Worker 청크에만 있는지(뷰어 메인 스레드·서비스 워커에 섞이지 않음)
+// Build output verification.
+// - the MuPDF wasm is in dist exactly once, with bytes identical to the original
+// - (M3) the Korean fallback font TTF is in dist exactly once with bytes identical to the original, and the Worker chunk points to that file
+// - (M3) if reflow imports harfbuzzjs, the harfbuzz wasm is in exactly once with bytes identical to the original,
+//   and harfbuzz code is only in the Worker chunk (skipped until reflow is wired up)
+// - required M0 items in the manifest (CSP, mime_types_handler + can_embed, DNR permissions, minimum version)
+// - name / description / toolbar title localization (user decision 2026-10-26): `default_locale` en, `__MSG_…__` references, values in `_locales/{en,ko}`
+//   (name = PDF Editor, dev build adds " (dev)", description at most 132 characters)
+// - MuPDF code is only in the Worker chunk (not mixed into the viewer main thread or service worker)
 //
-// `--release [out/release 디렉터리]`: Web Store 패키지(스테이징·zip) 검사(docs/m5-contract.md D6·D7).
-// 위 공통 검사를 스테이징에 적용하고, 스토어 매니페스트(Chrome 151+, DNR·호스트 권한·WAR 없음), 개발 파일 부재
-// (`diag/`·`*.map`·`sourceMappingURL`·벤치 페이지 `bench.html`·벤치 청크·downloads 저장 메뉴), 크기 상한, 버전 일치, 아이콘·LICENSE·THIRD_PARTY_NOTICES.txt·저작권 고지,
-// OFL 예약 이름, zip 과 스테이징의 일치(`_locales` 포함)를 확인한다.
+// `--release [out/release directory]`: checks the Web Store package (staging and zip) (docs/m5-contract.md D6, D7).
+// Applies the common checks above to staging, and also checks the store manifest (Chrome 151+, no DNR, host permissions or WAR), absence of dev files
+// (`diag/`, `*.map`, `sourceMappingURL`, the bench page `bench.html`, bench chunks, the downloads save menu), size limits, version match, icons, LICENSE, THIRD_PARTY_NOTICES.txt, copyright notices,
+// the OFL reserved name, and that the zip matches staging (including `_locales`).
 import { createHash } from 'node:crypto';
 import { unzipSync } from 'fflate';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
@@ -39,7 +39,7 @@ const releaseDir = releaseMode ? (args[releaseIdx + 1] ?? join(root, 'out', 'rel
 const dist = releaseMode ? join(releaseDir, 'staging') : join(root, 'dist');
 const pkgVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 const MIB = 2 ** 20;
-/** 계약 D6 자체 기준(Web Store zip 제한 값은 미확인). */
+/** Contract D6 own limits (the Web Store zip limit values are unconfirmed). */
 const MAX_UNPACKED_BYTES = 25 * MIB;
 const MAX_ZIP_BYTES = 15 * MIB;
 const require = createRequire(join(root, 'package.json'));
@@ -58,7 +58,7 @@ let releaseSummary = null;
 const files = walk(dist);
 const rel = (p) => relative(dist, p);
 
-// wasm: 해시로 식별한다. MuPDF 는 항상 1개, harfbuzz 는 reflow 가 harfbuzzjs 를 import 할 때 1개, 그 밖의 wasm 은 오류.
+// wasm: identified by hash. MuPDF is always 1; harfbuzz is 1 when reflow imports harfbuzzjs; any other wasm is an error.
 const wasm = files.filter((f) => f.endsWith('.wasm'));
 const mupdfSha = sha256(join(mupdfDir, 'mupdf-wasm.wasm'));
 const repoRoot = join(root, '..', '..');
@@ -85,7 +85,7 @@ const expectedWasm = 1 + (reflowUsesHarfbuzz ? 1 : 0);
 if (wasm.length !== expectedWasm) {
   errors.push(`wasm 자산 ${wasm.length}개 (기대 ${expectedWasm}): ${wasm.map(rel).join(', ')}`);
 }
-// 폴백 폰트(M3): 원본과 같은 바이트 1개.
+// Fallback font (M3): 1 file with the same bytes as the original.
 const fontSource = join(repoRoot, 'assets/fonts/NotoSansKR-Regular-subset.ttf');
 const fontSha = sha256(fontSource);
 const fonts = files.filter((f) => f.endsWith('.ttf'));
@@ -112,7 +112,7 @@ if (files.includes(join(dist, 'manifest.json'))) {
   if (!files.includes(join(dist, m.background?.service_worker ?? ''))) {
     errors.push('background.service_worker 파일 없음');
   }
-  // 현지화(사용자 결정 2026-10-26): 이름·설명·툴바 제목은 메시지 참조, 값은 언어별 messages.json.
+  // Localization (user decision 2026-10-26): name, description and toolbar title are message references; values are in the per-language messages.json.
   if (m.default_locale !== DEFAULT_LOCALE) {
     errors.push(`default_locale != ${DEFAULT_LOCALE}: ${m.default_locale}`);
   }
@@ -156,7 +156,7 @@ if (files.includes(join(dist, 'manifest.json'))) {
     }
   }
   if (releaseMode) {
-    // D7(a): 스토어 빌드는 mimeHandler 경로만 쓴다.
+    // D7(a): the store build uses only the mimeHandler path.
     if (m.minimum_chrome_version !== STORE_MIN_CHROME) {
       errors.push(`minimum_chrome_version != ${STORE_MIN_CHROME}`);
     }
@@ -182,7 +182,7 @@ if (files.includes(join(dist, 'manifest.json'))) {
   }
 }
 
-// MuPDF 는 Worker 가 동적 import 하는 청크 하나에만 있어야 한다.
+// MuPDF must be in exactly one chunk, the one the Worker dynamically imports.
 const MUPDF_MARKER = '_wasm_init_context';
 const jsFiles = files.filter((f) => f.endsWith('.js'));
 const jsWithMupdf = jsFiles.filter((f) => readFileSync(f, 'utf8').includes(MUPDF_MARKER)).map(rel);
@@ -196,7 +196,7 @@ const forbidden = jsFiles
 if (forbidden.length > 0)
   errors.push(`메인 스레드·서비스 워커에 MuPDF 포함: ${forbidden.join(', ')}`);
 
-// 폴백 폰트는 Worker 진입 청크가 참조해야 하고, harfbuzz 코드는 메인 스레드·서비스 워커에 섞이지 않아야 한다.
+// The fallback font must be referenced by the Worker entry chunk, and harfbuzz code must not be mixed into the main thread or service worker.
 const pdfWorkerEntries = jsFiles.filter((f) => /assets\/pdf-worker-[^/]*\.js$/.test(f));
 if (pdfWorkerEntries.length !== 1) {
   errors.push(`Worker 진입 청크 ${pdfWorkerEntries.length}개 (기대 1)`);
@@ -221,7 +221,7 @@ if (reflowUsesHarfbuzz && jsWithHarfbuzz.length === 0) {
 }
 
 if (releaseMode) {
-  // 개발 파일 부재
+  // Absence of dev files
   const devFiles = files.map(rel).filter((f) => f.startsWith('diag/') || f.endsWith('.map'));
   if (devFiles.length > 0) errors.push(`개발 파일 포함: ${devFiles.join(', ')}`);
   const withMapRef = files
@@ -229,14 +229,14 @@ if (releaseMode) {
     .filter((f) => /sourceMappingURL/.test(readFileSync(f, 'utf8')))
     .map(rel);
   if (withMapRef.length > 0) errors.push(`sourceMappingURL 포함: ${withMapRef.join(', ')}`);
-  // `?e2e` 시험 이음매는 코드에 남아 있어도 되지만, 개발 전용 진단 페이지 참조는 없어야 한다.
+  // The `?e2e` test seam may remain in code, but there must be no references to the dev-only diagnostics page.
   for (const f of files.filter((f) => /\.(js|html)$/.test(f))) {
     if (/diag\/(m0-sample|embed-test|chrome-probe)/.test(readFileSync(f, 'utf8'))) {
       errors.push(`진단 자산 참조: ${rel(f)}`);
     }
   }
 
-  // 벤치 측정 페이지(S2, docs/m5-perf.md)는 개발 빌드 전용이다(D6). 페이지·청크·링크 모두 없어야 한다.
+  // The bench measurement page (S2, docs/m5-perf.md) is dev-build only (D6). The page, chunks and links must all be absent.
   const benchFiles = files.map(rel).filter((f) => /(^|\/)bench[^/]*\.(html|js|css)$/.test(f));
   if (benchFiles.length > 0) errors.push(`벤치 파일 포함: ${benchFiles.join(', ')}`);
   for (const f of files.filter((f) => /\.(js|html)$/.test(f))) {
@@ -244,7 +244,7 @@ if (releaseMode) {
       errors.push(`벤치 페이지 참조: ${rel(f)}`);
     }
   }
-  // 저장 메뉴의 downloads 저장(M0 진단)은 개발 빌드 전용이다(사용자 요청 2026-10-22): 요소·처리 분기·스타일 모두 없어야 한다.
+  // The save menu's downloads save (M0 diagnostics) is dev-build only (user request 2026-10-22): the element, handler branch and style must all be absent.
   for (const f of files.filter((f) => /\.(js|html|css)$/.test(f))) {
     if (/save-downloads/.test(readFileSync(f, 'utf8'))) {
       errors.push(`downloads 저장 메뉴 포함: ${rel(f)}`);
@@ -254,14 +254,14 @@ if (releaseMode) {
   if (existsSync(viewerHtmlPath) && !/id="save-menu"/.test(readFileSync(viewerHtmlPath, 'utf8'))) {
     errors.push('viewer.html 에 저장 메뉴(#save-menu) 없음');
   }
-  // 벤치 전용 Worker RPC(WASM 사용 중 힙 측정, @pdf-editor/core/bench)도 스토어 빌드에 없어야 한다(D1 사용자 결정 2026-10-21).
+  // The bench-only Worker RPC (heap measurement during WASM use, @pdf-editor/core/bench) must also be absent from the store build (D1 user decision 2026-10-21).
   for (const f of files.filter((f) => f.endsWith('.js'))) {
     if (/benchProbeHeap|probeWasmHeap/.test(readFileSync(f, 'utf8'))) {
       errors.push(`벤치 전용 RPC 포함: ${rel(f)}`);
     }
   }
 
-  // 필수 파일
+  // Required files
   for (const required of ['LICENSE', 'THIRD_PARTY_NOTICES.txt']) {
     if (!files.includes(join(dist, required))) errors.push(`누락: ${required}`);
   }
@@ -279,7 +279,7 @@ if (releaseMode) {
     ]) {
       if (!notices.includes(needle)) errors.push(`THIRD_PARTY_NOTICES.txt 에 '${needle}' 없음`);
     }
-    // 개발 의존성은 번들에 들어가지 않는다.
+    // Dev dependencies do not go into the bundle.
     const devDeps = new Set();
     for (const pj of [
       join(root, 'package.json'),
@@ -305,7 +305,7 @@ if (releaseMode) {
     }
   }
 
-  // OFL 예약 이름 'Source': 글꼴 이름 항목에 쓰이지 않아야 한다(저작권 고지 문자열 제외).
+  // OFL reserved name 'Source': must not be used in font name entries (excluding the copyright notice string).
   if (fonts.length === 1) {
     const used = findReservedNameUse(readFileSync(fonts[0]), 'Source');
     if (used.length > 0) {
@@ -313,7 +313,7 @@ if (releaseMode) {
     }
   }
 
-  // 크기 상한
+  // Size limits
   const unpacked = files.reduce((n, f) => n + statSync(f).size, 0);
   if (unpacked > MAX_UNPACKED_BYTES) {
     errors.push(`압축 전 합계 ${unpacked} B > ${MAX_UNPACKED_BYTES} B`);
@@ -325,7 +325,7 @@ if (releaseMode) {
     const zipBytes = readFileSync(zipPath);
     if (zipBytes.length > MAX_ZIP_BYTES)
       errors.push(`zip ${zipBytes.length} B > ${MAX_ZIP_BYTES} B`);
-    // zip = 스테이징(같은 파일·같은 바이트), 결정적 재생성
+    // zip = staging (same files, same bytes), deterministic regeneration
     const entries = unzipSync(new Uint8Array(zipBytes));
     const zipNames = Object.keys(entries).sort();
     const stagingNames = files.map(rel).sort();

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Noto Sans KR 서브셋 TTF(glyf) 생성.
+# Build the Noto Sans KR subset TTF (glyf).
 #
-# 결과: assets/fonts/NotoSansKR-Regular-subset.ttf (저장소에 커밋, OFL-1.1)
-# 원본: Google Fonts 배포 Noto Sans KR 가변 TTF(wght 100–900, 기본 인스턴스 100)
-# 처리: wght=400 정적 인스턴스 → 한글 음절·호환 자모·라틴·기본 기호·€·™ 범위 + KS X 1001 한자 4,888자 서브셋
-#       (한자·€·™ 추가: docs/m3-contract.md D12, 2026-10-19 사용자 결정. cmap 일대일: 같은 계약 수정 2)
+# Result: assets/fonts/NotoSansKR-Regular-subset.ttf (committed to the repository, OFL-1.1)
+# Source: Noto Sans KR variable TTF distributed by Google Fonts (wght 100–900, default instance 100)
+# Processing: wght=400 static instance → subset of Hangul syllables·compatibility jamo·Latin·basic symbols·€·™ ranges + 4,888 KS X 1001 Hanja
+#       (Hanja·€·™ added: docs/m3-contract.md D12, user decision 2026-10-19. One-to-one cmap: same contract amendment 2)
 #
-# CFF 기반 OTF(notofonts SubsetOTF/KR)는 MuPDF 1.28.1 addFont 경로에서 재열기 렌더가 깨지고
-# subsetFonts() 가 실패한다(docs/m0-day1-log.md). 비교용으로만 함께 받는다.
+# The CFF-based OTF (notofonts SubsetOTF/KR) breaks the reopened render in the MuPDF 1.28.1 addFont path and
+# subsetFonts() fails (docs/m0-day1-log.md). It is downloaded only for comparison.
 #
-# 필요: python3(venv), curl. 네트워크 접근.
+# Requires: python3 (venv), curl. Network access.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -17,7 +17,7 @@ SRC="$ROOT/assets/fonts/src"
 OUT="$ROOT/assets/fonts/NotoSansKR-Regular-subset.ttf"
 VENV="${VENV:-$SRC/.venv}"
 FONTTOOLS_VERSION=4.62.1
-# 재현 가능한 head.modified 값
+# Reproducible head.modified value
 export SOURCE_DATE_EPOCH=1760745600
 
 VF_URL='https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf'
@@ -48,10 +48,10 @@ fi
 
 "$VENV/bin/fonttools" varLib.instancer "$SRC/NotoSansKR-VF.ttf" wght=400 --static \
   --update-name-table -q -o "$SRC/NotoSansKR-Regular-static.ttf"
-# 코드 포인트 목록: 위 범위 + KS X 1001 한자(EUC-KR 0xCAA1–0xFDFE 디코드 4,888자) 중 원본 cmap 에 있는 것.
-# cmap 을 일대일로 만든다(docs/m3-contract.md 수정 2): 한 글리프를 여러 코드 포인트가 공유하면 MuPDF addFont 의
-# ToUnicode 가 가장 큰 코드 포인트를 골라 추출 결과가 바뀐다(공백 → U+00A0, 통합 한자 → 호환 한자 등).
-# 빼는 코드 포인트: 호환 한자 U+F900–FAFF(NFC 가 통합 한자로 바꿈), 반각 자모 U+FFA0–FFDC, 아래 PREFER 의 패자.
+# Code point list: the ranges above + the KS X 1001 Hanja (4,888 characters decoded from EUC-KR 0xCAA1–0xFDFE) that are in the source cmap.
+# Make the cmap one-to-one (docs/m3-contract.md amendment 2): if several code points share one glyph, MuPDF addFont's
+# ToUnicode picks the largest code point and changes extraction results (space → U+00A0, unified Hanja → compatibility Hanja, etc.).
+# Code points removed: compatibility Hanja U+F900–FAFF (NFC maps them to unified Hanja), halfwidth jamo U+FFA0–FFDC, the losers in PREFER below.
 "$VENV/bin/python" -I - "$SRC/NotoSansKR-Regular-static.ttf" "$UNICODES" > "$SRC/unicodes.txt" <<'PY'
 import sys
 from collections import defaultdict
@@ -73,7 +73,7 @@ assert len(hanja) == 4888, len(hanja)
 want |= hanja
 cmap = TTFont(font_path).getBestCmap()
 cps = sorted(c for c in want if c in cmap and not (0xF900 <= c <= 0xFAFF or 0xFFA0 <= c <= 0xFFDC))
-# 같은 글리프를 공유하는 나머지 묶음에서 남길 코드 포인트(입력 빈도 기준).
+# Code point to keep from the remaining groups that share the same glyph (by input frequency).
 PREFER = {0x0020, 0x002D, 0x3000, 0x2013, 0x2035, 0xFF5E}
 by_glyph = defaultdict(list)
 for c in cps:
@@ -92,7 +92,7 @@ PY
 "$VENV/bin/pyftsubset" "$SRC/NotoSansKR-Regular-static.ttf" --unicodes-file="$SRC/unicodes.txt" \
   --layout-features='*' --output-file="$OUT"
 
-# 일대일 확인
+# one-to-one check
 "$VENV/bin/python" -I -c '
 import sys
 from fontTools.ttLib import TTFont

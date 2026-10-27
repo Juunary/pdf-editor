@@ -1,8 +1,8 @@
 /**
- * 편집 코디네이터(DOM 비의존): 쪽 편집 가능 판정·진입(plan → begin)·세션 종료(커밋·취소)·문서 undo/redo·복구 로그.
- * `ViewerController` 가 소유하고, 상태는 `ViewerState.edit` 로 컴포넌트에 전달한다.
+ * Edit coordinator (DOM-independent): page editability classification, entry (plan → begin), session end (commit/cancel), document undo/redo, recovery log.
+ * Owned by `ViewerController`; state is passed to components through `ViewerState.edit`.
  *
- * 기능 격리: 편집 RPC 가 "M3 미구현" 예외를 내면 편집 기능만 끈다(`failure.ts`, 계약 4절 연결부).
+ * Feature isolation: if an edit RPC throws an "M3 not implemented" exception, only the edit feature is turned off (`failure.ts`, contract section 4 wiring).
  */
 import type {
   EditHistoryState,
@@ -33,37 +33,37 @@ export type EditLoadable<T> =
   | { status: 'ready'; pageIndex: number; value: T }
   | { status: 'error'; pageIndex: number; message: string };
 
-/** 편집할 수 없는 문단에서 더블클릭했을 때 보여 주는 사유 팝오버. */
+/** Reason popover shown when double-clicking a paragraph that cannot be edited. */
 export interface EditPopover {
-  /** 표 셀이면 'cell'(제목 문구). 없으면 문단. */
+  /** 'cell' (title text) for a table cell. Otherwise a paragraph. */
   kind?: 'paragraph' | 'cell';
   pageIndex: number;
   paragraphId: number;
   bbox: Rect;
-  /** 사유 문구(화면 언어). */
+  /** Reason text (display language). */
   items: string[];
 }
 
 export interface EditState {
-  /** 현재 쪽의 문단별 편집 가능 판정(마우스 오버 테두리). */
+  /** Per-paragraph editability classification of the current page (hover border). */
   editability: EditLoadable<PageEditability>;
-  /** plan·begin 진행 중. */
+  /** plan/begin in progress. */
   starting: boolean;
   popover: EditPopover | null;
   session: EditSessionView | null;
-  /** 문서 undo/redo 상태(편집 RPC 가 응답한 뒤 채워진다). */
+  /** Document undo/redo state (filled in after the edit RPC responds). */
   history: EditHistoryState | null;
-  /** 문서 undo/redo 처리 중. */
+  /** Document undo/redo in progress. */
   busy: boolean;
-  /** 사용자 알림(복구·오류). */
+  /** User notice (recovery/error). */
   notice: string | null;
-  /** 태그 PDF 편집 막기(설정, 기본 끔, 계약 D1). */
+  /** Block editing of tagged PDFs (setting, off by default, contract D1). */
   blockTagged: boolean;
-  /** 폴백 글자 점선 밑줄 표시(토글). */
+  /** Show a dotted underline for fallback characters (toggle). */
   fallbackUnderline: boolean;
-  /** 편집 가능 표시(D6): 문단·셀·패스 테두리를 쪽 위에 모두 그린다. */
+  /** Editability overlay (D6): draw all paragraph, cell and path borders over the page. */
   showEditable: boolean;
-  /** 벡터 패스 편집(M4) 상태. */
+  /** Vector path editing (M4) state. */
   path: PathState;
 }
 
@@ -83,7 +83,7 @@ export function initialEditState(): EditState {
   };
 }
 
-/** 계획이 태그된 쪽을 가리키는지(MCID 가 있거나 태그 경고가 있음). */
+/** Whether the plan points at a tagged page (has an MCID or a tag warning). */
 export function isTaggedPlan(plan: ParagraphEditPlan): boolean {
   return (
     plan.warnings.some(
@@ -95,31 +95,31 @@ export function isTaggedPlan(plan: ParagraphEditPlan): boolean {
 
 export interface CurrentView {
   pageIndex: number;
-  /** 변경 영역 렌더 배율(뷰어 scale × devicePixelRatio). */
+  /** Changed-region render scale (viewer scale × devicePixelRatio). */
   renderScale: number;
-  /** 추출 모델(없으면 시작 캐럿을 문단 끝으로). */
+  /** Extraction model (if absent, the start caret goes to the paragraph end). */
   text: PageModel | null;
 }
 
 export interface EditContext {
   rpc: EditHostApi;
   log: EditLog;
-  /** 툴바 편집 알림 문자열(기본 한국어). */
+  /** Toolbar edit notice strings (Korean by default). */
   strings?: ViewerStrings;
   now(): number;
   getState(): EditState;
   patch(partial: Partial<EditState>): void;
   currentView(): CurrentView | null;
   isStalePage(pageIndex: number): boolean;
-  /** 편집 기능을 영구 비활성화한다. */
+  /** Permanently disables the edit feature. */
   disable(reason: string): void;
   logEvent(event: string, data?: unknown): void;
   logOnce(kind: string, event: string, data: unknown): void;
-  /** 쪽 캐시를 버리고 다시 그린다(현재 쪽이 포함될 때). */
+  /** Discards the page cache and redraws (when the current page is included). */
   invalidatePages(pages: number[]): Promise<void>;
-  /** 취소 뒤 쪽 캔버스를 편집 전 렌더로 되돌린다. */
+  /** After cancel, restores the page canvas to the pre-edit render. */
   repaintPage(): void;
-  /** 벡터 패스 편집(M4) 연결. 호스트가 패스 RPC 를 주지 않으면 null. */
+  /** Vector path editing (M4) wiring. null if the host provides no path RPC. */
   paths: {
     rpc: PathHostApi;
     extract(pageIndex: number): Promise<PageModel>;
@@ -132,9 +132,9 @@ export interface EditContext {
 export class EditController {
   private session: EditSession | null = null;
   private ending: Promise<boolean> | null = null;
-  /** 벡터 패스 편집(M4). 호스트가 패스 RPC 를 주지 않으면 null. */
+  /** Vector path editing (M4). null if the host provides no path RPC. */
   readonly paths: PathController | null;
-  /** 편집기가 열리기 전 입력을 모으는 버퍼(DOM 구현은 마운트가 주입한다). */
+  /** Buffer that collects input before the editor opens (the DOM implementation is injected by mount). */
   private buffer: InputBufferPort | null = null;
 
   constructor(private readonly ctx: EditContext) {
@@ -167,16 +167,16 @@ export class EditController {
     return this.session !== null || (this.paths?.active ?? false);
   }
 
-  /** 테스트·e2e 용: 지금 세션(반응 시간 기록 등). */
+  /** For tests/e2e: the current session (response time records, etc.). */
   currentSession(): EditSession | null {
     return this.session;
   }
 
-  // ── 쪽 판정·이력 ─────────────────────────────────────────────────────
+  // ── Page classification and history ──────────────────────────────────
 
   /**
-   * 쪽 판정을 불러온다. 같은 쪽을 불러오는 중이면 그 요청이 끝날 때까지 기다린다(패스 Alt+클릭 선택이 판정 도착 전에
-   * 후보 없음으로 끝나지 않게).
+   * Loads the page classification. If the same page is already loading, waits for that request to finish (so a path Alt+click selection
+   * does not end with no candidates before the classification arrives).
    */
   async ensureEditability(pageIndex: number): Promise<void> {
     const current = this.ctx.getState().editability;
@@ -202,7 +202,7 @@ export class EditController {
       const value = await this.ctx.rpc.getPageEditability(pageIndex);
       if (this.ctx.isStalePage(pageIndex)) return this.resetLoading(pageIndex);
       this.ctx.patch({ editability: { status: 'ready', pageIndex, value } });
-      // 패스 판정만 실패한 쪽: 문단 편집은 그대로 쓰고 진단 로그만 남긴다.
+      // Page where only the path classification failed: keep using paragraph editing and just log a diagnostic.
       if (value.pathError) {
         this.ctx.logEvent('path-editability-error', { pageIndex, error: value.pathError });
       }
@@ -254,7 +254,7 @@ export class EditController {
     }
   }
 
-  // ── 설정 ─────────────────────────────────────────────────────────────
+  // ── Settings ─────────────────────────────────────────────────────────
 
   setBlockTagged(blockTagged: boolean): void {
     this.ctx.patch({ blockTagged });
@@ -264,7 +264,7 @@ export class EditController {
     this.ctx.patch({ fallbackUnderline });
   }
 
-  /** 편집 가능 표시(D6) 토글. 켜면 패스 선택용 모델을 미리 읽는다. */
+  /** Editability overlay (D6) toggle. Turning it on preloads the model used for path selection. */
   setShowEditable(showEditable: boolean): void {
     this.ctx.patch({ showEditable });
     const view = this.ctx.currentView();
@@ -279,11 +279,11 @@ export class EditController {
     if (this.ctx.getState().notice) this.ctx.patch({ notice: null });
   }
 
-  // ── 진입 ─────────────────────────────────────────────────────────────
+  // ── Entry ────────────────────────────────────────────────────────────
 
   /**
-   * 문단 편집을 시작한다(더블클릭). 편집할 수 없으면 사유 팝오버를 띄운다.
-   * point(페이지 공간)는 시작 캐럿 위치다(원 문서 글자 → 텍스트 위치, 계약 5.3).
+   * Starts paragraph editing (double-click). If it cannot be edited, shows the reason popover.
+   * point (page space) is the start caret position (original document character → text position, contract 5.3).
    */
   async begin(pageIndex: number, paragraphId: number, point: Point | null): Promise<void> {
     const state = this.ctx.getState();
@@ -291,7 +291,7 @@ export class EditController {
     this.paths?.clear();
     const hadRedo = state.history?.canRedo === true;
     this.ctx.patch({ starting: true, popover: null, notice: null });
-    // 편집기가 열리는 동안(plan → begin) 친 글자를 모은다. 열리면 넣고, 열리지 못하면 버린다.
+    // Collect characters typed while the editor opens (plan → begin). Insert them once it opens; drop them if it fails to open.
     this.buffer?.open();
     let started = false;
     try {
@@ -320,7 +320,7 @@ export class EditController {
           this.ctx.currentView()?.renderScale,
         );
       } catch (e) {
-        // 오래된 revision(그 사이 문서가 바뀜): 다시 판정해 한 번 더 시도한다.
+        // Stale revision (the document changed in between): classify again and retry once.
         if (!/revision/i.test(classifyFailure(e).message)) throw e;
         plan = await this.ctx.rpc.planParagraphEdit(pageIndex, paragraphId);
         if (!plan.editable) {
@@ -353,7 +353,7 @@ export class EditController {
       this.ctx.patch({ session: this.session.view() });
       this.session.start();
       started = true;
-      // 새 편집을 시작하면 core 가 다시 실행(redo) 단계를 버린다(계약 D9, 취소해도 복원 안 됨).
+      // Starting a new edit makes core discard the redo stage (contract D9; not restored even if cancelled).
       if (hadRedo) this.ctx.patch({ notice: this.t.redoDiscarded });
       const buffered = this.buffer?.take() ?? '';
       if (buffered !== '') {
@@ -383,7 +383,7 @@ export class EditController {
   }
 
   private showLimits(plan: ParagraphEditPlan): void {
-    // 한국어는 core 설명(detail)이 하나라도 있으면 설명만(이전 동작), 영어는 사유 코드 문구.
+    // Korean uses only the core detail text if there is any (previous behavior); English uses the reason-code text.
     const withDetail = plan.limits.filter((l) => l.detail !== '');
     const items = limitItems(
       this.t.lang === 'ko' && withDetail.length > 0 ? withDetail : plan.limits,
@@ -401,7 +401,7 @@ export class EditController {
     });
   }
 
-  /** getPageEditability 의 사유 코드만으로 팝오버를 띄운다(plan 호출 없이). */
+  /** Shows the popover from getPageEditability reason codes alone (without a plan call). */
   showReasons(pageIndex: number, paragraphId: number, bbox: Rect, reasons: string[]): void {
     this.ctx.patch({
       popover: {
@@ -438,7 +438,7 @@ export class EditController {
     });
   }
 
-  // ── 종료 ─────────────────────────────────────────────────────────────
+  // ── End ──────────────────────────────────────────────────────────────
 
   private endSession(): void {
     this.session?.dispose();
@@ -447,8 +447,8 @@ export class EditController {
   }
 
   /**
-   * 초안이 있으면 커밋한다(바깥 클릭·Ctrl+S·쪽 이동). 변경이 없으면 취소와 같다.
-   * 편집 모드를 벗어났으면(또는 처음부터 없으면) true, 계속 편집 중이면 false 를 돌려준다.
+   * Commits the draft if there is one (outside click, Ctrl+S, page change). With no changes it is the same as cancel.
+   * Returns true if edit mode was left (or never entered), false if still editing.
    */
   commitActive(): Promise<boolean> {
     if (this.paths?.active) return this.paths.commitGesture();
@@ -468,7 +468,7 @@ export class EditController {
         return false;
       }
       if (out.kind === 'kept') {
-        // 마지막 입력을 초안에 반영하지 못해 커밋하지 않았다. 편집기를 열어 둔다(오류는 편집기 정보 줄에도 보인다).
+        // The last input could not be applied to the draft, so no commit. Keep the editor open (the error also shows on the editor info line).
         this.ctx.patch({ notice: this.t.editNotApplied(this.t.errorDetail(out.error)) });
         return false;
       }
@@ -495,7 +495,7 @@ export class EditController {
     }
   }
 
-  /** 도구 막대 "편집 취소". */
+  /** Toolbar "Cancel edit" button. */
   async cancelActive(): Promise<void> {
     if (await this.paths?.cancelGesture()) return;
     if (this.ending) await this.ending;
@@ -515,7 +515,7 @@ export class EditController {
     this.ctx.repaintPage();
   }
 
-  // ── 문서 undo/redo ───────────────────────────────────────────────────
+  // ── Document undo/redo ───────────────────────────────────────────────
 
   async undo(): Promise<void> {
     await this.step('undo');
@@ -545,11 +545,11 @@ export class EditController {
     }
   }
 
-  // ── 복구 ─────────────────────────────────────────────────────────────
+  // ── Recovery ─────────────────────────────────────────────────────────
 
   /**
-   * 확장이 Worker 를 새로 만들어 문서를 복구한 뒤 호출한다(계약 D6). 초안 중이었으면 편집기 모델로 같은 문단 초안을
-   * 다시 시작하고, 아니면 쪽 캐시를 버린다. 복구 전 undo 이력은 사라지므로 알린다.
+   * Called after the extension recreates the Worker and recovers the document (contract D6). If a draft was in progress, restarts the draft of the same paragraph
+   * with the editor model; otherwise discards the page cache. The undo history from before recovery is gone, so the user is notified.
    */
   async handleWorkerRecovered(history: EditHistoryState | null): Promise<void> {
     if (history) {

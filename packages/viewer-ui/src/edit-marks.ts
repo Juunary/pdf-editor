@@ -1,6 +1,6 @@
 /**
- * 편집 가능 표시(M4 계약 D6)의 순수 계산: 그릴 테두리 목록(문단·셀·패스)과 마우스 아래 표시 찾기.
- * 패스는 작은 것(짧은 변 < 1pt 이고 긴 변 < 4pt)을 빼고, 2,000 개를 넘으면 큰 순서로 2,000 개만 남긴다.
+ * Pure computation for the editability overlay (M4 contract D6): the list of borders to draw (paragraphs, cells, paths) and finding the mark under the mouse.
+ * Small paths (short side < 1pt and long side < 4pt) are excluded, and if there are more than 2,000, only the 2,000 largest are kept.
  */
 import type { PageEditability, Point, Rect } from '@pdf-editor/shared-types';
 import { limitLabel } from './edit-labels.js';
@@ -16,15 +16,15 @@ export interface Mark {
   kind: MarkKind;
   bbox: Rect;
   editable: boolean;
-  /** 제한 사유 문구(화면 언어, 편집 가능이면 빈 목록). */
+  /** Limit-reason texts (display language; an empty list if editable). */
   reasons: string[];
-  /** 문단 id 또는 paintSeq. */
+  /** Paragraph id or paintSeq. */
   id: number;
 }
 
 export interface Marks {
   marks: Mark[];
-  /** 개수 상한이나 크기 때문에 그리지 않은 패스 수. */
+  /** Number of paths not drawn because of the count limit or size. */
   pathsSkipped: number;
 }
 
@@ -68,7 +68,7 @@ export function buildMarks(
   return { marks, pathsSkipped: editability.paths.length - shown.length };
 }
 
-/** 점 아래의 표시. 허용 거리 tol(pt) 안에서 가장 작은 상자(패스는 가는 선이라 같은 크기면 패스 우선). */
+/** The mark under a point. The smallest box within the tolerance tol (pt) (paths are thin lines, so a path wins at equal size). */
 export function markAt(marks: readonly Mark[], p: Point, tol = 0): Mark | null {
   let best: Mark | null = null;
   for (const m of marks) {
@@ -80,9 +80,9 @@ export function markAt(marks: readonly Mark[], p: Point, tol = 0): Mark | null {
 }
 
 /**
- * 레이아웃 오버레이와 함께 그릴 때의 테두리 위치(사용자 요청 2026-10-22, "레이아웃·편집 표시" 한 버튼).
- * 레이아웃 상자와 같은 자리에 겹치지 않게 문단은 gap 만큼 바깥, 표 셀은 gap 만큼 안쪽(이웃 셀 테두리와 겹치지 않게)에
- * 그린다. 셀이 너무 작아 안쪽으로 줄일 수 없으면 원래 상자, 패스는 그대로(가는 선이라 겹쳐도 읽힌다). 단위 pt.
+ * Border positions when drawn together with the layout overlay (user request 2026-10-22, the single "레이아웃·편집 표시" button).
+ * So as not to overlap the layout box at the same place, a paragraph is drawn outside by gap and a table cell inside by gap (so it does not overlap neighboring cell borders).
+ * If a cell is too small to shrink inward, the original box is used; paths are unchanged (thin lines remain readable even when overlapping). Unit pt.
  */
 export function markFrame(m: Mark, gap: number): Rect {
   const [x0, y0, x1, y1] = m.bbox;
@@ -92,7 +92,7 @@ export function markFrame(m: Mark, gap: number): Rect {
   return [x0 + gap, y0 + gap, x1 - gap, y1 - gap];
 }
 
-/** 툴팁 문구: "표 셀 · 편집 가능" 또는 "패스 · 제한: 사유…"(화면 언어). */
+/** Tooltip text: "표 셀 · 편집 가능" or "패스 · 제한: 사유…" (display language). */
 export function markTip(m: Mark, t: ViewerStrings = VIEWER_STRINGS.ko): string {
   const head = t.markKinds[m.kind];
   return m.editable

@@ -1,6 +1,6 @@
 /**
- * M5 벤치마크 서버 실행 공용(계약 4.1): 확장 로드, 문서 HTTP 제공(CORS 허용), 렌더러 VmRSS 읽기.
- * 측정 페이지는 Windows 수동 실행과 같은 `bench.html` 이다.
+ * Shared M5 benchmark server run helpers (contract 4.1): load the extension, serve documents over HTTP (CORS allowed), read the renderer VmRSS.
+ * The measurement page is the same `bench.html` used for manual runs on Windows.
  */
 import { chromium, type BrowserContext, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
@@ -38,8 +38,8 @@ export interface BenchBrowser {
 }
 
 /**
- * 측정 브라우저. 기본 뷰포트 1280×1000·dpr 1. Windows 기준 PC 조건을 흉내 낼 때는 환경 변수 `BENCH_VIEWPORT`(예 `1440x731`)·
- * `BENCH_DPR`(예 `2`)로 바꾼다(헤드리스 에뮬레이션, 판정은 Windows 값).
+ * Measurement browser. Default viewport 1280×1000, dpr 1. To mimic the Windows reference PC, override with the environment variables `BENCH_VIEWPORT` (e.g. `1440x731`) and
+ * `BENCH_DPR` (e.g. `2`) (headless emulation; classification uses the Windows values).
  */
 export async function launchBenchBrowser(): Promise<BenchBrowser> {
   const userDataDir = mkdtempSync(join(tmpdir(), 'pdf-editor-e2e-bench-'));
@@ -65,7 +65,7 @@ export async function launchBenchBrowser(): Promise<BenchBrowser> {
   };
 }
 
-/** 문서 파일을 `/<id>.pdf` 로 제공한다(확장 페이지의 fetch 를 위해 CORS 허용). */
+/** Serves a document file as `/<id>.pdf` (CORS allowed so the extension page's fetch works). */
 export async function serveDocs(
   docs: readonly BenchDocFile[],
 ): Promise<{ server: Server; base: string }> {
@@ -102,13 +102,13 @@ function listPids(): number[] {
 }
 
 /**
- * 이 브라우저(`userDataDir`)의 확장 프로세스(렌더러) PID. 뷰어 페이지와 그 전용 Worker 가 같은 렌더러에 있다.
- * 렌더러는 `--extension-process` 로 구분한다. 여러 개면 VmRSS 가 가장 큰 것.
+ * PID of the extension process (renderer) of this browser (`userDataDir`). The viewer page and its dedicated Worker live in the same renderer.
+ * The renderer is identified by `--extension-process`. If there are several, the one with the largest VmRSS.
  */
 export function extensionRendererPids(userDataDir: string): number[] {
   const all = listPids().map((pid) => ({
     pid,
-    // Chrome 은 argv 를 고쳐 쓰는 프로세스가 있어 NUL 과 공백 둘 다로 자른다.
+    // Some Chrome processes rewrite argv, so split on both NUL and spaces.
     cmd: proc(pid, 'cmdline').split(/[\0 ]/),
     ppid: Number(/^\S+ \(.*\) \S (\d+)/.exec(proc(pid, 'stat'))?.[1] ?? 0),
   }));
@@ -138,7 +138,7 @@ export function extensionRendererPids(userDataDir: string): number[] {
     .map((p) => p.pid);
 }
 
-/** `/proc/<pid>/status` 의 VmRSS(MiB). */
+/** VmRSS (MiB) from `/proc/<pid>/status`. */
 export function vmRssMiB(pid: number): number | null {
   const m = /VmRSS:\s+(\d+) kB/.exec(proc(pid, 'status'));
   return m ? Number(m[1]) / 1024 : null;
@@ -179,8 +179,8 @@ interface AttachEvent {
 const MiB = 2 ** 20;
 
 /**
- * 페이지 CDP 세션으로 그 페이지의 전용 Worker 에 명령을 보낸다. Playwright `CDPSession.send` 는 세션 id 인자가 없어(평면 세션의
- * 하위 세션으로 보낼 수 없음) 자동 연결을 `flatten: false` 로 두고 `Target.sendMessageToTarget` 으로 보낸다.
+ * Sends a command to the page's dedicated Worker through the page's CDP session. Playwright `CDPSession.send` has no session id argument (so it cannot address a child
+ * session of a flat session), so auto-attach is set to `flatten: false` and commands go through `Target.sendMessageToTarget`.
  */
 class WorkerChannel {
   readonly sessions = new Map<string, string>();
@@ -214,7 +214,7 @@ class WorkerChannel {
     return [...this.sessions].filter(([, type]) => type === 'worker').map(([id]) => id);
   }
 
-  /** 하위 세션에 명령을 보내고 결과(실패·5 s 무응답이면 null)를 받는다. */
+  /** Sends a command to the child session and returns the result (null on failure or no response within 5 s). */
   send(sessionId: string, method: string, params: object = {}): Promise<unknown> {
     const id = this.nextId++;
     return new Promise((resolve) => {
@@ -235,12 +235,12 @@ class WorkerChannel {
 }
 
 /**
- * 측정 페이지의 `benchTabMemory` 를 등록한다: 렌더러 VmRSS(MiB). 라벨이 `phase:end-after-gc` 면 먼저 페이지와 전용 Worker 에서
- * 강제 GC 를 돌려 수거 가능한 쓰레기를 뺀 값을 돌려준다(CDP `HeapProfiler.collectGarbage`).
+ * Registers the measurement page's `benchTabMemory`: renderer VmRSS (MiB). If the label is `phase:end-after-gc`, it first forces GC in the page and the dedicated Worker
+ * (CDP `HeapProfiler.collectGarbage`) and returns the value with collectable garbage removed.
  *
- * `benchTabDetail` 도 등록한다: 탭 메모리 구성(MiB). 렌더러 VmRSS, 페이지 JS 힙, 살아 있는 전용 Worker 들의 JS 힙
- * (CDP `Runtime.getHeapUsage` 의 사용·할당 크기), Worker 의 WASM 선형 메모리(`$libmupdf_wasm_Module.HEAPU8`). 서버 헤드리스
- * 값이라 Windows 작업 관리자 값과 같지 않다(구성 비교용).
+ * Also registers `benchTabDetail`: the tab memory breakdown (MiB). Renderer VmRSS, page JS heap, JS heaps of the live dedicated Workers
+ * (used and allocated sizes from CDP `Runtime.getHeapUsage`), and the Worker's WASM linear memory (`$libmupdf_wasm_Module.HEAPU8`). These are server headless
+ * values, so they differ from the Windows Task Manager values (for comparing the breakdown only).
  */
 export async function exposeTabMemory(
   b: BenchBrowser,

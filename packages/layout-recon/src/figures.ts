@@ -1,5 +1,5 @@
 /**
- * 도형 검출(계약 3절 4단계): 큰 이미지와 벡터 경로 군집. 표 괘선·배경, 글을 담은 배경 상자는 뺀다.
+ * Figure detection (contract section 3, step 4): large images and vector path clusters. Table rules and backgrounds, and background boxes that contain text, are excluded.
  */
 import type { PageModel, Rect } from '@pdf-editor/shared-types';
 import { C } from './constants.js';
@@ -19,16 +19,16 @@ interface Element {
   bbox: Rect;
   image?: number;
   path?: number;
-  /** 라벨 후보 줄(군집 다리 역할만, 도형 구성 요소로 세지 않는다). */
+  /** Label candidate lines (serve only as cluster bridges, not counted as figure components). */
   text?: boolean;
-  /** 회전·세로 줄(연표·축 라벨). 5개 이상 모이면 도형 근거로 본다. */
+  /** Rotated or vertical lines (timeline and axis labels). Five or more of them count as evidence of a figure. */
   rotated?: boolean;
-  /** 본문보다 작은 글자 줄. */
+  /** Lines with text smaller than body text. */
   small?: boolean;
   complex: boolean;
 }
 
-/** 얇고 긴 띠(쪽 짧은 변의 5% 미만 두께, 가로세로비 8 초과): 장식. */
+/** Thin, long strip (thickness under 5% of the page's short side, aspect ratio over 8): decoration. */
 function isStrip(r: Rect, page: Rect): boolean {
   const w = r[2] - r[0];
   const h = r[3] - r[1];
@@ -36,7 +36,7 @@ function isStrip(r: Rect, page: Rect): boolean {
   return Math.min(w, h) < 0.05 * short && Math.max(w, h) > 8 * Math.min(w, h);
 }
 
-/** 산문 줄(폭이 넓고 단어가 많은 줄). */
+/** Prose line (wide line with many words). */
 const isProse = (f: LineFeature, w: number): boolean =>
   f.words.length >= 6 && width(f.bbox) > 0.5 * w;
 
@@ -61,7 +61,7 @@ export function detectFigures(
     const covered = charCenters.filter((p) => containsPoint(r, p)).length;
     if (charCenters.length > 20 && covered >= C.backgroundCharRatio * charCenters.length) return;
     if (isStrip(r, page)) return;
-    // 산문 줄 3개 이상을 덮는 이미지는 배경(사진 위 본문·사이드바)이다.
+    // An image covering three or more prose lines is a background (body text over a photo, sidebar).
     const prose = lines.filter((f) => isProse(f, width(r)) && containsPoint(r, center(f.bbox)));
     if (prose.length >= 3) return;
     elements.push({ bbox: r, image: i, complex: true });
@@ -83,12 +83,12 @@ export function detectFigures(
     if (excludedPaths.has(b.path)) continue;
     pathEls.push({ bbox: b.bbox, path: b.path, complex: false });
   }
-  // 쪽 밖 경로는 쪽으로 자르고(완전히 밖이면 버림), 쪽 대부분을 덮는 장식(테두리·배경)은 뺀다.
+  // Paths outside the page are clipped to the page (dropped if entirely outside), and decorations covering most of the page (borders, backgrounds) are excluded.
   const clipped = pathEls.flatMap((e) => {
     const r = intersect(expand(e.bbox, 0.5), page);
     return r ? [{ ...e, bbox: r }] : [];
   });
-  // 짧은 줄(4단어 이하, 쪽 폭 30% 이하)은 도형 조각 사이를 잇는 다리로만 쓴다(회로도·흐름도 라벨).
+  // Short lines (at most 4 words, at most 30% of page width) are used only as bridges between figure pieces (circuit and flowchart labels).
   const bridges: Element[] = lines
     .filter((f) => !f.horizontal || (f.words.length <= 4 && width(f.bbox) <= 0.3 * width(page)))
     .filter((f) => !CAPTION.test(f.text))
@@ -107,9 +107,9 @@ export function detectFigures(
     ),
     ...bridges,
   ];
-  // 상자 근접 군집(union-find).
+  // Clustering by box proximity (union-find).
   const parent = els.map((_, i) => i);
-  // 반복문 find(경로 절반 줄이기). 재귀는 긴 사슬에서 호출 스택을 넘긴다.
+  // Iterative find (path halving). Recursion overflows the call stack on long chains.
   const find = (i: number): number => {
     let x = i;
     for (let guard = 0; parent[x] !== x; guard++) {
@@ -119,8 +119,8 @@ export function detectFigures(
     }
     return x;
   };
-  // 공간 격자 색인으로 이웃 후보만 비교한다(경로 수만 개 쪽에서 쌍별 비교를 피한다).
-  // 칸 크기: 요소 크기 중앙값 2배 + 이음 거리(8–48pt). 밀집 영역에서도 칸당 후보가 적게 한다.
+  // Compares only neighbor candidates via a spatial grid index (avoids pairwise comparison on pages with tens of thousands of paths).
+  // Cell size: 2x the median element size + joining distance (8–48pt). Keeps the candidates per cell few even in dense areas.
   const elSizes = els
     .map((e) => Math.max(e.bbox[2] - e.bbox[0], e.bbox[3] - e.bbox[1]))
     .sort((a, b) => a - b);
@@ -154,7 +154,7 @@ export function detectFigures(
     if (g.length === 0) continue;
     let bbox = g[0]!.bbox;
     for (const e of g.slice(1)) bbox = union(bbox, e.bbox);
-    // 본문보다 작은 다리 줄(축·연표 라벨)은 도형 상자에 넣는다.
+    // Bridge lines smaller than body text (axis and timeline labels) go into the figure box.
     for (const e of all) if (e.text && e.small) bbox = union(bbox, e.bbox);
     const images = g.filter((e) => e.image !== undefined).map((e) => e.image!);
     const pathIds = g.filter((e) => e.path !== undefined).map((e) => e.path!);
@@ -163,7 +163,7 @@ export function detectFigures(
       const complex = g.some((e) => e.complex);
       const rotatedLabels = all.filter((e) => e.rotated).length;
       if (!complex && g.length < 8 && rotatedLabels < 5) continue;
-      // 글을 담은 상자(콜아웃·사이드바)는 도형이 아니다.
+      // A box that contains text (callout, sidebar) is not a figure.
       const inside = lines.filter((f) => containsPoint(bbox, center(f.bbox)));
       if (inside.filter((f) => isProse(f, width(bbox))).length >= 3) continue;
     }
@@ -173,8 +173,8 @@ export function detectFigures(
 }
 
 /**
- * 하위 그림(패널) 합치기: 위아래(x 겹침 50% 이상) 또는 좌우(y 겹침 50% 이상)로 이웃하고 간격이 본문 글자
- * 3em 이하이며 그 사이에 산문 줄이 없으면 한 도형으로 본다(캡션 하나에 패널 여럿).
+ * Merging sub-figures (panels): neighbors above/below (x overlap at least 50%) or left/right (y overlap at least 50%) whose gap is at most 3em of body
+ * font size, with no prose line between them, are treated as one figure (several panels under one caption).
  */
 function mergePanels(figs: DetectedFigure[], lines: readonly LineFeature[]): DetectedFigure[] {
   const size = lines.length
@@ -217,12 +217,12 @@ function mergePanels(figs: DetectedFigure[], lines: readonly LineFeature[]): Det
   return out;
 }
 
-/** 이 개수를 넘으면 점유 격자 근사로 군집한다(경로 수만 개 차트 쪽의 최악 시간 상한). */
+/** Above this count, clustering uses the occupancy grid approximation (worst-case time bound for charts with tens of thousands of paths). */
 const DENSE_ELEMENTS = 4000;
 
 /**
- * 점유 격자 군집(근사): 쪽을 C.vectorJoin 크기 칸으로 나눠 요소 상자(이음 거리 절반만큼 확장)가 덮는 칸을
- * 표시하고, 표시 칸의 4-이웃 연결 요소를 군집으로 본다. parent[i] 에 요소 i 의 군집 대표(첫 요소)를 쓴다.
+ * Occupancy grid clustering (approximate): divides the page into cells of size C.vectorJoin and marks the cells covered by element boxes (expanded by half the joining distance),
+ * then treats 4-neighbor connected components of marked cells as clusters. Writes the cluster representative (first element) of element i into parent[i].
  */
 function clusterByOccupancy(els: readonly Element[], page: Rect, parent: number[]): void {
   const cell = C.vectorJoin;
@@ -238,13 +238,13 @@ function clusterByOccupancy(els: readonly Element[], page: Rect, parent: number[
       Math.min(rows - 1, Math.floor((e[3] - page[1]) / cell)),
     ];
   };
-  // 1) 칸 표시(첫 표시 요소를 임시 소유자로).
+  // 1) Mark cells (the first marking element is the temporary owner).
   els.forEach((e, i) => {
     const [x0, y0, x1, y1] = span(e.bbox);
     for (let y = y0; y <= y1; y++)
       for (let x = x0; x <= x1; x++) if (owner[y * cols + x] === -1) owner[y * cols + x] = i;
   });
-  // 2) 표시 칸 연결 요소(BFS), 칸마다 요소 대표를 정한다.
+  // 2) Connected components of marked cells (BFS); pick an element representative per cell.
   const comp = new Int32Array(cols * rows).fill(-1);
   const queue = new Int32Array(cols * rows);
   for (let s = 0; s < owner.length; s++) {
@@ -271,7 +271,7 @@ function clusterByOccupancy(els: readonly Element[], page: Rect, parent: number[
       }
     }
   }
-  // 3) 요소 → 군집 대표(요소 상자 중심 칸의 연결 요소, 쪽 밖이면 자기 자신).
+  // 3) Element → cluster representative (connected component of the cell at the element box center; itself if outside the page).
   els.forEach((e, i) => {
     const [x0, y0, x1, y1] = span(e.bbox);
     const c = Math.floor((y0 + y1) / 2) * cols + Math.floor((x0 + x1) / 2);

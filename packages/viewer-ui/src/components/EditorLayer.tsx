@@ -39,7 +39,7 @@ const HANDLES: [HandleName, number, number][] = [
 
 const HANDLE_SIZE = 8;
 
-/** 같은 경고(종류+메시지)는 한 번만. */
+/** The same warning (kind + message) only once. */
 function mergeWarnings(...lists: EditWarning[][]): EditWarning[] {
   const seen = new Set<string>();
   const out: EditWarning[] = [];
@@ -53,11 +53,11 @@ function mergeWarnings(...lists: EditWarning[][]): EditWarning[] {
 }
 
 /**
- * 편집 층(계약 5.9, D7): 영역 테두리·핸들, 캐럿·선택·조합 밑줄(리플로우 결과로 그림), 폴백·없는 글자 표시,
- * 초과 표시(영역은 리플로우가 자동으로 넓히고, 상한에 막혀 남은 초과만 표시 + "되돌리기"), 경고 목록, 태그 쪽 안내,
- * 입력용 숨은 textarea.
+ * Edit layer (contract 5.9, D7): region border and handles, caret/selection/composition underline (drawn from the reflow result), fallback and missing character markers,
+ * overflow indicator (the region is widened automatically by reflow; only the overflow remaining after hitting the limit is shown + "되돌리기"), warning list, tagged-page notice,
+ * hidden textarea for input.
  *
- * 캐럿·선택은 "마지막으로 처리된 프레임"(`session.shown`)으로 그려 캔버스에 합성된 글자와 어긋나지 않는다.
+ * The caret and selection are drawn from the "last processed frame" (`session.shown`) so they do not diverge from the characters composited onto the canvas.
  */
 export function EditorLayer({ controller, pageRef, layout, session, fallbackUnderline }: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -68,16 +68,16 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
   const caret = caretBox(reflow, shown.text, shown.caret, shown.affinity);
   const sessionOf = (): EditSession | null => controller.edit?.currentSession() ?? null;
 
-  // 시작할 때 입력용 textarea 에 포커스를 준다.
-  // 더블클릭으로 선택됐던 텍스트 층의 DOM 선택은 지운다(남아 있으면 이후 IME 조합 중 선택이 바뀌어 조합이 끊긴다).
+  // On start, focus the input textarea.
+  // Clear the DOM selection of the text layer left from the double-click (if it remains, the selection changes during later IME composition and breaks the composition).
   useLayoutEffect(() => {
     document.getSelection()?.removeAllRanges();
     taRef.current?.focus({ preventScroll: true });
-    // 임베디드 문맥(`<embed>`·`<iframe>`)에서는 프레임 자체에 포커스가 없을 수 있다(텍스트 층과 같은 이유, m1 통합 실측).
+    // In an embedded context (`<embed>`, `<iframe>`) the frame itself may not have focus (same reason as the text layer, m1 integration measurement).
     if (!document.hasFocus()) window.focus();
   }, [session.draftId]);
 
-  // 모델이 조합을 끝냈는데 IME 는 아직 조합 중이면(저장 전 커밋 등) blur 로 IME 조합을 끝내고 다시 포커스한다.
+  // If the model has ended composition but the IME is still composing (commit before save, etc.), end the IME composition with blur and focus again.
   useLayoutEffect(() => {
     const ta = taRef.current;
     if (!ta || editor.composition) return;
@@ -89,7 +89,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
     if (document.activeElement !== ta) ta.focus({ preventScroll: true });
   }, [editor.composition]);
 
-  // 입력: keydown·beforeinput·composition*·클립보드. Preact 의 이벤트 이름 규칙과 무관하게 직접 등록한다.
+  // Input: keydown, beforeinput, composition*, clipboard. Registered directly regardless of Preact's event name rules.
   useLayoutEffect(() => {
     const ta = taRef.current;
     if (!ta) return;
@@ -97,7 +97,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
       const s = sessionOf();
       if (!s) return;
       if ((e.isComposing || e.keyCode === 229) && (e.ctrlKey || e.metaKey)) {
-        // 조합 중 단축키(Ctrl+Z 등)는 무시한다(I5). 막지 않으면 브라우저가 편집 명령(historyUndo)으로 조합을 깨뜨린다.
+        // Shortcuts during composition (Ctrl+Z etc.) are ignored (I5). If not blocked, the browser breaks the composition with an edit command (historyUndo).
         e.preventDefault();
         return;
       }
@@ -141,12 +141,12 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
     const onBeforeInput = (e: InputEvent) => {
       const s = sessionOf();
       if (!s) return;
-      // 되돌리기·다시 실행 편집 명령은 조합 여부와 무관하게 막는다(편집기 이력은 keydown 에서 처리한다).
+      // Undo/redo edit commands are blocked regardless of composition (the editor history is handled in keydown).
       if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') {
         e.preventDefault();
         return;
       }
-      if (e.isComposing) return; // 조합 중 입력은 composition 이벤트로 처리한다
+      if (e.isComposing) return; // input during composition is handled by composition events
       e.preventDefault();
       switch (e.inputType) {
         case 'insertText':
@@ -170,7 +170,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
           s.deleteKey(true);
           break;
         default:
-          break; // 붙여넣기·자르기는 클립보드 이벤트, 되돌리기는 keydown 에서 처리한다
+          break; // paste/cut are handled by clipboard events, undo by keydown
       }
     };
     const onCompositionStart = () => {
@@ -202,7 +202,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
       const s = sessionOf();
       if (!s) return;
       e.preventDefault();
-      s.paste(e.clipboardData?.getData('text/plain') ?? ''); // 텍스트만
+      s.paste(e.clipboardData?.getData('text/plain') ?? ''); // text only
     };
     ta.addEventListener('keydown', onKeyDown);
     ta.addEventListener('beforeinput', onBeforeInput);
@@ -224,12 +224,12 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
     };
   }, [controller]);
 
-  // 바깥 클릭 = 커밋(조합 중이면 조합을 확정한 뒤, 계약 I8).
+  // Outside click = commit (if composing, finalize the composition first, contract I8).
   useLayoutEffect(() => {
     const onDown = (e: MouseEvent) => {
       const target = e.target as Element | null;
       if (target?.closest?.('[data-pe-keep]')) return;
-      taRef.current?.blur(); // 조합 중이면 compositionend 가 동기로 오고 모델이 확정한다
+      taRef.current?.blur(); // if composing, compositionend arrives synchronously and the model finalizes
       void commitAndFinish(controller);
     };
     document.addEventListener('mousedown', onDown, true);
@@ -241,14 +241,14 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
     return cssToPage(e.clientX - (rect?.left ?? 0), e.clientY - (rect?.top ?? 0), layout);
   };
 
-  /** 영역 안 마우스 누름: 캐럿·선택(더블클릭 = 단어, 트리플클릭 = 전체). 조합 중이면 확정한 뒤 이동한다(I4). */
+  /** Mouse down inside the region: caret/selection (double-click = word, triple-click = all). If composing, finalizes first and then moves (I4). */
   const onAreaDown = (e: MouseEvent) => {
     if (e.button !== 0) return;
     const s = sessionOf();
     if (!s) return;
     e.preventDefault();
     e.stopPropagation();
-    if (s.isComposing) taRef.current?.blur(); // compositionend 가 동기로 와서 모델이 확정한다
+    if (s.isComposing) taRef.current?.blur(); // compositionend arrives synchronously and the model finalizes
     s.pointerDown(pagePoint(e), e.detail, e.shiftKey);
     taRef.current?.focus({ preventScroll: true });
     const onMove = (m: MouseEvent) => s.pointerDrag(pagePoint(m));
@@ -261,7 +261,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
     document.addEventListener('mouseup', onUp);
   };
 
-  /** 영역 핸들 드래그: areaLimit 안으로 자른다. */
+  /** Region handle drag: clipped to areaLimit. */
   const onHandleDown = (handle: HandleName) => (e: MouseEvent) => {
     if (e.button !== 0) return;
     const s = sessionOf();
@@ -399,8 +399,8 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
         );
       })}
       {reflow.overflow && (
-        // 영역은 글 높이까지 자동으로 넓어진다(계약 5.4, 2026-10-20). 여기 오는 것은 영역 상한(쪽·Form 경계)에 막혀
-        // 남은 초과뿐이다. 그대로 커밋(Esc·바깥 클릭)하면 overflow-clipped 경고 상태로 반영된다(사용자 결정).
+        // The region widens automatically to the text height (contract 5.4, 2026-10-20). What reaches here is only the overflow left over because of the region limit (page/Form boundary).
+        // Committing as is (Esc, outside click) is applied with the overflow-clipped warning state (user decision).
         <div
           id="pe-edit-overflow"
           class="pe-edit-overflow"
@@ -472,7 +472,7 @@ export function EditorLayer({ controller, pageRef, layout, session, fallbackUnde
   );
 }
 
-/** 커밋하고 편집을 마친 뒤 보류했던 환경 변화(창 크기)를 반영한다. */
+/** After committing and finishing the edit, applies the environment change (window size) that was deferred. */
 async function commitAndFinish(controller: ViewerController): Promise<void> {
   const ended = await controller.edit?.commitActive();
   if (ended) await controller.afterEditEnded();

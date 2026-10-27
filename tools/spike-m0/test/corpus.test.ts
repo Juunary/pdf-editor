@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-// core 를 mupdf 보다 먼저 import 한다(src/corpus-edit.ts 참고).
+// Import core before mupdf (see src/corpus-edit.ts).
 import { analyzeForEdit } from '../src/corpus-cli.js';
 import { judgeRestrictions, runCorpusEdit, type ParagraphContext } from '../src/corpus-edit.js';
 import {
@@ -26,8 +26,8 @@ const fontBytes = new Uint8Array(
   ),
 );
 
-describe('코퍼스 문단 자동 선택(stext)', () => {
-  it('m0-sample: Day 1 하드코딩 대상 문단을 자동으로 고르고, 인접 문단과 겹치지 않는다', () => {
+describe('automatic corpus paragraph selection (stext)', () => {
+  it('m0-sample: automatically picks the Day 1 hard-coded target paragraph and does not overlap adjacent paragraphs', () => {
     const r = analyzeForEdit(fixture('m0-sample.pdf'));
     expect(r.paragraphs).toHaveLength(1);
     const p = r.paragraphs[0]!;
@@ -36,7 +36,7 @@ describe('코퍼스 문단 자동 선택(stext)', () => {
     );
     expect(p.fontSize).toBe(11);
     expect(p.linePitch).toBeCloseTo(14, 1);
-    // 자동 영역은 Day 1 하드코딩 영역 안에 있다
+    // The automatic area lies within the Day 1 hard-coded area
     expect(p.rect[0]).toBeGreaterThanOrEqual(TARGET_RECT[0]);
     expect(p.rect[1]).toBeGreaterThanOrEqual(TARGET_RECT[1]);
     expect(p.rect[3]).toBeLessThanOrEqual(TARGET_RECT[3]);
@@ -44,7 +44,7 @@ describe('코퍼스 문단 자동 선택(stext)', () => {
     expect(r.analysis.forms.usages).toBe(0);
   });
 
-  it('공유 XObject 픽스처: Form 안 텍스트 문단은 Form 문맥(L 조건 입력)과 함께 보고된다', () => {
+  it('shared XObject fixture: a text paragraph inside a Form is reported with its Form context (L-condition input)', () => {
     const r = analyzeForEdit(fixture('m0-shared-xobject.pdf'));
     expect(r.analysis.forms.shared).toBe(2);
     expect(r.analysis.forms.sharedWithText).toBe(2);
@@ -54,7 +54,7 @@ describe('코퍼스 문단 자동 선택(stext)', () => {
     }
   });
 
-  it('훑기 구간: 15%·50%·85% 지점 + 나머지, 중복 없음', () => {
+  it('scan ranges: 15%·50%·85% points + the remainder, no duplicates', () => {
     const segs = scanSegments(100);
     expect(segs[0]![0]).toBe(14); // floor(99 × 0.15)
     expect(segs[1]![0]).toBe(49);
@@ -65,7 +65,7 @@ describe('코퍼스 문단 자동 선택(stext)', () => {
   });
 });
 
-describe('한 줄 블록 병합(stext 가 줄마다 블록을 나누는 문서)', () => {
+describe('single-line block merging (documents where stext splits a block per line)', () => {
   const line = (y: number, x = 50, size = 10, text = 'lorem ipsum dolor sit amet'): StextBlock => ({
     bbox: [x, y - 8, x + 200, y + 2],
     lines: [
@@ -84,19 +84,19 @@ describe('한 줄 블록 병합(stext 가 줄마다 블록을 나누는 문서)'
       },
     ],
   });
-  it('왼쪽 정렬·같은 크기·고른 간격이면 묶고, 크기가 다른 줄에서 끊는다', () => {
+  it('groups lines that are left-aligned, same size, and evenly spaced, and breaks at a line of a different size', () => {
     const blocks = [line(100), line(112), line(124), line(136), line(160, 50, 14), line(200)];
     const merged = mergeLineBlocks(blocks);
     expect(merged.map((m) => m.members)).toEqual([[0, 1, 2, 3]]);
   });
-  it('8줄마다 끊는다', () => {
+  it('breaks every 8 lines', () => {
     const blocks = Array.from({ length: 12 }, (_v, i) => line(100 + i * 12));
     expect(mergeLineBlocks(blocks).map((m) => m.members.length)).toEqual([8, 4]);
   });
 });
 
-describe('코퍼스 문단 교체(redaction → 한글 폴백 임베딩 → 전체 저장)', () => {
-  it('m0-sample: 실패 0, 편집 영역 밖 0 px, 재열기 검색 적중, 전체 저장·힙 판정 ok', () => {
+describe('corpus paragraph replacement (redaction → Korean fallback embedding → full save)', () => {
+  it('m0-sample: 0 failures, 0 px outside the edit area, reopen search hits, full save and heap check ok', () => {
     const plan = analyzeForEdit(fixture('m0-sample.pdf'));
     const r = runCorpusEdit({
       bytes: fixture('m0-sample.pdf'),
@@ -121,7 +121,7 @@ describe('코퍼스 문단 교체(redaction → 한글 폴백 임베딩 → 전�
     expect(r.mupdfMessages.count).toBe(0);
   });
 
-  it('제한 판정: Form L1·L2·L7, 태그 MCID, 매핑 위험 문자', () => {
+  it('restriction classification: Form L1·L2·L7, tag MCID, mapping-risk characters', () => {
     const base = analyzeForEdit(fixture('m0-sample.pdf')).paragraphs[0]!;
     const ctx: ParagraphContext = {
       ...base,
@@ -154,14 +154,14 @@ describe('코퍼스 문단 교체(redaction → 한글 폴백 임베딩 → 전�
     ]);
   });
 
-  it('rectsIntersect: 면적 있는 교차만', () => {
+  it('rectsIntersect: only intersections with area', () => {
     expect(rectsIntersect([0, 0, 10, 10], [10, 0, 20, 10])).toBe(false);
     expect(rectsIntersect([0, 0, 10, 10], [9, 9, 20, 20])).toBe(true);
   });
 });
 
-describe('공유 Form 사용 위치 1곳만 복제·수정(코퍼스 경로)', () => {
-  it('합성 공유 XObject: 텍스트 Form 2개, 선택 위치만 바뀌고 다른 쪽 0 px', () => {
+describe('clone·modify only one shared Form usage location (corpus path)', () => {
+  it('synthetic shared XObject: 2 text Forms, only the selected location changes and other pages differ by 0 px', () => {
     const bytes = fixture('m0-shared-xobject.pdf');
     const doc = openPdf(bytes);
     const picks = pickSharedTextForms(doc);
@@ -176,8 +176,8 @@ describe('공유 Form 사용 위치 1곳만 복제·수정(코퍼스 경로)', (
   });
 });
 
-describe('pdf.js(pdfjs-dist) 독립 확인', () => {
-  it('fixtures/m0 편집 결과 3개: 한글 문단 추출·검색어·편집 영역 밖 0 px', async () => {
+describe('independent pdf.js (pdfjs-dist) check', () => {
+  it('3 fixtures/m0 edit results: Korean paragraph extraction, search terms, 0 px outside the edit area', async () => {
     const results = await runPdfjsCheck(
       m0FixturePairs(root),
       fileURLToPath(new URL('../../../out/m0-corpus/pdfjs-test', import.meta.url)),

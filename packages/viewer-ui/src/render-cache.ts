@@ -1,6 +1,6 @@
 /**
- * 쪽 렌더 결과 LRU 캐시(M5 계약 4.1). 키는 (쪽, 렌더 배율). 상한은 8쪽과 64 MiB 중 작은 쪽이다.
- * 문서가 바뀌면 해당 쪽의 항목을 모든 배율에서 버린다. 비트맵 하나가 상한보다 크면 담지 않는다.
+ * Page render result LRU cache (M5 contract 4.1). The key is (page, render scale). The limit is the smaller of 8 pages and 64 MiB.
+ * When the document changes, the entries of the affected pages are dropped at every scale. A bitmap larger than the limit is not stored.
  */
 import type { RenderedPage } from '@pdf-editor/shared-types';
 
@@ -13,10 +13,10 @@ export interface RenderCacheLimits {
 }
 
 export class RenderCache {
-  /** Map 의 삽입 순서가 최근 사용 순서다(맨 앞이 가장 오래됨). */
+  /** The insertion order of the Map is the recency order (the front is the oldest). */
   private readonly entries = new Map<string, { pageIndex: number; value: RenderedPage }>();
   private bytes = 0;
-  /** 무효화마다 올린다. 진행 중이던 렌더가 무효화 뒤에 도착하면 `put` 에서 거를 때 쓴다. */
+  /** Incremented on every invalidation. Used by `put` to filter out a render that was in flight and arrives after an invalidation. */
   private epochValue = 0;
 
   constructor(
@@ -55,7 +55,7 @@ export class RenderCache {
     return hit.value;
   }
 
-  /** `epoch` 는 렌더를 시작할 때의 `cache.epoch`. 그 사이 무효화가 있었으면 담지 않는다. */
+  /** `epoch` is the `cache.epoch` at the time the render started. If there was an invalidation in between, it is not stored. */
   put(
     pageIndex: number,
     scale: number,
@@ -81,7 +81,7 @@ export class RenderCache {
     }
   }
 
-  /** 이 쪽들의 항목을 모든 배율에서 버린다. */
+  /** Drops the entries of these pages at every scale. */
   invalidate(pages: readonly number[]): void {
     this.epochValue++;
     const set = new Set(pages);

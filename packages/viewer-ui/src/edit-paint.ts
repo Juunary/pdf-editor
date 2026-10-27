@@ -1,8 +1,8 @@
-/** 변경 영역 렌더(`DraftUpdate.region`)를 쪽 캔버스에 합성하는 위치 계산(순수, 계약 D7). */
+/** Position calculation for compositing the changed-region render (`DraftUpdate.region`) onto the page canvas (pure, contract D7). */
 import type { RenderedPage } from '@pdf-editor/shared-types';
 import { renderScale, type PageLayout } from './layout.js';
 
-/** 영역 비트맵의 캔버스 좌상단(device px). 쪽 전체 렌더면 (0, 0). */
+/** Top-left of the region bitmap on the canvas (device px). (0, 0) for a whole-page render. */
 export function regionPlacement(
   region: RenderedPage,
   layout: PageLayout,

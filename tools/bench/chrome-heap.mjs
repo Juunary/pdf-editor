@@ -1,10 +1,10 @@
 /* global window, document */
-// Chrome Worker 저장 힙 1회 검증(계약 4.2, docs/m5-heap.md 4.3). Playwright 번들 Chromium 에 dist 확장을 올리고 `viewer.html?e2e`
-// 이음매(`__pe.pdf`, 뷰어 소유 Worker 의 RPC)로 열기 → (full) 첫 편집 가능 문단 편집·커밋 → planSave → save 를 부른다.
-// 저장 전 판정(over-limit 중단)은 거치지 않고 저장해 실제 실패 양상을 본다. 탭 크래시는 미탐으로 센다.
-// 사용: pnpm --filter @pdf-editor/extension build 후
+// Chrome Worker save-heap check, one run (contract 4.2, docs/m5-heap.md 4.3). Loads the dist extension into Playwright's bundled Chromium and opens `viewer.html?e2e`
+// through the seam (`__pe.pdf`, RPC to the viewer-owned Worker) → (full) edits and commits the first editable paragraph → calls planSave → save.
+// It saves without the pre-save classification (over-limit abort) to observe the real failure mode. A tab crash counts as a miss.
+// Usage: after pnpm --filter @pdf-editor/extension build
 //   node tools/bench/chrome-heap.mjs <pdf>:<full|none|full2|none2> [...] [--out out/m5-heap/chrome.jsonl]
-// full2·none2: 같은 세션 저장 2회(docs/m5-heap.md 4.4). 첫 저장 뒤 (full2 는 다시 편집하고) 두 번째 planSave → save, 결과 plan2·peak2.
+// full2·none2: two saves in the same session (docs/m5-heap.md 4.4). After the first save (full2 edits again), a second planSave → save; results are plan2·peak2.
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, basename } from 'node:path';
@@ -94,7 +94,7 @@ async function measure(context, extensionId, path, variant) {
     out.ok = false;
     out.error = String(e);
   }
-  // 미탐: 측정 피크 > 예상 피크, 또는 탭 크래시. 저장 실패(Worker 복구)는 예상이 over-limit 이 아니면 미탐.
+  // Miss: measured peak > estimated peak, or a tab crash. A save failure (Worker recovery) is a miss unless the estimate was over-limit.
   const est = out.heap?.estimatedPeakBytes ?? 0;
   out.miss = out.crashed || (out.ok ? out.peak > est : out.heap?.level !== 'over-limit');
   if (out.heap2) {

@@ -1,10 +1,10 @@
 /**
- * M3 viewer-ui 편집기 e2e(docs/m3-viewer-ui.md).
+ * M3 viewer-ui editor e2e (docs/m3-viewer-ui.md).
  *
- * 가짜 편집 호스트(글자 폭이 일정한 단순 리플로우)로 viewer-ui 빌드 산출물만 띄워, 실제 Chromium 에서 편집기 UI 를 확인한다:
- * 진입(테두리·더블클릭·제한 사유), 입력·키·클립보드, IME 시나리오 I1–I8(CDP `Input.imeSetComposition`·`Input.insertText`),
- * 변경 영역 합성 위치, 초과 3선택, 영역 핸들, 폴백·없는 글자 표시, 경고·태그 안내, 문서 undo/redo, 복구.
- * 실제 core 편집 RPC 가 필요한 흐름은 `integration` 블록의 `test.skip` 으로 두고 통합 때 켠다(docs/m3-viewer-ui.md 5절).
+ * Serves only the viewer-ui build output with a fake edit host (simple reflow with constant glyph width) and checks the editor UI in a real Chromium:
+ * entry (border, double-click, restriction reason), input, keys and clipboard, IME scenarios I1–I8 (CDP `Input.imeSetComposition` and `Input.insertText`),
+ * compositing position of the changed region, overflow 3-choice, region handles, fallback and missing-glyph display, warning and tag notices, document undo/redo, recovery.
+ * Flows that need the real core edit RPC are left as `test.skip` in the `integration` block and enabled at integration (docs/m3-viewer-ui.md section 5).
  */
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
 import type { PageModel } from '@pdf-editor/shared-types';
@@ -16,11 +16,11 @@ import {
   type EditHarnessConfig,
 } from './edit-harness.js';
 
-// ── 하니스 구성 ────────────────────────────────────────────────────────
+// ── Harness setup ────────────────────────────────────────────────────
 
 /**
- * 문단 1: 편집 가능 "Hello World"(영역 [20,20,130,60], 한 줄 11글자, 두 줄까지 들어간다).
- * 문단 2: 제한(표 셀). 문단 3: 태그 쪽(MCID 있음). 글자 10×14pt 격자, 줄 0 은 y 20–34.
+ * Paragraph 1: editable "Hello World" (region [20,20,130,60], 11 glyphs on one line, up to two lines fit).
+ * Paragraph 2: restricted (table cell). Paragraph 3: tagged page (has MCID). 10×14pt glyph grid, line 0 is y 20–34.
  */
 const PARAGRAPHS = [
   { id: 1, bbox: [20, 20, 130, 60] as [number, number, number, number], text: 'Hello World' },
@@ -58,13 +58,13 @@ async function geo(page: Page): Promise<Geo> {
   return { x: box.x, y: box.y, scale: Number(await surface.getAttribute('data-css-scale')) };
 }
 
-/** 페이지 공간(pt) → 화면 좌표. */
+/** Page space (pt) → screen coordinates. */
 const at = (g: Geo, x: number, y: number) => ({ x: g.x + x * g.scale, y: g.y + y * g.scale });
 
-/** 첫 줄 글자 col 의 화면 좌표(글자 상자 안 비율 fx). */
+/** Screen coordinates of glyph col on the first line (ratio fx inside the glyph box). */
 const charAt = (g: Geo, col: number, fx = 0.5) => at(g, 20 + col * 10 + fx * 10, 27);
 
-/** 브라우저 안 `window.__controller` 에서 읽는 편집 세션(`EditSessionView` 의 일부). */
+/** Edit session read from `window.__controller` in the browser (part of `EditSessionView`). */
 interface PageSession {
   editor: { text: string; caret: number; anchor: number; composition: [number, number] | null };
   shown: {
@@ -114,7 +114,7 @@ async function session(page: Page): Promise<SessionInfo | null> {
   });
 }
 
-/** 보낸 입력이 모두 처리되어 화면 프레임이 모델과 같아질 때까지 기다린다. */
+/** Waits until all sent input has been processed and the screen frame equals the model. */
 async function settled(page: Page): Promise<SessionInfo> {
   await page.waitForFunction(() => {
     const w = window as unknown as PageWindow;
@@ -133,7 +133,7 @@ async function ended(page: Page): Promise<void> {
   );
 }
 
-/** 문단 1 을 더블클릭해 편집을 시작한다(캐럿은 클릭한 글자 앞·뒤). */
+/** Double-clicks paragraph 1 to start editing (the caret is before or after the clicked glyph). */
 async function startEdit(page: Page, col = 6, fx = 0.2): Promise<Geo> {
   const g = await geo(page);
   const p = charAt(g, col, fx);
@@ -150,7 +150,7 @@ async function hostCalls(page: Page, method: string): Promise<number> {
   );
 }
 
-/** 쪽 캔버스의 한 점(pt) 픽셀 RGB. */
+/** Pixel RGB of a point (pt) on the page canvas. */
 async function pixel(page: Page, x: number, y: number): Promise<number[]> {
   return page.evaluate(
     ([px, py]) => {
@@ -191,7 +191,7 @@ async function compose(client: CDPSession, text: string): Promise<void> {
 const insert = (client: CDPSession, text: string) => client.send('Input.insertText', { text });
 
 let errors: string[] = [];
-test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
+test.describe('M3 editor UI (fake edit host)', () => {
   test.beforeAll(startEditHarness);
   test.afterAll(stopEditHarness);
   test.beforeEach(async ({ page }) => {
@@ -210,10 +210,10 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
     expect(errors, '페이지 오류').toEqual([]);
   });
 
-  // ── 진입 ──────────────────────────────────────────────────────────
+  // ── Entry ──────────────────────────────────────────────────────────
 
-  test.describe('진입', () => {
-    test('마우스 오버: 편집 가능 문단은 실선, 제한 문단은 점선(다른 색) 테두리', async ({
+  test.describe('entry', () => {
+    test('mouse over: solid border for editable paragraphs, dashed border (different color) for restricted ones', async ({
       page,
     }) => {
       const g = await geo(page);
@@ -233,10 +233,10 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(hover).toHaveCount(0);
     });
 
-    test('더블클릭: 편집 층이 열리고 캐럿은 클릭한 글자 위치, 입력 textarea 에 포커스', async ({
+    test('double-click: the edit layer opens, the caret is at the clicked glyph position, the input textarea has focus', async ({
       page,
     }) => {
-      const g = await startEdit(page, 6, 0.2); // 'W' 왼쪽 절반 → 오프셋 6 앞
+      const g = await startEdit(page, 6, 0.2); // left half of 'W' → before offset 6
       expect((await caretInfo(page)).offset).toBe(6);
       expect((await caretInfo(page)).x).toBe(80);
       expect(await page.evaluate(() => document.activeElement?.id)).toBe('pe-edit-input');
@@ -244,14 +244,14 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       const area = await page.locator('#pe-edit-area').boundingBox();
       expect(Math.abs(area!.x - (g.x + 20 * g.scale))).toBeLessThan(0.75);
       expect(Math.abs(area!.height - 40 * g.scale)).toBeLessThan(0.75);
-      // 글자 오른쪽 절반을 누르면 그 글자 뒤
+      // Clicking the right half of a glyph puts the caret after it
       await page.keyboard.press('Escape');
       await ended(page);
       await startEdit(page, 6, 0.8);
       expect((await caretInfo(page)).offset).toBe(7);
     });
 
-    test('한 번 클릭·드래그는 기존 텍스트 선택 그대로(편집이 시작되지 않는다)', async ({
+    test('a single click or drag keeps the existing text selection (editing does not start)', async ({
       page,
     }) => {
       const g = await geo(page);
@@ -265,7 +265,9 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-text-layer')).toBeVisible();
     });
 
-    test('제한 문단 더블클릭: 사유 팝오버를 보이고 편집은 시작하지 않는다', async ({ page }) => {
+    test('double-click on a restricted paragraph: shows the reason popover and does not start editing', async ({
+      page,
+    }) => {
       const g = await geo(page);
       const p = at(g, 30, 105);
       await page.mouse.dblclick(p.x, p.y);
@@ -282,7 +284,9 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(pop).toHaveCount(0);
     });
 
-    test('태그 쪽 문단은 안내를 보이고, 설정으로 막을 수 있다(D1)', async ({ page }) => {
+    test('a tagged-page paragraph shows a notice and can be blocked by a setting (D1)', async ({
+      page,
+    }) => {
       const g = await geo(page);
       const p = at(g, 60, 167);
       await page.mouse.dblclick(p.x, p.y);
@@ -299,19 +303,21 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
     });
   });
 
-  // ── 입력 ──────────────────────────────────────────────────────────
+  // ── Input ──────────────────────────────────────────────────────────
 
-  test.describe('입력·키', () => {
-    test('타이핑: 모델·캐럿·변경 영역 합성(글리프 위치 픽셀)이 맞는다', async ({ page }) => {
-      await startEdit(page, 10, 0.8); // 오프셋 11(끝)
-      expect(await pixel(page, 125, 26)).toEqual([0x22, 0x22, 0x22]); // 시작 프레임의 11번째 글자
-      expect(await pixel(page, 25, 46)).toEqual([255, 255, 255]); // 둘째 줄은 비어 있다
+  test.describe('input and keys', () => {
+    test('typing: model, caret and changed-region compositing (glyph position pixels) are correct', async ({
+      page,
+    }) => {
+      await startEdit(page, 10, 0.8); // offset 11 (end)
+      expect(await pixel(page, 125, 26)).toEqual([0x22, 0x22, 0x22]); // the 11th glyph of the start frame
+      expect(await pixel(page, 25, 46)).toEqual([255, 255, 255]); // the second line is empty
       await page.keyboard.type('abc');
       const s = await settled(page);
       expect(s.text).toBe('Hello Worldabc');
       expect(s.caret).toBe(14);
       expect(s.lines).toBe(2);
-      // 마지막 공백("Hello " 뒤)에서 줄이 나뉘어 "Worldabc" 8글자가 둘째 줄(기준선 52, 상자 41–52)에 합성된다.
+      // The line breaks at the last space (after "Hello "), and the 8 glyphs of "Worldabc" are composited on the second line (baseline 52, box 41–52).
       expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]);
       expect(await pixel(page, 95, 46)).toEqual([0x22, 0x22, 0x22]);
       expect(await pixel(page, 105, 46)).toEqual([255, 255, 255]);
@@ -319,8 +325,8 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect([caret.offset, caret.x, caret.line]).toEqual([14, 100, 1]);
     });
 
-    test('Backspace·Delete·화살표·Home/End·Shift 선택·Ctrl+A', async ({ page }) => {
-      await startEdit(page, 6, 0.2); // 오프셋 6
+    test('Backspace, Delete, arrows, Home/End, Shift selection, Ctrl+A', async ({ page }) => {
+      await startEdit(page, 6, 0.2); // offset 6
       await page.keyboard.press('Backspace');
       expect((await settled(page)).text).toBe('HelloWorld');
       await page.keyboard.press('Delete');
@@ -334,7 +340,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       let s = (await session(page))!;
       expect([s.anchor, s.caret]).toEqual([0, 9]);
       await expect(page.locator('.pe-edit-sel')).toHaveCount(1);
-      await page.keyboard.press('ArrowRight'); // 선택이 있으면 끝으로 접는다
+      await page.keyboard.press('ArrowRight'); // with a selection, collapses to its end
       s = (await session(page))!;
       expect([s.anchor, s.caret]).toEqual([9, 9]);
       await page.keyboard.press('Control+A');
@@ -344,14 +350,16 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect((await settled(page)).text).toBe('X');
     });
 
-    test('Enter 는 강제 줄바꿈, ↑/↓ 는 리플로우 줄 기준, 줄 안 Home/End', async ({ page }) => {
-      await startEdit(page, 4, 0.8); // 오프셋 5
+    test('Enter is a forced line break, ↑/↓ follow reflow lines, Home/End within a line', async ({
+      page,
+    }) => {
+      await startEdit(page, 4, 0.8); // offset 5
       await page.keyboard.press('Enter');
       expect((await settled(page)).text).toBe('Hello\n World');
       expect((await caretInfo(page)).line).toBe(1);
       await page.keyboard.press('ArrowUp');
       let c = await caretInfo(page);
-      expect([c.line, c.offset]).toEqual([0, 0]); // 목표 x(둘째 줄 처음 = 20pt) 유지
+      expect([c.line, c.offset]).toEqual([0, 0]); // keeps the target x (start of the second line = 20pt)
       await page.keyboard.press('ArrowDown');
       c = await caretInfo(page);
       expect(c.line).toBe(1);
@@ -361,7 +369,9 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect((await session(page))!.caret).toBe(6);
     });
 
-    test('붙여넣기: 텍스트만, 줄바꿈은 강제 줄바꿈, NFC 정규화, NBSP → 공백', async ({ page }) => {
+    test('paste: text only, line breaks become forced line breaks, NFC normalization, NBSP → space', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       await page.evaluate(() => {
         const ta = document.getElementById('pe-edit-input')!;
@@ -375,7 +385,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect((await settled(page)).text).toBe('Hello WorldA\nB한 C');
     });
 
-    test('복사·잘라내기는 편집기 선택 텍스트를 쓴다', async ({ page }) => {
+    test('copy and cut use the editor selection text', async ({ page }) => {
       await startEdit(page, 0, 0.2);
       await page.keyboard.press('Shift+ArrowRight');
       await page.keyboard.press('Shift+ArrowRight');
@@ -396,9 +406,11 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect((await settled(page)).text).toBe('llo World');
     });
 
-    test('클릭·드래그·더블클릭·트리플클릭으로 캐럿·선택', async ({ page }) => {
+    test('click, drag, double-click and triple-click set the caret and selection', async ({
+      page,
+    }) => {
       const g = await startEdit(page, 10, 0.8);
-      const a = charAt(g, 2, 0.9); // 오프셋 3 경계
+      const a = charAt(g, 2, 0.9); // offset 3 boundary
       await page.mouse.click(a.x, a.y);
       expect((await session(page))!.caret).toBe(3);
       const b = charAt(g, 8, 0.2);
@@ -418,7 +430,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect(await page.evaluate(() => document.activeElement?.id)).toBe('pe-edit-input');
     });
 
-    test('편집 중 글자 단위 되돌리기: 연속 입력은 한 단위, 공백 뒤에서 끊긴다', async ({
+    test('per-glyph undo while editing: continuous input is one unit, broken after a space', async ({
       page,
     }) => {
       await startEdit(page, 10, 0.8);
@@ -426,23 +438,25 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       for (const ch of ['a', 'b', ' ', 'c', 'd']) await insert(client, ch);
       expect((await settled(page)).text).toBe('Hello Worldab cd');
       await page.keyboard.press('Control+Z');
-      expect((await settled(page)).text).toBe('Hello Worldab '); // "cd" 한 단위
+      expect((await settled(page)).text).toBe('Hello Worldab '); // "cd" is one unit
       await page.keyboard.press('Control+Z');
-      expect((await settled(page)).text).toBe('Hello World'); // "ab " 한 단위
+      expect((await settled(page)).text).toBe('Hello World'); // "ab " is one unit
       await page.keyboard.press('Control+Shift+Z');
       expect((await settled(page)).text).toBe('Hello Worldab ');
       await page.keyboard.press('Control+Y');
       expect((await settled(page)).text).toBe('Hello Worldab cd');
-      // 편집 중 Ctrl+Z 는 문서 undo 가 아니다.
+      // Ctrl+Z while editing is not a document undo.
       expect(await hostCalls(page, 'undo')).toBe(0);
     });
   });
 
-  // ── IME 시나리오(계약 1.3) ─────────────────────────────────────────
+  // ── IME scenarios (contract 1.3) ─────────────────────────────────────────
 
   test.describe('IME I1–I8', () => {
-    test('I1: 조합 중 밑줄·캐럿이 조합 끝에, 확정하면 한 음절이 들어간다', async ({ page }) => {
-      await startEdit(page, 6, 0.2); // 오프셋 6
+    test('I1: during composition the underline and caret are at the end of the composition, and committing inserts one syllable', async ({
+      page,
+    }) => {
+      await startEdit(page, 6, 0.2); // offset 6
       const client = await cdp(page);
       await compose(client, 'ㅎ');
       let s = await settled(page);
@@ -455,23 +469,25 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await compose(client, '한');
       s = await settled(page);
       expect(s.text).toBe('Hello 한World');
-      // 밑줄은 조합 구간(1글자) 아래에 있고, 오른쪽 끝이 캐럿 위치다(줄이 넘어가도 따라간다).
+      // The underline is below the composition span (1 glyph), and its right end is the caret position (it follows even when the line wraps).
       const under = await page.locator('.pe-edit-comp').boundingBox();
       const g = await geo(page);
       const caret = await caretInfo(page);
       expect(Math.abs(under!.x + under!.width - (g.x + caret.x * g.scale))).toBeLessThan(0.75);
       expect(Math.abs(under!.width - 10 * g.scale)).toBeLessThan(0.75);
-      await insert(client, '한'); // 확정
+      await insert(client, '한'); // commit
       s = await settled(page);
       expect(s.text).toBe('Hello 한World');
       expect(s.composition).toBeNull();
       expect(s.caret).toBe(7);
       await expect(page.locator('.pe-edit-comp')).toHaveCount(0);
-      // 확정 글자 '한' 은 줄 나눔으로 둘째 줄 처음(x 20–30, 상자 41–52)에 합성된다.
+      // The committed glyph '한' is composited at the start of the second line (x 20–30, box 41–52) because of line wrapping.
       expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]);
     });
 
-    test('I2: 조합 중 자모 삭제는 조합 문자열만 갱신한다', async ({ page }) => {
+    test('I2: deleting a jamo during composition updates only the composition string', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       const client = await cdp(page);
       await compose(client, '한');
@@ -484,29 +500,33 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('.pe-edit-comp')).toHaveCount(0);
     });
 
-    test('I3: 줄 끝에서 조합 글자가 다음 줄로 넘어가도 캐럿·밑줄이 따라간다', async ({ page }) => {
-      await startEdit(page, 10, 0.8); // 오프셋 11(첫 줄이 꽉 참)
+    test('I3: even when a composed glyph wraps to the next line at the line end, the caret and underline follow', async ({
+      page,
+    }) => {
+      await startEdit(page, 10, 0.8); // offset 11 (the first line is full)
       const client = await cdp(page);
       await compose(client, '가나');
       const s = await settled(page);
       expect(s.composition).toEqual([11, 13]);
       const caret = await caretInfo(page);
-      // "Hello " 뒤에서 줄이 나뉘어 "World가나" 가 둘째 줄이 된다: 캐럿 x = 20 + 7글자.
+      // The line breaks after "Hello ", so "World가나" becomes the second line: caret x = 20 + 7 glyphs.
       expect([caret.offset, caret.line, caret.x]).toEqual([13, 1, 90]);
       const under = await page.locator('.pe-edit-comp').boundingBox();
       const g = await geo(page);
-      // 밑줄은 조합 구간(둘째 줄 5–7번째 글자 = x 70–90)의 둘째 줄 아래(기준선 52 + 하강 3 = 55pt)에 있다.
+      // The underline is below the second line of the composition span (second-line glyphs 5–7 = x 70–90) (baseline 52 + descent 3 = 55pt).
       expect(Math.abs(under!.y - (g.y + 55 * g.scale))).toBeLessThan(1.5);
       expect(Math.abs(under!.x - (g.x + 70 * g.scale))).toBeLessThan(0.75);
       expect(Math.abs(under!.width - 20 * g.scale)).toBeLessThan(0.75);
     });
 
-    test('I4: 조합 중 클릭하면 조합을 확정한 뒤 캐럿을 옮긴다', async ({ page }) => {
+    test('I4: clicking during composition commits the composition and then moves the caret', async ({
+      page,
+    }) => {
       const g = await startEdit(page, 6, 0.2);
       const client = await cdp(page);
       await compose(client, 'ㅎ');
       await settled(page);
-      const p = charAt(g, 1, 0.2); // 오프셋 1
+      const p = charAt(g, 1, 0.2); // offset 1
       await page.mouse.click(p.x, p.y);
       const s = await settled(page);
       expect(s.text).toBe('Hello ㅎWorld');
@@ -515,23 +535,25 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('.pe-edit-comp')).toHaveCount(0);
     });
 
-    test('I4: 조합 중 화살표는 무시하고(IME 가 처리), 확정 뒤에 이동한다', async ({ page }) => {
+    test('I4: arrows during composition are ignored (the IME handles them) and move after commit', async ({
+      page,
+    }) => {
       await startEdit(page, 6, 0.2);
       const client = await cdp(page);
       await compose(client, 'ㅎ');
       await settled(page);
       await page.keyboard.press('ArrowLeft');
-      expect((await session(page))!.caret).toBe(7); // 이동하지 않음
+      expect((await session(page))!.caret).toBe(7); // does not move
       await insert(client, 'ㅎ');
       await settled(page);
       await page.keyboard.press('ArrowLeft');
       expect((await session(page))!.caret).toBe(6);
     });
 
-    test('I5: 조합 중 Ctrl+Z 는 무시한다', async ({ page }) => {
+    test('I5: Ctrl+Z during composition is ignored', async ({ page }) => {
       await startEdit(page, 10, 0.8);
       const client = await cdp(page);
-      await insert(client, 'q'); // 되돌릴 수 있는 입력이 있어도
+      await insert(client, 'q'); // even if there is undoable input
       await compose(client, '가');
       await settled(page);
       await page.keyboard.press('Control+Z');
@@ -542,7 +564,9 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect((await settled(page)).text).toBe('Hello Worldq가');
     });
 
-    test('I6: 조합 확정 한 번은 앞뒤 입력과 같은 되돌리기 단위', async ({ page }) => {
+    test('I6: one composition commit is the same undo unit as the input before and after', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       const client = await cdp(page);
       await insert(client, 'x');
@@ -554,20 +578,24 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect((await settled(page)).text).toBe('Hello World');
     });
 
-    test('I7: 한자 변환 결과가 들어가고, 글리프가 없는 글자는 표시·경고한다', async ({ page }) => {
+    test('I7: Hanja conversion results are inserted, and glyphs without a glyph are marked and warned', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       const client = await cdp(page);
       await compose(client, '漢');
       await insert(client, '漢');
       expect((await settled(page)).text).toBe('Hello World漢');
-      // U+2603 은 가짜 호스트에서 "원본·폴백 모두 글리프 없음" 으로 처리한다.
+      // U+2603 is handled by the fake host as "no glyph in either the original or the fallback".
       await insert(client, '☃');
       await settled(page);
       await expect(page.locator('.pe-edit-missing')).toHaveCount(1);
       await expect(page.locator('#pe-edit-warnings li[data-kind="glyph-missing"]')).toBeVisible();
     });
 
-    test('I8: 조합 중 바깥 클릭은 조합을 확정한 뒤 커밋한다', async ({ page }) => {
+    test('I8: a click outside during composition commits the composition and then commits the edit', async ({
+      page,
+    }) => {
       const g = await startEdit(page, 10, 0.8);
       const client = await cdp(page);
       await compose(client, '한');
@@ -586,7 +614,9 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect(sent!.composition).toBeNull();
     });
 
-    test('I8: 조합 중 Esc 는 편집 종료가 아니다(IME 가 먼저 쓴다)', async ({ page }) => {
+    test('I8: Esc during composition does not end editing (the IME uses it first)', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       const client = await cdp(page);
       await compose(client, '한');
@@ -596,16 +626,18 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect(await hostCalls(page, 'commitParagraphEdit')).toBe(0);
       await insert(client, '한');
       await settled(page);
-      await page.keyboard.press('Escape'); // 조합이 아니면 커밋
+      await page.keyboard.press('Escape'); // commits when not composing
       await ended(page);
       expect(await hostCalls(page, 'commitParagraphEdit')).toBe(1);
     });
   });
 
-  // ── 종료 ──────────────────────────────────────────────────────────
+  // ── End ──────────────────────────────────────────────────────────
 
-  test.describe('종료', () => {
-    test('Esc = 커밋(변경 있음), 변경이 없으면 취소와 같다', async ({ page }) => {
+  test.describe('end', () => {
+    test('Esc = commit (with changes), same as cancel when there are no changes', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       await page.keyboard.press('Escape');
       await ended(page);
@@ -619,7 +651,9 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await page.waitForFunction(() => (window as unknown as { __renders: number }).__renders >= 2);
     });
 
-    test('바깥 클릭 = 커밋, 영역·핸들·초과 패널 클릭은 커밋하지 않는다', async ({ page }) => {
+    test('click outside = commit; clicks on the region, handles or overflow panel do not commit', async ({
+      page,
+    }) => {
       const g = await startEdit(page, 10, 0.8);
       await page.keyboard.type('z');
       const inside = charAt(g, 2);
@@ -630,24 +664,26 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect(await hostCalls(page, 'commitParagraphEdit')).toBe(1);
     });
 
-    test('도구 막대 "편집 취소": 초안을 버리고 쪽 캔버스가 편집 전으로 돌아간다', async ({
+    test('toolbar "편집 취소" (cancel edit): discards the draft and the page canvas returns to before the edit', async ({
       page,
     }) => {
       await startEdit(page, 10, 0.8);
       await page.keyboard.type('abcdefghijkl');
       await settled(page);
-      expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]); // 둘째 줄 합성됨
+      expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]); // the second line is composited
       await page.locator('#pe-edit-cancel').click();
       await ended(page);
       expect(await hostCalls(page, 'cancelParagraphEdit')).toBe(1);
       expect(await hostCalls(page, 'commitParagraphEdit')).toBe(0);
-      // 기준 비트맵(편집 전 렌더, 흰 바탕)으로 복원
+      // Restore from the reference bitmap (pre-edit render, white background)
       expect(await pixel(page, 25, 46)).toEqual([255, 255, 255]);
       expect(await pixel(page, 125, 26)).toEqual([255, 255, 255]);
       await expect(page.locator('#pe-text-layer')).toBeVisible();
     });
 
-    test('커밋 뒤 쪽을 다시 그리고 텍스트 층·편집 판정을 다시 불러온다', async ({ page }) => {
+    test('after a commit, redraws the page and reloads the text layer and edit classification', async ({
+      page,
+    }) => {
       const before = await page.evaluate(
         () => (window as unknown as { __renders: number }).__renders,
       );
@@ -671,10 +707,10 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
     });
   });
 
-  // ── 초과 UI·영역 ───────────────────────────────────────────────────
+  // ── Overflow UI and region ───────────────────────────────────────────────────
 
-  test.describe('초과·영역', () => {
-    /** 영역 상한 아래 80pt: 5줄(47글자)은 자동 확장으로도 들어가지 않는다. */
+  test.describe('overflow and region', () => {
+    /** 80pt below the region upper bound: 5 lines (47 glyphs) do not fit even with auto expansion. */
     async function blocked(page: Page): Promise<void> {
       errors.length = 0;
       errors = await openEditHarness(page, config({ areaLimit: [0, 0, 612, 80] }));
@@ -688,16 +724,16 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
           ).__controller.getState().edit.editability.status === 'ready',
       );
       await startEdit(page, 10, 0.8);
-      await page.keyboard.type('abcdefghijklmnopqrstuvwxyz0123456789'); // 11 + 36 글자 = 5줄
+      await page.keyboard.type('abcdefghijklmnopqrstuvwxyz0123456789'); // 11 + 36 glyphs = 5 lines
       await settled(page);
     }
 
-    test('넘치면 영역 아래 변이 글 높이까지 자동으로 내려가고 선택 UI 는 없다', async ({
+    test('on overflow the region bottom edge grows automatically to the text height and there is no choice UI', async ({
       page,
     }) => {
       await startEdit(page, 10, 0.8);
       const before = await settled(page);
-      await page.keyboard.type('abcdefghijklmnopqrstuvw'); // 3줄
+      await page.keyboard.type('abcdefghijklmnopqrstuvw'); // 3 lines
       const after = await settled(page);
       expect(after.lines).toBeGreaterThanOrEqual(3);
       expect(after.overflow).toBe(false);
@@ -707,19 +743,21 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-edit-overflow')).toHaveCount(0);
       await expect(page.getByRole('button', { name: '영역 넓히기' })).toHaveCount(0);
       await expect(page.getByRole('button', { name: '글자 줄이기' })).toHaveCount(0);
-      // 테두리(#pe-edit-area)도 넓어진 영역을 그린다: 셋째 줄 기준선(72) 아래까지.
+      // The border (#pe-edit-area) also draws the widened region: down past the third-line baseline (72).
       const area = (await page.locator('#pe-edit-area').getAttribute('data-area'))!
         .split(',')
         .map(Number);
       expect(area[3]!).toBeGreaterThan(72);
-      // 지우면 다시 원 영역으로 돌아온다(입력마다 같은 규칙).
+      // Deleting returns to the original region (same rule for every input).
       for (let i = 0; i < 23; i++) await page.keyboard.press('Backspace');
       expect((await settled(page)).area).toEqual(before.area);
     });
 
-    test('핸들로 아래 변을 글보다 위로 올려도 글 높이까지 다시 늘어난다', async ({ page }) => {
+    test('even if the bottom edge is raised above the text with the handle, it grows back to the text height', async ({
+      page,
+    }) => {
       const g = await startEdit(page, 10, 0.8);
-      await page.keyboard.type('abcdefghijklmnopqrstuvw'); // 3줄
+      await page.keyboard.type('abcdefghijklmnopqrstuvw'); // 3 lines
       const full = await settled(page);
       const handle = await page.locator('.pe-edit-handle[data-handle="s"]').boundingBox();
       const hx = handle!.x + handle!.width / 2;
@@ -733,7 +771,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect(s.area[3]).toBeCloseTo(full.area[3]!, 3);
     });
 
-    test('영역 상한에 막히면 초과 표시·overflow-clipped 경고와 "되돌리기" 하나만 보인다', async ({
+    test('when blocked by the region upper bound, only the overflow indicator, the overflow-clipped warning and one "되돌리기" are shown', async ({
       page,
     }) => {
       await blocked(page);
@@ -748,15 +786,15 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(
         page.locator('#pe-edit-warnings li[data-kind="overflow-clipped"]'),
       ).toBeVisible();
-      // 넘친 줄도 합성돼 있다(자동 클립 없음): 5번째 줄 기준선 20+12+80 = 112 근처
+      // Overflowing lines are composited too (no automatic clipping): near the baseline of line 5, 20+12+80 = 112
       expect(await pixel(page, 25, 106)).toEqual([0x22, 0x22, 0x22]);
     });
 
-    test('되돌리기: 이번 편집을 버리고 편집 시작 전 상태로 돌아간다(편집 취소와 같은 경로)', async ({
+    test('undo: discards this edit and returns to the state before editing started (same path as cancel edit)', async ({
       page,
     }) => {
       await blocked(page);
-      expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]); // 둘째 줄 합성됨
+      expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]); // the second line is composited
       await page.locator('#pe-edit-revert').click();
       await ended(page);
       expect(await hostCalls(page, 'cancelParagraphEdit')).toBe(1);
@@ -766,7 +804,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-text-layer')).toBeVisible();
     });
 
-    test('상한에 막힌 초과가 남아도 Esc 는 커밋한다(overflow-clipped 경고 상태, 사용자 결정)', async ({
+    test('Esc commits even when overflow blocked by the upper bound remains (overflow-clipped warning state, user decision)', async ({
       page,
     }) => {
       await blocked(page);
@@ -776,8 +814,10 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       expect(await hostCalls(page, 'cancelParagraphEdit')).toBe(0);
     });
 
-    test('영역 핸들 8개, 드래그로 영역이 바뀌고 areaLimit 밖으로 못 나간다', async ({ page }) => {
-      // 상한 [0,0,200,100]: 오른쪽 변은 200pt 를 넘지 못한다.
+    test('8 region handles, dragging changes the region and it cannot go beyond areaLimit', async ({
+      page,
+    }) => {
+      // Upper bound [0,0,200,100]: the right edge cannot exceed 200pt.
       errors.length = 0;
       await openEditHarness(page, config({ areaLimit: [0, 0, 200, 100] }));
       await page.waitForSelector('#pe-text-layer');
@@ -800,7 +840,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await page.mouse.up();
       let s = await settled(page);
       expect(s.area[2]).toBeCloseTo(160, 0);
-      // 한참 더 끌어도 상한(200)에서 멈춘다.
+      // Even when dragged much further, it stops at the upper bound (200).
       const handle2 = await page.locator('.pe-edit-handle[data-handle="e"]').boundingBox();
       const hx2 = handle2!.x + handle2!.width / 2;
       await page.mouse.move(hx2, hy);
@@ -809,15 +849,17 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await page.mouse.up();
       s = await settled(page);
       expect(s.area[2]).toBe(200);
-      // 아래 변을 끌어 영역을 키운 뒤 넓어진 줄 폭으로 줄이 다시 나뉜다(한 줄에 더 들어간다).
+      // After dragging the bottom edge to enlarge the region, the lines are re-broken at the widened line width (more fit on one line).
       expect(s.lines).toBe(1);
     });
   });
 
-  // ── 표시 ──────────────────────────────────────────────────────────
+  // ── Display ──────────────────────────────────────────────────────────
 
-  test.describe('표시', () => {
-    test('폴백 글자는 점선 밑줄(토글), 없는 글자는 표시', async ({ page }) => {
+  test.describe('display', () => {
+    test('fallback glyphs get a dotted underline (toggle), missing glyphs are marked', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       const client = await cdp(page);
       await insert(client, '한글');
@@ -832,7 +874,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('.pe-edit-fb')).toHaveCount(1);
     });
 
-    test('경고 목록은 중복 없이 보이고, 저장하면 편집 쪽 번호가 기록된다는 안내를 둔다', async ({
+    test('the warning list is shown without duplicates, and a notice says the edited page numbers are recorded on save', async ({
       page,
     }) => {
       await startEdit(page, 10, 0.8);
@@ -844,7 +886,9 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-edit-warnings li[data-kind="glyph-missing"]')).toHaveCount(1);
     });
 
-    test('입력 → 합성 반응 시간이 performance.measure 로 기록된다(계약 8.4)', async ({ page }) => {
+    test('input → compositing response time is recorded with performance.measure (contract 8.4)', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       await page.keyboard.type('abcdef');
       await settled(page);
@@ -853,21 +897,23 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       );
       expect(ms.length).toBeGreaterThanOrEqual(1);
       for (const d of ms) expect(d).toBeGreaterThanOrEqual(0);
-      expect(Math.max(...ms)).toBeLessThan(2000); // 가짜 호스트 기준 상한(실측 기준은 통합 때)
+      expect(Math.max(...ms)).toBeLessThan(2000); // upper bound for the fake host (the measured baseline comes at integration)
     });
   });
 
-  // ── 문서 undo/redo ────────────────────────────────────────────────
+  // ── Document undo/redo ────────────────────────────────────────────────
 
-  test.describe('문서 undo/redo', () => {
-    test('편집 밖 Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y 와 도구 막대 버튼', async ({ page }) => {
+  test.describe('document undo/redo', () => {
+    test('Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y outside editing and the toolbar buttons', async ({
+      page,
+    }) => {
       await startEdit(page, 10, 0.8);
       await page.keyboard.type('!');
       await page.keyboard.press('Escape');
       await ended(page);
       await expect(page.locator('#pe-doc-undo')).toBeEnabled();
       await expect(page.locator('#pe-doc-redo')).toBeDisabled();
-      await page.mouse.click(5, 5); // 포커스를 문서 쪽으로
+      await page.mouse.click(5, 5); // move focus to the document
       await page.keyboard.press('Control+Z');
       await expect(page.locator('#pe-doc-redo')).toBeEnabled();
       expect(await hostCalls(page, 'undo')).toBe(1);
@@ -884,10 +930,10 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
     });
   });
 
-  // ── 복구(D6) ──────────────────────────────────────────────────────
+  // ── Recovery (D6) ──────────────────────────────────────────────────────
 
-  test.describe('복구', () => {
-    test('초안 중 Worker 가 복구되면 같은 문단 초안을 편집기 모델로 다시 시작한다', async ({
+  test.describe('recovery', () => {
+    test('when the Worker is recovered during a draft, the same paragraph draft restarts with the editor model', async ({
       page,
     }) => {
       await startEdit(page, 10, 0.8);
@@ -922,7 +968,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
   test.describe('devicePixelRatio 2', () => {
     test.use({ deviceScaleFactor: 2 });
 
-    test('변경 영역이 렌더 배율(CSS 배율 × dpr)로 합성되고 오버레이는 CSS px 그대로', async ({
+    test('the changed region is composited at the render scale (CSS scale × dpr) and overlays stay in CSS px', async ({
       page,
     }) => {
       await startEdit(page, 10, 0.8);
@@ -930,7 +976,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       await page.keyboard.type('abc');
       const s = await settled(page);
       expect(s.text).toBe('Hello Worldabc');
-      // 시작 갱신·입력 모두 renderScale = 1.5 × 2 = 3 으로 요청됐다.
+      // The start update and the input were both requested with renderScale = 1.5 × 2 = 3.
       const scales = await page.evaluate(() =>
         (window as unknown as { __edit: { inputs: { renderScale: number }[] } }).__edit.inputs.map(
           (i) => i.renderScale,
@@ -938,7 +984,7 @@ test.describe('M3 편집기 UI(가짜 편집 호스트)', () => {
       );
       expect(scales.length).toBeGreaterThan(0);
       for (const scale of scales) expect(scale).toBe(3);
-      // 캔버스 비트맵은 dpr 배, 합성 위치도 같은 배율이다("Worldabc" 둘째 줄 x 20–100, y 41–52).
+      // The canvas bitmap is dpr times, and the compositing position uses the same scale ("Worldabc" second line x 20–100, y 41–52).
       expect(await pixel(page, 25, 46)).toEqual([0x22, 0x22, 0x22]);
       expect(await pixel(page, 95, 46)).toEqual([0x22, 0x22, 0x22]);
       expect(await pixel(page, 105, 46)).toEqual([255, 255, 255]);

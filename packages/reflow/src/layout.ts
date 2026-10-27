@@ -1,6 +1,6 @@
 /**
- * 문단 배치(계약 5.4). 클러스터 셰이핑 → 줄 나눔(탐욕, 첫 맞춤) → 초과 시 영역 아래 변 자동 확장(상한까지) → 정렬·좌표.
- * 좌표는 페이지 공간(y 아래), 길이 pt. 같은 입력이면 같은 결과다(reflowMs 제외).
+ * Paragraph layout (contract 5.4). Cluster shaping -> line breaking (greedy, first fit) -> on overflow, auto-extend the region's bottom edge (up to the limit) -> alignment and coordinates.
+ * Coordinates are in page space (y down), lengths in pt. The same input gives the same result (excluding reflowMs).
  */
 import type { PlacedGlyph, PlacedLine, Rect } from '@pdf-editor/shared-types';
 import { now } from './clock.js';
@@ -14,11 +14,11 @@ import {
   type CharClass,
 } from './text.js';
 
-/** 줄 폭 판정 여유(pt). 원 문단 bbox 와 같은 폭의 줄이 부동소수 오차로 넘치지 않게 한다. */
+/** Tolerance for the line-width check (pt). Keeps a line the same width as the original paragraph bbox from overflowing due to floating-point error. */
 export const FIT_EPSILON = 0.01;
-/** 초과 판정 여유(pt, 계약 5.4: 영역 아래 + 0.5pt). */
+/** Tolerance for the overflow check (pt, contract 5.4: region bottom + 0.5pt). */
 export const OVERFLOW_TOLERANCE = 0.5;
-/** 폰트 높이 정보가 없을 때 쓰는 기본값(1/1000 em). */
+/** Default used when there is no font height information (1/1000 em). */
 const DEFAULT_ASCENT = 800;
 const DEFAULT_DESCENT = -200;
 
@@ -29,18 +29,18 @@ interface Item {
   end: number;
   seg: FontSegment;
   kind: ItemKind;
-  /** kind 가 glyph 일 때만 있다. */
+  /** Present only when kind is glyph. */
   face: FontFace | null;
   glyphs: ShapedGlyph[];
-  /** 전진량(pt, 커닝 포함). */
+  /** Advance (pt, including kerning). */
   adv: number;
-  /** adv 중 다음 클러스터와의 커닝(pt). */
+  /** Kerning of adv with the next cluster (pt). */
   kernAfter: number;
   cc: CharClass;
 }
 
 interface LineRange {
-  /** 클러스터 인덱스 [a, b). */
+  /** Cluster index [a, b). */
   a: number;
   b: number;
   hard: boolean;
@@ -84,8 +84,8 @@ export function layout(input: ReflowInput): ReflowResult {
 
   const lines = breakLines(items, normal, preferred, lineWidth);
   const bottom = bottomOf(lines);
-  // 초과하면 아래 변을 필요한 높이까지 자동으로 내린다(상한까지, 2026-10-20 사용자 결정). 줄 폭은 그대로라 줄 나눔은
-  // 바뀌지 않는다. 사용자가 핸들로 영역을 글 높이보다 줄여도 같은 규칙으로 다시 늘어난다. 상한에 막히면 초과 유지.
+  // On overflow, automatically lower the bottom edge to the required height (up to the limit, 2026-10-20 user decision). The line width is unchanged, so line breaking is
+  // not affected. Even if the user shrinks the region below the text height with a handle, it grows again by the same rule. If blocked by the limit, the overflow is kept.
   let overflow = bottom > area[3] + OVERFLOW_TOLERANCE;
   if (overflow) {
     area = [area[0], area[1], area[2], Math.max(area[3], Math.min(areaLimit[3], bottom))];
@@ -153,7 +153,7 @@ function validate(input: ReflowInput): void {
   }
 }
 
-/** 클러스터(확장 자소, 구간 경계에서도 나눔)를 만들고, 같은 폰트가 이어지는 구간을 한 번에 셰이핑한다. */
+/** Builds clusters (extended grapheme clusters, also split at segment boundaries) and shapes each run of the same font in one pass. */
 function buildItems(text: string, segments: readonly FontSegment[]): Item[] {
   const items: Item[] = [];
   for (const seg of segments) {
@@ -185,8 +185,8 @@ function buildItems(text: string, segments: readonly FontSegment[]): Item[] {
         return;
       }
       const em = it.seg.size / 1000;
-      // 자간(Tc)은 글리프마다 전진 뒤에 붙는다. 클러스터 마지막 글리프 뒤 자간은 다음 클러스터와의 간격이라 커닝처럼
-      // 줄 끝에서 뺀다(kernAfter).
+      // Letter spacing (Tc) is attached after the advance of each glyph. The spacing after the last glyph of a cluster is the gap to the next cluster, so like kerning
+      // it is subtracted at the line end (kernAfter).
       const cs = it.seg.charSpacing ?? 0;
       const hs = it.seg.horizontalScale ?? 1;
       it.glyphs = r.glyphs;
@@ -199,10 +199,10 @@ function buildItems(text: string, segments: readonly FontSegment[]): Item[] {
 }
 
 /**
- * 탐욕 줄 나눔. 공백은 폭 판정에 넣지 않고(줄 끝에 매달림), 줄 끝 클러스터의 다음 커닝은 뺀다. 넘치면 줄 안의 마지막 일반
- * 나눔 기회에서 나누고, 없으면(어절·단어가 줄 폭보다 김) 비상 나눔(음절·글자 단위)을 한다. 줄에는 최소 한 클러스터가 들어간다.
- * 공백은 넘침 판정 전에 줄에 들어가고 나눔 위치는 공백·강제 줄바꿈 앞이 될 수 없으므로, 줄 끝 공백과 그 뒤 강제 줄바꿈은
- * 항상 그 줄에 붙는다(빈 줄을 따로 만들지 않는다).
+ * Greedy line breaking. Whitespace is not counted in the width check (it hangs at the line end), and the next kerning of the last cluster on a line is subtracted. On overflow, break at the last ordinary
+ * break opportunity in the line; if there is none (a word is longer than the line width), use an emergency break (per syllable/character). A line holds at least one cluster.
+ * Whitespace goes onto the line before the overflow check, and a break position cannot be before whitespace or a forced line break, so trailing whitespace and a forced line break after it
+ * always stay on that line (no separate empty line is created).
  */
 function breakLines(
   items: readonly Item[],
@@ -246,7 +246,7 @@ function breakLines(
   return lines;
 }
 
-/** 비상 나눔 위치 k(a < k ≤ j, k 앞에서 나눔). 공백 앞은 안 되고, 금칙을 지키는 가장 뒤 위치를 우선한다. */
+/** Emergency break position k (a < k <= j, break before k). Not allowed before whitespace; prefers the latest position that respects the prohibition rules. */
 function emergencyBreak(
   items: readonly Item[],
   preferred: readonly boolean[],
@@ -266,7 +266,7 @@ interface PlacedLineGlyphs {
   x1: number;
 }
 
-/** 한 줄의 정렬·좌표. justify 는 마지막 줄·강제 줄바꿈 앞 줄을 빼고 줄 안 공백에, 공백이 없으면 클러스터 사이에 나눈다. */
+/** Alignment and coordinates of one line. justify distributes extra space among the whitespace in the line, except for the last line and a line before a forced line break; if there is no whitespace, between clusters. */
 function placeLine(
   items: readonly Item[],
   line: LineRange,
@@ -307,8 +307,8 @@ function placeLine(
     if (spaces.length > 0) {
       for (const i of spaces) extra[i - a] = free / spaces.length;
     } else {
-      // 공백 없는 줄: 이웃한 두 클러스터가 모두 CJK·한글일 때만 그 사이에 나눈다. 라틴 단어 하나뿐인 줄을 글자
-      // 사이로 벌리면 추출기가 글자마다 공백을 넣어 복사·검색이 깨진다(M3 코퍼스 측정 2026-10-20). 나눌 곳이 없으면 왼쪽.
+      // Line without whitespace: distribute only between two neighboring clusters that are both CJK/Hangul. Spreading a line that is a single Latin word
+      // letter by letter makes the extractor insert a space between letters, which breaks copy and search (M3 corpus measurement 2026-10-20). If there is nowhere to distribute, left-align.
       const visible: number[] = [];
       for (let i = a; i < contentEnd; i++) if (items[i]?.kind === 'glyph') visible.push(i);
       const gaps: number[] = [];
@@ -384,9 +384,9 @@ function placeLine(
 }
 
 /**
- * 줄의 글리프 클러스터에서 가장 큰 올림·가장 깊은 내림(pt, 내림 음수). 글리프가 없으면 null.
- * 공백 클러스터는 공백만 있는 줄에서만 센다: 원본 폰트에 공백 글리프가 없어 폴백으로 간 공백(TeX 폰트 등)이
- * 폴백 폰트 높이로 줄 상자를 키우지 않게 한다.
+ * Largest ascent and deepest descent among the line's glyph clusters (pt, descent negative). null if there are no glyphs.
+ * Whitespace clusters are counted only on lines that consist solely of whitespace: this keeps whitespace that fell back to the fallback font because the original font has no space glyph (TeX fonts etc.)
+ * from enlarging the line box with the fallback font's height.
  */
 function lineMetrics(items: readonly Item[], line: LineRange): Metrics | null {
   return metricsOver(items, line, false) ?? metricsOver(items, line, true);
@@ -415,7 +415,7 @@ function faceMetrics(face: FontFace | null, size: number): Metrics {
   };
 }
 
-/** 글리프가 없는 줄(빈 텍스트·빈 줄)의 캐럿 높이: 그 위치의 구간(길이 0 구간 우선) 폰트·크기. */
+/** Caret height for a line without glyphs (empty text or empty line): the font and size of the segment at that position (a zero-length segment takes priority). */
 function caretMetrics(
   text: string,
   segments: readonly FontSegment[],
@@ -433,7 +433,7 @@ function caretMetrics(
   return faceMetrics(seg?.face ?? firstFace, size);
 }
 
-/** 줄의 시작 텍스트 위치(빈 줄은 앞 줄 끝). */
+/** Start text position of a line (an empty line takes the end of the previous line). */
 function offsetOf(items: readonly Item[], line: LineRange, text: string): number {
   if (line.a < line.b) return items[line.a]?.start ?? 0;
   return line.a > 0 ? (items[line.a - 1]?.end ?? text.length) : 0;

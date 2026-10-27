@@ -11,8 +11,8 @@ import {
 } from '../src/index.js';
 
 /**
- * 2쪽 문서. Fx1(카드: 배경·제목·문단·중첩 Fx2)을 1쪽 2곳(A: y=560, B: y=300)과 2쪽 1곳에서 그린다.
- * Fx2(배지: 배경·2줄)는 Fx1 안과 2쪽에서 직접 그린다. 두 페이지는 Resources 간접 객체를 공유한다.
+ * 2-page document. Fx1 (card: background, title, paragraph, nested Fx2) is drawn at 2 places on page 1 (A: y=560, B: y=300) and 1 place on page 2.
+ * Fx2 (badge: background, 2 lines) is drawn directly inside Fx1 and on page 2. The two pages share a Resources indirect object.
  */
 function sharedDoc(): Uint8Array {
   const doc = new mupdf.PDFDocument();
@@ -49,7 +49,7 @@ const count = (s: string, needle: string) => s.split(needle).length - 1;
 const pixels = (doc: mupdf.PDFDocument, p: number) =>
   doc.loadPage(p).toPixmap(mupdf.Matrix.identity, mupdf.ColorSpace.DeviceRGB, false).getPixels();
 
-/** 원본 객체 중 문자열 표현 또는 원시 스트림이 바뀐 객체 번호. */
+/** Object numbers among the original objects whose string representation or raw stream changed. */
 function changedObjects(before: mupdf.PDFDocument, after: mupdf.PDFDocument): number[] {
   const changed: number[] = [];
   for (let n = 1; n < before.countObjects(); n++) {
@@ -69,7 +69,7 @@ function changedObjects(before: mupdf.PDFDocument, after: mupdf.PDFDocument): nu
 describe('listXObjectUsages / indexXObjectUsages', () => {
   const doc = open(sharedDoc());
 
-  it('중첩 Form 까지 사용 위치·경로·CTM 을 낸다', () => {
+  it('reports usage sites, paths and CTM down to nested Forms', () => {
     const u = listXObjectUsages(doc, 0);
     expect(u.map((x) => x.path.map((s) => `${s.resourceName}#${s.doOrdinal}`).join('>'))).toEqual([
       'Fx1#0',
@@ -81,39 +81,39 @@ describe('listXObjectUsages / indexXObjectUsages', () => {
     expect(u[3]!.pageBox).toEqual([396, 310, 516, 350]);
   });
 
-  it('공유 횟수: Fx1 3곳, Fx2 4곳', () => {
+  it('sharing counts: Fx1 3 places, Fx2 4 places', () => {
     const counts = [...indexXObjectUsages(doc).values()].map((l) => l.length).sort();
     expect(counts).toEqual([3, 4]);
   });
 });
 
-describe('redactFormUsage: 선택 사용 위치만 새 인스턴스로 교체', () => {
+describe('redactFormUsage: replaces only the selected usage sites with new instances', () => {
   const bytes = sharedDoc();
 
-  it('1단계: 1쪽 B 의 문단만 지우고 A·2쪽·원본 객체는 그대로', () => {
+  it('step 1: erases only the paragraph of B on page 1 and leaves A, page 2 and the original objects as they are', () => {
     const doc = open(bytes);
     const before = open(bytes);
     const b = listXObjectUsages(doc, 0)[2]!;
     const r = redactFormUsage(doc, b, [[0, 80, 480, 115]]);
     expect(r.originalUsageCount).toBe(3);
-    expect(r.newForms.length).toBe(2); // Fx1 인스턴스 + 그 안의 Fx2 인스턴스
+    expect(r.newForms.length).toBe(2); // Fx1 instance + the Fx2 instance inside it
 
     const t0 = text(doc, 0);
-    expect(count(t0, 'Shared para one')).toBe(1); // A 만 남음
+    expect(count(t0, 'Shared para one')).toBe(1); // only A remains
     expect(count(t0, 'Card title')).toBe(2);
     expect(count(t0, 'Nested one')).toBe(2);
     expect(text(doc, 1)).toBe(text(before, 1));
     expect(pixels(doc, 1)).toEqual(pixels(before, 1));
 
-    // 원본 객체 중 바뀐 것은 1쪽 페이지 사전뿐(Contents·Resources 교체). Fx1·Fx2·공유 Resources·2쪽은 그대로.
+    // Among the original objects, only the page 1 page dictionary changed (Contents and Resources replaced). Fx1, Fx2, shared Resources and page 2 are unchanged.
     expect(changedObjects(before, doc)).toEqual([before.findPage(0).asIndirect()]);
     const after = listXObjectUsages(doc, 0);
-    expect(after[0]!.objectNumber).toBe(b.objectNumber); // A 는 원본 Fx1
+    expect(after[0]!.objectNumber).toBe(b.objectNumber); // A is the original Fx1
     expect(after[2]!.objectNumber).toBe(r.targetObjectNumber);
     expect(doc.countPages()).toBe(2);
   });
 
-  it('2단계(중첩): 1쪽 B 안의 Fx2 문단만 지우고 새 텍스트를 Form 공간에 붙인다', () => {
+  it('step 2 (nested): erases only the Fx2 paragraph inside B on page 1 and attaches the new text in Form space', () => {
     const doc = open(bytes);
     const before = open(bytes);
     const nested = listXObjectUsages(doc, 0)[3]!;
@@ -132,7 +132,7 @@ describe('redactFormUsage: 선택 사용 위치만 새 인스턴스로 교체', 
     expect(changedObjects(before, doc)).toEqual([before.findPage(0).asIndirect()]);
   });
 
-  it('MuPDF 기본(페이지 redaction)은 같은 페이지의 모든 Form 사용 위치를 새 인스턴스로 바꾼다', () => {
+  it('MuPDF default (page redaction) replaces all Form usage sites on the same page with new instances', () => {
     const doc = open(bytes);
     const fx1 = listXObjectUsages(doc, 0)[0]!.objectNumber;
     const page = doc.loadPage(0);
@@ -140,12 +140,12 @@ describe('redactFormUsage: 선택 사용 위치만 새 인스턴스로 교체', 
     annot.setRect([56, 842 - 415, 536, 842 - 380]);
     annot.applyRedaction(0, 0, 0, 0);
     const after = listXObjectUsages(doc, 0);
-    expect(after.every((u) => u.objectNumber !== fx1)).toBe(true); // A 도 원본이 아님
-    expect(listXObjectUsages(doc, 1)[0]!.objectNumber).toBe(fx1); // 다른 페이지는 원본
+    expect(after.every((u) => u.objectNumber !== fx1)).toBe(true); // A is not the original either
+    expect(listXObjectUsages(doc, 1)[0]!.objectNumber).toBe(fx1); // the other page is the original
   });
 });
 
-describe('사각형 정규화(A7-3): 뒤집힌 /BBox [0 792 612 0]', () => {
+describe('rectangle normalization (A7-3): flipped /BBox [0 792 612 0]', () => {
   function flippedDoc(): Uint8Array {
     const doc = new mupdf.PDFDocument();
     const F1 = doc.addSimpleFont(new mupdf.Font('Helvetica'));
@@ -159,14 +159,14 @@ describe('사각형 정규화(A7-3): 뒤집힌 /BBox [0 792 612 0]', () => {
     return doc.saveToBuffer('compress').asUint8Array().slice();
   }
 
-  it('toRect 는 x0 ≤ x1, y0 ≤ y1 로 정규화한다', () => {
+  it('toRect normalizes to x0 <= x1, y0 <= y1', () => {
     const doc = new mupdf.PDFDocument();
     const arr = doc.newArray();
     for (const v of [0, 792, 612, 0]) arr.push(v);
     expect(toRect(arr)).toEqual([0, 0, 612, 792]);
   });
 
-  it('사용 위치의 페이지 공간 경계가 빈 사각형이 아니다', () => {
+  it('the page-space bounds of the usage site are not an empty rectangle', () => {
     const doc = open(flippedDoc());
     const [u] = listXObjectUsages(doc, 0);
     expect(u).toBeDefined();
@@ -175,7 +175,7 @@ describe('사각형 정규화(A7-3): 뒤집힌 /BBox [0 792 612 0]', () => {
     expect(y1 - y0).toBeCloseTo(792);
   });
 
-  it('BBox 안의 사각형을 BBox 밖으로 오판하지 않는다', () => {
+  it('a rectangle inside the BBox is not misjudged as outside the BBox', () => {
     const doc = open(flippedDoc());
     const fx = doc.findPage(0).get('Resources').get('XObject').get('Fx');
     expect(outsideFormBBox(fx, [72, 690, 300, 712])).toBe(false);

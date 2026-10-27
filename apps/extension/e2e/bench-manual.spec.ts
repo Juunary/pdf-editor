@@ -1,7 +1,7 @@
 /**
- * 측정 페이지 수동 실행의 탭 메모리 입력(Windows 절차, docs/m5-perf.md 1.3): 작업 관리자 K 값을 그대로 넣으면 MiB 로 바꾸고,
- * 직전과 같은 값·자릿수가 의심스러운 값은 경고 뒤 한 번 더 확인받으며, 결과 JSON 에 원문·단위·경고를 남긴다.
- * 대기는 `?settle=0` 으로 줄인다(작은 문서, 메모리 시나리오만).
+ * Tab memory input in the measurement page's manual run (Windows procedure, docs/m5-perf.md 1.3): a Task Manager K value entered as-is is converted to MiB,
+ * a value identical to the previous one or with a suspicious digit count gets a warning and must be confirmed once more, and the result JSON keeps the raw text, unit and warnings.
+ * Waiting is shortened with `?settle=0` (small document, memory scenario only).
  */
 import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ test.afterAll(async () => {
   await b.close();
 });
 
-test('수동 탭 메모리 입력: K 환산·경고 확인·원문 기록', async () => {
+test('manual tab memory input: K conversion, warning confirmation, raw text recorded', async () => {
   const page = await b.context.newPage();
   await page.goto(`chrome-extension://${b.extensionId}/bench.html?settle=0`);
   await page.setInputFiles('#bench-files', join(DIST, 'diag/m0-sample.pdf'));
@@ -31,13 +31,13 @@ test('수동 탭 메모리 입력: K 환산·경고 확인·원문 기록', asyn
     await page.fill('#bench-manual-value', value);
     await page.click('#bench-continue');
   };
-  // 기준점: 작업 관리자 표시 그대로(쉼표·K).
+  // Checkpoint: exactly as shown in Task Manager (comma, K).
   await enter('기준점', '272,940K');
-  // 종료 직후: 직전과 같은 값 → 경고, 같은 값으로 한 번 더 눌러 넘긴다.
+  // Right after close: same value as the previous one -> warning; press again with the same value to proceed.
   await enter('종료 직후', '272940');
   await expect(page.locator('#bench-manual-warning')).toContainText('직전 입력과 같은 값');
   await page.click('#bench-continue');
-  // 30초 뒤: 0 하나 더 붙은 값 → 자릿수 경고 → 고쳐 넣는다.
+  // 30 s later: a value with one extra 0 -> digit-count warning -> correct it.
   await enter('종료 30초 뒤(판정값)', '10007300');
   await expect(page.locator('#bench-manual-warning')).toContainText('5배 이상');
   await page.fill('#bench-manual-value', '1007300');

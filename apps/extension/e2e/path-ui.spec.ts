@@ -1,7 +1,7 @@
 /**
- * M4 viewer-ui e2e(docs/m4-viewer-ui.md): 셀 진입·벡터 패스 선택/편집·편집 가능 표시·표 격자(병합 셀)·입력 버퍼·R-L1.
- * 가짜 편집 호스트(`packages/viewer-ui/test/fake-edit-host.ts`)로 viewer-ui 빌드 산출물만 띄운다. 실제 core 패스 RPC 는
- * 아직 "M4 미구현" 이므로 필요한 흐름은 `path-integration.spec.ts` 의 `test.skip` 으로 둔다.
+ * M4 viewer-ui e2e (docs/m4-viewer-ui.md): cell entry, vector path selection/editing, editability overlay, table grid (merged cells), input buffer, R-L1.
+ * Only the viewer-ui build output is served with the fake edit host (`packages/viewer-ui/test/fake-edit-host.ts`). The real core path RPC is
+ * still "M4 not implemented", so flows that need it are left as `test.skip` in `path-integration.spec.ts`.
  */
 import { expect, test, type Page } from '@playwright/test';
 import type { PageLayout, PathSegment } from '@pdf-editor/shared-types';
@@ -22,7 +22,7 @@ const CURVE: PathSegment[] = [
   { type: 'C', p1: [330, 50], p2: [370, 50], p3: [400, 100] },
 ];
 
-/** 패스 구성(페이지 공간 pt). seq 11 은 seq 10 안쪽의 더 작은 패스다. */
+/** Path composition (page-space pt). seq 11 is a smaller path inside seq 10. */
 const PATHS: FakePath[] = [
   { info: makePath(10, [100, 200, 220, 260]) },
   {
@@ -50,7 +50,7 @@ const PATHS: FakePath[] = [
       segments: CURVE,
     }),
   },
-  { info: makePath(15, [10, 10, 10.5, 12]) }, // 작은 패스: 편집 가능 표시에서 생략
+  { info: makePath(15, [10, 10, 10.5, 12]) }, // small path: omitted from the editability overlay
 ];
 
 const PARAGRAPHS = [
@@ -66,7 +66,7 @@ const PARAGRAPHS = [
   },
 ];
 
-/** 병합 셀이 있는 3×3 표: (0,0)은 1×2 병합, (1,2)는 2×1 병합. */
+/** 3×3 table with merged cells: (0,0) is a 1×2 merge, (1,2) is a 2×1 merge. */
 const TABLE_LAYOUT = {
   bounds: [0, 0, 612, 792],
   columns: [],
@@ -209,7 +209,7 @@ async function altClick(
 }
 
 let errors: string[] = [];
-test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
+test.describe('M4 cell and vector path UI (fake edit host)', () => {
   test.beforeAll(startEditHarness);
   test.afterAll(stopEditHarness);
   test.beforeEach(async ({ page }) => {
@@ -228,8 +228,10 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
     expect(errors, '페이지 오류').toEqual([]);
   });
 
-  test.describe('셀 진입', () => {
-    test('셀 위에서 셀 상자 테두리(data-cell), 더블클릭으로 셀 편집', async ({ page }) => {
+  test.describe('cell entry', () => {
+    test('cell box border (data-cell) over a cell, double-click edits the cell', async ({
+      page,
+    }) => {
       const g = await geo(page);
       const p = at(g, 70, 315);
       await page.mouse.move(p.x, p.y);
@@ -243,7 +245,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-edit-layer')).toHaveCount(0);
     });
 
-    test('제한된 셀은 "이 셀은 편집할 수 없습니다" 팝오버', async ({ page }) => {
+    test('a restricted cell shows the "이 셀은 편집할 수 없습니다" popover', async ({ page }) => {
       const g = await geo(page);
       const p = at(g, 70, 355);
       await page.mouse.dblclick(p.x, p.y);
@@ -253,8 +255,8 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
     });
   });
 
-  test.describe('R-L1·입력 버퍼', () => {
-    test('beginParagraphEdit 에 렌더 배율을 넘기고 시작 갱신 RPC 를 보내지 않는다', async ({
+  test.describe('R-L1 and input buffer', () => {
+    test('beginParagraphEdit receives the render scale and sends no start-update RPC', async ({
       page,
     }) => {
       const g = await geo(page);
@@ -272,7 +274,9 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect(await calls(page, 'updateParagraphDraft')).toBe(0);
     });
 
-    test('편집기가 열리는 동안 친 글자를 열린 뒤 캐럿 위치에 넣는다', async ({ page }) => {
+    test('characters typed while the editor is opening go to the caret position after it opens', async ({
+      page,
+    }) => {
       const g = await geo(page);
       const p = at(g, 60, 30);
       await page.evaluate(() => {
@@ -294,8 +298,8 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
     });
   });
 
-  test.describe('편집 가능 표시', () => {
-    test('기본 꺼짐, 토글하면 문단·셀·패스 테두리와 범례, 작은 패스는 생략, 포인터는 통과', async ({
+  test.describe('editability overlay', () => {
+    test('off by default; toggling shows paragraph, cell and path borders and the legend, small paths omitted, pointer passes through', async ({
       page,
     }) => {
       await expect(page.locator('#pe-marks')).toHaveCount(0);
@@ -307,15 +311,15 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await expect(marks).toHaveAttribute('data-paths', '5');
       await expect(page.locator('#pe-marks-legend')).toContainText('편집 가능');
       expect(await marks.evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none');
-      // 포인터 통과: 켜 놓아도 문단 더블클릭 편집은 그대로
+      // Pointer pass-through: even with it on, double-click paragraph editing works as before
       const g = await geo(page);
       const p = at(g, 60, 30);
       await page.mouse.dblclick(p.x, p.y);
       await expect(page.locator('#pe-edit-layer')).toBeVisible();
-      await expect(page.locator('#pe-marks')).toHaveCount(0); // 편집 중에는 표시를 숨긴다
+      await expect(page.locator('#pe-marks')).toHaveCount(0); // the overlay is hidden while editing
     });
 
-    test('레이아웃·편집 표시 한 버튼: 한 번 누르면 레이아웃과 편집 가능 표시가 함께 켜지고 다시 누르면 함께 꺼진다', async ({
+    test('layout and editability overlay in one button: one press turns both on together and another turns both off', async ({
       page,
     }) => {
       await expect(page.locator('#pe-mark-toggle')).toHaveCount(0);
@@ -332,14 +336,16 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await expect(btn).toHaveAttribute('aria-pressed', 'false');
       await expect(page.locator('#pe-layout-canvas')).toHaveCount(0);
       await expect(page.locator('#pe-marks')).toHaveCount(0);
-      // 꺼지면 패스 클릭 선택도 꺼진다.
+      // When off, click selection of paths is also off.
       const g = await geo(page);
       const p = at(g, 110, 250);
       await page.mouse.click(p.x, p.y);
       expect(await selection(page)).toEqual([]);
     });
 
-    test('레이아웃을 쓸 수 없으면 편집 가능 표시만 켜고 제목에 사유를 적는다', async ({ page }) => {
+    test('when the layout is unavailable, only the editability overlay is turned on and the title gives the reason', async ({
+      page,
+    }) => {
       const other = await page.context().newPage();
       const pageErrors = await openEditHarness(other, config({ layout2: undefined }));
       await other.waitForFunction(
@@ -364,7 +370,9 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await other.close();
     });
 
-    test('마우스를 올리면 종류·사유 툴팁(제한 패스는 사유)', async ({ page }) => {
+    test('hovering shows a kind and reason tooltip (restricted paths show the reason)', async ({
+      page,
+    }) => {
       await page.click('#pe-overlay-toggle');
       const g = await geo(page);
       const lim = at(g, 320, 310);
@@ -378,8 +386,8 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
     });
   });
 
-  test.describe('패스 선택', () => {
-    test('Alt+클릭: 겹치면 가장 작은 패스, 표시를 꺼도 동작. 빈 곳 클릭은 해제', async ({
+  test.describe('path selection', () => {
+    test('Alt+click: the smallest path when overlapping, works even with the overlay off. Clicking an empty spot clears', async ({
       page,
     }) => {
       const g = await geo(page);
@@ -396,7 +404,9 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-path-layer')).toHaveCount(0);
     });
 
-    test('Alt 없이 클릭: 표시가 꺼져 있으면 선택하지 않고, 켜면 선택한다', async ({ page }) => {
+    test('click without Alt: does not select when the overlay is off, selects when on', async ({
+      page,
+    }) => {
       const g = await geo(page);
       const p = at(g, 110, 250);
       await page.mouse.click(p.x, p.y);
@@ -406,7 +416,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect(await selection(page)).toEqual([10]);
     });
 
-    test('선은 화면 4px 안에서 맞는다', async ({ page }) => {
+    test('a line is hit within 4px on screen', async ({ page }) => {
       const g = await geo(page);
       const near = at(g, 420, 200);
       await altClick(page, near.x, near.y + 3);
@@ -416,7 +426,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect(await selection(page)).toEqual([]);
     });
 
-    test('Shift+클릭 다중 선택(더하기·빼기)', async ({ page }) => {
+    test('Shift+click multi-selection (add and remove)', async ({ page }) => {
       const g = await geo(page);
       const a = at(g, 140, 220);
       const b = at(g, 110, 250);
@@ -429,7 +439,9 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect(await selection(page)).toEqual([10]);
     });
 
-    test('편집할 수 없는 패스: 사유 안내만 있고 핸들·색 선택기가 없다', async ({ page }) => {
+    test('non-editable path: only a reason notice, no handles or color picker', async ({
+      page,
+    }) => {
       const g = await geo(page);
       const p = at(g, 320, 310);
       await altClick(page, p.x, p.y);
@@ -439,7 +451,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
     });
   });
 
-  test.describe('패스 편집', () => {
+  test.describe('path editing', () => {
     async function select(page: Page, x: number, y: number, extra: ('Alt' | 'Shift')[] = ['Alt']) {
       const g = await geo(page);
       const p = at(g, x, y);
@@ -448,7 +460,9 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       return g;
     }
 
-    test('끌기: 미리보기(서버 갱신 전), 200 ms 정지 뒤 갱신, 놓으면 커밋', async ({ page }) => {
+    test('drag: preview (before the server update), update after a 200 ms idle, commit on release', async ({
+      page,
+    }) => {
       const g = await select(page, 140, 220);
       const box = (await page.locator('#pe-path-box').boundingBox())!;
       const sx = box.x + box.width / 2;
@@ -460,7 +474,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect(await calls(page, 'updatePathDraft')).toBe(0);
       await page.waitForTimeout(260);
       expect(await calls(page, 'updatePathDraft')).toBe(1);
-      await expect(page.locator('#pe-path-preview')).toHaveCount(0); // 서버 영역이 반영됨
+      await expect(page.locator('#pe-path-preview')).toHaveCount(0); // the server region is applied
       await page.mouse.move(sx + 30, sy + 12, { steps: 3 });
       await page.mouse.up();
       await expect.poll(() => edits(page)).toBe(1);
@@ -470,11 +484,11 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect(e.transform![5]).toBeCloseTo(12 / g.scale, 0);
       const info = await pathInfo(page, 11);
       expect(info!.bbox[0]).toBeCloseTo(130 + 30 / g.scale, 0);
-      expect(await selection(page)).toEqual([11]); // 편집 뒤에도 선택 유지
+      expect(await selection(page)).toEqual([11]); // selection is kept after the edit
       expect(await calls(page, 'commitPathEdit')).toBe(1);
     });
 
-    test('Esc: 끄는 중 취소하면 문서가 바뀌지 않는다', async ({ page }) => {
+    test('Esc: cancelling mid-drag leaves the document unchanged', async ({ page }) => {
       await select(page, 140, 220);
       const box = (await page.locator('#pe-path-box').boundingBox())!;
       const sx = box.x + box.width / 2;
@@ -491,7 +505,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect((await pathInfo(page, 11))!.bbox).toEqual([130, 210, 160, 230]);
     });
 
-    test('핸들 크기 조절: 반대 모서리 고정, Shift 면 비율 고정', async ({ page }) => {
+    test('handle resize: opposite corner fixed, Shift keeps the aspect ratio', async ({ page }) => {
       await select(page, 140, 220);
       const handle = page.locator('.pe-path-handle[data-handle="se"]');
       const hb = (await handle.boundingBox())!;
@@ -508,11 +522,13 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect(t[0]).toBeCloseTo(t[3]!, 6);
       expect(t[0]!).toBeGreaterThan(1);
       const info = (await pathInfo(page, 11))!;
-      expect(info.bbox[0]).toBeCloseTo(130, 3); // 왼쪽 위 고정
+      expect(info.bbox[0]).toBeCloseTo(130, 3); // top-left fixed
       expect(info.bbox[1]).toBeCloseTo(210, 3);
     });
 
-    test('색 선택기: 연속 입력은 보내지 않고 닫을 때(change) 한 번만 커밋', async ({ page }) => {
+    test('color picker: continuous input is not sent, only one commit on close (change)', async ({
+      page,
+    }) => {
       await select(page, 140, 220);
       await page.evaluate(() => {
         const el = document.getElementById('pe-path-fill') as HTMLInputElement;
@@ -534,7 +550,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect((await pathInfo(page, 11))!.color!.rgb).toEqual([0, 1, 0]);
     });
 
-    test('선 두께 패널', async ({ page }) => {
+    test('line width panel', async ({ page }) => {
       await select(page, 420, 200, ['Alt']);
       const input = page.locator('#pe-path-width');
       await expect(input).toHaveValue('2');
@@ -544,7 +560,9 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect((await pathInfo(page, 13))!.lineWidth).toBe(4);
     });
 
-    test('점 편집 모드: 꼭짓점·제어점 표시, 끌면 PathEdit.points 로 커밋', async ({ page }) => {
+    test('point edit mode: vertices and control points shown, dragging commits as PathEdit.points', async ({
+      page,
+    }) => {
       const geoNow = await geo(page);
       const mid = at(geoNow, 350, 62.5);
       await altClick(page, mid.x, mid.y);
@@ -569,14 +587,14 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       expect(e.points![0]!.to[0]).toBeCloseTo(400 + 15 / geoNow.scale, 0);
       expect(e.points![0]!.to[1]).toBeCloseTo(100 - 9 / geoNow.scale, 0);
       expect(e.transform).toBeNull();
-      // 점 편집 중 Esc: 모드 종료, 한 번 더: 선택 해제
+      // Esc during point editing: ends the mode; once more: clears the selection
       await page.keyboard.press('Escape');
       await expect(page.locator('.pe-path-point')).toHaveCount(0);
       await page.keyboard.press('Escape');
       await expect(page.locator('#pe-path-layer')).toHaveCount(0);
     });
 
-    test('점 편집은 다중 선택에서 쓸 수 없다', async ({ page }) => {
+    test('point editing is unavailable in multi-selection', async ({ page }) => {
       await select(page, 140, 220);
       await expect(page.locator('#pe-path-points')).toBeEnabled();
       const g = await geo(page);
@@ -585,7 +603,9 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-path-points')).toBeDisabled();
     });
 
-    test('다중 선택 이동은 한 편집, Delete 키는 다중 선택을 한 번에 지운다', async ({ page }) => {
+    test('multi-selection move is one edit, the Delete key deletes the multi-selection at once', async ({
+      page,
+    }) => {
       await select(page, 140, 220);
       const g = await geo(page);
       const b = at(g, 110, 250);
@@ -608,7 +628,7 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
       await expect(page.locator('#pe-path-layer')).toHaveCount(0);
     });
 
-    test('삭제 버튼 + 문서 되돌리기', async ({ page }) => {
+    test('delete button + document undo', async ({ page }) => {
       await select(page, 140, 220);
       await page.click('#pe-path-delete');
       await expect.poll(() => edits(page)).toBe(1);
@@ -619,12 +639,12 @@ test.describe('M4 셀·벡터 패스 UI(가짜 편집 호스트)', () => {
     });
   });
 
-  test.describe('표 격자(병합 셀 기준)', () => {
-    test('격자는 병합 범위를 한 칸으로 그린다', async ({ page }) => {
+  test.describe('table grid (merged cell basis)', () => {
+    test('the grid draws a merged range as one cell', async ({ page }) => {
       await page.click('#pe-overlay-toggle');
       const canvas = page.locator('#pe-layout-canvas');
       await expect(canvas).toBeVisible();
-      // 병합 셀 3개 + 덮이지 않은 빈 칸 4개 = 7 (행·열 전체 선이면 병합 안을 가로지른다)
+      // 3 merged cells + 4 uncovered empty cells = 7 (full row/column lines would cut across the merged cells)
       await expect(canvas).toHaveAttribute('data-grid-cells', '7');
     });
   });

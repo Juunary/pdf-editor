@@ -1,6 +1,6 @@
 /**
- * 줄 특징(layout-recon 내부 입력). PageModel.lines 하나당 LineFeature 하나.
- * 단어·구간 상자는 글자 quad 의 x 범위로 만든다(가로쓰기 기준). 세로·회전 줄은 horizontal=false.
+ * Line features (internal input of layout-recon). One LineFeature per PageModel.lines entry.
+ * Word and span boxes are built from the x range of the character quads (horizontal writing). Vertical or rotated lines have horizontal=false.
  */
 import type { PageModel, Rect } from '@pdf-editor/shared-types';
 import { MATH_FONT } from './text-rules.js';
@@ -8,32 +8,32 @@ import { MATH_FONT } from './text-rules.js';
 export interface Box {
   x0: number;
   x1: number;
-  /** PageModel.chars 인덱스(이 상자 안, 줄 안 순서). */
+  /** PageModel.chars indices (within this box, in line order). */
   chars: number[];
   text: string;
 }
 
 export interface LineFeature {
-  /** PageModel.lines 인덱스. */
+  /** PageModel.lines index. */
   index: number;
   bbox: Rect;
-  /** 읽기 텍스트(spaceAfter 반영, 줄 끝 공백 제거). */
+  /** Reading text (spaceAfter applied, trailing whitespace removed). */
   text: string;
-  /** 글자 크기 중앙값(pt). */
+  /** Median font size (pt). */
   size: number;
-  /** 글자 수 기준 다수 폰트. */
+  /** Majority font by character count. */
   fontId: number;
   bold: boolean;
   italic: boolean;
-  /** 기준선 y 중앙값(페이지 공간). */
+  /** Median baseline y (page space). */
   baseline: number;
-  /** 줄 진행 방향이 거의 (1, 0) 인지. */
+  /** Whether the line direction is nearly (1, 0). */
   horizontal: boolean;
-  /** PageModel.chars 인덱스, 줄 안 순서. */
+  /** PageModel.chars indices, in line order. */
   chars: number[];
-  /** 공백(글자·spaceAfter)으로 나눈 단어 상자. */
+  /** Word boxes split by whitespace (characters or spaceAfter). */
   words: Box[];
-  /** 큰 간격(글자 크기의 1.5배 초과)으로 나눈 구간 상자. 표의 셀·다단 줄을 가르는 데 쓴다. */
+  /** Span boxes split at large gaps (more than 1.5x the font size). Used to separate table cells and multi-column lines. */
   segments: Box[];
 }
 
@@ -96,7 +96,7 @@ export function lineFeatures(model: PageModel): LineFeature[] {
     const spaceAfter = new Set(line.spaceAfter);
     const cs = chars.map((i) => model.chars[i]!);
     const visible = cs.filter((c) => c.text.trim() !== '');
-    // 줄 크기는 수식 글꼴이 아닌 글자 기준(수식 첨자 글자 수가 줄 크기를 끌어내리지 않게).
+    // Line size is based on non-math-font characters (so math subscript characters do not pull the line size down).
     const prose = visible.filter((c) => !MATH_FONT.test(model.fonts[c.fontId]?.name ?? ''));
     const sizes = (prose.length ? prose : visible).map((c) => c.size);
     const size = median(sizes.length ? sizes : cs.map((c) => c.size));
@@ -129,8 +129,8 @@ export function lineFeatures(model: PageModel): LineFeature[] {
 }
 
 /**
- * 추출 지문 원문: 줄 텍스트(lineFeatures 규칙)를 "\n" 으로 이은 문자열. 라벨의 linesSha256 은 이 문자열의
- * UTF-8 SHA-256 이다(docs/m2-contract.md 4.1). 해시는 호출자가 계산한다(이 패키지는 암호 모듈에 의존하지 않음).
+ * Extraction fingerprint source: line texts (lineFeatures rules) joined with "\n". The label's linesSha256 is the
+ * UTF-8 SHA-256 of this string (docs/m2-contract.md 4.1). The caller computes the hash (this package does not depend on a crypto module).
  */
 export function fingerprintText(model: PageModel): string {
   return lineFeatures(model)

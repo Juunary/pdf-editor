@@ -1,5 +1,5 @@
 {
-  "_comment": "번들 그래프(소스맵 모듈 목록)에 나타나지 않는 서드파티: MuPDF WASM 에 정적 링크된 라이브러리, harfbuzz.wasm, 폰트, WASM 런타임. 근거는 evidence 필드. licenseFiles 는 이 파일이 있는 디렉터리 기준 경로.",
+  "_comment": "Third parties that do not appear in the bundle graph (source map module list): libraries statically linked into MuPDF WASM, harfbuzz.wasm, fonts, the WASM runtime. The basis is in the evidence field. licenseFiles are paths relative to the directory of this file.",
   "mupdfWasm": {
     "package": "mupdf",
     "version": "1.28.1",
@@ -12,7 +12,7 @@
       "license": "FTL (FreeType License; GPL-2.0-only 와 이중 라이선스 중 FTL 선택)",
       "homepage": "https://freetype.org/",
       "licenseFiles": ["licenses/mupdf-freetype-LICENSE.TXT", "licenses/mupdf-freetype-FTL.TXT"],
-      "evidence": "mupdf-wasm.wasm 에 FT_ 심볼·FreeType 문자열"
+      "evidence": "FT_ symbols and FreeType strings in mupdf-wasm.wasm"
     },
     {
       "name": "MuPDF WASM 에 정적 링크: HarfBuzz",
@@ -20,7 +20,7 @@
       "license": "MIT (Old MIT)",
       "homepage": "https://harfbuzz.github.io/",
       "licenseFiles": ["licenses/mupdf-harfbuzz-COPYING"],
-      "evidence": "mupdf-wasm.wasm 에 hb_shape 심볼"
+      "evidence": "hb_shape symbol in mupdf-wasm.wasm"
     },
     {
       "name": "MuPDF WASM 에 정적 링크: jbig2dec",
@@ -28,7 +28,7 @@
       "license": "AGPL-3.0-or-later",
       "homepage": "https://jbig2dec.com/",
       "licenseFiles": ["licenses/mupdf-jbig2dec-LICENSE", "licenses/mupdf-jbig2dec-COPYING"],
-      "evidence": "mupdf-wasm.wasm 에 jbig2_ 심볼"
+      "evidence": "jbig2_ symbols in mupdf-wasm.wasm"
     },
     {
       "name": "MuPDF WASM 에 정적 링크: OpenJPEG",
@@ -36,7 +36,7 @@
       "license": "BSD-2-Clause",
       "homepage": "https://www.openjpeg.org/",
       "licenseFiles": ["licenses/mupdf-openjpeg-LICENSE"],
-      "evidence": "mupdf-wasm.wasm 에 opj_ 심볼"
+      "evidence": "opj_ symbols in mupdf-wasm.wasm"
     },
     {
       "name": "MuPDF WASM 에 정적 링크: Little CMS 2 (lcms2)",
@@ -44,7 +44,7 @@
       "license": "MIT",
       "homepage": "https://www.littlecms.com/",
       "licenseFiles": ["licenses/mupdf-lcms2-LICENSE"],
-      "evidence": "mupdf-wasm.wasm 에 cmsCreate 심볼"
+      "evidence": "cmsCreate symbol in mupdf-wasm.wasm"
     },
     {
       "name": "MuPDF WASM 에 정적 링크: IJG libjpeg",
@@ -53,7 +53,7 @@
       "homepage": "https://www.ijg.org/",
       "notice": "This software is based in part on the work of the Independent JPEG Group.",
       "licenseFiles": ["licenses/mupdf-libjpeg-README"],
-      "evidence": "mupdf-wasm.wasm 에 JPEG 문자열(libjpeg 디코더 메시지)"
+      "evidence": "JPEG strings (libjpeg decoder messages) in mupdf-wasm.wasm"
     },
     {
       "name": "MuPDF WASM 에 정적 링크: zlib",
@@ -61,7 +61,7 @@
       "license": "Zlib",
       "homepage": "https://zlib.net/",
       "licenseFiles": ["licenses/mupdf-zlib-LICENSE"],
-      "evidence": "mupdf-wasm.wasm 에 inflate·deflate 문자열"
+      "evidence": "inflate·deflate strings in mupdf-wasm.wasm"
     },
     {
       "name": "MuPDF WASM 에 정적 링크: Gumbo HTML parser",
@@ -69,7 +69,7 @@
       "license": "Apache-2.0",
       "homepage": "https://github.com/google/gumbo-parser",
       "licenseFiles": ["licenses/mupdf-gumbo-COPYING"],
-      "evidence": "mupdf-wasm.wasm 에 gumbo_ 심볼(HTML 기능은 끄지 않음)"
+      "evidence": "gumbo_ symbols in mupdf-wasm.wasm (the HTML feature is not turned off)"
     },
     {
       "name": "MuPDF WASM 에 정적 링크: cmark-gfm",
@@ -77,7 +77,7 @@
       "license": "BSD-2-Clause (일부 구성요소 MIT 등, COPYING 참조)",
       "homepage": "https://github.com/github/cmark-gfm",
       "licenseFiles": ["licenses/mupdf-cmark-gfm-COPYING"],
-      "evidence": "mupdf-wasm.wasm 에 'cmark ...' 문자열(마크다운 기능은 끄지 않음)"
+      "evidence": "'cmark ...' strings in mupdf-wasm.wasm (the Markdown feature is not turned off)"
     },
     {
       "name": "MuPDF WASM 에 내장: URW base35 글꼴(Nimbus Sans·Nimbus Roman·Nimbus Mono PS·Standard Symbols PS·Dingbats)",
@@ -87,7 +87,7 @@
       "copyright": "Copyright 2016 by (URW)++ Design & Development",
       "notice": "PDF 표준 14 글꼴 대체용으로 MuPDF 가 WASM 안에 넣은 CFF 글꼴이다. 라이선스는 mupdf 1.28.1 태그 resources/fonts/urw/OFL.txt(2026-10-21 확인)",
       "licenseFiles": ["licenses/mupdf-urw-OFL.txt"],
-      "evidence": "mupdf-wasm.wasm 에 'Copyright 2013/2014 by (URW)++ Design & Development', 'Copyright 2015 by URW' 와 Nimbus Sans·Nimbus Roman·Nimbus Mono PS·Standard Symbols PS·Dingbats 글꼴 이름 문자열"
+      "evidence": "'Copyright 2013/2014 by (URW)++ Design & Development', 'Copyright 2015 by URW' and the font name strings Nimbus Sans·Nimbus Roman·Nimbus Mono PS·Standard Symbols PS·Dingbats in mupdf-wasm.wasm"
     },
     {
       "name": "WASM 런타임: Emscripten 과 musl 기반 libc",
@@ -95,7 +95,7 @@
       "license": "MIT 또는 University of Illinois/NCSA (Emscripten), MIT (musl)",
       "homepage": "https://emscripten.org/",
       "licenseFiles": ["licenses/emscripten-LICENSE", "licenses/musl-COPYRIGHT"],
-      "evidence": "mupdf-wasm.js 는 Emscripten 생성 글루 코드, WASM 은 emcc 로 링크"
+      "evidence": "mupdf-wasm.js is Emscripten-generated glue code; the WASM is linked with emcc"
     },
     {
       "name": "harfbuzz.wasm (harfbuzzjs 1.6.2 에 포함)",
@@ -103,7 +103,7 @@
       "license": "MIT (Old MIT)",
       "homepage": "https://github.com/harfbuzz/harfbuzzjs",
       "licenseFiles": ["licenses/mupdf-harfbuzz-COPYING"],
-      "evidence": "harfbuzzjs 패키지 LICENSE 는 번들 그래프 항목(harfbuzzjs)에서 따로 실린다. 이 항목은 WASM 안 HarfBuzz 본체의 Old MIT 고지(위 MuPDF 가 쓰는 HarfBuzz COPYING 과 같은 텍스트)"
+      "evidence": "The harfbuzzjs package LICENSE is listed separately under the bundle graph entry (harfbuzzjs). This entry is the Old MIT notice for the HarfBuzz core inside the WASM (the same text as the HarfBuzz COPYING used by MuPDF above)"
     },
     {
       "name": "Noto Sans KR 부분집합 (폴백 폰트)",
@@ -113,7 +113,7 @@
       "copyright": "Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'",
       "notice": "서브셋은 수정본이며 글꼴 이름은 'Noto Sans KR'이다. 예약 글꼴 이름 'Source' 는 글꼴 이름 항목에 없다(원 저작권 고지 문자열에만 남아 있다, verify-dist --release 가 확인).",
       "licenseFiles": ["../../assets/fonts/OFL.txt"],
-      "evidence": "assets/fonts/NotoSansKR-Regular-subset.ttf, 출처·처리는 assets/fonts/README.md"
+      "evidence": "assets/fonts/NotoSansKR-Regular-subset.ttf; source and processing are in assets/fonts/README.md"
     }
   ]
 }

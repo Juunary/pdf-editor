@@ -12,25 +12,25 @@ import {
 import { VIEWER_STRINGS, type ViewerStrings } from '../strings.js';
 import { cssToPage, type PageLayout } from '../layout.js';
 
-/** 편집 가능 = 초록 실선, 제한 = 주황 점선(M3 문단 테두리와 같은 색, 계약 D6). */
+/** Editable = green solid line, limited = orange dotted line (same colors as the M3 paragraph border, contract D6). */
 const OK = '#2e7d32';
 const LIMITED = '#ef6c00';
-/** 레이아웃 오버레이와 함께 그릴 때 테두리를 레이아웃 상자에서 떼는 거리(CSS px). */
+/** Distance (CSS px) by which the border is separated from the layout box when drawn together with the layout overlay. */
 const LAYOUT_GAP_PX = 2.5;
 
 interface Props {
   editability: PageEditability;
   layout: PageLayout;
   pageRef: RefObject<HTMLDivElement>;
-  /** 레이아웃 오버레이가 함께 보이는지. 그러면 문단 테두리는 바깥, 셀 테두리는 안쪽으로 떼어 그린다. */
+  /** Whether the layout overlay is also visible. If so, paragraph borders are drawn outside and cell borders inside, offset. */
   withLayout?: boolean;
-  /** 범례·툴팁·사유 문자열(기본 한국어). */
+  /** Legend, tooltip and reason strings (Korean by default). */
   strings?: ViewerStrings;
 }
 
 /**
- * 편집 가능 표시(D6): 문단·셀·패스 테두리를 한 캔버스에 그린다. 포인터를 받지 않는다(기존 층으로 통과).
- * 마우스를 올린 곳의 사유 툴팁은 쪽의 mousemove 를 들어서 계산한다.
+ * Editability overlay (D6): draws paragraph, cell and path borders on one canvas. Does not receive pointers (passes through to the existing layers).
+ * The tooltip of the reason at the point where the mouse hovers is computed by listening to the page's mousemove.
  */
 export function EditableMarks({
   editability,
@@ -124,7 +124,7 @@ export function EditableMarks({
   );
 }
 
-/** 범례 한 줄(화면 아래쪽에 고정). 레이아웃 오버레이와 함께면 레이아웃 상자 설명을 더한다. */
+/** Legend line (pinned at the bottom of the screen). With the layout overlay, adds the layout box description. */
 export function MarksLegend({
   skipped,
   withLayout = false,

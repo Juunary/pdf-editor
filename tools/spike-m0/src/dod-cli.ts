@@ -1,4 +1,4 @@
-// M0 DoD 잔여 항목(공유 XObject·기존 Redact 주석·대형 문서 저장) 실행기. cli.ts 에서 호출한다.
+// Runner for the remaining M0 DoD items (shared XObject, existing Redact annotations, large-document save). Called from cli.ts.
 import * as mupdf from 'mupdf';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -28,7 +28,7 @@ import {
 
 const sha256 = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
-/** PDF 사용자 공간 사각형(A4, 회전 없음) → pdftoppm 픽셀 사각형(여유 2px). */
+/** PDF user-space rectangle (A4, no rotation) → pdftoppm pixel rectangle (2px margin). */
 function popplerPixelRect(r: [number, number, number, number], dpi: number, pageHeight = 842) {
   const s = dpi / 72;
   return [
@@ -46,7 +46,7 @@ export interface DodPaths {
   ttf: string;
 }
 
-/** 공유 Form XObject 스파이크: 경우별 결과 JSON·저장 PDF·PNG + Poppler 교차 확인. */
+/** Shared Form XObject spike: per-case result JSON, saved PDF, PNG + Poppler cross-check. */
 export function runXObjectCli({ root, out, ttf }: DodPaths): void {
   mkdirSync(out, { recursive: true });
   const fontBytes = new Uint8Array(readFileSync(ttf));
@@ -112,7 +112,7 @@ export function runXObjectCli({ root, out, ttf }: DodPaths): void {
   console.log(`결과: ${relative(root, join(out, 'xobject-result.json'))}`);
 }
 
-/** 기존 Redact 주석 문서: 경우별 결과 JSON·저장 PDF + Poppler 교차 확인. */
+/** Document with existing Redact annotations: per-case result JSON, saved PDF + Poppler cross-check. */
 export function runRedactCli({ root, out, ttf }: DodPaths): void {
   mkdirSync(out, { recursive: true });
   const fontBytes = new Uint8Array(readFileSync(ttf));
@@ -150,7 +150,7 @@ export function runRedactCli({ root, out, ttf }: DodPaths): void {
   console.log(`결과: ${relative(root, join(out, 'redact-result.json'))}`);
 }
 
-/** 고정 픽스처(재생성 시 같은 바이트): 공유 XObject·기존 Redact 주석 문서의 원본과 편집 결과. */
+/** Fixed fixtures (same bytes on regeneration): the originals and edit results of the shared-XObject and existing-Redact-annotation documents. */
 export function writeDodFixtures(root: string, ttf: string): { name: string; bytes: Uint8Array }[] {
   const fontBytes = new Uint8Array(readFileSync(ttf));
   return [
@@ -167,7 +167,7 @@ export function writeDodFixtures(root: string, ttf: string): { name: string; byt
   ];
 }
 
-/** 자식 프로세스: 저장 변형 1개 실행 → JSON. */
+/** Child process: run one save variant → JSON. */
 export function runSaveChild(task: string, input: string, outFile: string, ttf: string): void {
   const result = runSaveVariant(
     task.slice('save:'.length),
@@ -190,8 +190,8 @@ interface SaveRun extends Partial<SaveBenchResult> {
 }
 
 /**
- * 대형 문서 저장 상한 조사(A4). 합성 100·300쪽(Day 1 생성기) × 저장 변형, 그리고 2 GiB 근처
- * 대형 문서(JS 직접 생성) × buffer/stream 입력. 변형마다 별도 프로세스.
+ * Large-document save limit investigation (A4). Synthetic 100·300 pages (Day 1 generator) × save variants, and near-2 GiB
+ * large documents (generated directly in JS) × buffer/stream input. A separate process per variant.
  */
 export function runSaveBenchCli({ root, out }: DodPaths, largePages: number[]): void {
   const dir = join(out, 'save-bench');

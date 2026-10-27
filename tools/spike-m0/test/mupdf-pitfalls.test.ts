@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
 
 /**
- * MuPDF 1.28.1 알려진 결함 대조(docs/m0-dod-xobject-redact-save.md 2.5).
- * 이 테스트가 실패하면 MuPDF 동작이 바뀐 것이다 → 회피 규칙 재평가.
+ *  * Control for known MuPDF 1.28.1 defects (docs/m0-dod-xobject-redact-save.md 2.5).
+ *  * If this test fails, MuPDF behavior has changed → reassess the workaround rule.
  */
 function imageDoc(): Uint8Array {
   const doc = new mupdf.PDFDocument();
@@ -29,20 +29,20 @@ function saveAfterResolve(options: string, resolve: boolean): boolean {
   return re.findPage(0).get('Resources').get('XObject').get('Im').isStream();
 }
 
-describe('MuPDF 1.28.1: 압축 이미지 XObject resolve() 후 garbage=compact 저장', () => {
-  it('resolve() 하면 compact 저장에서 이미지 스트림이 빠진다(핸들을 해제해도 같음)', () => {
+describe('MuPDF 1.28.1: garbage=compact save after resolve() of a compressed image XObject', () => {
+  it('after resolve(), the image stream is dropped in a compact save (same even if the handle is released)', () => {
     mupdf.setLog({ error: () => {}, warning: () => {} });
     try {
       expect(saveAfterResolve('garbage=compact,compress', true)).toBe(false);
       expect(saveAfterResolve('garbage=deduplicate,compress', true)).toBe(false);
-      // objstms 는 결함 경로와 무관하다: compact 와 함께 쓰면 빠지고(아래), garbage=yes 와 함께면 남는다
+      // objstms is unrelated to the defect path: used with compact the stream is dropped (below), used with garbage=yes it is kept
       expect(saveAfterResolve('garbage=compact,compress,objstms', true)).toBe(false);
     } finally {
       mupdf.setLog(null);
     }
   });
 
-  it('간접 참조 get() 만 쓰거나 garbage=yes 면 이미지가 남는다', () => {
+  it('the image is kept if only indirect-reference get() is used or with garbage=yes', () => {
     expect(saveAfterResolve('garbage=compact,compress', false)).toBe(true);
     expect(saveAfterResolve('garbage=yes,compress', true)).toBe(true);
     expect(saveAfterResolve('garbage=yes,compress,objstms', true)).toBe(true);
@@ -50,15 +50,15 @@ describe('MuPDF 1.28.1: 압축 이미지 XObject resolve() 후 garbage=compact �
 });
 
 /**
- * MuPDF 1.28.1: objstms 저장의 문서 상태 변화(docs/m0-dod-xobject-redact-save.md 3.3 A3-7 검증).
- * 저장마다 객체 스트림·xref 스트림용 번호 2개를 문서에 할당하고 저장 뒤에도 남긴다.
+ *  * MuPDF 1.28.1: document state change from objstms saves (docs/m0-dod-xobject-redact-save.md 3.3 A3-7 verification).
+ *  * Each save allocates 2 numbers in the document for the object stream and xref stream and keeps them after saving.
  */
-describe('MuPDF 1.28.1: objstms 저장 뒤 같은 문서의 상태', () => {
+describe('MuPDF 1.28.1: state of the same document after an objstms save', () => {
   const latin1 = (b: Uint8Array) => Buffer.from(b).toString('latin1');
   const save = (doc: mupdf.PDFDocument, options: string) =>
     doc.saveToBuffer(options).asUint8Array().slice();
 
-  it('저장마다 countObjects 가 2 늘고, 이후 garbage=yes 저장의 xref 에 빈 항목으로 남는다', () => {
+  it('each save increases countObjects by 2, and they remain as empty entries in the xref of a later garbage=yes save', () => {
     const doc = mupdf.Document.openDocument(imageDoc(), 'application/pdf') as mupdf.PDFDocument;
     const n = doc.countObjects();
     const fresh = save(doc, 'garbage=yes,compress');
@@ -73,7 +73,7 @@ describe('MuPDF 1.28.1: objstms 저장 뒤 같은 문서의 상태', () => {
     doc.destroy();
   });
 
-  it('그 뒤 같은 문서의 증분 저장은 xref 표 원본에도 xref 스트림 구간을 덧붙인다', () => {
+  it('after that, an incremental save of the same document appends an xref stream section even to an xref-table original', () => {
     const src = imageDoc();
     const doc = mupdf.Document.openDocument(src, 'application/pdf') as mupdf.PDFDocument;
     expect(latin1(src)).toMatch(/\nxref\n/);

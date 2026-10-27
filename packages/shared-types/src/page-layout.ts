@@ -1,6 +1,6 @@
 /**
- * 쪽 레이아웃(M2, PLAN.md 3.4 "논리 문서 모델"). layout-recon 이 PageModel 에서 만든다(docs/m2-contract.md).
- * PLAN.md 의 DocumentModel 은 쪽별 PageLayout 의 모음이다. 모든 기하는 페이지 공간(geometry.ts)이다.
+ * Page layout (M2, PLAN.md 3.4 "logical document model"). Built by layout-recon from the PageModel (docs/m2-contract.md).
+ * The DocumentModel in PLAN.md is a collection of per-page PageLayouts. All geometry is in page space (geometry.ts).
  */
 import type { RGB, Rect } from './geometry.js';
 
@@ -9,12 +9,12 @@ export type ParagraphRole =
   | 'heading'
   | 'list-item'
   | 'caption'
-  | 'header' // 쪽 머리(러닝헤드 등)
-  | 'footer' // 쪽 꼬리(쪽 번호 등)
+  | 'header' // page header (running head, etc.)
+  | 'footer' // page footer (page number, etc.)
   | 'footnote'
   | 'other';
 
-/** 문단 안 같은 모양의 글자 구간. start·end 는 LayoutParagraph.chars 위치 [start, end). */
+/** A run of characters with the same style within a paragraph. start and end are LayoutParagraph.chars positions [start, end). */
 export interface StyleRun {
   start: number;
   end: number;
@@ -28,29 +28,29 @@ export interface StyleRun {
 export interface LayoutParagraph {
   id: number;
   bbox: Rect;
-  /** PageModel.lines 인덱스, 읽기 순서. */
+  /** PageModel.lines indices, in reading order. */
   lines: number[];
-  /** PageModel.chars 인덱스, 읽기 순서(줄 순서 → 줄 안 순서). */
+  /** PageModel.chars indices, in reading order (line order → order within a line). */
   chars: number[];
   /**
-   * 문단 텍스트. 줄 안은 글자 + spaceAfter 공백, 줄 사이는 공백 하나(줄 끝이 "-" 이면 붙임).
-   * 문단 안 줄바꿈은 배치 결과로 보고 남기지 않는다(docs/m2-contract.md 2.3).
+   * Paragraph text. Within a line: characters + spaceAfter spaces; between lines: a single space (joined directly if the line ends with "-").
+   * Line breaks within a paragraph are treated as layout results and not kept (docs/m2-contract.md 2.3).
    */
   text: string;
   role: ParagraphRole;
-  /** PageLayout.columns 인덱스. 머리·꼬리·표 안·도형 라벨 문단은 -1. */
+  /** PageLayout.columns index. -1 for header, footer, in-table and figure label paragraphs. */
   column: number;
-  /** 표 안 문단이면 LayoutTable.id. */
+  /** LayoutTable.id if the paragraph is inside a table. */
   table: number | null;
-  /** 도형 안 글자(축 라벨 등)면 LayoutFigure.id. */
+  /** LayoutFigure.id if it is text inside a figure (axis labels, etc.). */
   figure: number | null;
-  /** 기준선 간격(pt). 한 줄이면 null. M3 리플로우 입력. */
+  /** Baseline spacing (pt). null for a single line. M3 reflow input. */
   lineHeight: number | null;
-  /** 첫 줄 들여쓰기(pt, 둘째 줄 이후 왼쪽 기준. 한 줄이면 0). */
+  /** First-line indent (pt, relative to the left edge of the second and later lines. 0 for a single line). */
   firstLineIndent: number;
   align: 'left' | 'right' | 'center' | 'justify' | 'unknown';
   styleRuns: StyleRun[];
-  /** 같은 쪽 다른 열로 이어지는 문단이면 그 문단 id, 아니면 null. */
+  /** The paragraph id if the paragraph continues in another column on the same page, otherwise null. */
   continuesTo: number | null;
 }
 
@@ -65,9 +65,9 @@ export interface TableCell {
   rowSpan: number;
   colSpan: number;
   bbox: Rect;
-  /** 셀 안 PageModel.lines 인덱스(읽기 순서). */
+  /** PageModel.lines indices inside the cell (reading order). */
   lines: number[];
-  /** 셀 안 LayoutParagraph id. */
+  /** LayoutParagraph ids inside the cell. */
   paragraphs: number[];
 }
 
@@ -76,15 +76,15 @@ export interface LayoutTable {
   bbox: Rect;
   rows: number;
   cols: number;
-  /** 행 경계 y(rows+1 개, 위→아래), 열 경계 x(cols+1 개, 왼쪽→오른쪽). */
+  /** Row boundary y (rows+1 entries, top→bottom), column boundary x (cols+1 entries, left→right). */
   rowBounds: number[];
   colBounds: number[];
   cells: TableCell[];
-  /** lines: 괘선으로 찾음, text: 글자 정렬로 찾음. */
+  /** lines: found by ruling lines, text: found by text alignment. */
   strategy: 'lines' | 'text';
   /**
-   * 표 상자 안의 괘선·배경 사각형으로 쓴 PageModel.paths 인덱스(오름차순, 도형 검출에서 뺀 것). `lines` 전략은 이 패스로
-   * 격자를 찾는다. 패스 삭제 경고 `table-rule-removed` 의 판정 근거(docs/m4-pdf-ops.md 6절 #5).
+   * PageModel.paths indices used as rules or background rectangles inside the table box (ascending; excluded from figure detection). The `lines` strategy finds the grid from these paths.
+   * It is the basis for the path-deletion warning `table-rule-removed` (docs/m4-pdf-ops.md section 6 #5).
    */
   paths: number[];
 }
@@ -93,10 +93,10 @@ export interface LayoutFigure {
   id: number;
   bbox: Rect;
   kind: 'image' | 'vector';
-  /** PageModel.images·paths 인덱스. */
+  /** PageModel.images and paths indices. */
   images: number[];
   paths: number[];
-  /** 도형 안 글자(축 라벨 등) LayoutParagraph id. */
+  /** LayoutParagraph ids of text inside the figure (axis labels, etc.). */
   labels: number[];
 }
 
@@ -113,17 +113,17 @@ export interface PageLayout {
   tables: LayoutTable[];
   figures: LayoutFigure[];
   /**
-   * 최상위 읽기 순서(머리 → 본문 → 꼬리). 표·도형 안 문단은 넣지 않는다(표는 셀 행 우선, 도형은
-   * labels 순서). 머리·꼬리 문단은 role 로 구분한다.
+   * Top-level reading order (header → body → footer). Paragraphs inside tables and figures are not included (tables go row-major by cell, figures by
+   * labels order). Header and footer paragraphs are distinguished by role.
    */
   readingOrder: LayoutItemRef[];
-  /** 어떤 문단에도 넣지 않은 줄(보이는 글자가 없는 줄). */
+  /** Lines not put into any paragraph (lines without visible characters). */
   unassignedLines: number[];
   warnings: string[];
   reconMs: number;
 }
 
-/** PLAN.md 의 DocumentModel: 쪽 레이아웃 모음. */
+/** DocumentModel from PLAN.md: a collection of page layouts. */
 export interface DocumentModel {
   pages: PageLayout[];
 }

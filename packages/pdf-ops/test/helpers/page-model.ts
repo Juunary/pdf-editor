@@ -1,13 +1,13 @@
 /**
- * 테스트 전용 최소 PageModel 생성기(core 의존 없음, 패키지에서 내보내지 않음).
- * `runPageContents`(항등 행렬) Device 콜백을 계약 3절 규칙으로 센다. 매칭 검증에 필요한 필드만 채운다
- * (quad·lines·blocks·색은 자리 채움).
+ * Test-only minimal PageModel generator (no core dependency, not exported from the package).
+ * Counts the `runPageContents` (identity matrix) Device callbacks by the contract section 3 rules. Fills only the fields needed for matching verification
+ * (quad, lines, blocks and colors are placeholders).
  *
- * glyphSeq 정책
- * - first-arrival: 계약 3.1 core 판정(`first-arrival.ts`). gid −1 보조 글리프는 직전 글리프 글자에 붙인다.
- * - no-clip(채택하지 않은 core 안 A, 비교용): clipText·clipStrokeText 글리프는 세지 않는다. 직전 텍스트 콜백과
- *   포인터가 같고 그 콜백을 셌으면 세지 않는다.
- * paintSeq: 칠하기 콜백마다 1. beginMask~endMask 사이는 세지 않는다. beginTile 은 1(캐시됨)을 돌려준다.
+ * glyphSeq policy
+ * - first-arrival: contract 3.1 core classification (`first-arrival.ts`). A gid -1 auxiliary glyph is attached to the character of the previous glyph.
+ * - no-clip (core option A, not adopted, for comparison): clipText and clipStrokeText glyphs are not counted. If the pointer equals that of the previous text callback
+ *   and that callback was counted, it is not counted.
+ * paintSeq: 1 per paint callback. Not counted between beginMask~endMask. beginTile returns 1 (cached).
  */
 import * as mupdf from 'mupdf';
 import { releaseBorrowedShade } from '../../src/mupdf-util.js';
@@ -23,8 +23,8 @@ import type {
 } from '@pdf-editor/shared-types';
 
 /**
- * first-arrival = 계약 3.1 판정(수정 6), first-arrival-v2 = 수정 2–5 의 1단계(비교·회귀 재현용),
- * no-clip = 채택하지 않은 core 안 A(비교용).
+ * first-arrival = contract 3.1 classification (amendment 6), first-arrival-v2 = step 1 of amendments 2-5 (for comparison and regression reproduction),
+ * no-clip = core option A, not adopted (for comparison).
  */
 export type HelperPolicy = 'first-arrival' | 'first-arrival-v2' | 'no-clip';
 
@@ -134,7 +134,7 @@ export function buildTestPageModel(
         lastCounted = true;
         return;
       }
-      // first-arrival: 계약 3.1 core 판정(0단계: gid −1 보조 글리프는 직전 글리프 글자에 붙인다).
+      // first-arrival: contract 3.1 core classification (step 0: a gid -1 auxiliary glyph is attached to the character of the previous glyph).
       const real = glyphs.filter((g) => g.gid >= 0);
       const decisions = judge.judge(
         kind,
@@ -197,7 +197,7 @@ export function buildTestPageModel(
     clipPath: path('clip'),
     clipStrokePath: path('clip-stroke'),
     fillShade: (shade) => {
-      // 빌린 Shade 래퍼: 종료자를 해제해야 GC 가 셰이드를 놓지 않는다(core extract.ts 와 같음).
+      // Borrowed Shade wrapper: the finalizer must be released or GC does not let go of the shade (same as core extract.ts).
       releaseBorrowedShade(shade);
       if (mask > 0) return;
       shades.push({ paintSeq: paintSeq++, bbox: [0, 0, 0, 0], alpha: 1 });
@@ -212,7 +212,7 @@ export function buildTestPageModel(
   const t0 = performance.now();
   page.runPageContents(device, mupdf.Matrix.identity);
   device.close();
-  // 동기 루프에서는 FinalizationRegistry 정리가 돌지 않으므로 직접 해제한다(장치 표의 콜백 클로저·텍스트 참조).
+  // FinalizationRegistry cleanup does not run in a synchronous loop, so release directly (callback closures and text references of the device table).
   device.destroy();
   for (const t of held) t.destroy();
   const pdfPage = page as mupdf.PDFPage;

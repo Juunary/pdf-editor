@@ -1,6 +1,6 @@
 /**
- * 읽기 순서(계약 3절 6단계): 항목 상자에 재귀 XY-cut. 세로 빈 띠(C.gutterMin 이상)가 있으면 세로로 먼저,
- * 없으면 가로로 자른다. 둘 다 없으면 위→아래, 왼쪽→오른쪽으로 정렬한다.
+ * Reading order (contract section 3, step 6): recursive XY-cut over item boxes. If a vertical empty band (at least C.gutterMin) exists, cut vertically first;
+ * otherwise cut horizontally. If neither is possible, sort top→bottom, left→right.
  */
 import type { Rect } from '@pdf-editor/shared-types';
 import { C } from './constants.js';
@@ -10,13 +10,13 @@ export interface CutItem {
 }
 
 export interface CutResult {
-  /** 항목 인덱스, 읽기 순서. */
+  /** Item indices, in reading order. */
   order: number[];
-  /** 항목별 가장 안쪽 세로 자르기 묶음 번호. 세로 자르기 밖이면 -1. */
+  /** Per-item group number of the innermost vertical cut. -1 if outside any vertical cut. */
   group: number[];
 }
 
-/** 구간 [lo, hi] 들을 합쳐 빈 띠 위치(간격 ≥ minGap)를 돌려준다. */
+/** Merges the ranges [lo, hi] and returns empty band positions (gap ≥ minGap). */
 function gaps(intervals: [number, number, number][], minGap: number): number[] {
   const s = [...intervals].sort((a, b) => a[0] - b[0]);
   const cuts: number[] = [];

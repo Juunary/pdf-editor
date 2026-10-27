@@ -13,11 +13,11 @@ interface Props {
   pageIndex: number;
   editability: PageEditability;
   popover: EditPopover | null;
-  /** plan·begin 진행 중이거나 문서 undo/redo 처리 중. */
+  /** plan/begin in progress, or document undo/redo in progress. */
   busy: boolean;
 }
 
-/** 페이지 공간 사각형 → 컨테이너 기준 CSS 상자. */
+/** Page-space rectangle → container-relative CSS box. */
 export function cssRect(rect: Rect, layout: PageLayout): Record<string, string> {
   const [l, t] = pageToCss([rect[0], rect[1]], layout);
   const [r, b] = pageToCss([rect[2], rect[3]], layout);
@@ -25,8 +25,8 @@ export function cssRect(rect: Rect, layout: PageLayout): Record<string, string> 
 }
 
 /**
- * 편집 진입(계약 5.9): 마우스가 문단 위에 있으면 테두리(편집 가능 = 실선, 제한 = 점선·다른 색),
- * 더블클릭하면 편집을 시작하거나 제한 사유를 팝오버로 보여 준다. 한 번 클릭·드래그는 텍스트 층이 그대로 처리한다.
+ * Edit entry (contract 5.9): when the mouse is over a paragraph, a border (editable = solid line, limited = dotted line, different color),
+ * and double-clicking starts editing or shows the limit reason in a popover. A single click or drag is handled as is by the text layer.
  */
 export function EditEntry({
   controller,
@@ -40,7 +40,7 @@ export function EditEntry({
   const [hover, setHover] = useState<number | null>(null);
   const paragraphs = editability.paragraphs;
 
-  // 레이아웃 효과로 등록한다: 렌더 직후(다음 프레임을 기다리지 않고) 더블클릭을 받는다.
+  // Registered as a layout effect: receives the double-click right after render (without waiting for the next frame).
   useLayoutEffect(() => {
     const page = pageRef.current;
     if (!page) return;
@@ -71,7 +71,7 @@ export function EditEntry({
     };
   }, [controller, pageRef, layout, pageIndex, paragraphs, busy]);
 
-  // 팝오버: 바깥을 누르거나 Esc 를 누르면 닫는다(렌더 직후부터 받도록 레이아웃 효과로 등록한다).
+  // Popover: closes on an outside press or Esc (registered as a layout effect so it receives events right after render).
   useLayoutEffect(() => {
     if (!popover) return;
     const onDown = (e: MouseEvent) => {

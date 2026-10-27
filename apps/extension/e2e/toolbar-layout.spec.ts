@@ -1,12 +1,12 @@
 /**
- * 뷰어 툴바·문서 영역 배치(M5 S3, 머리 영역 확대 보정 사용자 요청 2026-10-22).
+ * Viewer toolbar and document area layout (M5 S3, header area zoom correction user request 2026-10-22).
  *
- * - 툴바는 항상 창 맨 위에 창 폭 그대로 보이고, 문서 영역(#page-container)만 가로·세로로 스크롤한다.
- * - 브라우저 확대·축소는 실제 탭 배율(`chrome.tabs.setZoom`, Ctrl +/−·Ctrl+휠·메뉴와 같은 HostZoomMap 경로)로 건다.
- *   머리 영역(툴바·알림 줄·검색창)의 화면상 크기(getBoundingClientRect × devicePixelRatio)·배치는 100% 와 같고, 문서는
- *   지금처럼 확대·축소된다.
- * - 좁은 배치(글자·여백 축소, 개발 전용 메뉴 항목 숨김, 상태 줄 자기 줄)는 창이 실제로 좁을 때(100% 환산 600px 이하)만 켜진다.
- * - 임베디드 문맥(embed·iframe·object)은 보정하지 않는다(바깥 페이지 확대를 따른다).
+ * - The toolbar always shows at the very top of the window at the full window width, and only the document area (#page-container) scrolls horizontally and vertically.
+ * - Browser zoom in/out is applied through the real tab zoom (`chrome.tabs.setZoom`, the same HostZoomMap path as Ctrl +/−, Ctrl+wheel and the menu).
+ *   The on-screen size (getBoundingClientRect × devicePixelRatio) and layout of the header area (toolbar, notice line, find bar) are the same as at 100%, and the document
+ *   zooms in and out as usual.
+ * - The narrow layout (reduced text and margins, development-only menu items hidden, status line on its own row) turns on only when the window is actually narrow (600px or less converted to 100%).
+ * - Embedded contexts (embed, iframe, object) are not corrected (they follow the outer page zoom).
  */
 import {
   chromium,
@@ -35,7 +35,7 @@ let userDataDir: string;
 let extensionId: string;
 
 test.beforeAll(async () => {
-  // dist/diag 를 http 로 제공한다(`/sample.pdf` 는 m0-sample.pdf, 임베디드 문맥은 embed-test.html).
+  // Serves dist/diag over http (`/sample.pdf` is m0-sample.pdf, the embedded context is embed-test.html).
   server = createServer((req, res) => {
     const name = basename(new URL(req.url ?? '/', 'http://x').pathname);
     let body: Buffer;
@@ -55,7 +55,7 @@ test.beforeAll(async () => {
   context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
-    // 프로젝트 로케일(playwright.config.ts: ko 기본, en 은 같은 시험을 영어 툴바로).
+    // Project locale (playwright.config.ts: ko by default, en runs the same test with the English toolbar).
     locale: test.info().project.use.locale ?? E2E_LOCALE,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
@@ -64,7 +64,7 @@ test.beforeAll(async () => {
 });
 
 test.afterEach(async () => {
-  // 탭 배율은 출처 단위로 남으므로(확장 출처·시험 서버 출처) 페이지를 닫기 전에 되돌린다. 시험 안에서는 페이지를 닫지 않는다.
+  // The tab zoom is kept per origin (extension origin, test server origin), so restore it before closing the page. Within a test the page is not closed.
   await sw.evaluate(async () => {
     for (const t of await chrome.tabs.query({})) {
       if (t.id !== undefined) await chrome.tabs.setZoom(t.id, 0).catch(() => undefined);
@@ -86,7 +86,7 @@ interface Box {
   height: number;
 }
 
-/** 뷰어가 있는 탭 id(확장 페이지 탭은 getCurrent, MIME handler 는 StreamInfo). */
+/** Tab id of the tab with the viewer (extension page tabs use getCurrent, the MIME handler uses StreamInfo). */
 async function tabIdOf(frame: Frame): Promise<number> {
   return frame.evaluate(async () => {
     const info = await chrome.mimeHandler?.getStreamInfo().catch(() => null);
@@ -94,12 +94,12 @@ async function tabIdOf(frame: Frame): Promise<number> {
   });
 }
 
-/** 탭 배율을 바꾼다(브라우저 확대·축소와 같은 경로). */
+/** Changes the tab zoom (the same path as browser zoom in/out). */
 async function setTabZoom(tabId: number, factor: number): Promise<void> {
   await sw.evaluate(([id, f]) => chrome.tabs.setZoom(id, f), [tabId, factor] as const);
 }
 
-/** 보정 문맥: 프레임이 새 배율로 바뀌고(dpr) 머리 영역 보정이 그 배율을 반영할 때까지. */
+/** Correction context: until the frame switches to the new zoom (dpr) and the header area correction reflects that zoom. */
 async function waitCompensated(frame: Frame, factor: number): Promise<void> {
   await expect
     .poll(() =>
@@ -120,7 +120,7 @@ async function openViewer(width: number, height: number, filler = true): Promise
   });
   await expect(page.locator('html')).toHaveAttribute('data-zoom-mode', 'tabs');
   if (filler) {
-    // 창보다 큰 문서를 흉내 낸다(가로·세로 모두 스크롤되게).
+    // Mimic a document larger than the window (so it scrolls both horizontally and vertically).
     await page.evaluate(() => {
       const el = document.createElement('div');
       el.id = 'test-filler';
@@ -139,7 +139,7 @@ interface PhysBox {
   h: number;
 }
 
-/** 머리 영역의 화면상(물리 px) 상자: 툴바와 그 안의 보이는 컨트롤, 알림 줄, 검색창. */
+/** On-screen (physical px) boxes of the header area: the toolbar and its visible controls inside, the notice line, and the find bar. */
 async function headerSnapshot(frame: Frame) {
   return frame.evaluate(() => {
     const d = devicePixelRatio;
@@ -168,7 +168,7 @@ async function headerSnapshot(frame: Frame) {
 
 type Snapshot = Awaited<ReturnType<typeof headerSnapshot>>;
 
-/** 두 스냅숏의 물리 상자가 tol(px) 안에서 같다. */
+/** The physical boxes of two snapshots are equal within tol (px). */
 function expectSameLayout(actual: Snapshot, expected: Snapshot, tag: string, tol = 1) {
   const same = (a: PhysBox | null, b: PhysBox | null, label: string) => {
     expect(a === null, `${tag}: ${label} 표시 여부`).toBe(b === null);
@@ -203,7 +203,7 @@ async function viewportSize(page: Page) {
   }));
 }
 
-test('확대 50%·200%: 머리 영역의 화면상 크기·배치는 100% 와 같고 문서는 확대·축소된다(1280px)', async () => {
+test('zoom 50% and 200%: the on-screen size and layout of the header area equal 100% and the document zooms in/out (1280px)', async () => {
   const page = await openViewer(1280, 800, false);
   const tabId = await tabIdOf(page.mainFrame());
   const base100 = await headerSnapshot(page.mainFrame());
@@ -213,7 +213,7 @@ test('확대 50%·200%: 머리 영역의 화면상 크기·배치는 100% 와 �
   for (const f of [2, 0.5]) {
     await setTabZoom(tabId, f);
     await waitCompensated(page.mainFrame(), f);
-    // 문서는 새 배율로 다시 그린다(창 폭 맞춤, 최대 1.5배).
+    // The document is redrawn at the new zoom (fit to window width, up to 1.5x).
     await expect.poll(() => pagePhysicalWidth(page)).not.toBeCloseTo(doc100, 0);
     docs[f] = await pagePhysicalWidth(page);
     expectSameLayout(await headerSnapshot(page.mainFrame()), base100, `확대 ${f * 100}%`);
@@ -221,34 +221,34 @@ test('확대 50%·200%: 머리 영역의 화면상 크기·배치는 100% 와 �
   }
   expect(docs[2]!, '200%: 쪽이 커진다').toBeGreaterThan(doc100 * 1.05);
   expect(docs[0.5]!, '50%: 쪽이 작아진다').toBeLessThan(doc100 * 0.95);
-  // 되돌리면 그대로다.
+  // Restoring brings it back unchanged.
   await setTabZoom(tabId, 1);
   await waitCompensated(page.mainFrame(), 1);
   expectSameLayout(await headerSnapshot(page.mainFrame()), base100, '되돌림 100%');
 });
 
-test('좁은 배치는 실제 창 폭으로만 켜진다: 확대로는 켜지지 않고, 창을 줄이면 확대·축소와 무관하게 켜진다', async () => {
+test('the narrow layout turns on only from the actual window width: zooming does not turn it on, shrinking the window does regardless of zoom', async () => {
   const page = await openViewer(1000, 700, false);
   const frame = page.mainFrame();
   const tabId = await tabIdOf(frame);
   const wide = await headerSnapshot(frame);
   expect(wide.narrow).toBe(false);
-  // 1000px 창 200%(CSS 폭 500): 좁은 배치가 아니고 100% 와 같은 배치.
+  // 1000px window at 200% (CSS width 500): not the narrow layout, same layout as 100%.
   await setTabZoom(tabId, 2);
   await waitCompensated(frame, 2);
   expectSameLayout(await headerSnapshot(frame), wide, '1000px 200%');
-  // 창을 400px 로 줄이면 좁은 배치(200% 그대로).
+  // Shrinking the window to 400px gives the narrow layout (200% unchanged).
   await page.setViewportSize({ width: 400, height: 700 });
   await expect(page.locator('html')).toHaveAttribute('data-narrow', '');
   const narrow200 = await headerSnapshot(frame);
-  // 400px 창 100%·50% 도 같은 좁은 배치다.
+  // A 400px window at 100% and 50% also gives the same narrow layout.
   for (const f of [1, 0.5]) {
     await setTabZoom(tabId, f);
     await waitCompensated(frame, f);
     expectSameLayout(await headerSnapshot(frame), narrow200, `400px ${f * 100}%`);
   }
-  // 좁은 배치: 상태 줄은 자기 줄(툴바 안쪽 폭), 개발 전용 메뉴 항목은 숨김. 렌더 경과 상태는 개발 표시라 좁은 배치에서
-  // 줄을 차지하지 않는다(사용자 요청 2026-10-23). 상태 줄 폭은 진단 표시를 켜고 잰다.
+  // Narrow layout: the status line on its own row (toolbar inner width), development-only menu items hidden. The render-progress status is a development display, so in the narrow layout
+  // it does not take up a row (user request 2026-10-23). The status line width is measured with the diagnostics display on.
   await expect(page.locator('#status')).toBeHidden();
   await showDiag(page);
   const status = (await page.locator('#status').boundingBox()) as Box;
@@ -275,7 +275,7 @@ async function assertToolbarPinned(page: Page, tag: string) {
   expect(tb.y, `${tag}: 툴바 top`).toBeCloseTo(0, 0);
   expect(tb.x, `${tag}: 툴바 left`).toBeCloseTo(0, 0);
   expect(tb.width, `${tag}: 툴바 폭 = 창 폭`).toBeCloseTo(w, 0);
-  // 저장 메뉴·정보 버튼과 툴바의 모든 보이는 요소가 화면 안에 있다.
+  // The save menu, the info button and every visible element of the toolbar are on screen.
   for (const sel of ['#save-menu-button', '#about']) {
     const box = (await page.locator(sel).boundingBox()) as Box;
     expect(box.x, `${tag}: ${sel} left`).toBeGreaterThanOrEqual(-0.5);
@@ -294,13 +294,13 @@ async function assertToolbarPinned(page: Page, tag: string) {
 
 for (const cfg of PIN_CONFIGS) {
   const tag = `${cfg.width}x${cfg.height} 확대 ${cfg.zoom}`;
-  test(`툴바 고정·문서 영역만 스크롤: ${tag}`, async () => {
+  test(`toolbar pinned, only the document area scrolls: ${tag}`, async () => {
     const page = await openViewer(cfg.width, cfg.height);
     if (cfg.zoom !== 1) {
       await setTabZoom(await tabIdOf(page.mainFrame()), cfg.zoom);
       await waitCompensated(page.mainFrame(), cfg.zoom);
     }
-    // 좁은 배치는 100% 환산 폭(창 폭)으로만 정해진다.
+    // The narrow layout is decided only by the width converted to 100% (the window width).
     await expect
       .poll(() => page.evaluate(() => document.documentElement.hasAttribute('data-narrow')), {
         message: `${tag}: 좁은 배치`,
@@ -308,7 +308,7 @@ for (const cfg of PIN_CONFIGS) {
       .toBe(cfg.width <= 600);
     await assertToolbarPinned(page, `${tag} 초기`);
 
-    // 문서 영역을 가로·세로로 끝까지 스크롤한 뒤에도 툴바는 그대로다.
+    // Even after scrolling the document area to the end horizontally and vertically, the toolbar stays as is.
     await page.evaluate(() => {
       const c = document.getElementById('page-container')!;
       c.scrollTo(c.scrollWidth, c.scrollHeight);
@@ -335,7 +335,7 @@ for (const cfg of PIN_CONFIGS) {
     expect(state.pageOverflowX, `${tag}: 창 가로 스크롤 없음`).toBe(false);
     await assertToolbarPinned(page, `${tag} 스크롤 뒤`);
 
-    // 왼쪽 끝으로 돌아가면 첫 요소(왼쪽 화살표)가 잘리지 않는다.
+    // Back at the left end, the first element (the left arrow) is not clipped.
     await page.evaluate(() => document.getElementById('page-container')!.scrollTo(0, 0));
     const left = await page.evaluate(() => {
       const c = document.getElementById('page-container')!.getBoundingClientRect();
@@ -345,7 +345,7 @@ for (const cfg of PIN_CONFIGS) {
   });
 }
 
-test('알림 줄·검색창도 확대 보정: 화면상 크기가 100% 와 같고 검색창은 머리 영역 바로 아래', async () => {
+test('notice line and find bar are also zoom-corrected: on-screen size equals 100% and the find bar is right below the header area', async () => {
   const page = await openViewer(1280, 800, false);
   const frame = page.mainFrame();
   const tabId = await tabIdOf(frame);
@@ -391,7 +391,7 @@ test('알림 줄·검색창도 확대 보정: 화면상 크기가 100% 와 같�
   }
 });
 
-test('MIME handler 최상위 문맥도 탭 배율로 보정한다', async () => {
+test('the MIME handler top-level context is also corrected by tab zoom', async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1000, height: 700 });
   await page.goto(`${base}/sample.pdf`);
@@ -412,7 +412,7 @@ test('MIME handler 최상위 문맥도 탭 배율로 보정한다', async () => 
   }
 });
 
-test('임베디드 문맥(embed·iframe·object)은 보정하지 않고 바깥 페이지 확대를 따른다', async () => {
+test('embedded contexts (embed, iframe, object) are not corrected and follow the outer page zoom', async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1000, height: 700 });
   await page.goto(`${base}/embed-test.html`);
@@ -435,13 +435,13 @@ test('임베디드 문맥(embed·iframe·object)은 보정하지 않고 바깥 �
     await expect(f.locator('html')).toHaveAttribute('data-zoom-mode', 'off');
   }
   await setTabZoom(await tabIdOf(frames[0]!), 2);
-  // 뷰어 프레임은 탭 배율을 받는다(헤드리스에서는 프레임마다 반영 시점이 다르다). 받은 프레임도 머리 영역 보정은 켜지지
-  // 않는다(CSS zoom 1): 화면상 크기는 바깥 확대를 따르고, 좁은 배치는 이전처럼 CSS 폭으로 정한다.
+  // The viewer frame receives the tab zoom (the timing differs per frame in headless). Even a frame that receives it does not turn on the header area correction
+  // (CSS zoom 1): the on-screen size follows the outer zoom, and the narrow layout is still decided by the CSS width.
   await expect
     .poll(async () => (await Promise.all(frames.map(header))).some((s) => s.dpr === 2))
     .toBe(true);
   for (const [i, f] of frames.entries()) {
-    // 화면 밖 프레임은 렌더링(resize 이벤트)이 미뤄지므로 바깥 요소를 화면 안으로 가져온 뒤 본다.
+    // A frame off screen has rendering (resize events) deferred, so bring the outer element on screen before looking.
     await (await f.parentFrame()!.frameElement()).scrollIntoViewIfNeeded();
     await expect
       .poll(async () => {
@@ -456,7 +456,7 @@ test('임베디드 문맥(embed·iframe·object)은 보정하지 않고 바깥 �
   }
 });
 
-test('좁은 폭(400): 개발 전용 메뉴 항목 숨김, 상태 줄은 자기 줄, 쪽 이동·저장·되돌리기가 화면 안', async () => {
+test('narrow width (400): development-only menu items hidden, status line on its own row, page navigation, save and undo are on screen', async () => {
   const page = await openViewer(400, 700);
   await expect(page.locator('html')).toHaveAttribute('data-narrow', '');
   const { w } = await viewportSize(page);
@@ -465,7 +465,7 @@ test('좁은 폭(400): 개발 전용 메뉴 항목 숨김, 상태 줄은 자기 
     expect(box, sel).not.toBeNull();
     expect(box!.x + box!.width, `${sel} right`).toBeLessThanOrEqual(w + 0.5);
   }
-  // 저장 메뉴는 화면 안에 열리고, 개발 전용 downloads 저장은 숨긴다.
+  // The save menu opens inside the screen, and the development-only save to downloads is hidden.
   await page.click('#save-menu-button');
   await expect(page.locator('#save')).toBeVisible();
   await expect(page.locator('#save-as')).toBeVisible();
@@ -475,12 +475,12 @@ test('좁은 폭(400): 개발 전용 메뉴 항목 숨김, 상태 줄은 자기 
   expect(menu.x + menu.width).toBeLessThanOrEqual(w + 0.5);
   await page.keyboard.press('Escape');
   await expect(page.locator('#save-menu')).toBeHidden();
-  // 툴바 높이는 여러 줄로 늘어나도 문서 영역이 남는다.
+  // Even if the toolbar height grows to several rows, the document area remains.
   const c = (await page.locator('#page-container').boundingBox()) as Box;
   expect(c.height).toBeGreaterThan(200);
 });
 
-test('넓은 창(1280): 쪽이 문서 영역 가운데에 놓인다', async () => {
+test('wide window (1280): the page sits at the center of the document area', async () => {
   const page = await openViewer(1280, 800, false);
   await page.waitForTimeout(300);
   const off = await page.evaluate(() => {
@@ -488,13 +488,13 @@ test('넓은 창(1280): 쪽이 문서 영역 가운데에 놓인다', async () =
     const p = document.getElementById('pe-page')!.getBoundingClientRect();
     return Math.abs(c.left + c.width / 2 - (p.left + p.width / 2));
   });
-  expect(off).toBeLessThan(20); // 화살표 칸·스크롤바 폭 차이 허용
+  expect(off).toBeLessThan(20); // tolerates the difference in arrow slot and scrollbar width
 });
 
 for (const width of [400, 800]) {
-  test(`알림 줄·검색창·정보 대화상자가 화면 안에 들어온다(${width}px)`, async () => {
+  test(`notice line, find bar and about dialog fit on screen (${width}px)`, async () => {
     const page = await openViewer(width, 700);
-    // 긴 알림을 직접 넣는다(알림 줄은 툴바 아래 고정, 검색창은 그 아래).
+    // Insert a long notice directly (the notice line is fixed below the toolbar, the find bar below it).
     await page.evaluate(() => {
       const bar = document.getElementById('notice-bar')!;
       const row = document.createElement('div');
@@ -530,16 +530,16 @@ for (const width of [400, 800]) {
   });
 }
 
-test('문맥 배지는 화면에 없고 body[data-context] 로 남는다', async () => {
+test('the context badge is not on screen and remains as body[data-context]', async () => {
   const page = await openViewer(1000, 700, false);
   await expect(page.locator('#context-badge')).toHaveCount(0);
   await expect(page.locator('body')).toHaveAttribute('data-context', 'url-param');
 });
 
-test('찾기 결과 스크롤은 문서 영역(#page-container)을 움직이고 창은 스크롤하지 않는다', async () => {
+test('find result scrolling moves the document area (#page-container) and does not scroll the window', async () => {
   const page = await openViewer(900, 420, false);
   await expect(page.locator('#pe-text-layer .pe-line').first()).toBeAttached();
-  // 쪽 아래쪽 줄에서 문서 전체에 한 번만 나오는 단어를 고른다(현재 결과가 그 자리에 오게).
+  // Pick a word in a lower line of the page that appears only once in the whole document (so the current result lands there).
   const word = await page.evaluate(() => {
     const lines = [...document.querySelectorAll<HTMLElement>('#pe-text-layer .pe-line')];
     const all = lines.map((l) => l.textContent ?? '').join('\n');

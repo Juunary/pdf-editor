@@ -8,7 +8,7 @@ interface Props {
   pageIndex: number;
 }
 
-/** 검색 결과 quad 하이라이트. 현재 결과는 다른 색이며 화면 가운데로 스크롤한다. */
+/** Search result quad highlights. The current result has a different color and is scrolled to the screen center. */
 export function HighlightLayer({ hits, layout, pageIndex }: Props) {
   const currentRef = useRef<HTMLDivElement>(null);
   const current = hits.find((h) => h.current);

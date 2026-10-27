@@ -1,23 +1,23 @@
 /**
- * PDF 폰트의 코드 분할·CID·글리프 폭을 MuPDF 1.28 과 같게 재현한다(Device 콜백의 글리프 원점과 맞추기 위함).
- * MuPDF 내부 폰트 로더는 JS 에 노출되지 않으므로 pdf-font.c / pdf-cmap.c / pdf-type3.c / pdf-metrics.c 의 분기를
- * 그대로 옮겼다. 정수 절단·반올림도 C 와 같게 둔다(float32 는 Math.fround).
+ * Reproduces PDF font code splitting, CIDs and glyph widths the same as MuPDF 1.28 (to match the glyph origins of the Device callback).
+ * MuPDF's internal font loader is not exposed to JS, so the branches of pdf-font.c / pdf-cmap.c / pdf-type3.c / pdf-metrics.c are
+ * ported as they are. Integer truncation and rounding are kept the same as in C (float32 via Math.fround).
  *
- * 정확: 폭 표가 폰트 사전에 있는 경우(/Widths, /W, Type3), Identity·임베디드 CMap, 표준 14 글꼴(/Widths 없음, 이름 해석 가능),
- *       사전 정의 CMap 의 코드 분할.
- * 근사(unresolved 에 사유를 남김): 사전 정의 CMap 의 CID 매핑(표 없음, /W 가 균일하지 않을 때), 임베디드 폰트 파일의 글리프 폭,
- *       AGL 표 밖 글리프 이름, Symbol·ZapfDingbats + /Encoding.
+ * Exact: when the width table is in the font dictionary (/Widths, /W, Type3), Identity and embedded CMaps, the standard 14 fonts (no /Widths, name resolvable),
+ *       code splitting of predefined CMaps.
+ * Approximate (reason recorded in unresolved): CID mapping of predefined CMaps (no table, when /W is not uniform), glyph widths of embedded font files,
+ *       glyph names outside the AGL table, Symbol and ZapfDingbats + /Encoding.
  *
- * 1.28.1 WASM 실측으로 C 소스·요구사항 발췌와 달랐던 점:
- * - pdf_to_int(실수) = floor(f + 0.5) (음수에서 (int)(f + 0.5) 가 아님)
- * - 표준 14 별칭 매칭은 "ABCDEF+" 부분 집합 접두어를 벗기지 않는다
- * - Type3 /FontMatrix 가 배열이 아니면(없으면) 항등행렬이다(명세 기본값 0.001 아님). 배열이면 모자란 칸은 0
- * - 임베디드 CMap: 코드스페이스가 없고 매핑 범위가 있으면 2바이트 <0000>-<FFFF> 를 넣고, 사전 /WMode 가 본문 WMode 를 덮는다
- * - 폰트 로드 실패(Type3 필수 키 없음, Type0 에서 CMap 이름 불명·FontDescriptor 없음 등)는 hail-mary(Times-Roman, 1바이트)로 대체된다
+ * Differences found by measuring on 1.28.1 WASM against the C source and the requirement excerpts:
+ * - pdf_to_int(real) = floor(f + 0.5) (not (int)(f + 0.5) for negatives)
+ * - Standard 14 alias matching does not strip the "ABCDEF+" subset prefix
+ * - If Type3 /FontMatrix is not an array (or absent) it is the identity matrix (not the spec default 0.001). If it is an array, missing entries are 0
+ * - Embedded CMap: if there is no codespace but there are mapping ranges, 2-byte <0000>-<FFFF> is added, and the dictionary /WMode overrides the body WMode
+ * - Font load failures (Type3 missing required keys, Type0 with unknown CMap name or no FontDescriptor, etc.) are replaced by hail-mary (Times-Roman, 1 byte)
  *
- * 폭은 두 벌을 둔다. `advance` 는 MuPDF 재현(pdf_to_int 정수 폭, 매칭용), `advanceSpec` 은 명세 폭(pdf_to_real 실수 폭,
- * 편집용)이다. 소수 /Widths·/W 가 있는 폰트에서 편집 연산(TJ 숫자 조정)을 정수 폭으로 계산하면 명세대로 그리는
- * 뷰어(PDFium·Acrobat·pdf.js)에서 뒤 글자가 밀린다.
+ * Two sets of widths are kept. `advance` is the MuPDF reproduction (pdf_to_int integer widths, for matching), and `advanceSpec` is the spec width (pdf_to_real real widths,
+ * for editing). For fonts with fractional /Widths or /W, computing edit operations (TJ number adjustments) with integer widths shifts the later characters in
+ * viewers that draw per the spec (PDFium, Acrobat, pdf.js).
  */
 import * as mupdf from 'mupdf';
 import type { Matrix } from '@pdf-editor/shared-types';
@@ -35,61 +35,61 @@ import {
 import { readStreamBytes } from './mupdf-util.js';
 
 export interface DecodedCode {
-  /** 원 코드 값: 바이트 big-endian (MuPDF cpt) */
+  /** Original code value: bytes, big-endian (MuPDF cpt) */
   code: number;
-  /** 디코드한 문자열 바이트 안의 오프셋과 길이 */
+  /** Offset and length within the decoded string bytes */
   offset: number;
   length: number;
 }
 
 export interface PdfFont {
-  /** /Subtype 이름(Type0, Type1, MMType1, TrueType, Type3). 알 수 없으면 null */
+  /** /Subtype name (Type0, Type1, MMType1, TrueType, Type3). null if unknown */
   subtype: string | null;
-  /** 폰트 사전의 간접 객체 번호. 직접 객체거나 hail-mary 면 null */
+  /** Indirect object number of the font dictionary. null for a direct object or hail-mary */
   objectNumber: number | null;
   wmode: 0 | 1;
-  /** Type3 만: MuPDF 가 쓰는 /FontMatrix(없으면 항등, MuPDF 동작). 그 밖은 null */
+  /** Type3 only: the /FontMatrix MuPDF uses (identity if absent, MuPDF behavior). null otherwise */
   type3Matrix: Matrix | null;
-  /** MuPDF 결과와 다를 수 있는 사유. 비어 있으면 정확 */
+  /** Reasons the result may differ from MuPDF. Empty means exact */
   unresolved: string[];
-  /** MuPDF 가 이 사전을 로드하지 못해 hail-mary 로 대체했으면 그 사유 */
+  /** If MuPDF could not load this dictionary and substituted hail-mary, the reason */
   fallbackReason?: string;
-  /** 진단용: 내장 글꼴 경로(/Widths 없는 비임베디드 단순 폰트)에서 해석한 코드별 글리프 인덱스(Device 콜백 gid 와 비교 가능) */
+  /** For diagnostics: per-code glyph index resolved on the built-in font path (non-embedded simple font without /Widths) (comparable with the Device callback gid) */
   glyphIds?: readonly number[];
-  /** 문자열 바이트를 코드로 분할(pdf_decode_cmap) */
+  /** Splits string bytes into codes (pdf_decode_cmap) */
   decode(bytes: Uint8Array): DecodedCode[];
-  /** 코드 → CID(pdf_lookup_cmap). -1 이면 MuPDF 는 글리프를 그리지 않고 전진하지도 않는다 */
+  /** Code → CID (pdf_lookup_cmap). If -1, MuPDF neither draws the glyph nor advances */
   cid(code: number): number;
-  /** 가로 전진량 w0, 1/1000 텍스트 공간 단위 = pdf_lookup_hmtx(cid).w(MuPDF 정수 폭, 매칭용) */
+  /** Horizontal advance w0, in 1/1000 text-space units = pdf_lookup_hmtx(cid).w (MuPDF integer width, for matching) */
   advance(cid: number): number;
   /**
-   * 명세 가로 전진량 w0, 1/1000 텍스트 공간 단위. /Widths·/W·/DW·/MissingWidth 를 실수 그대로 읽는다(편집용).
-   * MuPDF 객체의 실수는 float32 라 원문 십진값과 1e-5 수준 차이가 날 수 있다.
+   * Spec horizontal advance w0, in 1/1000 text-space units. Reads /Widths, /W, /DW and /MissingWidth as real numbers (for editing).
+   * Reals in MuPDF objects are float32, so they can differ from the source decimal value at the 1e-5 level.
    */
   advanceSpec(cid: number): number;
-  /** 세로 지표 = pdf_lookup_vmtx(cid): w = w1y, x/y = 위치 벡터(1/1000) */
+  /** Vertical metrics = pdf_lookup_vmtx(cid): w = w1y, x/y = position vector (1/1000) */
   vertical(cid: number): { w: number; x: number; y: number };
 }
 
-// ---------------------------------------------------------------- C 수치 규칙
+// ---------------------------------------------------------------- C numeric rules
 
 const f32 = Math.fround;
 const int16 = (v: number): number => (v << 16) >> 16;
 const uint16 = (v: number): number => v & 0xffff;
 
-/** pdf_to_int: 정수는 그대로, 실수는 (int)floorf(f + 0.5f), 그 밖은 0(간접 참조는 풀어서 본다) */
+/** pdf_to_int: integer as is, real as (int)floorf(f + 0.5f), otherwise 0 (indirect references are resolved first) */
 function toInt(o: mupdf.PDFObject): number {
   if (o.isInteger()) return o.asNumber();
   if (o.isReal()) return Math.floor(f32(f32(o.asNumber()) + 0.5));
   return 0;
 }
 
-/** pdf_to_real: 숫자가 아니면 0 */
+/** pdf_to_real: 0 if not a number */
 function toReal(o: mupdf.PDFObject): number {
   return o.isNumber() ? o.asNumber() : 0;
 }
 
-/** pdf_array_get_int / pdf_array_get_real: 배열이 아니거나 범위 밖이면 null 객체 → 0 */
+/** pdf_array_get_int / pdf_array_get_real: null object → 0 if not an array or out of range */
 const arrInt = (a: mupdf.PDFObject, i: number): number => toInt(a.get(i));
 const arrReal = (a: mupdf.PDFObject, i: number): number => toReal(a.get(i));
 
@@ -105,8 +105,8 @@ interface HEntry {
 }
 
 /**
- * pdf_hmtx 표. 등록 → lo 오름차순 정렬 → 이진 탐색(겹치면 탐색 중 먼저 걸린 항목). 못 찾으면 기본폭.
- * real = true 면 폭을 정수로 자르지 않는다(명세 폭 표).
+ * pdf_hmtx table. Register → sort by lo ascending → binary search (on overlap, the entry hit first in the search). Default width if not found.
+ * If real = true, widths are not truncated to integers (spec width table).
  */
 class HmtxTable {
   readonly entries: HEntry[] = [];
@@ -115,7 +115,7 @@ class HmtxTable {
     readonly real = false,
   ) {}
   add(lo: number, hi: number, w: number): void {
-    // lo/hi 는 unsigned short, w 는 int(MuPDF 표)
+    // lo/hi are unsigned short, w is int (MuPDF table)
     this.entries.push({ lo: uint16(lo), hi: uint16(hi), w: this.real ? w : w | 0 });
   }
   end(): void {
@@ -137,7 +137,7 @@ class HmtxTable {
   lookup(cid: number): number {
     return this.find(cid)?.w ?? this.dw;
   }
-  /** 같은 lo 에 폭이 다른 항목이 있으면 MuPDF(qsort 불안정 정렬)와 순서가 다를 수 있다 */
+  /** If entries with the same lo have different widths, the order can differ from MuPDF (unstable qsort) */
   hasAmbiguousTies(): boolean {
     const seen = new Map<number, number>();
     for (const x of this.entries) {
@@ -159,13 +159,13 @@ interface VEntry {
 
 class VmtxTable {
   readonly entries: VEntry[] = [];
-  /** dvmtx.x 는 쓰이지 않는다(조회 때 hmtx.w / 2 로 덮는다) */
+  /** dvmtx.x is not used (overwritten with hmtx.w / 2 on lookup) */
   constructor(
     readonly dy: number,
     readonly dw: number,
   ) {}
   add(lo: number, hi: number, x: number, y: number, w: number): void {
-    // x, y, w 는 C short
+    // x, y, w are C short
     this.entries.push({ lo: uint16(lo), hi: uint16(hi), x: int16(x), y: int16(y), w: int16(w) });
   }
   end(): void {
@@ -182,7 +182,7 @@ class VmtxTable {
       else if (cid > v.hi) l = m + 1;
       else return { w: v.w, x: v.x, y: v.y };
     }
-    // v = dvmtx; v.x = h.w / 2 (C int 나눗셈, short 대입)
+    // v = dvmtx; v.x = h.w / 2 (C int division, short assignment)
     return { w: int16(this.dw), x: int16(Math.trunc(h.lookup(cid) / 2)), y: int16(this.dy) };
   }
 }
@@ -191,17 +191,17 @@ class VmtxTable {
 
 const cs = (n: number, low: number, high: number): CodespaceRange => ({ n, low, high });
 
-/** 코드 → CID. -1 = 매핑 없음 */
+/** Code → CID. -1 = no mapping */
 interface CMapSpec {
   codespaces: CodespaceRange[];
   wmode: 0 | 1;
   lookup(code: number): number;
   unresolved: string[];
-  /** CID 가 코드 그대로인 자리표시자 매핑을 포함하는가(사전 정의 CMap) */
+  /** Whether it contains a placeholder mapping where the CID is the code itself (predefined CMap) */
   placeholder: boolean;
 }
 
-/** pdf_decode_cmap 을 바이트열 전체에 반복 적용. 일치 코드스페이스가 없으면 코드 0, 길이 1 */
+/** pdf_decode_cmap applied repeatedly over the whole byte sequence. If no codespace matches, code 0, length 1 */
 function decodeWith(codespaces: readonly CodespaceRange[], bytes: Uint8Array): DecodedCode[] {
   const out: DecodedCode[] = [];
   let pos = 0;
@@ -235,7 +235,7 @@ interface Segment {
   out: number;
 }
 
-/** 정의 순서상 나중 범위가 이기는 구간 맵(MuPDF 의 splay 트리와 같은 결과) */
+/** Range map where the later range in definition order wins (same result as MuPDF's splay tree) */
 class RangeMap {
   private readonly segs: Segment[] = [];
   count = 0;
@@ -293,7 +293,7 @@ function identityCMap(wmode: 0 | 1): CMapSpec {
   };
 }
 
-/** 사전 정의 CMap(이름). null = MuPDF 가 읽지 못하는 이름 */
+/** Predefined CMap (by name). null = a name MuPDF cannot read */
 function namedCMap(name: string): CMapSpec | null {
   if (name === 'Identity-H') return identityCMap(0);
   if (name === 'Identity-V') return identityCMap(1);
@@ -330,7 +330,7 @@ const isDelim = (c: number) =>
   c === 0x2f ||
   c === 0x25;
 
-/** CMap 본문(PostScript 부분집합) 토큰화. 16진 문자열은 big-endian 정수와 바이트 수로 */
+/** Tokenizes the CMap body (PostScript subset). Hex strings as a big-endian integer and byte count */
 function lexCMap(b: Uint8Array): CTok[] {
   const out: CTok[] = [];
   const n = b.length;
@@ -356,7 +356,7 @@ function lexCMap(b: Uint8Array): CTok[] {
       out.push({ t: 'other' });
       i += 2;
     } else if (c === 0x3c) {
-      // 16진 문자열: 홀수 자리면 마지막 니블은 상위 비트에 둔다(PDF 규칙)
+      // Hex string: with an odd number of digits, the last nibble goes in the high bits (PDF rule)
       i++;
       const nib: number[] = [];
       while (i < n && b[i] !== 0x3e) {
@@ -407,7 +407,7 @@ interface ParsedCMap {
   usecmap: string | null;
 }
 
-/** pdf_parse_cmap: codespacerange·cidrange·cidchar·WMode·usecmap 만 해석(bf* 등은 건너뜀) */
+/** pdf_parse_cmap: interprets only codespacerange, cidrange, cidchar, WMode and usecmap (bf* etc. are skipped) */
 function parseCMapBody(data: Uint8Array): ParsedCMap {
   const toks = lexCMap(data);
   const res: ParsedCMap = { codespaces: [], ranges: new RangeMap(), wmode: null, usecmap: null };
@@ -463,10 +463,10 @@ function parseCMapBody(data: Uint8Array): ParsedCMap {
 }
 
 /**
- * pdf_load_embedded_cmap. 관측한 MuPDF 동작:
- * - 본문에 코드스페이스가 없고 매핑 범위가 있으면 2바이트 <0000>-<FFFF> 를 넣는다.
- * - usecmap(본문 이름·사전 /UseCMap)은 파싱 뒤에 적용되며, 코드스페이스가 비어 있을 때만 상속한다. 이름을 못 읽으면 무시한다.
- * - 사전에 /WMode 숫자가 있으면 본문 WMode 를 덮는다.
+ * pdf_load_embedded_cmap. Observed MuPDF behavior:
+ * - If the body has no codespace but has mapping ranges, 2-byte <0000>-<FFFF> is added.
+ * - usecmap (body name, dictionary /UseCMap) is applied after parsing and inherits only when the codespace is empty. Ignored if the name cannot be read.
+ * - A numeric /WMode in the dictionary overrides the body WMode.
  */
 function loadEmbeddedCMap(stream: mupdf.PDFObject, depth = 0): CMapSpec {
   const unresolved: string[] = [];
@@ -505,7 +505,7 @@ function loadEmbeddedCMap(stream: mupdf.PDFObject, depth = 0): CMapSpec {
   };
 }
 
-// ---------------------------------------------------------------- 표준 14 글꼴 (pdf_load_builtin_font)
+// ---------------------------------------------------------------- Standard 14 fonts (pdf_load_builtin_font)
 
 const BASE_FONT_NAMES: readonly (readonly string[])[] = [
   ['Courier', 'CourierNew', 'CourierNewPSMT'],
@@ -578,8 +578,8 @@ const BASE_FONT_NAMES: readonly (readonly string[])[] = [
 ];
 
 /**
- * pdf_clean_font_name: 표(공백 무시 비교)에 있으면 표준 이름, 없으면 null.
- * 소스(skip_subset_prefix)와 달리 1.28.1 WASM 실측은 "ABCDEF+" 접두어를 벗기지 않는다("ABCDEF+Arial" → 표 불일치).
+ * pdf_clean_font_name: the standard name if in the table (whitespace-insensitive comparison), otherwise null.
+ * Unlike the source (skip_subset_prefix), measuring on 1.28.1 WASM shows the "ABCDEF+" prefix is not stripped ("ABCDEF+Arial" → no table match).
  */
 function cleanFontName(fontname: string): string | null {
   const s = fontname.replace(/ /g, '');
@@ -594,7 +594,7 @@ const FD_NONSYMBOLIC = 1 << 5;
 const FD_ITALIC = 1 << 6;
 const FD_FORCE_BOLD = 1 << 18;
 
-/** pdf_lookup_substitute_font + pdf_load_system_font 의 플래그 판정 */
+/** Flag classification of pdf_lookup_substitute_font + pdf_load_system_font */
 function substituteFace(fontname: string, flags: number): string {
   const bold = fontname.includes('Bold') || (flags & FD_FORCE_BOLD) !== 0;
   const italic =
@@ -608,7 +608,7 @@ function substituteFace(fontname: string, flags: number): string {
   return `${family}${sty}`;
 }
 
-/** ft_width: FT_Get_Advance * 1000 / upem (C int). advanceGlyph 는 float32 로 나눈 값이므로 잡음만큼 보정해 내림 */
+/** ft_width: FT_Get_Advance * 1000 / upem (C int). advanceGlyph is a value divided in float32, so round down after correcting for the noise */
 const glyphWidth = (font: mupdf.Font, gid: number): number =>
   Math.floor(font.advanceGlyph(gid) * 1000 + 0.001);
 
@@ -622,8 +622,8 @@ function loadEncodingByName(est: (string | null)[], name: string, unresolved: Se
 }
 
 /**
- * 내장 글꼴 face 의 256개 코드별 폭. 글리프는 이름 → 유니코드(AGL) → 글꼴 유니코드 cmap 으로 찾고,
- * 못 찾으면 내장 인코딩(텍스트 글꼴은 StandardEncoding, Symbol·ZapfDingbats 는 실측 표)으로 되돌린다.
+ * Widths per 256 codes of a built-in font face. Glyphs are found by name → Unicode (AGL) → font Unicode cmap,
+ * and if not found fall back to the built-in encoding (StandardEncoding for text fonts, a measured table for Symbol and ZapfDingbats).
  */
 function builtinWidths(
   face: string,
@@ -652,7 +652,7 @@ function builtinWidths(
       if (name) {
         const u = glyphNameToUnicode(name);
         if (u === null) {
-          // .notdef 는 글꼴에 있어도 이름 조회(ft_name_index > 0 검사)에서 걸러지므로 내장 글리프가 그대로 남는다
+          // .notdef is filtered out by the name lookup (ft_name_index > 0 check) even if the font has it, so the built-in glyph remains
           if (name !== '.notdef') unresolved.add(`글리프 이름 미해석(글꼴에 없다고 가정): ${name}`);
         } else {
           const g = gidByUnicode(u);
@@ -668,7 +668,7 @@ function builtinWidths(
   }
 }
 
-// ---------------------------------------------------------------- 폰트 구현
+// ---------------------------------------------------------------- Font implementation
 
 interface FontParts {
   subtype: string | null;
@@ -678,10 +678,10 @@ interface FontParts {
   unresolved: string[];
   fallbackReason?: string;
   h: HmtxTable;
-  /** 명세 폭 표(실수). */
+  /** Spec width table (real). */
   hSpec: HmtxTable;
   v: VmtxTable | null;
-  /** null = 1바이트 단순 폰트 */
+  /** null = 1-byte simple font */
   cmap: CMapSpec | null;
   gids?: number[];
 }
@@ -716,10 +716,10 @@ function makeFont(p: FontParts): PdfFont {
   return font;
 }
 
-/** MuPDF 가 로드에 실패해 hail-mary 로 대체하는 경우의 신호 */
+/** Signal for when MuPDF fails to load and substitutes hail-mary */
 class LoadFailure extends Error {}
 
-/** pdf_load_simple_font. dict = null 이면 hail-mary(BaseFont 없음, Widths 없음) */
+/** pdf_load_simple_font. If dict = null, hail-mary (no BaseFont, no Widths) */
 function buildSimple(dict: mupdf.PDFObject | null, subtype: string | null): FontParts {
   const unresolved = new Set<string>();
   const get = (k: string): mupdf.PDFObject => (dict ? dict.get(k) : mupdf.PDFObject.Null);
@@ -733,7 +733,7 @@ function buildSimple(dict: mupdf.PDFObject | null, subtype: string | null): Font
     hasDescriptor &&
     (['FontFile', 'FontFile2', 'FontFile3'] as const).some((k) => descriptor.get(k).isIndirect());
 
-  // 글꼴 선택: 표준 이름 → 그 글꼴, 이름 불명 + 기술자 없음 → Times-Roman, 기술자 있음 → 플래그 기반 대체 글꼴
+  // Font selection: standard name → that font; unknown name + no descriptor → Times-Roman; descriptor present → flag-based substitute font
   const clean = cleanFontName(basefont);
   const face = clean ?? (hasDescriptor ? substituteFace(basefont, flags) : 'Times-Roman');
   if (face === 'Symbol' || face === 'ZapfDingbats') flags |= FD_SYMBOLIC;
@@ -756,7 +756,7 @@ function buildSimple(dict: mupdf.PDFObject | null, subtype: string | null): Font
       '임베디드 폰트 + /Widths 없음: 폰트 파일 글리프 폭 해석 불가(MissingWidth 로 대체)',
     );
   } else {
-    // 인코딩
+    // Encoding
     const est: (string | null)[] = new Array<string | null>(256).fill(null);
     const enc = get('Encoding');
     if (has(enc)) {
@@ -803,16 +803,16 @@ function buildSimple(dict: mupdf.PDFObject | null, subtype: string | null): Font
   };
 }
 
-/** pdf_load_type3_font 의 폭 부분 */
+/** Width part of pdf_load_type3_font */
 function buildType3(dict: mupdf.PDFObject): FontParts {
   if (!has(dict.get('Encoding'))) throw new LoadFailure('Type3 /Encoding 없음');
   const widths = dict.get('Widths');
   const charprocs = dict.get('CharProcs');
-  // 위 두 검사는 MuPDF 에서 FirstChar/LastChar 읽은 뒤에 나오지만 어느 쪽이든 로드 실패다
+  // The two checks above come after reading FirstChar/LastChar in MuPDF, but either way the load fails
   if (!has(widths)) throw new LoadFailure('Type3 /Widths 없음');
   if (!has(charprocs)) throw new LoadFailure('Type3 /CharProcs 없음');
 
-  // pdf_dict_get_matrix: 배열이 아니면 항등, 배열이면 6칸을 실수로 읽는다(모자란 칸 0)
+  // pdf_dict_get_matrix: identity if not an array; if an array, reads 6 entries as reals (missing entries 0)
   const fm = dict.get('FontMatrix');
   const m: Matrix = fm.isArray()
     ? ([0, 1, 2, 3, 4, 5].map((i) => f32(arrReal(fm, i))) as Matrix)
@@ -824,7 +824,7 @@ function buildType3(dict: mupdf.PDFObject): FontParts {
   let last = toInt(dict.get('LastChar'));
   if (first < 0 || last > 255 || first > last) first = last = 0;
   for (let i = first; i <= last; i++) {
-    // float w = a * w * 1000 (모두 float32), pdf_add_hmtx(int) 로 절단
+    // float w = a * w * 1000 (all float32), truncated by pdf_add_hmtx(int)
     const w = f32(f32(m[0] * f32(arrReal(widths, i - first))) * 1000);
     h.add(i, i, Math.trunc(w));
     hSpec.add(i, i, m[0] * arrReal(widths, i - first) * 1000);
@@ -935,13 +935,13 @@ function buildType0(dict: mupdf.PDFObject): FontParts {
     v.end();
   }
 
-  // 사전 정의 CMap 의 CID 는 자리표시자다. 폭이 CID 와 무관하게 균일하면(W 없음 또는 모든 폭이 DW) 폭은 정확하다.
+  // The CID of a predefined CMap is a placeholder. If widths are uniform regardless of CID (no W or all widths equal DW), the widths are exact.
   if (cmap.placeholder) {
     const uniformH = h.entries.every((e) => e.w === dw);
     const uniformV = wmode === 0 || (v !== null && v.entries.length === 0);
     if (!uniformH) unresolved.add('사전 정의 CMap 의 CID 를 몰라 /W 폭 조회가 부정확');
     else if (!uniformV) unresolved.add('사전 정의 CMap 의 CID 를 몰라 /W2 조회가 부정확');
-    // 균일하면 CID 조회 결과와 무관하게 같은 폭이므로 CMap 사유(CID 매핑표 없음)는 폭에 영향이 없다
+    // If uniform, widths are the same regardless of the CID lookup result, so the CMap reason (no CID mapping table) does not affect widths
     if (uniformH && uniformV) {
       for (const r of [...unresolved]) if (r.includes('CID 매핑표 없음')) unresolved.delete(r);
     }
@@ -961,7 +961,7 @@ function buildType0(dict: mupdf.PDFObject): FontParts {
 
 const SIMPLE_SUBTYPES = new Set(['Type1', 'MMType1', 'TrueType']);
 
-/** pdf_load_font 의 분기. 로드 실패(LoadFailure)는 호출자가 hail-mary 로 바꾼다 */
+/** Branch of pdf_load_font. The caller turns a load failure (LoadFailure) into hail-mary */
 function buildFromDict(dict: mupdf.PDFObject): FontParts {
   const subtype = nameOf(dict.get('Subtype'));
   if (subtype === 'Type0') return buildType0(dict);
@@ -973,8 +973,8 @@ function buildFromDict(dict: mupdf.PDFObject): FontParts {
 }
 
 /**
- * 문서 단위 폰트 캐시. 간접 객체 번호로 구분하고, 직접(해석된) 객체면 객체 자신으로 구분한다.
- * 직접 객체는 래퍼가 달라도 같은 pdf_obj 면 wasm 포인터가 같으므로 포인터를 키로 쓰고, 래퍼를 붙잡아 포인터 재사용을 막는다.
+ * Document-level font cache. Keyed by indirect object number, and for a direct (resolved) object by the object itself.
+ * For a direct object, if the pdf_obj is the same, the wasm pointer is the same even with different wrappers, so the pointer is used as the key and the wrapper is held to prevent pointer reuse.
  */
 export class FontCache {
   private readonly byNumber = new Map<number, PdfFont>();
@@ -983,7 +983,7 @@ export class FontCache {
 
   constructor(readonly doc: mupdf.PDFDocument) {}
 
-  /** fontObj = 해석된 /Font 리소스 사전. null 이면 MuPDF "hail mary" 폰트(Tf 리소스가 없을 때) */
+  /** fontObj = resolved /Font resource dictionary. If null, the MuPDF "hail mary" font (when there is no Tf resource) */
   load(fontObj: mupdf.PDFObject | null): PdfFont {
     if (fontObj === null || fontObj.isNull()) return this.hail();
     const num = fontObj.isIndirect() ? fontObj.asIndirect() : null;

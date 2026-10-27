@@ -1,6 +1,6 @@
 /**
- * 시각 줄(Unit): 같은 행의 가까운 stext 줄 조각을 합친 단위(계약 3절 5단계 첫 항목).
- * 영역 쌓기·문단 나누기·머리·꼬리 판정은 Unit 단위로 한다.
+ * Visual line (Unit): a unit merging nearby stext line fragments in the same row (contract section 3, step 5, first item).
+ * Region stacking, paragraph splitting and header/footer classification operate on Units.
  */
 import type { PageModel, RGB, Rect } from '@pdf-editor/shared-types';
 import { C } from './constants.js';
@@ -9,38 +9,38 @@ import type { LineFeature } from './features.js';
 import { height, overlapY, union, width } from './geom.js';
 
 export interface Unit {
-  /** 왼쪽 → 오른쪽 조각(흡수한 첨자·기호 조각 포함). */
+  /** Fragments left → right (including absorbed subscript and symbol fragments). */
   parts: LineFeature[];
-  /** 배치 판단용 상자(흡수한 조각 제외). */
+  /** Box used for layout decisions (excluding absorbed fragments). */
   bbox: Rect;
-  /** 흡수한 조각까지 덮는 상자(문단 상자용). */
+  /** Box covering absorbed fragments too (for paragraph boxes). */
   full: Rect;
   size: number;
   baseline: number;
-  /** 보이는 글자 과반이 굵은 폰트. */
+  /** Majority of visible characters use a bold font. */
   bold: boolean;
-  /** 보이는 글자 과반의 색(없으면 null). */
+  /** Color of the majority of visible characters (null if none). */
   color: RGB | null;
-  /** 조각 텍스트를 공백으로 이은 것. */
+  /** Fragment texts joined with spaces. */
   text: string;
-  /** 보이는 글자 중 수식 글꼴·수학 기호 비율(0–1). 표시 수식 묶음 판단용. */
+  /** Ratio of math-font or math-symbol characters among visible characters (0–1). Used to decide display-equation grouping. */
   math: number;
 }
 
-/** 줄 끝 번호: 쪽 번호·식 번호. */
+/** Trailing line number: page number or equation number. */
 export const NUMBER_TAG = /^\s*\(?\d{1,4}(?:\.\d{1,3})?[a-z]?\)?\s*$/u;
 
-/** 절·목차 번호("4.1", "B.", "IV.", "(a)"). */
+/** Section and table-of-contents numbers ("4.1", "B.", "IV.", "(a)"). */
 const SECTION_NO =
   /^\s*(?:\(?[\dA-Za-z]{1,3}\)|[\dIVXivx]{1,4}(?:\.\d{1,3})*\.?|[A-Z]\.|§\s*\d+)\s*$/u;
 
-/** 점 끈(목차). */
+/** Dot leader (table of contents). */
 export const LEADER = /(?:\.\s?){4,}\s*$|…{2,}\s*$/u;
 
 const colorKey = (c: RGB | null): string =>
   c ? c.map((v) => Math.round(v * 20)).join(',') : 'none';
 
-/** 조각들로 Unit 을 만든다(parts 는 이미 왼쪽→오른쪽). */
+/** Builds a Unit from fragments (parts are already left→right). */
 export function makeUnit(model: PageModel, parts: LineFeature[]): Unit {
   let bbox = parts[0]!.bbox;
   for (const p of parts.slice(1)) bbox = union(bbox, p.bbox);
@@ -63,7 +63,7 @@ export function makeUnit(model: PageModel, parts: LineFeature[]): Unit {
     }
   }
   const top = [...colors.values()].sort((a, b) => b.n - a.n)[0];
-  // 기준 조각: 글자가 가장 많은 조각(같으면 큰 쪽). 첨자·큰 연산자 조각이 기준선·크기를 흔들지 않게 한다.
+  // Reference fragment: the one with the most characters (the larger one on ties). Keeps subscript and large-operator fragments from shifting the baseline and size.
   const main = parts.reduce((m, p) =>
     p.chars.length > m.chars.length || (p.chars.length === m.chars.length && p.size > m.size)
       ? p
@@ -82,34 +82,34 @@ export function makeUnit(model: PageModel, parts: LineFeature[]): Unit {
   };
 }
 
-/** 같은 행 판정. */
+/** Same-row check. */
 export function sameRow(a: Rect, b: Rect): boolean {
   return overlapY(a, b) >= C.sameRowOverlap * Math.min(height(a), height(b));
 }
 
 /**
- * 가로 줄을 행으로 묶고, 행 안에서 간격이 글자 크기 × rowJoinGapEm 이하인 이웃 조각을 합친다.
- * 결과는 위→아래, 왼쪽→오른쪽.
+ * Groups horizontal lines into rows and merges neighboring fragments within a row whose gap is at most font size × rowJoinGapEm.
+ * The result is top→bottom, left→right.
  */
 export function buildUnits(
   model: PageModel,
   feats: readonly LineFeature[],
   fillers: readonly Rect[] = [],
-  /** 같은 행 조각을 간격과 무관하게 잇는다(표 셀 안: 셀이 이미 가로 범위를 가둔다). */
+  /** Joins same-row fragments regardless of gap (inside a table cell: the cell already bounds the horizontal range). */
   joinRow = false,
 ): Unit[] {
   const pageWidth = width(model.bounds);
-  // 행 간격을 메우는 것: 인라인 이미지와 다른 글자 조각(수식의 큰 연산자·첨자는 다른 기준선의 조각이다).
-  // 글자 조각은 좁고(쪽 폭 25% 이하) 행 높이를 거의 다 덮을 때만 메운다(다른 열의 줄은 메우지 않음).
+  // What fills a row gap: inline images and other character fragments (large operators and subscripts in math are fragments on a different baseline).
+  // A character fragment fills the gap only if it is narrow (at most 25% of page width) and covers almost the whole row height (lines in other columns do not fill it).
   const textFillers = feats.map((f) => f.bbox).filter((r) => width(r) <= 0.25 * pageWidth);
   const sorted = [...feats].sort((a, b) => a.baseline - b.baseline || a.bbox[0] - b.bbox[0]);
   const rows: LineFeature[][] = [];
   for (const f of sorted) {
     const row = rows.at(-1);
     const ref = row?.[0];
-    // 위·아래 첨자 조각(크기 비 1.3 초과)은 기준선 차이를 더 허용한다.
+    // Subscript/superscript fragments (size ratio over 1.3) allow a larger baseline difference.
     const ratio = ref ? Math.max(f.size, ref.size) / Math.max(Math.min(f.size, ref.size), 0.1) : 1;
-    // 수식 조각(분수·첨자로 기준선이 어긋남)이 낀 행은 기준선 차이를 더 허용한다.
+    // Rows containing math fragments (baselines shifted by fractions and subscripts) allow a larger baseline difference.
     const mathy = ref !== undefined && (fragMath(model, f) >= 0.3 || fragMath(model, ref) >= 0.3);
     const tol = (ratio > 1.3 || mathy ? 0.6 : 0.35) * Math.max(f.size, ref?.size ?? 0);
     if (row && ref && Math.abs(f.baseline - ref.baseline) <= tol && sameRow(f.bbox, ref.bbox))
@@ -119,7 +119,7 @@ export function buildUnits(
   const units: Unit[] = [];
   for (const row of rows) {
     row.sort((a, b) => a.bbox[0] - b.bbox[0]);
-    // 머리·꼬리 띠의 행(러닝헤드 + 쪽 번호)에는 줄 끝 번호 잇기를 하지 않는다.
+    // Trailing-number joining is not applied to rows in the header/footer band (running head + page number).
     const pageH = height(model.bounds);
     const inMargin =
       row[0]!.bbox[3] <= model.bounds[1] + C.marginBand * pageH ||
@@ -132,29 +132,29 @@ export function buildUnits(
         uncoveredGap(prev.bbox, f.bbox, [...fillers, ...textFillers], 0.8),
       );
       const ratio = Math.max(f.size, prev.size) / Math.max(Math.min(f.size, prev.size), 0.1);
-      // 위·아래 첨자(작은 조각이 바로 붙음)는 크기 비율과 무관하게 합친다.
+      // Subscripts/superscripts (a small fragment directly attached) are merged regardless of size ratio.
       const script = ratio > 1.5 && gap <= 0.3 * Math.max(f.size, prev.size);
       const em = Math.max(f.size, prev.size);
-      // 번호·쪽 번호 같은 짧은 조각(폭 3em 이하)은 2em 간격까지 잇는다(목차·절 번호).
-      // (다른 열의 짧은 조각을 잇지 않도록 왼쪽 조각이 번호 형식일 때만)
-      // 번호 조각은 행의 첫 조각일 때만(줄 끝 식 번호 "(8)" 이 다음 단 줄과 이어지지 않게).
+      // Short fragments such as numbers and page numbers (width at most 3em) are joined up to a 2em gap (table of contents, section numbers).
+      // (only when the left fragment has a number format, so short fragments in other columns are not joined)
+      // A number fragment only when it is the first fragment of the row (so a trailing equation number "(8)" does not join a line in the next column).
       const shortPart =
         parts.length === 1 &&
         prev === row[0] &&
         width(prev.bbox) <= 3 * em &&
         SECTION_NO.test(prev.text);
-      // 행 끝(또는 다음 조각과 1.5em 이상 떨어진 단 끝)의 조각인지.
+      // Whether the fragment is at the end of the row (or at a column end at least 1.5em from the next fragment).
       const next = row[row.indexOf(f) + 1];
       const atRowEnd = !next || next.bbox[0] - f.bbox[2] >= 1.5 * em;
       const near = gap <= C.rowJoinGapEm * em || (shortPart && gap <= 2 * em);
-      // 줄 끝 번호(목차 쪽 번호·식 번호)는 넓은 왼쪽 조각(쪽 폭 25% 이상) 또는 점 끈 뒤면 간격과 무관하게 잇는다.
+      // A trailing number (table-of-contents page number, equation number) is joined regardless of gap if the left fragment is wide (at least 25% of page width) or follows a dot leader.
       const tag =
         !inMargin &&
         atRowEnd &&
         NUMBER_TAG.test(f.text) &&
         (width(prev.bbox) >= 0.25 * pageWidth || LEADER.test(prev.text));
-      // 표시 수식: 같은 행의 수식 조각끼리(그리고 수식 뒤 식 번호)는 쪽 폭 40% 안이면 간격과 무관하게 잇는다.
-      // 수식 조각끼리는 3em 안(단 사이를 넘지 않게), 수식 뒤 식 번호는 단 끝이면 쪽 폭 40% 안.
+      // Display math: math fragments in the same row (and an equation number after the math) are joined regardless of gap if within 40% of page width.
+      // Math fragments within 3em of each other (not crossing column gaps); an equation number after math within 40% of page width if at a column end.
       const mathRow =
         fragMath(model, prev) >= 0.4 &&
         ((fragMath(model, f) >= 0.4 && gap <= 3 * em) ||
@@ -173,15 +173,15 @@ export function buildUnits(
 }
 
 /**
- * 표시 수식 묶기: 수식 비율 40% 이상인 단위(위아래 첨자·분수 줄 포함)와 그 옆 식 번호를, 상자를 1em
- * 넓혀 닿는 것끼리 하나의 단위로 합친다. 표시 수식이 영역 쌓기·문단 나누기에서 여러 조각이 되지 않게 한다.
+ * Display math grouping: units with a math ratio of at least 40% (including subscript/superscript and fraction lines) and the equation number beside them are merged into one unit when their boxes touch after
+ * being expanded by 1em. This keeps a display equation from becoming several pieces in region stacking and paragraph splitting.
  */
 function mergeMathClusters(model: PageModel, units: Unit[], disabled: boolean): Unit[] {
   if (disabled) return units;
   const pageWidth = width(model.bounds);
   const isMath = units.map((u) => u.math >= 0.4);
   if (!isMath.some(Boolean)) return units;
-  // 수식 옆 식 번호도 묶음 후보.
+  // An equation number beside math is also a grouping candidate.
   units.forEach((u, i) => {
     if (isMath[i] || !NUMBER_TAG.test(u.text)) return;
     if (units.some((v, j) => isMath[j] && sameRow(v.bbox, u.bbox) && u.bbox[0] >= v.bbox[2]))
@@ -201,8 +201,8 @@ function mergeMathClusters(model: PageModel, units: Unit[], disabled: boolean): 
       const em = Math.max(u.size, v.size);
       const gx = Math.max(u.full[0], v.full[0]) - Math.min(u.full[2], v.full[2]);
       const gy = Math.max(u.full[1], v.full[1]) - Math.min(u.full[3], v.full[3]);
-      // 식 번호는 같은 행이면 멀어도 묶는다.
-      // 식 번호는 같은 행·같은 단(번호가 수식 오른쪽, 간격 쪽 폭 35% 이하)이면 멀어도 묶는다.
+      // An equation number is grouped even when far away if it is in the same row.
+      // An equation number is grouped even when far away if it is in the same row and column (number to the right of the math, gap at most 35% of page width).
       const [eq, tag] = NUMBER_TAG.test(v.text)
         ? [u, v]
         : NUMBER_TAG.test(u.text)
@@ -233,7 +233,7 @@ function mergeMathClusters(model: PageModel, units: Unit[], disabled: boolean): 
       .flatMap((u) => u.parts)
       .sort((p, q) => p.baseline - q.baseline || p.bbox[0] - q.bbox[0]);
     const nu = makeUnit(model, parts);
-    // 판단 상자·크기·기준선은 가장 넓은 구성원(수식 본체) 것.
+    // The decision box, size and baseline come from the widest member (the math body).
     const main = members.reduce((m, u) => (u.bbox[2] - u.bbox[0] > m.bbox[2] - m.bbox[0] ? u : m));
     const full = members.reduce<Rect>((r, u) => union(r, u.full), members[0]!.full);
     out.push({
@@ -249,7 +249,7 @@ function mergeMathClusters(model: PageModel, units: Unit[], disabled: boolean): 
 
 const visibleCount = (u: Unit): number => u.text.replace(/\s/gu, '').length;
 
-/** 조각 하나의 수식 글꼴·수학 기호 비율. */
+/** Ratio of math-font or math-symbol characters in one fragment. */
 function fragMath(model: PageModel, f: LineFeature): number {
   let n = 0;
   let m = 0;
@@ -263,14 +263,14 @@ function fragMath(model: PageModel, f: LineFeature): number {
 }
 
 /**
- * 보이는 글자 3개 이하 조각(수식 첨자·큰 연산자·따로 잡힌 글머리)을 세로로 겹치고 가로로 가까운 본 단위에
- * 흡수한다. 흡수한 조각은 텍스트·줄 목록에는 들어가지만 배치 판단 상자(bbox)는 바꾸지 않는다.
+ * Absorbs fragments with at most 3 visible characters (math subscripts, large operators, separately captured bullets) into the main unit that overlaps vertically and is horizontally close.
+ * Absorbed fragments are included in the text and line list but do not change the layout decision box (bbox).
  */
 function absorbMinor(model: PageModel, units: Unit[]): Unit[] {
-  // 작은 조각: 보이는 글자 3개 이하, 또는 본문 크기 80% 이하 글자의 10자 이하 조각(첨자 묶음).
+  // Small fragment: at most 3 visible characters, or a fragment of at most 10 characters at 80% of body size or smaller (subscript group).
   const sizes = units.map((u) => u.size).sort((a, b) => a - b);
   const typical = sizes.length ? sizes[sizes.length >> 1]! : 10;
-  // 조각마다 글자 3개 이하로만 된 단위(큰 연산자들이 한 행으로 묶인 것)도 작은 조각이다.
+  // A unit made only of fragments with at most 3 characters each (large operators grouped into one row) is also a small fragment.
   const isMinor = (u: Unit) =>
     visibleCount(u) <= 3 ||
     (u.size <= 0.8 * typical && visibleCount(u) <= 10) ||
@@ -304,15 +304,15 @@ function absorbMinor(model: PageModel, units: Unit[]): Unit[] {
       (a, b) => a.bbox[0] - b.bbox[0],
     );
     const nu = makeUnit(model, parts);
-    // 판단 상자·크기·기준선은 본 단위 것을 쓴다.
+    // The decision box, size and baseline come from the main unit.
     return { ...nu, bbox: u.bbox, size: u.size, baseline: u.baseline, full: nu.bbox };
   });
   return [...merged, ...kept];
 }
 
 /**
- * 두 조각 사이 가로 간격에서 같은 행의 인라인 이미지(글리프 그림 등)가 덮는 길이를 뺀 값.
- * Hancom 출력은 구결·외자 글리프를 작은 이미지로 넣어 줄을 여러 stext 줄로 쪼갠다(2026-10-19 실측).
+ * The horizontal gap between two fragments minus the length covered by inline images (glyph pictures, etc.) in the same row.
+ * Hancom output embeds gugyeol and single-character glyphs as small images, splitting a line into several stext lines (measured 2026-10-19).
  */
 function uncoveredGap(a: Rect, b: Rect, fillers: readonly Rect[], minCover: number): number {
   const lo = a[2];
@@ -336,7 +336,7 @@ function uncoveredGap(a: Rect, b: Rect, fillers: readonly Rect[], minCover: numb
   return hi - lo - covered;
 }
 
-/** 인라인 이미지 후보: 높이가 글자 크기 3배 이하인 작은 이미지. */
+/** Inline image candidate: a small image whose height is at most 3x the font size. */
 export function inlineImages(model: PageModel, size: number): Rect[] {
   return model.images
     .filter(

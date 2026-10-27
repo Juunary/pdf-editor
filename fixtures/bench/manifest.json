@@ -1,50 +1,50 @@
 {
   "version": 1,
-  "description": "M5 벤치마크 문서 세트(계약 D1). 코퍼스 문서는 fixtures/corpus/manifest.json 의 id·해시를 따르고, 합성 문서는 생성기·인자·시드로 같은 바이트를 재생성한다. 문서 파일은 커밋하지 않는다.",
+  "description": "M5 benchmark document set (contract D1). Corpus documents follow the id·hash in fixtures/corpus/manifest.json, and synthetic documents regenerate the same bytes from generator, arguments, and seed. Document files are not committed.",
   "corpusDir": "fixtures/corpus",
   "outDir": "out/bench",
   "tiers": {
-    "core": "코퍼스 5건. 기본 실행",
-    "synthetic": "합성 2건(저장 상한 시험용 900쪽, 객체 위주 2,000쪽). 디스크·시간이 큼",
-    "large-real": "8절 대용량 실제 문서 2건. 후보 확정 전까지 비어 있음",
-    "judge-stress": "쪽 판정 최대 패스 쪽 시험(M4 측정의 1.75 s 쪽). 쪽 번호는 0부터"
+    "core": "5 corpus documents. Default run",
+    "synthetic": "2 synthetic documents (900 pages for the save-limit test, 2,000 object-heavy pages). Large in disk and time",
+    "large-real": "2 real large documents from section 8. Empty until candidates are confirmed",
+    "judge-stress": "Test of the page with the most paths for page classification (the 1.75 s page in the M4 measurement). Page numbers are 0-based"
   },
   "documents": [
     {
       "id": "nist-sp800-53r5",
       "source": "corpus",
       "tier": "core",
-      "role": "492쪽 태그 PDF, 500쪽 이하 상한 문서"
+      "role": "492-page tagged PDF, a document at the 500-page-or-less limit"
     },
     {
       "id": "nasa-se-handbook-sp2016-6105",
       "source": "corpus",
       "tier": "core",
-      "role": "297쪽, 공유 Form 텍스트"
+      "role": "297 pages, shared Form text"
     },
     {
       "id": "kogl-nabo-finstmt2025",
       "source": "corpus",
       "tier": "core",
-      "role": "179쪽 한국어 재무제표 표"
+      "role": "179-page Korean financial statement tables"
     },
     {
       "id": "zen-beamer-7535020",
       "source": "corpus",
       "tier": "core",
-      "role": "11.8 MB, 삽입 PDF 그림"
+      "role": "11.8 MB, embedded PDF figures"
     },
     {
       "id": "arxiv-2609.09268",
       "source": "corpus",
       "tier": "core",
-      "role": "벡터 도표(패스 끌기)"
+      "role": "Vector charts (path dragging)"
     },
     {
       "id": "kogl-mods-cpi-202609",
       "source": "corpus",
       "tier": "judge-stress",
-      "role": "최대 패스 쪽(4쪽) 판정 시간 분해",
+      "role": "Classification-time breakdown for the page with the most paths (page 4)",
       "judgePages": [
         3
       ]
@@ -53,7 +53,7 @@
       "id": "synthetic-image-900",
       "source": "synthetic",
       "tier": "synthetic",
-      "role": "900쪽 이미지 위주(저장 상한 시험용, 약 675.6 MiB)",
+      "role": "900-page image-heavy (for the save-limit test, about 675.6 MiB)",
       "generator": "fixtures/bench/synth.mjs",
       "args": {
         "kind": "image",
@@ -68,7 +68,7 @@
       "id": "synthetic-objects-2000",
       "source": "synthetic",
       "tier": "synthetic",
-      "role": "2,000쪽 텍스트, 객체 524,003개(객체 위주)",
+      "role": "2,000-page text, 524,003 objects (object-heavy)",
       "generator": "fixtures/bench/synth.mjs",
       "args": {
         "kind": "objects",
@@ -83,7 +83,7 @@
       "id": "large-real-image",
       "source": "external",
       "tier": "large-real",
-      "role": "100 MB 이상 이미지 위주 실제 문서 자리(계약 8절, 메인 세션이 확정)",
+      "role": "Slot for a real image-heavy document of 100 MB or more (contract section 8, to be confirmed by the main session)",
       "url": null,
       "sha256": null,
       "bytes": null,
@@ -94,7 +94,7 @@
       "id": "large-real-objects",
       "source": "external",
       "tier": "large-real",
-      "role": "100 MB 이상 객체 위주 실제 문서 자리(계약 8절, 메인 세션이 확정)",
+      "role": "Slot for a real object-heavy document of 100 MB or more (contract section 8, to be confirmed by the main session)",
       "url": null,
       "sha256": null,
       "bytes": null,

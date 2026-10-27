@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * 라벨 파일 형식·소속 검사(docs/m2-contract.md 4.1). 작업 묶음 TXT 로 줄 수·지문·보이는 줄을 확인한다.
- *   node scripts/layout-labels/validate-labels.mjs <라벨 디렉터리> <작업 묶음 디렉터리>
+ * Label file format and membership check (docs/m2-contract.md 4.1). Checks line counts, fingerprints, and visible lines using the work-packet TXT.
+ *   node scripts/layout-labels/validate-labels.mjs <label directory> <work-packet directory>
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -56,7 +56,7 @@ for (const rel of files.sort()) {
     if (!['dev', 'test', 'test2'].includes(label.split)) errs.push(`split ${label.split}`);
     if (!['draft', 'reviewed', 'confirmed'].includes(label.status))
       errs.push(`status ${label.status}`);
-    // 독립 검토: reviewed 이상은 검토자가 있어야 하고 라벨러와 달라야 한다.
+    // Independent review: reviewed and above must have a reviewer different from the labeler.
     if (label.status !== 'draft') {
       if (!label.reviewedBy) errs.push('reviewedBy 없음');
       else if (label.reviewedBy === label.labeledBy) errs.push('reviewedBy 가 labeledBy 와 같음');

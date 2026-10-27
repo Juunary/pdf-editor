@@ -9,14 +9,14 @@ function onePagePdf(): Uint8Array {
 }
 
 describe('openPdf', () => {
-  it('MuPDF WASM 을 로드하고 PDF 를 연다', () => {
+  it('loads MuPDF WASM and opens a PDF', () => {
     const doc = openPdf(onePagePdf());
     expect(doc.countPages()).toBe(1);
     expect(doc.loadPage(0).getBounds()).toEqual([0, 0, 200, 100]);
     expect(wasmHeapBytes()).toBeGreaterThan(0);
   });
 
-  it('PDF 가 아닌 입력은 예외', () => {
+  it('throws on input that is not a PDF', () => {
     expect(() => openPdf(new TextEncoder().encode('not a pdf'))).toThrow();
   });
 });

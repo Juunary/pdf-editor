@@ -1,5 +1,5 @@
 /**
- * 배치 시간(500자 문단). 결과는 콘솔에 남기고 docs/m3-reflow.md 4절에 기록한다. 판정 기준은 느슨하게 둔다(부하에 흔들림).
+ * Layout time (500-character paragraph). The result is left on the console and recorded in docs/m3-reflow.md section 4. The pass/fail criteria are kept loose (they fluctuate with load).
  */
 import { describe, expect, it } from 'vitest';
 import { now } from '../src/clock.js';
@@ -51,17 +51,17 @@ function measure(inp: ReflowInput, runs = 200): { median: number; p95: number; m
 const fmt = (r: { median: number; p95: number; max: number }) =>
   `median ${r.median.toFixed(3)} ms, p95 ${r.p95.toFixed(3)} ms, max ${r.max.toFixed(3)} ms`;
 
-describe('배치 시간(500자 문단)', () => {
-  it('원본 폰트(pdf-widths)·폴백 폰트(harfbuzz)·자동 확장', () => {
+describe('layout time (500-character paragraph)', () => {
+  it('original font (pdf-widths), fallback font (harfbuzz), auto-extend', () => {
     expect(TEXT.length).toBe(500);
-    // 첫 호출: 4 MB 폴백 폰트를 harfbuzz 로 읽고 cmap 조회를 채운다.
+    // First call: reads the 4 MB fallback font with harfbuzz and fills the cmap lookups.
     const t0 = now();
     const first = layoutParagraph(make(fallback('bench-cold'), 1000));
     const coldMs = now() - t0;
 
     const orig = measure(make(pdfFace(), 1000));
     const fb = measure(make(fallback('bench'), 1000));
-    // 높이 20pt 에 500자: 넘쳐서 아래 변을 자동으로 내린다.
+    // 500 characters in height 20pt: overflows, so the bottom edge is lowered automatically.
     const expandInput = make(fallback('bench'), 20);
     const expand = measure(expandInput, 50);
     const expandResult = layoutParagraph(expandInput);

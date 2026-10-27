@@ -1,29 +1,29 @@
 /**
- * 편집이 풀린 채 다시 쓴 큰 스트림을 Flate 로 압축해 다시 넣는다(M5 Windows 확인 W2, docs/m5-followup.md 5.1).
+ * Compresses large streams rewritten in an unpacked state by editing with Flate and puts them back (M5 Windows check W2, docs/m5-followup.md 5.1).
  *
- * 쪽 콘텐츠·Form 사본은 `writeStreamBytes`(MuPDF `writeStream`)로 쓰여 필터 없이 풀린 바이트를 그대로 보관한다. MuPDF 저널은
- * 작업마다 바뀐 객체의 작업 전 내용을 스트림 버퍼째 보관하므로, 풀린 크기가 큰 쪽(코퍼스 kogl-mods-cpi-202609 9쪽 8.9 MB)의
- * 문단을 처음 고칠 때마다 그만큼 저널에 남는다. 커밋 직전(같은 작업 안)에 압축해 두면 다음 편집이 저널로 넘기는 버퍼가 압축
- * 크기(같은 쪽 1.35 MB)가 된다. 원본 파일의 콘텐츠도 Flate 라서 압축 뒤 렌더·추출이 읽는 바이트는 편집 전과 같은 방식이다.
+ * Page content and Form copies are written by `writeStreamBytes` (MuPDF `writeStream`) and hold the unpacked bytes without a filter. The MuPDF journal
+ * keeps the pre-operation contents of each changed object per operation, including the stream buffer, so for a page with a large unpacked size (corpus kogl-mods-cpi-202609 page 9, 8.9 MB)
+ * that much stays in the journal on every first paragraph edit. If compressed just before commit (inside the same operation), the buffer the next edit hands to the journal becomes the compressed
+ * size (1.35 MB for the same page). The original file's content is also Flate, so after compression the bytes that rendering and extraction read are handled the same way as before editing.
  *
- * 압축은 플랫폼 `CompressionStream('deflate')`(zlib 형식, Chrome Worker·Node 18+)를 쓴다. 없거나 실패하면 그대로 둔다(메모리만
- * 덜 줄고 동작은 같다). 넣은 뒤 MuPDF 로 다시 풀어 원래 바이트와 같은지 확인하고, 다르면 풀린 바이트로 되돌린다.
+ * Compression uses the platform `CompressionStream('deflate')` (zlib format, Chrome Worker, Node 18+). If it is missing or fails, the stream is left as is (only
+ * less memory is saved and behavior is the same). After insertion it is unpacked again with MuPDF and compared with the original bytes; if different, it is reverted to the unpacked bytes.
  */
 import * as mupdf from 'mupdf';
 import { readStreamBytes, writeStreamBytes } from './mupdf-util.js';
 
-/** 이보다 작은 스트림은 압축하지 않는다(편집 블록 등, 저널 보관량이 작고 커밋마다 비동기 단계만 늘어난다). */
+/** Streams smaller than this are not compressed (edit blocks, etc.: the journal holds little, and each commit would only gain an async step). */
 export const COMPACT_MIN_BYTES = 64 * 1024;
 
 export interface UncompressedStream {
   objectNumber: number;
-  /** 지금 스트림의 풀린 바이트(필터가 없으므로 보관 바이트와 같다). */
+  /** Current unpacked bytes of the stream (same as the stored bytes since there is no filter). */
   bytes: Uint8Array;
 }
 
 /**
- * 객체 번호들 중 압축할 스트림: 필터·DecodeParms 가 없고 길이가 `minBytes` 이상이며 이미지·메타데이터가 아닌 스트림
- * (쪽 콘텐츠·Form). 동기로 바이트를 읽어 둔다.
+ * Streams to compress among the object numbers: streams with no filter or DecodeParms, length at least `minBytes`, that are not images or metadata
+ * (page content, Form). The bytes are read synchronously.
  */
 export function uncompressedStreams(
   doc: mupdf.PDFDocument,
@@ -50,20 +50,20 @@ export function uncompressedStreams(
   return out;
 }
 
-/** 플랫폼 `CompressionStream` 중 쓰는 부분(이 패키지는 DOM·Node 타입 없이 빌드한다). */
+/** The part of the platform `CompressionStream` that is used (this package builds without DOM or Node types). */
 type CompressionStreamCtor = new (format: 'deflate') => {
   readable: { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }> } };
   writable: { getWriter(): { write(chunk: Uint8Array): Promise<void>; close(): Promise<void> } };
 };
 
-/** zlib(RFC 1950) 형식 deflate. 플랫폼에 `CompressionStream` 이 없으면 null. */
+/** zlib (RFC 1950) format deflate. null if the platform has no `CompressionStream`. */
 export async function deflateZlib(bytes: Uint8Array): Promise<Uint8Array | null> {
   const Ctor = (globalThis as { CompressionStream?: CompressionStreamCtor }).CompressionStream;
   if (!Ctor) return null;
   const cs = new Ctor('deflate');
   const chunks: Uint8Array[] = [];
   let total = 0;
-  // 쓰기와 읽기를 함께 돌린다(읽지 않으면 큰 입력의 쓰기가 역압에 걸려 끝나지 않는다).
+  // Run writing and reading together (without reading, the write of a large input hits backpressure and never finishes).
   const reading = (async () => {
     const reader = cs.readable.getReader();
     for (;;) {
@@ -94,8 +94,8 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 }
 
 /**
- * 압축한 바이트를 스트림에 넣는다(/Filter /FlateDecode, /DecodeParms 없음). 넣은 뒤 다시 풀어 `plain` 과 같으면 true. 다르거나
- * 예외면 `plain` 을 풀린 채로 되돌리고 false(되돌리기도 실패하면 예외). 열린 저널 작업 안에서 부른다.
+ * Puts the compressed bytes into the stream (/Filter /FlateDecode, no /DecodeParms). Returns true if, after unpacking again, they equal `plain`. If different or
+ * on an exception, reverts `plain` to the unpacked state and returns false (throws if the revert also fails). Called inside an open journal operation.
  */
 export function writeCompressedStream(
   doc: mupdf.PDFDocument,
@@ -116,7 +116,7 @@ export function writeCompressedStream(
       }
       if (sameBytes(readStreamBytes(obj), plain)) return true;
     } catch {
-      // 아래에서 풀린 바이트로 되돌린다.
+      // Reverted to the unpacked bytes below.
     }
     writeStreamBytes(obj, plain);
     return false;
@@ -126,17 +126,17 @@ export function writeCompressedStream(
 }
 
 export interface CompactResult {
-  /** 압축해 넣은 스트림 수. */
+  /** Number of streams compressed and inserted. */
   compacted: number;
-  /** 압축 전·후 바이트 합(압축한 스트림만). */
+  /** Sum of bytes before and after compression (compressed streams only). */
   plainBytes: number;
   storedBytes: number;
 }
 
 /**
- * `uncompressedStreams` 로 고른 스트림을 압축해 넣는다. 압축(비동기) 뒤 `stillValid()` 가 false 면(그 사이 문서가 닫히거나
- * 초안이 바뀜) 아무것도 쓰지 않는다. 압축을 쓸 수 없거나 실패한 스트림은 그대로 둔다. 예외는 넣은 뒤 되돌리기까지 실패한
- * 경우뿐이다(그 스트림 상태를 알 수 없으므로 호출자가 작업을 버려야 한다).
+ * Compresses and inserts the streams chosen by `uncompressedStreams`. If `stillValid()` is false after the (async) compression (the document was closed or
+ * the draft changed in between), nothing is written. Streams that cannot be compressed or fail are left as is. An exception occurs only when the revert after insertion
+ * also fails (the state of that stream is unknown, so the caller must discard the operation).
  */
 export async function compactStreams(
   doc: mupdf.PDFDocument,
@@ -150,7 +150,7 @@ export async function compactStreams(
   if (!stillValid()) return result;
   streams.forEach((s, i) => {
     const z = packed[i];
-    // 압축이 줄이지 못하면(이미 압축된 데이터를 담은 스트림 등) 그대로 둔다.
+    // If compression does not shrink it (e.g. a stream holding already compressed data), leave it as is.
     if (!z || z.byteLength >= s.bytes.byteLength) return;
     if (writeCompressedStream(doc, s.objectNumber, z, s.bytes)) {
       result.compacted++;

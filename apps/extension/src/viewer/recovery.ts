@@ -1,16 +1,16 @@
 /**
- * Worker 복구 계층(계약 D6, A3-3). 뷰어 소유 Worker 가 치명 오류(wasm 트랩·메모리 부족·스크립트 오류)로 쓸 수 없게 되면
- * 새 Worker 를 만들고, 보관한 원본(`Blob`)을 열고, 보관한 편집 로그(`EditOp` + `activeEditIds`)를 `replayEdits` 로 다시 적용한다.
+ * Worker recovery layer (contract D6, A3-3). When the viewer-owned Worker becomes unusable due to a fatal error (wasm trap, out of memory, script error),
+ * it creates a new Worker, opens the kept original (`Blob`), and reapplies the kept edit log (`EditOp` + `activeEditIds`) with `replayEdits`.
  *
- * - 읽기 RPC(렌더·추출·판정 등)는 복구 뒤 한 번 자동으로 다시 시도한다.
- * - 쓰기·초안 RPC 는 상태가 바뀌었으므로 다시 시도하지 않고 `WorkerRecoveredError` 로 알린다. 호출한 쪽(뷰어 UI)이
- *   초안을 편집기 모델로 다시 시작하거나 저장을 다시 묻는다.
- * - 복구 전 세대의 초안 id 로 온 호출은 새 Worker 로 보내지 않고 같은 오류로 돌려준다.
- * - 동시에 여러 호출이 실패해도 복구는 한 번만 한다.
- * - 복구 기준점(계약 D4 사용자 결정 2026-10-21): 사용자 저장이 성공하면(`confirmSaved`) 그 저장 바이트를 기준점으로 삼고,
- *   복구 때 기준점을 열어 그 뒤 편집만 재적용한다. 활성 로그가 기준점 편집으로 시작하지 않으면(저장 전 편집까지 되돌림)
- *   원본 + 활성 로그 전체를 재적용한다. 기준점에서 복구하면 기준점이 이 세션의 원본이 된다.
- * - 재적용은 한 건씩 나눠 보내고(`replayEdits(…, { more })`) 진행(n/N)을 `onProgress` 로 알린다.
+ * - Read RPCs (render, extract, classification, etc.) are retried once automatically after recovery.
+ * - Write and draft RPCs are not retried because state has changed; they are reported with `WorkerRecoveredError`. The caller (viewer UI)
+ *   restarts the draft with the editor model or asks again about saving.
+ * - Calls that arrive with a draft id from a pre-recovery generation are not sent to the new Worker; they get the same error back.
+ * - Even if several calls fail at the same time, recovery runs only once.
+ * - Recovery checkpoint (contract D4 user decision 2026-10-21): when a user save succeeds (`confirmSaved`), those saved bytes become the checkpoint,
+ *   and on recovery the checkpoint is opened and only the edits after it are reapplied. If the active log does not start with the checkpoint's edits (edits before the save were undone),
+ *   the original plus the whole active log is reapplied. When recovering from the checkpoint, the checkpoint becomes this session's original.
+ * - Reapply sends edits one at a time (`replayEdits(…, { more })`) and reports progress (n/N) through `onProgress`.
  */
 import type {
   EditHistoryState,
@@ -25,7 +25,7 @@ import type {
 } from '@pdf-editor/shared-types';
 import { WORKER_RECOVERED_ERROR_NAME } from '@pdf-editor/viewer-ui';
 
-/** 문서 복구 실패. 화면 문장은 이름으로 만든다(viewer-ui error-text.ts, 사용자 결정 2026-10-26). */
+/** Document recovery failure. The on-screen sentence is built from the name (viewer-ui error-text.ts, user decision 2026-10-26). */
 export class RecoveryFailedError extends Error {
   override name = 'RecoveryFailedError';
 }
@@ -34,18 +34,18 @@ export class WorkerRecoveredError extends Error {
   override name = WORKER_RECOVERED_ERROR_NAME;
   constructor(
     message: string,
-    /** 복구하면서 다시 적용한 편집 수. */
+    /** Number of edits reapplied during recovery. */
     readonly replayedEdits: number,
   ) {
     super(message);
   }
 }
 
-/** Worker 한 개(Comlink 원격 + 종료 + 치명 오류 신호). */
+/** One Worker (Comlink remote + terminate + fatal error signal). */
 export interface WorkerHandle {
   api: PdfWorkerApi;
   terminate(): void;
-  /** Worker 가 죽으면(`error`·`messageerror`) reject 된다. 응답을 영영 못 받는 호출을 끊는 데 쓴다. */
+  /** Rejects when the Worker dies (`error`, `messageerror`). Used to cut off calls that would never get a response. */
   dead: Promise<never>;
 }
 
@@ -57,7 +57,7 @@ export interface EditLogSnapshotLike {
 export interface RecoveryInfo {
   cause: string;
   replayedEdits: number;
-  /** 저장 기준점에서 복구했으면 true(원본에서 전체 로그를 재적용했으면 false). */
+  /** true if recovered from a save checkpoint (false if the whole log was reapplied from the original). */
   fromSavedBaseline: boolean;
   history: EditHistoryState | null;
   recoveries: number;
@@ -65,24 +65,24 @@ export interface RecoveryInfo {
 
 export interface RecoveryDeps {
   spawn(): WorkerHandle;
-  /** 바이트를 복사 없이 Worker 로 넘긴다(호출 뒤 원본 ArrayBuffer 는 비워진다). */
+  /** Hands the bytes to the Worker without copying (the original ArrayBuffer is emptied after the call). */
   transfer(bytes: ArrayBuffer): ArrayBuffer;
-  /** 복구에 쓸 편집 로그. */
+  /** Edit log used for recovery. */
   editLog(): EditLogSnapshotLike;
-  /** 복구가 끝난 뒤 비동기로 호출한다(복구 중 RPC 를 기다리는 교착을 피한다). */
+  /** Called asynchronously after recovery finishes (avoids deadlock from waiting on RPCs during recovery). */
   onRecovered(info: RecoveryInfo): void | Promise<void>;
-  /** 복구 진행: 열기 뒤 `done = 0`, 편집을 하나 다시 적용할 때마다 `done + 1`(전체 `total`). */
+  /** Recovery progress: `done = 0` after open, then `done + 1` each time one edit is reapplied (`total` overall). */
   onProgress?(done: number, total: number): void;
   log(event: string, data?: unknown): void;
 }
 
-/** 복구 기준점: 저장한 바이트와 그 저장에 들어간 편집 id(저장 시점 활성 로그 순서). */
+/** Recovery checkpoint: the saved bytes and the edit ids included in that save (active log order at save time). */
 interface SavedBaseline {
   blob: Blob;
   editIds: string[];
 }
 
-/** 기준점이 지금 활성 로그의 앞부분이면 그 뒤 편집만, 아니면 null. */
+/** If the checkpoint is a prefix of the current active log, the edits after it; otherwise null. */
 export function opsAfterBaseline(
   log: EditLogSnapshotLike,
   baselineIds: readonly string[],
@@ -93,7 +93,7 @@ export function opsAfterBaseline(
   return log.ops.filter((op) => after.has(op.id));
 }
 
-/** 치명적인 Worker 오류인지: wasm 트랩·메모리 부족·Worker 스크립트 오류. 일반 문서 오류(MuPDF 예외)는 아니다. */
+/** Whether this is a fatal Worker error: wasm trap, out of memory, Worker script error. Not a regular document error (MuPDF exception). */
 export function isFatalWorkerError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (error.name === 'WorkerCrash' || error.name === 'RuntimeError') return true;
@@ -102,7 +102,7 @@ export function isFatalWorkerError(error: unknown): boolean {
   );
 }
 
-/** 복구 뒤 자동으로 다시 시도해도 되는 읽기 RPC. */
+/** Read RPCs that may be retried automatically after recovery. */
 const RETRY_AFTER_RECOVERY = new Set<keyof PdfWorkerApi>([
   'getPageInfo',
   'renderPage',
@@ -132,27 +132,27 @@ export class ResilientPdf implements PdfWorkerApi {
   private current: WorkerHandle;
   private epoch = 0;
   private recovering: Promise<void> | null = null;
-  /** 복구에 실패해 문서를 쓸 수 없는 상태(다음 open 이 풀어 준다). */
+  /** The state where recovery failed and the document cannot be used (the next open clears it). */
   private broken: Error | null = null;
   private recoveries = 0;
   private original: Blob | null = null;
   /**
-   * `original` 에 이미 들어 있는 편집 id. 기준점에서 복구하면 기준점 편집이 된다. 뷰어 로그가 새 세션 이력으로 바뀌기 전에
-   * 다시 복구해도 그 편집을 두 번 적용하지 않도록, 활성 로그가 이 id 로 시작하면 뺀다.
+   * Edit ids already contained in `original`. When recovering from a checkpoint, they become checkpoint edits. So that those edits are not applied twice even if recovery happens again
+   * before the viewer log is replaced with the new session history, they are dropped when the active log starts with these ids.
    */
   private originIds: string[] = [];
-  /** 사용자 저장이 성공해 확정된 복구 기준점. */
+  /** Recovery checkpoint confirmed when a user save succeeded. */
   private baseline: SavedBaseline | null = null;
-  /** 마지막 `save` 결과(사용자 저장 성공이 확인되면 기준점이 된다). */
+  /** The last `save` result (becomes the checkpoint once a user save success is confirmed). */
   private pendingSave: SavedBaseline | null = null;
-  /** 초안 id → 그 초안을 만든 Worker 세대. */
+  /** Draft id → the Worker generation that created that draft. */
   private readonly drafts = new Map<string, number>();
 
   constructor(private readonly deps: RecoveryDeps) {
     this.current = deps.spawn();
   }
 
-  /** 지금까지 복구한 횟수(진단·테스트용). */
+  /** Number of recoveries so far (for diagnostics and tests). */
   get recoveryCount(): number {
     return this.recoveries;
   }
@@ -180,7 +180,7 @@ export class ResilientPdf implements PdfWorkerApi {
     }
   }
 
-  /** 복구 전 세대의 초안으로 온 호출이면 새 Worker 로 보내지 않는다. */
+  /** If the call came with a draft from a pre-recovery generation, do not send it to the new Worker. */
   private checkDraft(method: DraftMethod, draftId: string): void {
     if (this.drafts.get(draftId) !== this.epoch) {
       throw new WorkerRecoveredError(
@@ -191,7 +191,7 @@ export class ResilientPdf implements PdfWorkerApi {
   }
 
   private recover(failed: WorkerHandle, cause: unknown): Promise<void> {
-    if (failed !== this.current) return this.recovering ?? Promise.resolve(); // 이미 교체됨
+    if (failed !== this.current) return this.recovering ?? Promise.resolve(); // already replaced
     this.recovering ??= this.doRecover(failed, cause).finally(() => {
       this.recovering = null;
     });
@@ -223,13 +223,13 @@ export class ResilientPdf implements PdfWorkerApi {
       this.deps.onProgress?.(0, ops.length);
       const bytes = await source.arrayBuffer();
       await handle.api.open(this.deps.transfer(bytes));
-      // 한 건씩 보내 진행을 알린다. 저널 켜기·메타 기록은 마지막 호출에서 한 번(core `replayEdits` more).
+      // Send one at a time to report progress. Turning on the journal and recording metadata happen once, on the last call (core `replayEdits` more).
       for (const [i, op] of ops.entries()) {
         await handle.api.replayEdits([op], { more: i < ops.length - 1 });
         this.deps.onProgress?.(i + 1, ops.length);
       }
       if (fromSavedBaseline) {
-        // 새 세션의 문서는 기준점에서 시작한다. 이후 복구도 이 바이트 + 이 세션의 활성 로그로 한다.
+        // The new session's document starts from the checkpoint. Later recovery also uses these bytes + this session's active log.
         this.original = baseline.blob;
         this.originIds = baseline.editIds;
         this.baseline = null;
@@ -239,7 +239,7 @@ export class ResilientPdf implements PdfWorkerApi {
       try {
         history = await handle.api.getEditHistory();
       } catch {
-        history = null; // 편집 RPC 가 없는(M3 미구현) 구성
+        history = null; // configuration without edit RPCs (M3 not implemented)
       }
       this.recoveries++;
       const info: RecoveryInfo = {
@@ -267,14 +267,14 @@ export class ResilientPdf implements PdfWorkerApi {
   // ── PdfWorkerApi ───────────────────────────────────────────────────
 
   async open(bytes: ArrayBuffer): Promise<Awaited<ReturnType<PdfWorkerApi['open']>>> {
-    // 원본은 open 전에 Blob 으로 보관한다(transfer 하면 ArrayBuffer 가 비워지므로, 복구 때 이 Blob 을 다시 연다).
+    // The original is kept as a Blob before open (transfer empties the ArrayBuffer, so this Blob is reopened on recovery).
     this.original = new Blob([bytes]);
     this.originIds = [];
     this.baseline = null;
     this.pendingSave = null;
     this.drafts.clear();
     if (this.broken) {
-      // 복구에 실패한 Worker 는 버리고 새로 시작한다.
+      // A Worker that failed to recover is discarded and a new one is started.
       this.broken = null;
       this.current.terminate();
       this.current = this.deps.spawn();
@@ -327,7 +327,7 @@ export class ResilientPdf implements PdfWorkerApi {
 
   async save(request: SaveRequest) {
     const result = await this.invoke<Awaited<ReturnType<PdfWorkerApi['save']>>>('save', [request]);
-    // 저장 바이트를 기준점 후보로 둔다(복사). 사용자 저장이 성공했을 때만 `confirmSaved` 가 기준점으로 올린다.
+    // Keep the saved bytes as a checkpoint candidate (copy). `confirmSaved` promotes it to the checkpoint only when the user save succeeded.
     this.pendingSave = {
       blob: new Blob([result.bytes]),
       editIds: [...this.deps.editLog().activeEditIds],
@@ -335,18 +335,18 @@ export class ResilientPdf implements PdfWorkerApi {
     return result;
   }
 
-  /** 사용자 저장이 성공했다: 마지막 `save` 결과를 복구 기준점으로 삼는다(계약 D4). */
+  /** The user save succeeded: use the last `save` result as the recovery checkpoint (contract D4). */
   confirmSaved(): void {
     if (this.pendingSave) this.baseline = this.pendingSave;
     this.pendingSave = null;
   }
 
-  /** 측정 등 사용자 저장이 아닌 `save` 결과는 기준점 후보에서 버린다. */
+  /** Discards a non-user-save `save` result, such as a measurement, from the checkpoint candidate. */
   discardPendingSave(): void {
     this.pendingSave = null;
   }
 
-  /** 진단·시험용: 확정된 기준점의 편집 id(없으면 null). */
+  /** For diagnostics and tests: edit ids of the confirmed checkpoint (null if none). */
   get baselineEditIds(): string[] | null {
     return this.baseline ? [...this.baseline.editIds] : null;
   }
@@ -481,12 +481,12 @@ export class ResilientPdf implements PdfWorkerApi {
     return this.invoke<EditHistoryState>('replayEdits', [ops, options]);
   }
 
-  /** Redact 주석 보고(A2-2, `PdfWorkerApi.listRedactAnnots`, 계약 수정 4). */
+  /** Redact annotation report (A2-2, `PdfWorkerApi.listRedactAnnots`, contract amendment 4). */
   listRedactAnnots() {
     return this.invoke<RedactAnnotSummary>('listRedactAnnots', []);
   }
 
-  /** 열기 시 보고용: 실패하거나 결과 모양이 다르면 null(보고만 건너뛴다). */
+  /** For the on-open report: null if it fails or the result shape differs (only the report is skipped). */
   async tryListRedactAnnots(): Promise<RedactAnnotSummary | null> {
     try {
       const report = await this.listRedactAnnots();

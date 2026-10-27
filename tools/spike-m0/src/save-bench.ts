@@ -1,4 +1,4 @@
-// core 를 mupdf 보다 먼저 import 해야 WASM 힙 측정 객체가 연결된다(packages/core/src/wasm-module.ts).
+// core must be imported before mupdf so the WASM heap measurement object is attached (packages/core/src/wasm-module.ts).
 import { wasmHeapBytes } from '@pdf-editor/core';
 import * as mupdf from 'mupdf';
 import { decideSaveMethod } from '@pdf-editor/pdf-ops';
@@ -8,20 +8,20 @@ import { deflateSync } from 'node:zlib';
 import { applyBenchEdit } from './bench.js';
 
 /**
- * 대형 문서 저장 상한 조사(docs/m0-day1-log.md A4). 변형마다 별도 Node 프로세스에서 실행한다
- * (WASM 선형 메모리는 줄지 않으므로 프로세스 종료 시점 값이 그 작업의 최대치).
+ * Large-document save limit investigation (docs/m0-day1-log.md A4). Each variant runs in its own Node process
+ * (WASM linear memory never shrinks, so the value at process exit is that task's maximum).
  */
 
 export interface SaveVariant {
-  /** buffer: 입력 바이트를 WASM 힙으로 복사(`openDocument(Uint8Array)`). stream: JS 쪽 바이트를 콜백으로 읽음(`new Stream(handle)`) */
+  /** buffer: copy input bytes into the WASM heap (`openDocument(Uint8Array)`). stream: MuPDF reads JS-side bytes through a callback (`new Stream(handle)`) */
   input: 'buffer' | 'stream';
-  /** full: 1쪽 문단 교체 후 전체 저장. incremental: 주석 1개 추가 후 증분 저장 */
+  /** full: full save after replacing a paragraph on page 1. incremental: incremental save after adding one annotation */
   edit: 'full' | 'incremental';
-  /** 전체 저장 옵션(full 에만 적용). 기본 decideSaveMethod 값 */
+  /** Full-save options (applies to full only). Default is the decideSaveMethod value */
   options?: string;
-  /** 저장 전 앞쪽 N쪽 렌더(디코드 캐시 적재) */
+  /** Render the first N pages before saving (loads the decode cache) */
   renderPages?: number;
-  /** 저장 직전 `emptyStore()` */
+  /** `emptyStore()` right before saving */
   emptyStore?: boolean;
 }
 
@@ -52,13 +52,13 @@ export interface SaveBenchResult {
   outputBytes: number | null;
   saveMs: number | null;
   marks: SaveBenchMark[];
-  /** 종료 시 WASM 선형 메모리 ÷ 입력 크기 */
+  /** WASM linear memory at exit ÷ input size */
   peakRatio: number | null;
-  /** 실패 후 같은 프로세스에서 새 문서 생성·저장이 되는지 */
+  /** Whether a new document can still be created and saved in the same process after a failure */
   recoveredAfterError: boolean | null;
 }
 
-/** JS 쪽 바이트를 MuPDF 가 필요한 구간만 읽게 하는 입력 스트림. 입력이 WASM 힙에 복사되지 않는다. */
+/** Input stream that lets MuPDF read only the ranges it needs from JS-side bytes. The input is not copied into the WASM heap. */
 export function openFromStream(bytes: Uint8Array): mupdf.PDFDocument {
   const stream = new mupdf.Stream({
     fileSize: () => bytes.byteLength,
@@ -156,8 +156,8 @@ export function runSaveVariant(
 }
 
 /**
- * WASM 을 거치지 않고 대형 PDF 를 파일로 직접 쓴다(2 GiB 상한 실험용, 생성 자체가 힙을 쓰지 않게).
- * 페이지마다 압축 불가 잡음 이미지(512×512 RGB, FlateDecode 약 787 KB) + 텍스트 1줄.
+ * Writes a large PDF directly to a file without going through WASM (for the 2 GiB limit experiment; generation itself uses no heap).
+ * Per page, an incompressible noise image (512×512 RGB, FlateDecode about 787 KB) + 1 text line.
  */
 export function writeLargePdf(path: string, pages: number): number {
   const fd = openSync(path, 'w');

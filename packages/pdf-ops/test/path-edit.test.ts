@@ -1,5 +1,5 @@
 /**
- * M4 패스 편집(docs/m4-contract.md 3절·4.2·4.3·D2–D4): 인터프리터 선택 필드, 판정, 쓰기, 지문, Form 복제.
+ * M4 path editing (docs/m4-contract.md section 3, 4.2, 4.3, D2-D4): interpreter optional fields, classification, writing, fingerprint, Form duplication.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as mupdf from 'mupdf';
@@ -33,7 +33,7 @@ const NONE: PathEdit = {
 };
 const edit = (e: Partial<PathEdit>): PathEdit => ({ ...NONE, ...e });
 
-/** 쪽 /Contents 를 이은 텍스트. */
+/** Text of the page /Contents joined together. */
 function contentText(doc: mupdf.PDFDocument, pageIndex = 0): string {
   const c = doc.findPage(pageIndex).get('Contents');
   const items = c.isArray() ? Array.from({ length: c.length }, (_, i) => c.get(i)) : [c];
@@ -43,7 +43,7 @@ function contentText(doc: mupdf.PDFDocument, pageIndex = 0): string {
 const ctxOf = (doc: mupdf.PDFDocument, pageIndex = 0, segments = false) =>
   pageContext(doc, pageIndex, { segments });
 
-/** 판정 → 준비 → 쓰기 한 번. */
+/** Classification -> preparation -> one write. */
 function apply(
   ctx: ParagraphEditContext,
   paintSeqs: number[],
@@ -59,7 +59,7 @@ function apply(
 const near = (a: readonly number[], b: readonly number[], tol = 0.01) =>
   a.every((v, i) => Math.abs(v - b[i]!) <= tol);
 
-describe('인터프리터 선택 필드(계약 3절)', () => {
+describe('interpreter optional fields (contract section 3)', () => {
   it('pathOps·strokeColorOps·lineWidthOps·operandRanges', () => {
     const doc = makeDoc([
       '1 0 0 RG 2 w 10 10 m 100 10 l S 0 0 1 rg 50 50 40 30 re f 0 0 400 300 re W n',
@@ -73,7 +73,7 @@ describe('인터프리터 선택 필드(계약 3절)', () => {
     const f = byOp('f');
     expect(f.pathOps!.map((id) => map.ops[id]!.op)).toEqual(['re']);
     expect(f.state!.fillColorOps.map((id) => map.ops[id]!.op)).toEqual(['rg']);
-    // 칠하기가 경로를 비운다: W 는 그 뒤 re 만.
+    // Painting empties the path: W only has the re after it.
     const W = byOp('W');
     expect(W.pathOps!.map((id) => map.ops[id]!.op)).toEqual(['re']);
     const re = byOp('re');
@@ -84,12 +84,12 @@ describe('인터프리터 선택 필드(계약 3절)', () => {
       '40',
       '30',
     ]);
-    // 숫자·이름 피연산자만(CS·cs 이름 포함), 그 밖 종류는 기록하지 않는다.
+    // Only number and name operands (including CS/cs names); other kinds are not recorded.
     expect(byOp('w').operandRanges).toHaveLength(1);
     expect(byOp('S').operandRanges).toBeUndefined();
   });
 
-  it('CS + SCN 은 둘 다 strokeColorOps 에 남는다', () => {
+  it('CS + SCN both remain in strokeColorOps', () => {
     const doc = makeDoc(['/DeviceRGB CS 0 1 0 SCN 10 10 m 100 10 l S']);
     const map = buildSourceMap(doc, 0);
     const S = map.ops.find((o) => o.op === 'S')!;
@@ -97,19 +97,19 @@ describe('인터프리터 선택 필드(계약 3절)', () => {
   });
 });
 
-describe('패스 판정(4.2)', () => {
+describe('path classification (4.2)', () => {
   const reasonsOf = (content: string, build?: Parameters<typeof makeDoc>[1]) => {
     const doc = makeDoc([content], build);
     return planPathEditability(ctxOf(doc)).map((p) => p.reasons);
   };
 
-  it('단순 채움·선은 편집 가능, n·클립 전용은 목록에 없음', () => {
+  it('simple fill/stroke is editable, n and clip-only are not in the list', () => {
     expect(
       reasonsOf('0 0 1 rg 50 50 40 30 re f 1 0 0 RG 10 10 m 100 10 l S 0 0 400 300 re W n'),
     ).toEqual([[], []]);
   });
 
-  it('B 는 PathInfo 2개지만 한 항목', () => {
+  it('B is two PathInfo but one entry', () => {
     const doc = makeDoc(['0 0 1 rg 1 0 0 RG 50 50 40 30 re B']);
     const ctx = ctxOf(doc);
     expect(ctx.model.paths).toHaveLength(2);
@@ -118,7 +118,7 @@ describe('패스 판정(4.2)', () => {
     expect(list[0]!.editable).toBe(true);
   });
 
-  it('제한 사유', () => {
+  it('limit reasons', () => {
     expect(reasonsOf('10 10 m 2 w 100 10 l S')).toEqual([['path-interleaved-ops']]);
     expect(reasonsOf('60 60 30 30 re W f')).toEqual([['clip-path']]);
     expect(reasonsOf('BT 10 10 50 50 re f ET')).toEqual([['inside-text-object']]);
@@ -151,7 +151,7 @@ describe('패스 판정(4.2)', () => {
     ).toEqual([['soft-mask'], []]);
   });
 
-  it('구성 ~ 칠하기가 /Contents 스트림 경계에 걸침', () => {
+  it('construction ~ paint spans a /Contents stream boundary', () => {
     const doc = makeDoc(['0 g']);
     const page = doc.findPage(0);
     const arr = doc.newArray();
@@ -162,7 +162,7 @@ describe('패스 판정(4.2)', () => {
     expect(list.map((p) => p.reasons)).toEqual([['path-spans-streams'], []]);
   });
 
-  it('planPathEdit: 색·선 두께(페이지 공간 pt)·지문', () => {
+  it('planPathEdit: color, line width (page-space pt), fingerprint', () => {
     const doc = makeDoc(['q 2 0 0 2 0 0 cm 0 0 1 rg 1 0 0 RG 3 w 10 10 40 30 re B Q']);
     const ctx = ctxOf(doc);
     const [item] = planPathEditability(ctx);
@@ -177,7 +177,7 @@ describe('패스 판정(4.2)', () => {
     expect(plan.target.paintSeqs).toEqual([item!.paintSeq]);
   });
 
-  it('선택적 콘텐츠는 경고만', () => {
+  it('optional content gives only a warning', () => {
     const doc = makeDoc(['/OC /L1 BDC 10 10 50 50 re f EMC'], (d) => {
       const ocg = d.addObject({ Type: 'OCG', Name: 'L' });
       d.getTrailer()
@@ -193,8 +193,8 @@ describe('패스 판정(4.2)', () => {
   });
 });
 
-describe('패스 쓰기(4.3·D3·D4)', () => {
-  it('이동: re 피연산자만 다시 쓰고 나머지 바이트는 그대로', () => {
+describe('path writing (4.3, D3, D4)', () => {
+  it('move: rewrites only the re operands and leaves the other bytes as they are', () => {
     const doc = makeDoc(['0 0 1 rg 50 50 40 30 re f 1 0 0 RG 10 10 m 100 10 l S']);
     const before = contentText(doc);
     const ctx = ctxOf(doc);
@@ -209,11 +209,11 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(near(r.bbox, moved)).toBe(true);
   });
 
-  it('크기: 비균일 확대는 re 유지, 선 두께는 그대로', () => {
+  it('size: non-uniform scaling keeps re, line width unchanged', () => {
     const doc = makeDoc(['1 0 0 RG 4 w 50 50 40 30 re S']);
     const ctx = ctxOf(doc);
     const [p] = planPathEditability(ctx);
-    // 페이지 공간 (x0,y0) 기준 2배·1배.
+    // 2x and 1x relative to page-space (x0,y0).
     const [x0, y0] = [p!.bbox[0] + 2, p!.bbox[1] + 2];
     apply(ctx, [p!.paintSeq], edit({ transform: [2, 0, 0, 1, -x0, 0] }));
     void y0;
@@ -221,7 +221,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(contentText(doc)).toMatch(/4 w/);
   });
 
-  it('색(D3): DeviceRGB·Gray·CMYK, 같은 색은 쓰지 않음, Gray 에 채도면 RGB + 경고', () => {
+  it('color (D3): DeviceRGB, Gray, CMYK; the same color is not written; saturation on Gray gives RGB + warning', () => {
     const doc = makeDoc([
       '0 0 1 rg 10 10 20 20 re f 0.5 g 40 10 20 20 re f 0 0 0 1 k 70 10 20 20 re f 0.5 g 100 10 20 20 re f',
     ]);
@@ -236,19 +236,19 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(t).toContain('q 1 g 40 10 20 20 re f Q');
     expect(t).toContain('q 0 0 0 0 k 70 10 20 20 re f Q');
     expect(pathEditWarnings(ctx, prep)).toEqual([]);
-    // 같은 초안 다시 쓰기: 원본 기준이라 앞 쓰기가 남지 않는다.
+    // Rewriting the same draft: based on the original, so the earlier write does not remain.
     writePathEdit(ctx, prep, edit({ fill: [1, 0, 0] }));
     const t2 = contentText(doc);
     expect(t2).toContain('q 1 0 0 rg 10 10 20 20 re f Q');
     expect(t2).toContain('q 1 0 0 rg 40 10 20 20 re f Q');
     expect(t2).not.toContain('1 1 1 rg');
     expect(pathEditWarnings(ctx, prep).map((w) => w.kind)).toEqual(['color-space-changed']);
-    // 원래 색과 8비트로 같으면 쓰지 않는다.
+    // If equal to the original color at 8 bits, it is not written.
     writePathEdit(ctx, prep, edit({ fill: [0, 0, 1] }));
     expect(contentText(doc)).toMatch(/^0 0 1 rg 10 10 20 20 re f 0\.5 g q 0 0 1 rg 40/);
   });
 
-  it('선 두께: 페이지 pt → 콘텐츠 공간(√|det|), 채움 전용 패스에는 쓰지 않음', () => {
+  it('line width: page pt -> content space (sqrt|det|), not written for fill-only paths', () => {
     const doc = makeDoc(['q 2 0 0 2 0 0 cm 1 0 0 RG 1 w 10 10 m 50 10 l S 10 20 20 20 re f Q']);
     const ctx = ctxOf(doc);
     const seqs = planPathEditability(ctx).map((p) => p.paintSeq);
@@ -259,7 +259,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(t).not.toContain('q 2 w 10 20');
   });
 
-  it('삭제: 구성 ~ 칠하기를 공백으로(짝 없는 n 없음), 다른 패스는 그대로(세 엔진)', async () => {
+  it('delete: replaces construction ~ paint with blanks (no unpaired n), other paths unchanged (three engines)', async () => {
     const doc = makeDoc([
       '0 0 1 rg 50 50 40 30 re f 1 0 0 RG 10 10 m 100 10 l S 200 200 20 20 re f',
     ]);
@@ -271,14 +271,14 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(contentText(doc)).not.toMatch(/(^|\s)n(\s|$)/);
     const again = ctxOf(reopen(doc));
     expect(again.model.paths).toHaveLength(2);
-    // 뒤 패스의 paintSeq 는 하나 당겨지고 판정·편집을 이어서 할 수 있다.
+    // The paintSeq of later paths is pulled forward by one, and classification and editing can continue.
     const next = planPathEditability(again);
     expect(next.map((p) => p.paintSeq)).toEqual([list[0]!.paintSeq, list[1]!.paintSeq]);
     expect(next.every((p) => p.editable)).toBe(true);
     await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
   });
 
-  it('삭제: Form 안·q/Q 사이·연속 삭제도 공백만 남고 렌더가 같다(세 엔진)', async () => {
+  it('delete: inside a Form, between q/Q, and consecutive deletes also leave only blanks and the render is the same (three engines)', async () => {
     const doc = makeDoc(
       ['q 1 0 0 RG 3 w 20 20 m 120 20 l S Q 0 1 0 rg 150 150 40 40 re f q /X0 Do Q'],
       (d) => ({
@@ -296,7 +296,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     let ctx = ctxOf(doc);
     const first = planPathEditability(ctx)[0]!;
     const r1 = apply(ctx, [first.paintSeq], edit({ delete: true }));
-    // 같은 문서에서 이어서: Form 안 첫 패스 삭제(복제본).
+    // Continuing on the same document: delete the first path inside the Form (the duplicate).
     const doc2 = reopen(doc);
     ctx = ctxOf(doc2);
     const inForm = planPathEditability(ctx).find((p) => p.bbox[0] < 15 && p.bbox[1] < 100)!;
@@ -306,32 +306,32 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     );
     const clone = doc2.findPage(0).get('Resources').get('XObject').get('PEF0');
     expect(latin1String(readStreamBytes(clone))).toBe('0 0 1 rg   1 0 0 rg 60 200 30 30 re f');
-    // Form BBox 클립 PathInfo 를 빼면 칠한 패스 2개.
+    // Without the Form BBox clip PathInfo, there are 2 painted paths.
     expect(ctxOf(reopen(doc2)).model.paths.filter((p) => p.op !== 'clip')).toHaveLength(2);
     await expectNoChangeOutside(before, bytesOf(doc2), 0, [r1.bbox, r2.bbox]);
   });
 
-  it('다중 선택: 같은 이동을 모든 대상에', () => {
+  it('multiple selection: the same move for all targets', () => {
     const doc = makeDoc(['10 10 20 20 re f 50 10 20 20 re f 90 10 20 20 re f']);
     const ctx = ctxOf(doc);
     const list = planPathEditability(ctx);
     apply(ctx, [list[0]!.paintSeq, list[2]!.paintSeq], edit({ transform: [1, 0, 0, 1, 0, -5] }));
-    // 페이지 공간 위로 5 = 사용자 공간 y + 5.
+    // 5 up in page space = user space y + 5.
     expect(contentText(doc)).toBe('10 15 20 20 re f 50 10 20 20 re f 90 15 20 20 re f');
   });
 
-  it('점 편집: re 의 점 하나 → m l l l h, 모델 세그먼트와 대응', () => {
+  it('point edit: one point of re -> m l l l h, corresponding to the model segments', () => {
     const doc = makeDoc(['50 50 40 30 re f']);
     const ctx = ctxOf(doc, 0, true);
     const info = ctx.model.paths[0]!;
     expect(info.segments!.map((s) => s.type)).toEqual(['M', 'L', 'L', 'L', 'Z']);
     const [p] = planPathEditability(ctx);
-    // 점 2 = (x+w, y+h) 사용자 공간 (90, 80) → 페이지 (90, 300-80).
+    // Point 2 = (x+w, y+h), user space (90, 80) -> page (90, 300-80).
     apply(ctx, [p!.paintSeq], edit({ points: [{ index: 2, to: [100, 200] }] }));
     expect(contentText(doc)).toBe('50 50 m 90 50 l 100 100 l 50 80 l h f');
   });
 
-  it('점 편집: v 의 첫 점(현재점)을 옮기면 c, y 는 둘째 점이 셋째와 다르면 c', () => {
+  it('point edit: moving the first point (current point) of v gives c, and y gives c if the second point differs from the third', () => {
     const doc = makeDoc(['10 10 m 20 30 40 10 v 60 30 80 10 y S']);
     const ctx = ctxOf(doc, 0, true);
     const info = ctx.model.paths[0]!;
@@ -343,7 +343,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     ]);
     expect(segs).toEqual(mine.segments);
     const [p] = planPathEditability(ctx);
-    // 점 1 = v 의 첫 제어점(현재점 10,10), 점 5 = y 의 둘째 점(= 끝점 80,10).
+    // Point 1 = first control point of v (current point 10,10), point 5 = second point of y (= end point 80,10).
     apply(
       ctx,
       [p!.paintSeq],
@@ -357,7 +357,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(contentText(doc)).toBe('10 10 m 12 12 20 30 40 10 c 60 30 70 20 80 10 c S');
   });
 
-  it('점 편집은 대상 하나만', () => {
+  it('point edit allows only one target', () => {
     const doc = makeDoc(['10 10 20 20 re f 50 10 20 20 re f']);
     const ctx = ctxOf(doc);
     const seqs = planPathEditability(ctx).map((p) => p.paintSeq);
@@ -368,7 +368,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     );
   });
 
-  it('회전 변환은 거절(이동·확대축소만)', () => {
+  it('rotation transforms are rejected (only move and scale)', () => {
     const doc = makeDoc(['10 10 20 20 re f']);
     const ctx = ctxOf(doc);
     const [p] = planPathEditability(ctx);
@@ -377,18 +377,18 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(() => writePathEdit(ctx, prep, edit({ transform: [0, 1, -1, 0, 0, 0] }))).toThrow();
   });
 
-  it('지문 불일치면 준비 실패(다른 패스를 고치지 않음)', () => {
+  it('a fingerprint mismatch fails preparation (does not modify another path)', () => {
     const doc = makeDoc(['10 10 20 20 re f 50 10 20 20 re f']);
     const ctx = ctxOf(doc);
     const list = planPathEditability(ctx);
     const plan = planPathEdit(ctx, [list[0]!.paintSeq]);
-    // 앞 패스를 지운 문서에서 같은 paintSeq 는 다른 패스를 가리킨다.
+    // In a document with the earlier path deleted, the same paintSeq points to a different path.
     const doc2 = makeDoc(['50 10 20 20 re f']);
     const ctx2 = ctxOf(doc2);
     expect(() => preparePathEdit(ctx2, plan, 'x')).toThrow(/지문/);
   });
 
-  it('path-clipped: 직사각형 클립 밖으로 옮기면 경고', () => {
+  it('path-clipped: warning when moved outside the rectangular clip', () => {
     const doc = makeDoc(['q 0 0 100 100 re W n 10 10 20 20 re f Q']);
     const ctx = ctxOf(doc);
     const [p] = planPathEditability(ctx);
@@ -398,7 +398,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(pathEditWarnings(ctx, prep).map((w) => w.kind)).toEqual(['path-clipped']);
   });
 
-  it('Form 안: 이 사용 위치만 바꾸고 같은 Form 의 두 패스는 복제본 하나', async () => {
+  it('inside a Form: changes only this usage site, and two paths of the same Form share one duplicate', async () => {
     const doc = makeDoc(['q /X0 Do Q q 1 0 0 1 150 0 cm /X0 Do Q'], (d) => ({
       XObject: {
         X0: d.addStream('0 0 1 rg 10 10 20 20 re f 1 0 0 rg 40 10 20 20 re f', {
@@ -417,7 +417,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(plan.warnings.map((w) => w.kind)).toContain('shared-form');
     const prep = preparePathEdit(ctx, plan, 'f');
     const r = writePathEdit(ctx, prep, edit({ fill: [0, 1, 0] }));
-    // 쪽 + 쪽 콘텐츠 + 복제본 1개.
+    // Page + page content + 1 duplicate.
     const t = contentText(doc);
     expect(t).toMatch(/^q \/PEF0 Do Q q 1 0 0 1 150 0 cm \/X0 Do Q$/);
     const again = ctxOf(reopen(doc));
@@ -427,7 +427,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
   });
 
-  it('쪽 사용 수 캐시는 판정(ctx)마다 새로 센다: 문서가 바뀐 뒤 shared-form 이 반영된다(리뷰 L5)', () => {
+  it('the page usage count cache is recounted for each classification (ctx): shared-form is reflected after the document changes (review L5)', () => {
     const doc = makeDoc(['q /X0 Do Q', { content: '', resources: { XObject: {} } }], (d) => ({
       XObject: {
         X0: d.addStream('0 0 1 rg 10 10 20 20 re f', {
@@ -449,7 +449,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(kinds()).toContain('shared-form');
   });
 
-  it('같은 Form 안 패스를 다시 편집하면 이전 복제본 이름을 지운다(리뷰 L2)', () => {
+  it('re-editing a path in the same Form deletes the previous duplicate name (review L2)', () => {
     const doc = makeDoc(['q /X0 Do Q'], (d) => ({
       XObject: {
         X0: d.addStream('0 0 1 rg 10 10 20 20 re f', {
@@ -477,12 +477,12 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
       writePathEdit(ctx, prep, edit({ fill: [0, i === 1 ? 1 : 0.5, 0] }));
       cur = reopen(cur);
     }
-    // 원래 X0 는 쓰는 곳이 없어졌고, 복제본 이름은 하나만 남는다.
+    // The original X0 is no longer used anywhere, and only one duplicate name remains.
     expect(names(cur).filter((n) => n.startsWith('PEF'))).toHaveLength(1);
     expect(contentText(cur)).toMatch(/^q \/PEF\d+ Do Q$/);
   });
 
-  it('Resources 없는 Form(쪽 상속): 복제본이 쪽 Resources 사본을 갖고 글자 렌더가 그대로(세 엔진)', async () => {
+  it('Form without Resources (inherits from the page): the duplicate holds a copy of the page Resources and the text render is unchanged (three engines)', async () => {
     const doc = makeDoc(['q /X0 Do Q'], (d) => ({
       XObject: {
         X0: d.addStream('BT /F2 24 Tf 10 50 Td (Hello) Tj ET 0 0 1 rg 10 10 20 20 re f', {
@@ -499,12 +499,12 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     const xo = doc.findPage(0).get('Resources').get('XObject');
     const clone = xo.get('PEF0').resolve();
     expect(clone.get('Resources').get('Font').get('F2').isNull()).toBe(false);
-    // 복제본 Resources 는 쪽 사전과 다른 객체(쪽에 PEF0 을 등록해도 복제본에는 없다).
+    // The duplicate Resources is an object different from the page dictionary (registering PEF0 on the page does not add it to the duplicate).
     expect(clone.get('Resources').get('XObject').get('PEF0').isNull()).toBe(true);
     await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
   });
 
-  it('Resources 없는 Form(상위 Form 상속): 상위 복제본 Resources 사본을 쓴다(세 엔진)', async () => {
+  it('Form without Resources (inherits from the parent Form): uses a copy of the Resources of the parent duplicate (three engines)', async () => {
     const doc = makeDoc(['q /X0 Do Q'], (d, f) => {
       const inner = d.addStream('BT /FX 24 Tf 10 50 Td (Inner) Tj ET 0 0 1 rg 10 10 20 20 re f', {
         Type: 'XObject',
@@ -533,7 +533,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     await expectNoChangeOutside(before, bytesOf(doc), 0, [r.bbox]);
   });
 
-  it('공유 /Contents 스트림은 사본', () => {
+  it('a shared /Contents stream is copied', () => {
     const src = new mupdf.PDFDocument();
     const shared = src.addStream('10 10 20 20 re f', {});
     for (let i = 0; i < 2; i++) {
@@ -548,7 +548,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(contentText(doc, 1)).toBe('10 10 20 20 re f');
   });
 
-  it('태그(MCID) 안 패스 삭제는 경고하고, 태그 밖 패스·이동은 경고하지 않는다(리뷰 L8)', () => {
+  it('deleting a path inside a tag (MCID) warns, while paths outside tags and moves do not warn (review L8)', () => {
     const doc = makeDoc([
       '/Figure << /MCID 0 >> BDC 1 0 0 rg 10 10 20 20 re f EMC 0 0 1 rg 50 50 20 20 re f',
     ]);
@@ -565,7 +565,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(warn(0, { delete: true })).toEqual(['tagged-structure-unlinked']);
   });
 
-  it('표 괘선 삭제 경고(table-rule-removed)', () => {
+  it('table rule deletion warning (table-rule-removed)', () => {
     const doc = makeDoc([{ content: gridTable(), mediabox: [0, 0, 500, 300] }]);
     const ctx = ctxOf(doc, 0, true);
     expect(ctx.layout.tables.map((t) => t.strategy)).toEqual(['lines']);
@@ -576,8 +576,8 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
     expect(pathEditWarnings(ctx, prep).map((w) => w.kind)).toEqual(['table-rule-removed']);
   });
 
-  it('표 상자와 겹쳐도 LayoutTable.paths 에 없는 패스는 table-rule-removed 를 내지 않는다', () => {
-    // 표 오른쪽 위 모서리를 걸치는 짧은 사선(괘선·배경 사각형이 아님). 이전 규칙(표 상자와 1pt 안 겹침)이면 경고했다.
+  it('a path not in LayoutTable.paths does not raise table-rule-removed even if it overlaps the table box', () => {
+    // A short diagonal line crossing the upper-right corner of the table (neither a rule line nor a background rectangle). The previous rule (overlap within 1pt of the table box) would have warned.
     const content = `${gridTable()} 395 205 m 410 190 l S`;
     const doc = makeDoc([{ content, mediabox: [0, 0, 500, 300] }]);
     const ctx = ctxOf(doc, 0, true);
@@ -594,7 +594,7 @@ describe('패스 쓰기(4.3·D3·D4)', () => {
   });
 });
 
-describe('V2·V3 합성(세 엔진)', () => {
+describe('V2/V3 synthesis (three engines)', () => {
   const content = [
     '0.2 0.4 0.6 rg 1 0 0 RG 1.5 w',
     '10.123456789012 20.987654321098 m 120.5 40.25 l 60.333333333333 90.666666666667 30.1 70.2 15 50 c h B',
@@ -603,7 +603,7 @@ describe('V2·V3 합성(세 엔진)', () => {
     '0.5 g 150 150 m 220 150 l 220 220 l h f*',
   ].join(' ');
 
-  it('V2: 칠하기마다 q … Q 로 감싸도 렌더가 같다', async () => {
+  it('V2: the render is the same even when wrapping each paint in q ... Q', async () => {
     const doc = makeDoc([content]);
     const before = bytesOf(doc);
     const ctx = ctxOf(doc);
@@ -622,11 +622,11 @@ describe('V2·V3 합성(세 엔진)', () => {
     await expectNoChangeOutside(before, bytesOf(doc), 0, []);
   });
 
-  it('V3: 구성 연산 피연산자를 9자리로 다시 써도 렌더가 같다', async () => {
+  it('V3: the render is the same even when rewriting construction operation operands to 9 digits', async () => {
     const doc = makeDoc([content]);
     const before = bytesOf(doc);
     const ctx = ctxOf(doc);
-    // 같은 좌표는 바뀐 연산이 없어 쓰지 않으므로 1e-12pt 이동(다중 선택)으로 모든 구성 연산을 다시 쓴다.
+    // The same coordinates are not written because no operation changed, so all construction operations are rewritten with a 1e-12pt move (multiple selection).
     const seqs = planPathEditability(ctx).map((p) => p.paintSeq);
     const plan = planPathEdit(ctx, seqs);
     writePathEdit(

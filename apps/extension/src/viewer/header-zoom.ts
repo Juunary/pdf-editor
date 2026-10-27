@@ -1,27 +1,27 @@
 /**
- * 머리 영역(툴바·알림 줄·검색창·저장 메뉴) 확대 보정(사용자 요청 2026-10-22).
+ * Header area (toolbar, notice row, search box, save menu) zoom compensation (user request 2026-10-22).
  *
- * 브라우저 확대·축소(Ctrl +/−, Ctrl+휠, 메뉴)로 탭 배율 f 가 바뀌어도 머리 영역의 화면상 크기·배치를 100% 때와 같게
- * 둔다. 문서 영역은 지금처럼 확대·축소된다.
+ * Even when the tab zoom factor f changes through browser zoom in/out (Ctrl +/−, Ctrl+wheel, menu), the header's on-screen size and layout stay the same as at 100%.
+ * The document area zooms in/out as before.
  *
- * - f 는 `chrome.tabs.getZoom(tabId)` 와 `chrome.tabs.onZoomChange` 로 얻는다(권한 불필요). tabId 는 MIME handler 면
- *   `StreamInfo.tabId`, 확장 페이지 탭이면 `chrome.tabs.getCurrent()`.
- * - 머리 영역에 CSS `zoom: 1/f` 를 준다(`--pe-header-zoom`). 좁은 배치는 100% 환산 폭(innerWidth × f)으로 판정한다.
- * - 보조: devicePixelRatio 변화를 확대 변화로 보고 즉시 추정한 뒤 탭 배율 조회로 확인한다. onZoomChange 는 프레임이
- *   새 배율로 바뀌기 전에 올 수 있어(MIME handler 최상위 실측), 프레임의 dpr 이 바뀐 뒤(resize)에 적용한다. 배경 탭처럼
- *   프레임이 늦게 바뀌어도 그때 적용한다. 탭 배율을 못 구하면 dpr 변화만으로 추정한다(시작 시 100% 가정).
- * - 임베디드 문맥(embed·iframe·object)은 보정하지 않는다: 바깥 페이지 확대를 따른다(docs/m5-release.md 10.1).
+ * - f is obtained via `chrome.tabs.getZoom(tabId)` and `chrome.tabs.onZoomChange` (no permission needed). tabId is
+ *   `StreamInfo.tabId` for the MIME handler, and `chrome.tabs.getCurrent()` for an extension-page tab.
+ * - The header gets CSS `zoom: 1/f` (`--pe-header-zoom`). The narrow layout is decided by the width converted to 100% (innerWidth × f).
+ * - Auxiliary: a devicePixelRatio change is treated as a zoom change and estimated immediately, then confirmed by querying the tab zoom. onZoomChange can arrive before the frame
+ *   switches to the new zoom (measured for the top-level MIME handler), so it is applied after the frame's dpr has changed (resize). Even when the frame
+ *   changes late, as in a background tab, it is applied then. If the tab zoom cannot be obtained, estimate from dpr changes alone (assume 100% at start).
+ * - Embedded contexts (embed, iframe, object) are not compensated: they follow the outer page's zoom (docs/m5-release.md 10.1).
  */
 import type { ViewerContextKind } from './source.js';
 
-/** 좁은 배치 경계(100% 환산 CSS px). 이전 `@media (max-width: 600px)` 와 같은 값. */
+/** Narrow layout boundary (100%-converted CSS px). Same value as the former `@media (max-width: 600px)`. */
 export const NARROW_MAX_WIDTH = 600;
 const EPS = 1e-3;
 
 /**
- * 보정할 문맥인지. 탭의 최상위 뷰어만 보정한다: MIME handler 최상위(PDF URL 페이지의 하위 프레임이지만 탭 전체를
- * 차지한다), 탭 최상위에 연 확장 페이지(`?file=`·파일 선택). DNR 폴백으로 웹 페이지 안 프레임에 뜬 확장 페이지는
- * 임베디드로 본다.
+ * Whether this is a context to compensate. Only the top-level viewer of a tab is compensated: the top-level MIME handler (a child frame of the PDF URL page, but it
+ * occupies the whole tab) and an extension page opened at the tab top level (`?file=`, file selection). An extension page shown in a frame inside a web page via the DNR fallback
+ * is treated as embedded.
  */
 export function compensatesZoom(kind: ViewerContextKind, isTopFrame: boolean): boolean {
   if (kind === 'mime-handler-top') return true;
@@ -29,7 +29,7 @@ export function compensatesZoom(kind: ViewerContextKind, isTopFrame: boolean): b
   return isTopFrame;
 }
 
-/** 100% 환산 폭이 경계 이하이면 좁은 배치. */
+/** Narrow layout if the 100%-converted width is at or below the boundary. */
 export function isNarrow(cssWidth: number, factor: number): boolean {
   return cssWidth * factor <= NARROW_MAX_WIDTH;
 }
@@ -39,25 +39,25 @@ const validFactor = (f: unknown): f is number => typeof f === 'number' && f > 0 
 export type HeaderZoomMode = 'off' | 'tabs' | 'dpr';
 
 export interface HeaderZoomState {
-  /** 머리 영역 보정에 쓰는 탭 확대 배율(보정하지 않으면 1). 머리 영역 CSS zoom 은 1/factor. */
+  /** Tab zoom factor used for header compensation (1 if not compensating). The header CSS zoom is 1/factor. */
   factor: number;
-  /** off: 보정 안 함(시작 전·임베디드), tabs: 탭 배율, dpr: dpr 변화로 추정(탭 배율을 못 구함). */
+  /** off: no compensation (before start, embedded); tabs: tab zoom; dpr: estimated from dpr changes (tab zoom unavailable). */
   mode: HeaderZoomMode;
   narrow: boolean;
 }
 
-/** 탭 확대 배율 API(`chrome.tabs`) 중 이 모듈이 쓰는 부분. */
+/** The part of the tab zoom API (`chrome.tabs`) used by this module. */
 export interface TabZoomApi {
   getZoom(): Promise<number>;
-  /** 이 탭의 배율 변화를 구독한다. 반환 함수로 해제한다. */
+  /** Subscribes to zoom changes of this tab. Unsubscribe with the returned function. */
   subscribe(listener: (factor: number) => void): () => void;
 }
 
 export interface HeaderZoomEnv {
-  /** 창 CSS 폭(`innerWidth`). */
+  /** Window CSS width (`innerWidth`). */
   cssWidth(): number;
   devicePixelRatio(): number;
-  /** 상태를 DOM 에 반영한다(CSS 변수·`data-narrow`). */
+  /** Reflects the state in the DOM (CSS variable, `data-narrow`). */
   apply(state: HeaderZoomState): void;
   log(event: string, data: unknown): void;
 }
@@ -65,11 +65,11 @@ export interface HeaderZoomEnv {
 export class HeaderZoom {
   private mode: HeaderZoomMode = 'off';
   private factor = 1;
-  /** 마지막으로 적용할 때의 dpr. 이후 dpr 이 바뀌면 프레임이 새 배율로 바뀐 것이다. */
+  /** dpr at the last apply. If dpr changes afterwards, the frame has switched to the new zoom. */
   private appliedDpr: number;
-  /** 프레임보다 먼저 온 onZoomChange 배율(프레임 dpr 이 바뀔 때 적용). */
+  /** onZoomChange zoom that arrived before the frame (applied when the frame's dpr changes). */
   private pending: number | null = null;
-  /** 탭 배율 조회 순번(늦게 온 응답 버리기). */
+  /** Tab zoom query sequence number (to discard late responses). */
   private seq = 0;
   private api: TabZoomApi | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -89,7 +89,7 @@ export class HeaderZoom {
   }
 
   /**
-   * 문맥을 안 뒤 부른다. 보정 문맥이면 탭 배율을 읽어 적용하고 변화를 구독한다. 탭 배율을 못 구하면 dpr 추정으로 둔다.
+   * Called once the context is known. In a compensated context, reads and applies the tab zoom and subscribes to changes. If the tab zoom cannot be obtained, falls back to the dpr estimate.
    */
   async attach(api: TabZoomApi | null, compensate: boolean): Promise<void> {
     this.detach();
@@ -120,7 +120,7 @@ export class HeaderZoom {
         this.env.log('header-zoom-error', String(e));
       }
     }
-    // 보조 경로: 시작 시 배율을 100% 로 보고 이후 dpr 변화를 확대 변화로 본다.
+    // Auxiliary path: assume 100% zoom at start and treat later dpr changes as zoom changes.
     this.mode = 'dpr';
     this.factor = 1;
     this.appliedDpr = this.env.devicePixelRatio();
@@ -128,17 +128,17 @@ export class HeaderZoom {
     this.apply();
   }
 
-  /** 창 크기·dpr 변화(resize, `matchMedia(resolution)`)에서 동기로 부른다. */
+  /** Called synchronously on window size / dpr changes (resize, `matchMedia(resolution)`). */
   onViewportChange(): void {
     const dpr = this.env.devicePixelRatio();
     if (Math.abs(dpr - this.appliedDpr) > EPS) {
       if (this.pending !== null) {
-        // 먼저 온 onZoomChange 값을 프레임이 바뀐 지금 적용한다.
+        // Apply the onZoomChange value that arrived earlier, now that the frame has changed.
         this.factor = this.pending;
         this.pending = null;
       } else if (this.mode !== 'off') {
-        // dpr 변화는 확대 변화로 보고 같은 비율로 바로 추정한다(그 프레임에 바로 맞춘다). 다른 배율 모니터로 창을
-        // 옮긴 경우 등은 탭 배율 조회가 바로잡는다.
+        // Treat a dpr change as a zoom change and estimate right away at the same ratio (fits that frame immediately). Cases such as moving the window
+        // to a monitor with a different scale are corrected by the tab zoom query.
         this.factor *= dpr / this.appliedDpr;
         if (this.mode === 'tabs') void this.confirm();
       }
@@ -147,21 +147,21 @@ export class HeaderZoom {
     this.apply();
   }
 
-  /** onZoomChange(이 탭). */
+  /** onZoomChange (this tab). */
   onZoomEvent(f: number): void {
     if (this.mode !== 'tabs' || !validFactor(f)) return;
-    this.seq++; // 진행 중인 조회 응답보다 이 값이 새롭다
+    this.seq++; // this value is newer than any in-flight query response
     this.pending = null;
     if (Math.abs(f - this.factor) < EPS) return;
     const dpr = this.env.devicePixelRatio();
     if (Math.abs(dpr - this.appliedDpr) > EPS) {
-      // 프레임은 이미 새 배율이다(resize 처리 전).
+      // The frame already has the new zoom (before resize handling).
       this.factor = f;
       this.appliedDpr = dpr;
       this.apply();
       return;
     }
-    // 프레임이 아직 새 배율로 바뀌지 않았다(이벤트가 먼저 왔거나 배경 탭): dpr 이 바뀔 때 적용한다.
+    // The frame has not yet switched to the new zoom (the event came first, or a background tab): apply when dpr changes.
     this.pending = f;
   }
 
@@ -200,7 +200,7 @@ export class HeaderZoom {
   }
 }
 
-/** dpr 변화(확대, 다른 배율 모니터로 이동)를 알린다. resize 없이 dpr 만 바뀌는 경우를 위해 둔다. */
+/** Reports a dpr change (zoom, or moving to a monitor with a different scale). Exists for cases where only dpr changes without a resize. */
 export function watchDevicePixelRatio(win: Window, onChange: () => void): () => void {
   let mq: MediaQueryList | null = null;
   const fire = () => {
@@ -215,7 +215,7 @@ export function watchDevicePixelRatio(win: Window, onChange: () => void): () => 
   return () => mq?.removeEventListener('change', fire);
 }
 
-/** `chrome.tabs` 로 만든 탭 배율 API. tabs API 가 없으면 null. */
+/** Tab zoom API built from `chrome.tabs`. null if the tabs API is missing. */
 export function chromeTabZoom(tabId: number): TabZoomApi | null {
   const tabs = typeof chrome === 'object' ? chrome.tabs : undefined;
   if (typeof tabs?.getZoom !== 'function' || !tabs.onZoomChange) return null;
@@ -231,7 +231,7 @@ export function chromeTabZoom(tabId: number): TabZoomApi | null {
   };
 }
 
-/** 뷰어가 있는 탭 id: MIME handler 는 StreamInfo.tabId, 확장 페이지 탭은 getCurrent(). 모르면 null. */
+/** Tab id where the viewer lives: StreamInfo.tabId for the MIME handler, getCurrent() for an extension-page tab. null if unknown. */
 export async function viewerTabId(
   streamInfo: { tabId: number } | null,
   getCurrent: (() => Promise<{ id?: number } | undefined>) | null,

@@ -1,6 +1,6 @@
 /**
- * M4 패스 편집 엔진 시험(docs/m4-contract.md 4.4, docs/m4-core.md). 가짜 어댑터(한 줄 = 패스 하나)로 core 의 저널·로그·
- * revision·재적용·경고·저장 로직을 검증한다. pdf-ops 패스 쓰기의 정확성은 검증하지 않는다.
+ * M4 path edit engine tests (docs/m4-contract.md 4.4, docs/m4-core.md). Verifies the journal, log,
+ * revision, reapply, warning and save logic of core with a fake adapter (one line = one path). The correctness of pdf-ops path writing is not verified.
  */
 import { describe, expect, it } from 'vitest';
 import type { EditPathOp, EditOp, PathEdit } from '@pdf-editor/shared-types';
@@ -49,7 +49,7 @@ function open(adapter: FakeAdapter = createFakeAdapter()): { s: PdfSession; adap
 const seqs = (s: PdfSession): number[] =>
   s.extractPage({ pageIndex: 0 }).paths.map((p) => p.paintSeq);
 
-/** 쪽 콘텐츠 스트림 바이트(문서 현재 상태). */
+/** Page content stream bytes (current document state). */
 function pageContent(s: PdfSession): string {
   const page = s.document.loadPage(0);
   try {
@@ -73,8 +73,8 @@ async function pathEdit(s: PdfSession, paintSeqs: number[], edit: PathEdit) {
   return { plan, started, update, committed };
 }
 
-describe('판정', () => {
-  it('getPageEditability 가 어댑터의 패스 판정을 paths 에 싣는다', async () => {
+describe('classification', () => {
+  it('getPageEditability puts the path classification of the adapter into paths', async () => {
     const { s } = open();
     const e = await s.getPageEditability(0);
     expect(e.paths.map((p) => p.paintSeq)).toEqual(seqs(s));
@@ -82,7 +82,7 @@ describe('판정', () => {
     s.close();
   });
 
-  it('패스 판정 오류는 패스만 비우고 문단 판정은 돌려준다(pathError 진단, 리뷰 M4)', async () => {
+  it('a path classification error empties only the paths and still returns the paragraph classification (pathError diagnostic, review M4)', async () => {
     const normal = open();
     const expected = (await normal.s.getPageEditability(0)).paragraphs;
     normal.s.close();
@@ -96,19 +96,19 @@ describe('판정', () => {
     expect(e.paths).toEqual([]);
     expect(e.pathError).toBe('판정 버그');
     expect(e.paragraphs).toEqual(expected);
-    // 문단 편집은 그대로 쓸 수 있다.
+    // Paragraph editing remains usable.
     const plan = await s.planParagraphEdit(0, expected[0]!.paragraphId);
     expect(plan.revision).toBe(0);
     s.close();
   });
 
-  it('정상 판정에는 pathError 가 없다', async () => {
+  it('a normal classification has no pathError', async () => {
     const { s } = open();
     expect((await s.getPageEditability(0)).pathError).toBeUndefined();
     s.close();
   });
 
-  it('planPathEdit 은 revision 과 대상 지문을 돌려주고 문서·저널을 바꾸지 않는다', async () => {
+  it('planPathEdit returns the revision and the target fingerprint and does not change the document or journal', async () => {
     const { s } = open();
     const before = pageContent(s);
     const plan = await s.planPathEdit(0, [seqs(s)[0]!]);
@@ -121,8 +121,8 @@ describe('판정', () => {
   });
 });
 
-describe('초안·커밋·undo/redo', () => {
-  it('시작 → 갱신 → 커밋: 스트림이 바뀌고 로그에 edit-path 가 남는다', async () => {
+describe('draft, commit, undo/redo', () => {
+  it('begin → update → commit: the stream changes and edit-path is left in the log', async () => {
     const { s } = open();
     const before = pageContent(s);
     const [first] = seqs(s);
@@ -146,7 +146,7 @@ describe('초안·커밋·undo/redo', () => {
     s.close();
   });
 
-  it('변경 영역 = 직전 쓴 상자 ∪ 새 상자(+2pt), 첫 갱신의 직전 상자는 대상 상자', async () => {
+  it('changed area = previously written box ∪ new box (+2pt), and the previous box of the first update is the target box', async () => {
     const { s } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -159,11 +159,11 @@ describe('초안·커밋·undo/redo', () => {
       expect.any(Number),
       expect.any(Number),
     ]);
-    // 옮긴 뒤 상자는 x 가 100 만큼 이동
+    // The box after moving is shifted by 100 in x
     expect(u1.bbox[0]).toBeCloseTo(tx0 + 100, 3);
     expect(u1.bbox[1]).toBeCloseTo(ty0, 3);
     const u2 = await s.updatePathDraft(started.draftId, move(0, 50), 1);
-    // 두 번째 갱신 영역은 첫 갱신 상자(+100)와 새 상자(0,+50)를 모두 덮는다.
+    // The second update area covers both the first update box (+100) and the new box (0,+50).
     const clip = u2.region.clip!;
     expect(clip[0]).toBeLessThanOrEqual(u1.bbox[0] + 1e-6);
     expect(clip[2]).toBeGreaterThanOrEqual(u1.bbox[2] - 1e-6);
@@ -174,7 +174,7 @@ describe('초안·커밋·undo/redo', () => {
     s.close();
   });
 
-  it('갱신은 원본 기준 절대 편집이다(여러 번 갱신해도 커밋은 마지막 편집)', async () => {
+  it('an update is an absolute edit relative to the original (even after several updates, the commit is the last edit)', async () => {
     const { s } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -188,7 +188,7 @@ describe('초안·커밋·undo/redo', () => {
     s.close();
   });
 
-  it('다중 선택은 한 편집 단위(저널 단계 1개)', async () => {
+  it('a multi-selection is one edit unit (1 journal step)', async () => {
     const { s } = open();
     const { committed } = await pathEdit(s, seqs(s), { ...NO_EDIT, fill: [0, 0, 1] });
     expect((committed.op as EditPathOp).target.paintSeqs).toHaveLength(2);
@@ -197,14 +197,14 @@ describe('초안·커밋·undo/redo', () => {
     s.close();
   });
 
-  it('삭제는 패스 줄을 n 으로 바꾼다', async () => {
+  it('delete replaces the path line with n', async () => {
     const { s } = open();
     await pathEdit(s, [seqs(s)[0]!], { ...NO_EDIT, delete: true });
     expect(pageContent(s)).toContain('\nn\n');
     s.close();
   });
 
-  it('변경 없이 커밋하면 거절한다', async () => {
+  it('rejects a commit without changes', async () => {
     const { s } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -214,7 +214,7 @@ describe('초안·커밋·undo/redo', () => {
     s.close();
   });
 
-  it('낡은 revision 은 거절한다', async () => {
+  it('rejects a stale revision', async () => {
     const { s } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -226,8 +226,8 @@ describe('초안·커밋·undo/redo', () => {
   });
 });
 
-describe('초안 상태 규칙', () => {
-  it('패스 초안과 문단 초안은 동시에 열 수 없고 RPC 짝이 맞아야 한다', async () => {
+describe('draft state rules', () => {
+  it('a path draft and a paragraph draft cannot be open at the same time, and the RPC pair must match', async () => {
     const { s } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -251,14 +251,14 @@ describe('초안 상태 규칙', () => {
     s.close();
   });
 
-  it('취소는 문서를 원상태로 되돌리고, 변경 없이 취소하면 redo 를 되살린다', async () => {
+  it('cancel restores the document, and cancelling without changes revives redo', async () => {
     const { s } = open();
     const [first] = seqs(s);
     await pathEdit(s, [first!], { ...NO_EDIT, fill: [0, 1, 0] });
     await s.undo();
     const reference = pageContent(s);
 
-    // 변경 없이 취소: MuPDF 에 redo 가 남으므로 core 의 redo 도 남는다.
+    // Cancel without changes: MuPDF keeps redo, so core keeps redo too.
     let plan = await s.planPathEdit(0, [first!]);
     let started = await s.beginPathEdit(0, [first!], plan.revision);
     expect((await s.getEditHistory()).canRedo).toBe(false);
@@ -266,7 +266,7 @@ describe('초안 상태 규칙', () => {
     expect(cancelled.canRedo).toBe(true);
     expect(cancelled.canRedo).toBe(s.document.canRedo());
 
-    // 쓴 뒤 취소: 문서는 원상태, redo 는 MuPDF 가 버렸으므로 core 도 비운다.
+    // Cancel after writing: the document is restored, and since MuPDF discarded redo, core clears it too.
     plan = await s.planPathEdit(0, [first!]);
     started = await s.beginPathEdit(0, [first!], plan.revision);
     await s.updatePathDraft(started.draftId, move(30, 0), 1);
@@ -277,7 +277,7 @@ describe('초안 상태 규칙', () => {
     s.close();
   });
 
-  it('준비 실패는 초안을 남기지 않는다', async () => {
+  it('a preparation failure leaves no draft', async () => {
     const { s, adapter } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -288,7 +288,7 @@ describe('초안 상태 규칙', () => {
     s.close();
   });
 
-  it('쓰기가 중간에 실패해도 직전 편집으로 되돌리고 초안은 유지된다', async () => {
+  it('even if writing fails midway, it rolls back to the previous edit and the draft is kept', async () => {
     const { s, adapter } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -303,7 +303,7 @@ describe('초안 상태 규칙', () => {
     s.close();
   });
 
-  it('되돌리기도 실패하면 초안은 취소만 된다', async () => {
+  it('if the rollback also fails, the draft can only be cancelled', async () => {
     const { s, adapter } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -325,8 +325,8 @@ describe('초안 상태 규칙', () => {
   });
 });
 
-describe('경고', () => {
-  it('Gray 패스에 채도 있는 색을 쓰면 color-space-changed(core 근사)', async () => {
+describe('warnings', () => {
+  it('using a saturated color on a Gray path gives color-space-changed (core approximation)', async () => {
     const { s } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -339,7 +339,7 @@ describe('경고', () => {
     s.close();
   });
 
-  it('쓰기 경고가 오면(빈 배열 포함) core 근사를 쓰지 않는다', async () => {
+  it('when write warnings arrive (including an empty array), the core approximation is not used', async () => {
     const { s, adapter } = open();
     adapter.probe.pathWriteWarnings = [];
     const [first] = seqs(s);
@@ -358,7 +358,7 @@ describe('경고', () => {
     s.close();
   });
 
-  it('pdf-ops 쓰기 결과의 warnings 를 초안 경고에 합친다', async () => {
+  it('merges the warnings of the pdf-ops write result into the draft warnings', async () => {
     const { s, adapter } = open();
     adapter.probe.pathWriteWarnings = [{ kind: 'path-clipped', message: '클립 밖', rects: [] }];
     const [first] = seqs(s);
@@ -372,14 +372,14 @@ describe('경고', () => {
   });
 });
 
-describe('재적용', () => {
+describe('reapply', () => {
   async function session(): Promise<{ s: PdfSession; ops: EditOp[] }> {
     const { s } = open();
     const [a, b] = seqs(s);
     const ops: EditOp[] = [];
     ops.push((await pathEdit(s, [a!], { ...NO_EDIT, fill: [0, 1, 0] })).committed.op);
     ops.push((await editParagraph(s, 1, 'replayed paragraph text')).op);
-    // 문단 편집 뒤 paintSeq 가 밀릴 수 있으나 모델 기준으로 다시 정한다.
+    // paintSeq may shift after a paragraph edit, but it is re-determined from the model.
     const seq = seqs(s);
     ops.push(
       (await pathEdit(s, [seq[seq.length === 2 ? 1 : seq.length - 1]!], move(15, 5))).committed.op,
@@ -388,7 +388,7 @@ describe('재적용', () => {
     return { s, ops };
   }
 
-  it('로그 순서대로 다시 적용하면 같은 콘텐츠가 되고 undo 할 수 없다', async () => {
+  it('reapplying in log order gives the same content and cannot be undone', async () => {
     const { s, ops } = await session();
     const expected = pageContent(s);
     const { s: fresh } = open();
@@ -404,7 +404,7 @@ describe('재적용', () => {
     again.close();
   });
 
-  it('지문이 다르면 다른 패스를 고치지 않고 실패한다', async () => {
+  it('when the fingerprint differs, it fails without editing a different path', async () => {
     const { s, ops } = await session();
     const tampered = ops.map((op) =>
       op.kind === 'edit-path'
@@ -422,7 +422,7 @@ describe('재적용', () => {
     await expect(fresh.replayEdits(tampered)).rejects.toThrow(
       /재적용 실패\(1\/3번째.*지문|구성 연산 해시/,
     );
-    // 일부만 적용된 문서는 이후 편집 RPC 를 막는다.
+    // A partially applied document blocks later edit RPCs.
     await expect(fresh.getEditHistory()).rejects.toThrow('다시 열어야');
     expect(pageContent(fresh)).toBe(before);
     s.close();
@@ -430,8 +430,8 @@ describe('재적용', () => {
   });
 });
 
-describe('저장·요약', () => {
-  it('패스 편집만 있어도 요약에 쪽이 들고 변경 종류는 content-stream 이다', async () => {
+describe('save and summary', () => {
+  it('even with path edits only, the page is in the summary and the change kind is content-stream', async () => {
     const { s } = open();
     await pathEdit(s, [seqs(s)[0]!], { ...NO_EDIT, fill: [0, 1, 0] });
     const plan = s.planSave({ changes: [] });
@@ -440,14 +440,14 @@ describe('저장·요약', () => {
     expect(plan.method).toBe('full');
     const saved = s.save({ changes: [] });
     expect(saved.bytes.length).toBeGreaterThan(0);
-    // 감싼 저장은 저널 단계를 만들지 않는다.
+    // A wrapped save creates no journal step.
     expect(journal(s).steps).toHaveLength(1);
     const info = s.document.getTrailer().get('Info').resolve();
     expect(info.get('PdfEditorEdits').asString()).toContain('pages=1');
     s.close();
   });
 
-  it('패스 편집의 tagged-structure-unlinked 경고는 구조 끊김 수에 항목마다 센다', async () => {
+  it('the tagged-structure-unlinked warning of a path edit counts each item in the structure break count', async () => {
     const { s, adapter } = open();
     adapter.probe.pathWriteWarnings = [
       { kind: 'tagged-structure-unlinked', message: '구조 끊김', rects: [] },
@@ -461,8 +461,8 @@ describe('저장·요약', () => {
   });
 });
 
-describe('초안 입력 검증', () => {
-  it('renderScale 이 0 이하면 RangeError', async () => {
+describe('draft input validation', () => {
+  it('RangeError when renderScale is 0 or less', async () => {
     const { s } = open();
     const [first] = seqs(s);
     const plan = await s.planPathEdit(0, [first!]);
@@ -476,8 +476,8 @@ describe('초안 입력 검증', () => {
   });
 });
 
-describe('R-L3 해제 연결', () => {
-  it('초안이 끝날 때(커밋·취소)와 재적용 뒤 pdf-ops 초안 상태를 버리고, 닫을 때 FontManager 를 해제한다', async () => {
+describe('R-L3 release wiring', () => {
+  it('discards the pdf-ops draft state when a draft ends (commit, cancel) and after reapply, and releases the FontManager on close', async () => {
     const { s, adapter } = open();
     const [first, second] = seqs(s);
     const ops: EditOp[] = [(await pathEdit(s, [first!], move(1, 0))).committed.op];
