@@ -34,6 +34,7 @@ import {
   makeSourceMap,
   makeTextOp,
 } from '../../../packages/viewer-ui/test/fixtures.js';
+import { E2E_LOCALE } from './locale.js';
 
 // ── 공통 ──────────────────────────────────────────────────────────────
 
@@ -287,6 +288,32 @@ async function boxOf(locator: Locator) {
   const box = await locator.boundingBox();
   if (!box) throw new Error('boundingBox 없음');
   return box;
+}
+
+interface DebugControllerLike {
+  toggleDebug(): void;
+  getState(): { debugEnabled: boolean; disabled: Record<string, string | null> };
+}
+
+/**
+ * 원본 연결 디버그 오버레이 켜기·끄기. 툴바 버튼은 없앴다(사용자 요청 2026-10-22): 하니스는 `window.__controller`,
+ * 확장 뷰어는 `?e2e` 이음매(`window.__pe.controller`)로 컨트롤러를 직접 부른다.
+ */
+async function toggleDebug(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __controller?: DebugControllerLike;
+      __pe?: { controller: DebugControllerLike | null };
+    };
+    (w.__controller ?? w.__pe?.controller)!.toggleDebug();
+  });
+}
+
+async function debugState(page: Page): Promise<{ enabled: boolean; disabled: string | null }> {
+  return page.evaluate(() => {
+    const s = (window as unknown as { __controller: DebugControllerLike }).__controller.getState();
+    return { enabled: s.debugEnabled, disabled: s.disabled.debug ?? null };
+  });
 }
 
 function expectBox(
@@ -644,7 +671,9 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
       }),
     );
     await expect(page.locator('#pe-debug-canvas')).toHaveCount(0);
-    await page.locator('#pe-debug-toggle').click();
+    // 툴바에는 디버그 버튼이 없다(사용자 요청 2026-10-22).
+    await expect(page.locator('#pe-debug-toggle')).toHaveCount(0);
+    await toggleDebug(page);
     const canvas = page.locator('#pe-debug-canvas');
     await expect(canvas).toHaveAttribute('data-matched', String(11 + 8));
     await expect(canvas).toHaveAttribute('data-limited', String(13));
@@ -694,7 +723,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await drag(page, charAt(g, 0, 0, 0.2), charAt(g, 0, 4, 0.8));
     expect(await copied(page)).toBe('Hello');
     // 끄면 오버레이가 사라진다
-    await page.locator('#pe-debug-toggle').click();
+    await toggleDebug(page);
     await expect(canvas).toHaveCount(0);
   });
 
@@ -756,7 +785,9 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     await expect(page.locator('#page-canvas')).toBeVisible();
     await expect(page.locator('#pe-text-layer')).toHaveCount(0);
     await expect(page.locator('#pe-notice')).toContainText('텍스트 선택');
-    await expect(page.locator('#pe-debug-toggle')).toBeDisabled();
+    // 디버그는 PageModel 이 없으면 켜지지 않는다.
+    await toggleDebug(page);
+    expect((await debugState(page)).enabled).toBe(false);
     const events = () => page.evaluate(() => ((window as Win).__log ?? []).map((l) => l.event));
     expect((await events()).filter((e) => e === 'extract-unavailable')).toHaveLength(1);
 
@@ -792,9 +823,10 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
   test('linkPage 만 미구현이면 디버그만 비활성화되고 텍스트 선택은 유지된다', async ({ page }) => {
     await openHarness(page, baseConfig({ failures: { link: 'M1 미구현: pdf-ops linkPage' } }));
     await expect(page.locator('#pe-text-layer')).toHaveCount(1);
-    await page.locator('#pe-debug-toggle').click();
+    await toggleDebug(page);
     await expect(page.locator('#pe-notice')).toContainText('연결 디버그');
-    await expect(page.locator('#pe-debug-toggle')).toBeDisabled();
+    await expect.poll(async () => (await debugState(page)).disabled).not.toBeNull();
+    expect((await debugState(page)).enabled).toBe(false);
     await expect(page.locator('#pe-debug-canvas')).toHaveCount(0);
     await page.keyboard.press('Control+A');
     expect(await copied(page)).toBe(FULL_TEXT);
@@ -806,7 +838,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     const layouts = [reconstructPage(PAGE_0), reconstructPage(PAGE_1)];
     await openHarness(page, baseConfig({ layouts }));
     await expect(page.locator('#pe-layout-canvas')).toHaveCount(0);
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     const canvas = page.locator('#pe-layout-canvas');
     await expect(canvas).toHaveAttribute('data-paragraphs', String(layouts[0]!.paragraphs.length));
     await expect(canvas).toHaveAttribute('data-order', String(layouts[0]!.readingOrder.length));
@@ -828,7 +860,7 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     expect(await copied(page)).toBe(FULL_TEXT);
     await page.locator('#pe-next').click();
     await expect(canvas).toHaveAttribute('data-paragraphs', String(layouts[1]!.paragraphs.length));
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     await expect(canvas).toHaveCount(0);
   });
 
@@ -836,9 +868,9 @@ test.describe('viewer-ui 하니스(합성 PageModel, 가짜 호스트)', () => {
     page,
   }) => {
     await openHarness(page, baseConfig({ failures: { layout: 'M2 미구현: core getPageLayout' } }));
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     await expect(page.locator('#pe-notice')).toContainText('레이아웃');
-    await expect(page.locator('#pe-layout-toggle')).toBeDisabled();
+    await expect(page.locator('#pe-overlay-toggle')).toBeDisabled();
     await expect(page.locator('#pe-layout-canvas')).toHaveCount(0);
     await page.keyboard.press('Control+A');
     expect(await copied(page)).toBe(FULL_TEXT);
@@ -881,6 +913,7 @@ async function withExtension<T>(fn: (env: ExtensionEnv) => Promise<T>): Promise<
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
   try {
@@ -1146,20 +1179,27 @@ test(`[통합] 레이아웃 오버레이: Worker getPageLayout 결과로 문단 
   await withExtension(async (env) => {
     const page = await openViewer(env, 'm0-sample.pdf');
     expect(await extractOutcome(page)).toBe('text-layer');
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     const canvas = page.locator('#pe-layout-canvas');
     await expect(canvas).toHaveAttribute('data-paragraphs', /^[1-9]\d*$/, { timeout: 20_000 });
     expect(Number(await canvas.getAttribute('data-order'))).toBeGreaterThan(0);
-    await page.locator('#pe-layout-toggle').click();
+    await page.locator('#pe-overlay-toggle').click();
     await expect(canvas).toHaveCount(0);
   });
 });
 
 test(`[통합] 디버그 오버레이: 글자 quad 색 구분과 마우스 위치 글자의 SourceOp 표시`, async () => {
   await withExtension(async (env) => {
-    const page = await openViewer(env, 'm0-sample.pdf');
+    // 디버그 오버레이는 툴바 버튼이 없어 `?e2e` 이음매로 켠다(사용자 요청 2026-10-22).
+    const page = await env.context.newPage();
+    await page.goto(`chrome-extension://${env.extensionId}/viewer.html?e2e`);
+    await page.locator('#open-file').setInputFiles(join(DIST, 'diag/m0-sample.pdf'));
+    await expect(page.locator('#status')).toHaveAttribute('data-state', 'rendered', {
+      timeout: 20_000,
+    });
     expect(await extractOutcome(page)).toBe('text-layer');
-    await page.locator('#pe-debug-toggle').click();
+    await expect(page.locator('#pe-debug-toggle')).toHaveCount(0);
+    await toggleDebug(page);
     const canvas = page.locator('#pe-debug-canvas');
     await expect(canvas).toHaveCount(1);
     const counts = await canvas.evaluate((c) => ({

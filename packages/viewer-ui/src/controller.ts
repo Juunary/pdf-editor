@@ -20,6 +20,7 @@ import { classifyFailure } from './failure.js';
 import { fitWidthScale, pageLayout, renderScale, type PageLayout } from './layout.js';
 import { clampPage, parsePageInput, stepPage } from './page-nav.js';
 import { buildReadingOrder, type ReadingOrder } from './reading-order.js';
+import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 import { RenderCache, type RenderCacheLimits } from './render-cache.js';
 import {
   applySearchResult,
@@ -117,6 +118,8 @@ export interface ViewerControllerOptions {
   prefetch?: boolean;
   /** 유휴 시점에 `fn` 을 실행한다. 기본: `requestIdleCallback`(없으면 `setTimeout`). 테스트에서 주입한다. */
   scheduleIdle?(fn: () => void): void;
+  /** UI 문자열 표(`strings.ts`). 기본은 한국어. 확장은 브라우저 UI 언어로 고른다. */
+  strings?: ViewerStrings;
 }
 
 export type StateListener = (state: ViewerState) => void;
@@ -131,6 +134,59 @@ export function featureDisabledReason(state: ViewerState, feature: FeatureName):
   if (own) return own;
   if (feature === 'debug' && state.disabled.text) return `PageModel 없음: ${state.disabled.text}`;
   return null;
+}
+
+/**
+ * "레이아웃·편집 표시" 버튼(사용자 요청 2026-10-22): 레이아웃 오버레이와 편집 가능 표시(켜면 클릭으로 패스 선택)를
+ * 한 버튼으로 함께 켜고 끈다. 한쪽만 쓸 수 있으면 그쪽만 켠다.
+ */
+export interface OverlayToggleState {
+  /** 쓸 수 있는 쪽 중 하나라도 켜져 있으면 true(버튼 눌림). */
+  on: boolean;
+  /** 레이아웃 오버레이를 쓸 수 없는 사유(쓸 수 있으면 null). */
+  layoutReason: string | null;
+  /** 편집 가능 표시를 쓸 수 없는 사유(쓸 수 있으면 null). */
+  marksReason: string | null;
+}
+
+/** 편집 RPC 가 없는 호스트(읽기 전용 하니스·벤치)의 편집 가능 표시 사유(한국어). */
+export const NO_EDIT_HOST_REASON = VIEWER_STRINGS.ko.noEditHost;
+
+export function overlayToggleState(
+  state: ViewerState,
+  hasEdit: boolean,
+  t: ViewerStrings = VIEWER_STRINGS.ko,
+): OverlayToggleState {
+  const layoutReason = featureDisabledReason(state, 'layout');
+  const marksReason = hasEdit ? state.disabled.edit : t.noEditHost;
+  return {
+    on:
+      (layoutReason === null && state.layoutEnabled) ||
+      (marksReason === null && state.edit.showEditable),
+    layoutReason,
+    marksReason,
+  };
+}
+
+/** 합친 버튼의 제목(툴팁). 쓸 수 없는 쪽은 사유를 적는다. */
+export function overlayToggleTitle(
+  s: OverlayToggleState,
+  pathSelect: boolean,
+  t: ViewerStrings = VIEWER_STRINGS.ko,
+): string {
+  const lines = [t.overlayIntro];
+  if (s.marksReason === null && pathSelect) lines.push(t.overlayPathSelect);
+  if (s.layoutReason !== null && s.marksReason !== null) {
+    lines.push(
+      t.overlayLayoutReason(t.errorDetail(s.layoutReason)),
+      t.overlayMarksReason(t.errorDetail(s.marksReason)),
+    );
+  } else if (s.layoutReason !== null) {
+    lines.push(t.overlayMarksOnly(t.errorDetail(s.layoutReason)));
+  } else if (s.marksReason !== null) {
+    lines.push(t.overlayLayoutOnly(t.errorDetail(s.marksReason)));
+  }
+  return lines.join('\n');
 }
 
 export class ViewerController {
@@ -152,11 +208,14 @@ export class ViewerController {
   /** 쪽 렌더 LRU(8쪽·64 MiB 중 작은 쪽). 문서가 바뀐 쪽은 `invalidatePages` 가 버린다. */
   readonly renderCache: RenderCache;
   private prefetchRunning = false;
+  /** UI 문자열 표(옵션 `strings`, 기본 한국어). */
+  readonly strings: ViewerStrings;
 
   constructor(private readonly options: ViewerControllerOptions) {
     this.host = options.host;
     this.renderCache = new RenderCache(options.renderCacheLimits);
     this.editLog = options.editLog ?? new EditLog();
+    this.strings = options.strings ?? VIEWER_STRINGS.ko;
     const pageIndex = clampPage(options.initialPage ?? 0, options.pageCount);
     this.state = {
       pageCount: options.pageCount,
@@ -179,6 +238,7 @@ export class ViewerController {
       this.edit = new EditController({
         rpc: host,
         log: this.editLog,
+        strings: this.strings,
         now: options.now ?? (() => performance.now()),
         getState: () => this.state.edit,
         patch: (partial) => this.patch({ edit: { ...this.state.edit, ...partial } }),
@@ -551,6 +611,23 @@ export class ViewerController {
 
   // ── 레이아웃 오버레이 ────────────────────────────────────────────────
 
+  /**
+   * 레이아웃 오버레이와 편집 가능 표시를 함께 켜거나 끈다(툴바 "레이아웃·편집 표시"). 쓸 수 없는 쪽은 건드리지 않는다.
+   * 편집 가능 표시를 켜면 클릭으로 패스를 선택한다(`PathLayer`).
+   */
+  setOverlays(on: boolean): void {
+    const s = overlayToggleState(this.state, this.edit !== null);
+    if (s.layoutReason === null && this.state.layoutEnabled !== on) this.toggleLayout();
+    if (s.marksReason === null && this.state.edit.showEditable !== on) {
+      this.edit?.setShowEditable(on);
+    }
+  }
+
+  /** 합친 버튼 누름: 켜져 있으면 둘 다 끄고, 꺼져 있으면 쓸 수 있는 쪽을 모두 켠다. */
+  toggleOverlays(): void {
+    this.setOverlays(!overlayToggleState(this.state, this.edit !== null).on);
+  }
+
   toggleLayout(): void {
     if (featureDisabledReason(this.state, 'layout')) return;
     const enabled = !this.state.layoutEnabled;
@@ -708,14 +785,14 @@ export class ViewerController {
         this.patchFind({
           ...clearResults(this.state.find),
           status: 'unavailable',
-          message: `검색을 사용할 수 없습니다 (${failure.message})`,
+          message: this.strings.findUnavailableWith(this.strings.errorDetail(e)),
         });
       } else {
         this.host.log('search-error', { query, error: failure.message });
         this.patchFind({
           ...clearResults(this.state.find),
           status: 'error',
-          message: `검색 실패: ${failure.message}`,
+          message: this.strings.findFailedWith(this.strings.errorDetail(e)),
         });
       }
     }

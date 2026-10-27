@@ -13,6 +13,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
@@ -282,6 +283,7 @@ for (const executablePath of LEGACY) {
     const context = await chromium.launchPersistentContext(userDataDir, {
       executablePath,
       headless: false,
+      locale: E2E_LOCALE,
       acceptDownloads: true,
       args: ['--headless=new', `--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
     });

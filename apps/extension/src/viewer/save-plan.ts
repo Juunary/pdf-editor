@@ -8,13 +8,15 @@
  * - 힙 `warn`: 확인 창.
  * - 태그 쪽 편집에서 구조 연결이 끊긴 문단이 있으면 확인 창(D1).
  * - PDF/A 선언 문서의 편집은 "적합성이 깨질 수 있음" 확인 창(5.6).
- * - core 저장 경고(`SavePlan.warnings`, 편집 엔진 실패 상태 저장 등)는 확인 창(맨 앞).
+ * - core 저장 경고(`SavePlan.warnings`, 편집 엔진 실패 상태 저장 등)는 확인 창(맨 앞). 한국어는 core 문장 그대로, 영어는
+ *   원인 코드(`SavePlan.warningCodes`)로 문장을 만든다(코드가 없으면 일반 문장, 사용자 결정 2026-10-26).
  * - 편집이 있으면 "편집한 쪽 번호가 파일 정보에 기록됨" 안내(확인 창이 뜰 때 함께 보인다).
  * - core 저널 상한 판정(`journalAdvice` RPC, 계약 D4)이 `advised` 이면 저장할 수 있을 때는 "저장 후 다시 열기" 권고를,
  *   중단할 때는 편집 기록 크기를 붙인다. 경고선은 core 가 정하고(저장 힙 warn 경계), 여기서는 따로 값을 두지 않는다.
  *   힙 판정 문구(`heap.message`)에는 권고가 없다(core 가 붙이지 않음).
  */
 import type { JournalAdvice, SavePlan } from '@pdf-editor/shared-types';
+import { APP_STRINGS, type AppStrings } from './strings.js';
 
 export interface SaveDecision {
   /** 중단 사유(있으면 저장하지 않는다). */
@@ -29,66 +31,68 @@ export interface SaveDecision {
 
 const mib = (bytes: number) => `${(bytes / 2 ** 20).toFixed(0)} MiB`;
 
-/** 편집 기록(저널)이 메모리를 차지해 한계에 가까울 때의 권고(D4). 저장할 수 있는 상태에서만 쓴다. */
-export const JOURNAL_REOPEN_ADVICE =
-  '편집 기록이 메모리를 많이 차지하고 있습니다. 먼저 저장하고 파일을 다시 열면 편집 기록이 정리되어 메모리가 줄어듭니다(다시 연 뒤에는 이전 편집을 되돌릴 수 없습니다).';
+const KO = APP_STRINGS.ko;
 
-/** 저장을 중단할 때 할 수 있는 일. */
-export const BLOCKED_SAVE_OPTIONS =
-  '저장하지 않았습니다. 파일을 다시 열면 메모리가 정리되지만 저장하지 않은 편집은 모두 사라집니다.';
+/** 편집 기록(저널)이 메모리를 차지해 한계에 가까울 때의 권고(D4, 한국어). 저장할 수 있는 상태에서만 쓴다. */
+export const JOURNAL_REOPEN_ADVICE = KO.journalReopenAdvice;
 
-/** over-limit 의 근거가 이미 커진 힙일 때 "그래도 저장 시도" 확인 창 안내. */
-export const GROWN_HEAP_RETRY_NOTE =
-  '예상이 큰 주된 이유는 앞선 저장·쪽 보기로 이미 커진 작업 메모리입니다. 작업 메모리는 줄지 않지만 그 안의 빈 공간을 다시 쓰므로 실제로는 저장될 수 있습니다. 저장 중 메모리가 부족하면 작업 모듈을 복구하고 다시 저장할지 묻습니다(복구 전 되돌리기 기록은 사라집니다).';
+/** 저장을 중단할 때 할 수 있는 일(한국어). */
+export const BLOCKED_SAVE_OPTIONS = KO.blockedSaveOptions;
 
-/** "그래도 저장 시도" 버튼 이름. */
-export const RETRY_SAVE_LABEL = '그래도 저장 시도';
+/** over-limit 의 근거가 이미 커진 힙일 때 "그래도 저장 시도" 확인 창 안내(한국어). */
+export const GROWN_HEAP_RETRY_NOTE = KO.grownHeapRetryNote;
+
+/** "그래도 저장 시도" 버튼 이름(한국어). */
+export const RETRY_SAVE_LABEL = KO.retrySaveLabel;
 
 /**
  * 저장 전 판정. `journal` 은 core 저널 상한 판정(`journalAdvice` RPC) 결과이며, 받지 못했으면 null(권고 없음).
+ * 문구는 `t`(기본 한국어). core 힙 문구(`heap.message`)는 한국어라 한국어일 때만 쓰고, 영어는 수치로 문구를 만든다.
  */
-export function decideSave(plan: SavePlan, journal: JournalAdvice | null = null): SaveDecision {
-  const warnings: string[] = [...(plan.warnings ?? [])];
+export function decideSave(
+  plan: SavePlan,
+  journal: JournalAdvice | null = null,
+  t: AppStrings = KO,
+): SaveDecision {
+  const coreMessage = t.lang === 'ko' ? plan.heap.message : null;
+  const warnings: string[] = coreSaveWarnings(plan, t);
   const infos: string[] = [];
   const { heap, edits } = plan;
   const advised = journal?.advised === true;
   let confirmLabel: string | undefined;
   if (heap.level === 'over-limit') {
-    const base =
-      heap.message ??
-      `저장 중 메모리가 한계(${mib(heap.limitBytes)})를 넘을 것으로 예상됩니다 (예상 피크 ${mib(heap.estimatedPeakBytes)}).`;
+    const base = coreMessage ?? t.heapOverLimit(mib(heap.limitBytes), mib(heap.estimatedPeakBytes));
     if (heap.grownHeapBasis) {
-      warnings.unshift(base, GROWN_HEAP_RETRY_NOTE);
-      confirmLabel = RETRY_SAVE_LABEL;
+      warnings.unshift(base, t.grownHeapRetryNote);
+      confirmLabel = t.retrySaveLabel;
     } else {
-      const journalNote = advised
-        ? ` 편집 기록이 약 ${mib(journal?.journalBytes ?? 0)} 를 차지하고 있습니다.`
-        : '';
-      return { block: `${base}${journalNote} ${BLOCKED_SAVE_OPTIONS}`, warnings, infos };
+      const journalNote = advised ? t.journalHeld(mib(journal?.journalBytes ?? 0)) : '';
+      return { block: `${base}${journalNote} ${t.blockedSaveOptions}`, warnings, infos };
     }
   }
   if (heap.level === 'warn') {
-    warnings.push(
-      heap.message ??
-        `저장 중 메모리를 많이 쓸 것으로 예상됩니다 (예상 피크 ${mib(heap.estimatedPeakBytes)} / 한계 ${mib(heap.limitBytes)}). 저장이 실패하면 작업 모듈을 복구하고 다시 저장할지 묻습니다.`,
-    );
+    warnings.push(coreMessage ?? t.heapWarn(mib(heap.estimatedPeakBytes), mib(heap.limitBytes)));
   }
-  const advice = advised ? JOURNAL_REOPEN_ADVICE : null;
+  const advice = advised ? t.journalReopenAdvice : null;
   if (advice) infos.push(advice);
   if (edits) {
     if (edits.structureUnlinked > 0) {
-      warnings.push(
-        `태그된 PDF 쪽에서 편집한 문단 ${edits.structureUnlinked}개는 구조(읽기 순서·태그)와의 연결이 끊어집니다.`,
-      );
+      warnings.push(t.structureUnlinked(edits.structureUnlinked));
     }
     if (edits.pdfaDeclared) {
-      warnings.push('이 문서는 PDF/A 로 선언되어 있어 편집하면 PDF/A 적합성이 깨질 수 있습니다.');
+      warnings.push(t.pdfaDeclared);
     }
     if (edits.pages.length > 0) {
-      infos.push(
-        `저장하면 편집한 쪽 번호(${edits.pages.map((p) => p + 1).join(', ')}쪽)가 파일 정보(PdfEditorEdits)에 기록됩니다.`,
-      );
+      infos.push(t.editPagesRecorded(edits.pages.map((p) => p + 1).join(', ')));
     }
   }
   return { block: null, warnings, infos, ...(confirmLabel ? { confirmLabel } : {}) };
+}
+
+/** core 저장 경고 문장. 한국어는 `warnings` 그대로, 영어는 `warningCodes` 로 만든다. */
+function coreSaveWarnings(plan: SavePlan, t: AppStrings): string[] {
+  const core = plan.warnings ?? [];
+  if (t.lang === 'ko' || core.length === 0) return [...core];
+  const codes = plan.warningCodes ?? [];
+  return codes.length > 0 ? codes.flatMap((c) => t.saveWarnings[c]) : [t.saveWarningUnknown];
 }

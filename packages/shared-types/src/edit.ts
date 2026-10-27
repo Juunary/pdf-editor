@@ -216,7 +216,14 @@ export type EditWarningKind =
 
 export interface EditWarning {
   kind: EditWarningKind;
+  /** 사용자 표시용 설명(한국어). 다른 언어 화면은 kind·count·chars·variant 로 뷰어가 문장을 만든다(2026-10-26). */
   message: string;
+  /** 문장에 들어가는 개수(폴백 글자 종류·지운 ActualText·겹친 링크·Redact 수). 없으면 rects 수. */
+  count?: number;
+  /** 문장에 들어가는 글자(폴백·글리프 없는 글자, 앞 20자). */
+  chars?: string;
+  /** 같은 kind 안의 경우. tagged-structure-unlinked: form-clone(Form 복제로 /StructParents 삭제)·path-removed(태그 콘텐츠 안 패스 삭제). */
+  variant?: 'form-clone' | 'path-removed';
   /** 관련 영역(링크·Redact 주석·겹침 상자). */
   rects: Rect[];
 }

@@ -38,6 +38,7 @@ import type {
   RenderedPage,
   ReflowSummary,
   SaveEditSummary,
+  SaveWarningCode,
   TextRun,
 } from '@pdf-editor/shared-types';
 import type {
@@ -58,7 +59,14 @@ import {
   tagFallbackSubset,
   unionRect,
 } from './edit-util.js';
-import { embedFont, type FallbackFontSource, type FontManager } from '@pdf-editor/pdf-ops';
+import {
+  compactStreams,
+  embedFont,
+  uncompressedStreams,
+  type FallbackFontSource,
+  type FontManager,
+  type UncompressedStream,
+} from '@pdf-editor/pdf-ops';
 
 /** 문서에 임베딩하는 폴백 폰트의 BaseFont 이름(저장 때 서브셋 태그가 붙는다). */
 const FALLBACK_FONT_NAME = 'NotoSansKR';
@@ -176,6 +184,8 @@ interface ParagraphDraft {
   usesFallback: boolean;
   /** 갱신 실패 뒤 직전 상태로 되돌리지 못했다. 취소만 할 수 있다. */
   broken: boolean;
+  /** 커밋 중(스트림 압축 대기, `#compactDraft`). 이 동안 이 초안의 갱신·커밋·취소를 받지 않는다. */
+  committing?: boolean;
 }
 
 /**
@@ -197,6 +207,8 @@ interface PathDraft {
   warnings: EditWarning[];
   broken: boolean;
   redoBackup: LogEntry[];
+  /** 커밋 중(스트림 압축 대기). */
+  committing?: boolean;
 }
 
 type Draft = ParagraphDraft | PathDraft;
@@ -291,8 +303,9 @@ export class EditEngine {
 
   /**
    * 커밋한 작업의 저널 비용: pdf-ops 가 알려 준 바뀐·새 객체(`changedObjects`, 편집 블록 포함) 중 스트림의 /Length 합(사전
-   * 조회만). 처음 고치는 문단은 쪽 콘텐츠와 새 블록, 이미 편집한 블록을 다시 고치면 그 블록만 든다. 원본 파일에 있던 스트림의
-   * 첫 교체는 MuPDF 가 내용을 복사하지 않을 수 있어 과대 추정 쪽이다(docs/m5-heap.md 5절).
+   * 조회만). 처음 고치는 문단은 쪽 콘텐츠와 새 블록, 이미 편집한 블록을 다시 고치면 그 블록만 든다. 큰 스트림은 커밋 때
+   * 압축하므로(`#compactDraft`) 압축 크기다. 원본 파일에 있던 스트림의 첫 교체는 MuPDF 가 내용을 복사하지 않을 수 있어 과대
+   * 추정 쪽이다(docs/m5-heap.md 5절).
    */
   #noteJournalCost(entry: LogEntry, changedObjects: readonly number[]): void {
     let bytes = 0;
@@ -571,6 +584,11 @@ export class EditEngine {
     this.#assertUsable();
     const draft = this.#requireParagraphDraft(draftId);
     if (draft.broken) throw new EditStateError('초안이 손상되어 커밋할 수 없습니다. 취소하세요.');
+    const large = this.#largeUncompressed([
+      ...draft.prepared.changedObjects,
+      draft.prepared.block.objectNumber,
+    ]);
+    if (large.length > 0) await this.#compactDraft(draft, large);
     const op: ReplaceParagraphOp = {
       kind: 'replace-paragraph',
       id: draft.opId,
@@ -716,6 +734,8 @@ export class EditEngine {
     if (!draft.edit) {
       throw new EditStateError('적용된 변경이 없어 커밋할 수 없습니다. 취소하세요.');
     }
+    const large = this.#largeUncompressed(draft.prepared.changedObjects);
+    if (large.length > 0) await this.#compactDraft(draft, large);
     const op: EditPathOp = {
       kind: 'edit-path',
       id: draft.opId,
@@ -999,6 +1019,11 @@ export class EditEngine {
    * 저장 때 사용자에게 알릴 경고(R-M4). 엔진이 실패 상태면 저널로 감싸지 않고 저장하므로 마지막 편집이 문서에 반영됐는지
    * 확인해야 한다. 정상이면 빈 배열.
    */
+  /** `saveWarnings()` 의 원인 코드(다른 언어 화면용). */
+  saveWarningCodes(): SaveWarningCode[] {
+    return this.#failure ? ['edit-engine-failed'] : [];
+  }
+
   saveWarnings(): string[] {
     if (!this.#failure) return [];
     return [
@@ -1092,7 +1117,42 @@ export class EditEngine {
     if (!draft || draft.draftId !== draftId) {
       throw new EditStateError(`열린 초안이 아닙니다: ${draftId}`);
     }
+    if (draft.committing) throw new EditStateError(`커밋하는 중인 초안입니다: ${draftId}`);
     return draft;
+  }
+
+  /**
+   * 커밋 직전(초안 작업 안): 이 편집이 풀린 채 다시 쓴 큰 스트림(쪽 콘텐츠·Form 사본·큰 편집 블록)을 Flate 로 압축한다.
+   * MuPDF 저널은 작업마다 바뀐 객체의 작업 전 내용을 스트림 버퍼째 보관하므로, 압축해 두면 다음 편집이 이 쪽을 다시 바꿀 때
+   * 저널로 넘어가는 버퍼가 풀린 크기가 아니라 압축 크기가 된다(docs/m5-followup.md 5.1, 코퍼스 8.9 MB 쪽 → 1.35 MB). 같은 작업
+   * 안이라 저널 단계는 늘지 않는다. 압축은 비동기라 그동안 초안을 `committing` 으로 막는다. 압축할 수 없으면 풀린 채 둔다(동작은
+   * 같고 메모리만 덜 준다). 넣은 스트림을 되돌리지도 못하면 초안을 손상으로 두고 커밋을 거절한다(취소하면 작업 전으로 돌아간다).
+   */
+  async #compactDraft(draft: Draft, streams: readonly UncompressedStream[]): Promise<void> {
+    // 첫 await 전에 막는다(같은 초안의 두 번째 커밋이 압축 대기 중에 끼어들지 않게).
+    draft.committing = true;
+    try {
+      await compactStreams(this.#doc, streams, () => !this.#disposed && this.#draft === draft);
+    } catch {
+      draft.broken = true;
+    } finally {
+      draft.committing = false;
+    }
+    this.#assertUsable();
+    if (this.#draft !== draft) throw new EditStateError('커밋하는 동안 초안이 바뀌었습니다.');
+    if (draft.broken) throw new EditStateError('초안이 손상되어 커밋할 수 없습니다. 취소하세요.');
+  }
+
+  /**
+   * 커밋이 바꾼 객체 중 압축할 큰 스트림(풀린 채 쓴 쪽 콘텐츠·Form 사본 등, `COMPACT_MIN_BYTES` 이상). 없으면 커밋은 이전처럼
+   * 기다림 없이 끝난다. 고르다 실패하면(읽기 오류) 압축하지 않는다.
+   */
+  #largeUncompressed(objectNumbers: readonly number[]): UncompressedStream[] {
+    try {
+      return uncompressedStreams(this.#doc, objectNumbers);
+    } catch {
+      return [];
+    }
   }
 
   #requireParagraphDraft(draftId: string): ParagraphDraft {

@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
-import { buildManifest, sourceUrl, type BuildKind } from './scripts/manifest.mjs';
+import {
+  buildLocaleMessages,
+  buildManifest,
+  readLocales,
+  sourceUrl,
+  type BuildKind,
+} from './scripts/manifest.mjs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
   version: string;
@@ -14,7 +21,10 @@ const kind: BuildKind = process.env.PDF_EDITOR_BUILD === 'store' ? 'store' : 'de
 /**
  * 매니페스트를 빌드 종류별로 만든다. 버전은 package.json 한 곳에서 온다.
  * 같은 단계에서 `<html data-build>` 를 넣어 스토어 빌드에서만 진단 UI 를 CSS 로 숨길 수 있게 한다.
- * 스토어 빌드는 벤치 페이지를 만들지 않으므로(D6) 그 링크(`#open-bench`)도 뺀다.
+ * 스토어 빌드는 벤치 페이지를 만들지 않으므로(D6) 그 링크(`#open-bench`)도 빼고, 저장 메뉴의 downloads 저장(M0 진단,
+ * 사용자 요청 2026-10-22)도 뺀다.
+ * 이름·설명 현지화(`_locales/<lang>/messages.json`, 사용자 결정 2026-10-26)도 여기서 내보낸다. 개발 빌드는 이름에
+ * " (dev)" 를 붙인다(`buildLocaleMessages`).
  */
 function extensionBuild(): Plugin {
   return {
@@ -22,7 +32,9 @@ function extensionBuild(): Plugin {
     transformIndexHtml: (html) => {
       const tagged = html.replace('<html ', `<html data-build="${kind}" `);
       return kind === 'store'
-        ? tagged.replace(/\s*<a id="open-bench"[^>]*>[\s\S]*?<\/a>/, '')
+        ? tagged
+            .replace(/\s*<a id="open-bench"[^>]*>[\s\S]*?<\/a>/, '')
+            .replace(/\s*<button\s+id="save-downloads"[\s\S]*?<\/button>/, '')
         : tagged;
     },
     generateBundle() {
@@ -32,6 +44,14 @@ function extensionBuild(): Plugin {
         fileName: 'manifest.json',
         source: `${JSON.stringify(buildManifest(base, kind, pkg.version), null, 2)}\n`,
       });
+      const locales = readLocales(fileURLToPath(new URL('./_locales', import.meta.url)));
+      for (const [lang, messages] of Object.entries(buildLocaleMessages(locales, kind))) {
+        this.emitFile({
+          type: 'asset',
+          fileName: `_locales/${lang}/messages.json`,
+          source: `${JSON.stringify(messages, null, 2)}\n`,
+        });
+      }
     },
   };
 }

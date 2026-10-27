@@ -4,6 +4,8 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chooseSave } from './toolbar-helpers.js';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
@@ -46,7 +48,7 @@ async function viewerFrames(page: Page, extensionId: string, count: number): Pro
   return page.frames().filter((f) => f.url().startsWith(prefix));
 }
 
-/** 렌더 완료·캔버스 잉크 확인 후, 저장 두 경로를 눌러 결과를 모은다. */
+/** 렌더 완료·캔버스 잉크 확인 후, 저장 메뉴의 두 경로(downloads·다른 이름)를 눌러 결과를 모은다. */
 async function exercise(page: Page, frame: Frame, label: string) {
   await expect(frame.locator('#status')).toHaveAttribute('data-state', 'rendered', {
     timeout: 20_000,
@@ -64,13 +66,13 @@ async function exercise(page: Page, frame: Frame, label: string) {
   // downloads 폴백: 다운로드 이벤트와 바이트 수
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    frame.click('#save-downloads'),
+    chooseSave(frame, 'save-downloads'),
   ]);
   const downloaded = statSync(await download.path()).size;
   expect(downloaded).toBe(statSync(SAMPLE).size);
 
   // FSA: 헤드리스 Chromium 은 피커를 즉시 취소한다. 결과(오류 종류)만 기록한다.
-  await frame.click('#save-as');
+  await chooseSave(frame, 'save-as');
   await expect
     .poll(async () => (await diagOf(frame)).filter((e) => e.event === 'save').length)
     .toBe(2);
@@ -95,6 +97,7 @@ test('확장 로드: 서비스 워커, MIME handler 세 문맥 렌더, 저장 �
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     acceptDownloads: true,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });

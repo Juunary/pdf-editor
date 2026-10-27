@@ -13,7 +13,7 @@ import type {
   Rect,
 } from '@pdf-editor/shared-types';
 import { offsetAtPagePoint } from './edit-geometry.js';
-import { limitLabel, REDO_DISCARDED_NOTICE, TAGGED_BLOCKED_LABEL } from './edit-labels.js';
+import { limitItems, limitLabel } from './edit-labels.js';
 import type { EditLog } from './edit-log.js';
 import type { InputBufferPort } from './input-buffer.js';
 import { EditSession, isWorkerRecovered, type EditSessionView } from './edit-session.js';
@@ -24,6 +24,7 @@ import {
   type PathContext,
   type PathState,
 } from './path-controller.js';
+import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 import type { EditHostApi, PathHostApi } from './viewer-host.js';
 
 export type EditLoadable<T> =
@@ -39,7 +40,7 @@ export interface EditPopover {
   pageIndex: number;
   paragraphId: number;
   bbox: Rect;
-  /** 사유 문구(한국어). */
+  /** 사유 문구(화면 언어). */
   items: string[];
 }
 
@@ -103,6 +104,8 @@ export interface CurrentView {
 export interface EditContext {
   rpc: EditHostApi;
   log: EditLog;
+  /** 툴바 편집 알림 문자열(기본 한국어). */
+  strings?: ViewerStrings;
   now(): number;
   getState(): EditState;
   patch(partial: Partial<EditState>): void;
@@ -149,6 +152,10 @@ export class EditController {
           patchPath: (partial) => ctx.patch({ path: { ...ctx.getState().path, ...partial } }),
         } satisfies PathContext)
       : null;
+  }
+
+  private get t(): ViewerStrings {
+    return this.ctx.strings ?? VIEWER_STRINGS.ko;
   }
 
   setInputBuffer(buffer: InputBufferPort | null): void {
@@ -299,7 +306,7 @@ export class EditController {
             pageIndex,
             paragraphId,
             bbox: plan.target.bbox,
-            items: [TAGGED_BLOCKED_LABEL],
+            items: [this.t.taggedBlocked],
           },
         });
         return;
@@ -337,6 +344,7 @@ export class EditController {
           renderScale: () => this.ctx.currentView()?.renderScale ?? 1,
           log: (event, data) => this.ctx.logEvent(event, data),
           onChange: (v) => this.ctx.patch({ session: v }),
+          strings: this.t,
         },
         plan,
         begun,
@@ -346,7 +354,7 @@ export class EditController {
       this.session.start();
       started = true;
       // 새 편집을 시작하면 core 가 다시 실행(redo) 단계를 버린다(계약 D9, 취소해도 복원 안 됨).
-      if (hadRedo) this.ctx.patch({ notice: REDO_DISCARDED_NOTICE });
+      if (hadRedo) this.ctx.patch({ notice: this.t.redoDiscarded });
       const buffered = this.buffer?.take() ?? '';
       if (buffered !== '') {
         this.session.typeText(buffered);
@@ -359,7 +367,7 @@ export class EditController {
         planMs: plan.planMs,
       });
     } catch (e) {
-      this.handleFailure(e, '편집을 시작하지 못했습니다');
+      this.handleFailure(e, this.t.editStartFailed);
     } finally {
       if (!started) this.buffer?.close();
       this.ctx.patch({ starting: false });
@@ -375,15 +383,20 @@ export class EditController {
   }
 
   private showLimits(plan: ParagraphEditPlan): void {
-    const details = plan.limits.map((l) => l.detail).filter((d) => d !== '');
-    const items = details.length > 0 ? details : plan.limits.map((l) => limitLabel(l.reason));
+    // 한국어는 core 설명(detail)이 하나라도 있으면 설명만(이전 동작), 영어는 사유 코드 문구.
+    const withDetail = plan.limits.filter((l) => l.detail !== '');
+    const items = limitItems(
+      this.t.lang === 'ko' && withDetail.length > 0 ? withDetail : plan.limits,
+      this.t.paragraphNotEditable,
+      this.t,
+    );
     this.ctx.patch({
       popover: {
         kind: plan.target.cell || this.isCellParagraph(plan.paragraphId) ? 'cell' : 'paragraph',
         pageIndex: plan.pageIndex,
         paragraphId: plan.paragraphId,
         bbox: plan.target.bbox,
-        items: items.length > 0 ? [...new Set(items)] : ['이 문단은 편집할 수 없습니다.'],
+        items,
       },
     });
   }
@@ -395,7 +408,10 @@ export class EditController {
         pageIndex,
         paragraphId,
         bbox,
-        items: reasons.length > 0 ? reasons.map(limitLabel) : ['이 문단은 편집할 수 없습니다.'],
+        items:
+          reasons.length > 0
+            ? [...new Set(reasons.map((r) => limitLabel(r, this.t)))]
+            : [this.t.paragraphNotEditable],
       },
     });
   }
@@ -417,8 +433,8 @@ export class EditController {
     this.ctx.patch({
       notice:
         failure.kind === 'recovered'
-          ? '문서를 복구했습니다. 편집을 다시 시작하세요.'
-          : `${prefix}: ${failure.message}`,
+          ? this.t.editRecoveredRestart
+          : this.t.failureWith(prefix, this.t.errorDetail(e)),
     });
   }
 
@@ -448,12 +464,12 @@ export class EditController {
     try {
       const out = await session.commit();
       if (out.kind === 'restarted') {
-        this.ctx.patch({ notice: '문서를 복구했습니다. 편집을 계속하세요.' });
+        this.ctx.patch({ notice: this.t.editRecoveredContinue });
         return false;
       }
       if (out.kind === 'kept') {
         // 마지막 입력을 초안에 반영하지 못해 커밋하지 않았다. 편집기를 열어 둔다(오류는 편집기 정보 줄에도 보인다).
-        this.ctx.patch({ notice: `편집을 반영하지 못했습니다: ${out.error}` });
+        this.ctx.patch({ notice: this.t.editNotApplied(this.t.errorDetail(out.error)) });
         return false;
       }
       this.endSession();
@@ -474,7 +490,7 @@ export class EditController {
       }
       return true;
     } catch (e) {
-      this.handleFailure(e, '편집을 저장하지 못했습니다');
+      this.handleFailure(e, this.t.editSaveFailed);
       return false;
     }
   }
@@ -491,7 +507,7 @@ export class EditController {
       this.ctx.patch({ history });
     } catch (e) {
       if (!isWorkerRecovered(e)) {
-        this.handleFailure(e, '편집을 취소하지 못했습니다');
+        this.handleFailure(e, this.t.editCancelFailed);
         return;
       }
     }
@@ -523,7 +539,7 @@ export class EditController {
       await this.ctx.invalidatePages(next.affectedPages);
       this.ctx.logEvent(`edit-${kind}`, { affectedPages: next.affectedPages, edits: next.edits });
     } catch (e) {
-      this.handleFailure(e, kind === 'undo' ? '되돌리지 못했습니다' : '다시 실행하지 못했습니다');
+      this.handleFailure(e, kind === 'undo' ? this.t.undoFailed : this.t.redoFailed);
     } finally {
       this.ctx.patch({ busy: false });
     }
@@ -548,26 +564,20 @@ export class EditController {
       await this.paths.cancelGesture();
       this.paths.reset();
       if (hadGesture) {
-        this.ctx.patch({
-          notice: '작업 모듈이 중단되어 문서를 복구했습니다. 진행 중이던 패스 편집은 취소했습니다.',
-        });
+        this.ctx.patch({ notice: this.t.recoveredPathCancelled });
       }
     }
     const session = this.session;
     if (session) {
       try {
         await session.restart();
-        this.ctx.patch({
-          notice: '작업 모듈이 중단되어 문서를 복구했습니다. 편집 중이던 문단을 다시 열었습니다.',
-        });
+        this.ctx.patch({ notice: this.t.recoveredParagraphReopened });
       } catch (e) {
-        this.handleFailure(e, '복구 뒤 편집을 다시 시작하지 못했습니다');
+        this.handleFailure(e, this.t.restartAfterRecoveryFailed);
       }
       return;
     }
-    this.ctx.patch({
-      notice: '작업 모듈이 중단되어 문서를 복구했습니다. 복구 전 되돌리기 이력은 사라졌습니다.',
-    });
+    this.ctx.patch({ notice: this.t.recoveredHistoryLost });
     const view = this.ctx.currentView();
     if (view) await this.ctx.invalidatePages([view.pageIndex]);
   }

@@ -3,7 +3,7 @@
 | 항목 | 내용 |
 |---|---|
 | 작성일 | 2026-10-19 |
-| 브랜치 | `m1-pdf-ops`(기준 `97a6fb4`, 계약 수정 1–6 머지(`956c57b`·`43e1c22`·`77707d5`·`c84f3fa`), worktree `/mnt/nas4/kjune/pdf-editor-m1-pdf-ops`) |
+| 브랜치 | `m1-pdf-ops`(기준 `f3d5cac`, 계약 수정 1–6 머지(`62067d3`·`da36c0e`·`31feef9`·`8c5473e`), worktree `/mnt/nas4/kjune/pdf-editor-m1-pdf-ops`) |
 | 범위 | `docs/m1-contract.md` 5.1절 |
 | 상태 | 계약 5.1 범위 구현 완료. glyphSeq 계수는 계약 3.1 확정 규칙(첫 등장 계수, 수정 6 판정, `GLYPH_SEQ_POLICY = 'first-arrival'`). 코퍼스 정책 비교용 측정 도구(`@pdf-editor/pdf-ops/measure`, 5.5절) 제공 |
 | 측정 환경 | 서버 `sailab01`, Node 22, npm `mupdf` 1.28.1, `Page.runPageContents(device, Matrix.identity)`(주석 제외). MuPDF 동작 근거는 Device 실측과 MuPDF 1.28.x C 소스(`pdf-op-run.c`·`pdf-interpret.c`·`pdf-font.c`·`pdf-type3.c`·`pdf-cmap.c`·`pdf-layer.c`·`path.c`) 대조 |

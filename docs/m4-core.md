@@ -4,7 +4,7 @@
 | --- | --- |
 | 작성일 | 2026-10-21 |
 | 범위 | `docs/m4-contract.md` 작업 S2(core): 4.4, D2·D4(core 쪽), 1.2 R-M4·R-L5·R-L2, 5.1 V5 |
-| 브랜치 | `m4-core` (기준: `m4` 브랜치 caa4654) |
+| 브랜치 | `m4-core` (기준: `m4` 브랜치 b3fdde8) |
 | 환경 | 서버 Node 22.18, mupdf 1.28.1. 브라우저 미측정. pdf-ops 패스 함수(S1 구현 중)는 "M4 미구현"이라 가짜 어댑터로 검증 |
 | 재현 | `pnpm --filter @pdf-editor/core test`(전체), `pnpm --filter @pdf-editor/core build` 후 `node packages/core/scripts/measure-m4.mjs max-paths｜drag ...`(스크립트 머리말 참고) |
 

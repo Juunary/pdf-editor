@@ -4,7 +4,7 @@
 | --- | --- |
 | 작성일 | 2026-10-21 |
 | 범위 | `docs/m5-contract.md` 4.1·D1 (벤치 하네스, 렌더 캐시, 쪽 판정 시간, 메모리 왕복, MuPDF OOB 감시) |
-| 브랜치 | `m5-perf` (기준 `m5` 6e4f3b2) |
+| 브랜치 | `m5-perf` (기준 `m5` 3ddfcca) |
 | 판정 기준 | Windows 기준 PC 의 사용자 실행 결과. 서버 결과는 회귀 감시용(D1) |
 
 ## 1. 하네스 사용법
@@ -13,7 +13,7 @@
 
 | 구성 | 위치 | 내용 |
 | --- | --- | --- |
-| 측정 페이지 | `apps/extension/bench.html`, `src/viewer/bench*.ts` | 확장 안 진단 페이지. 문서를 골라 지표를 돌리고 결과 JSON 을 내보낸다. `viewer.html` 진단 영역의 "M5 벤치마크 페이지" 링크로도 연다 |
+| 측정 페이지 | `apps/extension/bench.html`, `src/viewer/bench*.ts` | 확장 안 진단 페이지. 문서를 골라 지표를 돌리고 결과 JSON 을 내보낸다. `viewer.html` 진단 영역의 "M5 벤치마크 페이지" 링크로도 연다(진단 영역은 기본 숨김, 1.3 의 2) |
 | 지표 이벤트 | `src/viewer/bench-marks.ts` | D1 표의 `m5:*` 이름 그대로 `performance.mark` 를 남긴다. 편집 반응 표식은 `packages/viewer-ui/src/edit-session.ts` 가 남긴다 |
 | 통계·목표 | `src/viewer/bench-stats.ts` | p50·p95(nearest-rank)·목표 판정·직전 대비 +20% 회귀 표시 |
 | 서버 실행 | `apps/extension/e2e/bench-*.spec.ts`, `bench-harness.ts` | Playwright 번들 Chromium 에 같은 페이지를 로드해 실행. 렌더러 VmRSS 를 읽는다 |
@@ -28,7 +28,7 @@
 | 쪽 넘김 | `m5:nav:request` → `m5:nav:page-shown` | 순차 20회(쪽마다 300 ms 쉼: 미리 렌더 작동)와 고정 시드 임의 이동 10회. 목표는 둘을 합친 p95 |
 | 쪽 판정 | `m5:judge:page-enter` → `m5:judge:editability-ready` | 새 세션에서 쪽 6곳 첫 진입(캐시 비어 있음)과, 다른 쪽에 갔다 돌아온 재진입(`judgeReuse`). 쪽이 보인 시점부터 편집 가능 판정 완료까지 |
 | 편집 반응 | `m5:edit:input` → `m5:edit:preview-composited` | 첫 편집 가능 문단에서 30자 입력(60 ms 간격). 뷰어 자체 표식 |
-| 패스 끌기 | `m5:path:pointermove` → `m5:path:frame-painted` | 가장 큰 편집 가능 패스를 골라 `PathGesture.update` 40단계, 단계마다 두 번째 `requestAnimationFrame`. M4 `path-latency` 와 같은 정의. 서버 미리보기 왕복은 `serverUpdateMs` 로 따로 기록 |
+| 패스 끌기 | `m5:path:pointermove` → `m5:path:frame-painted` | 가장 큰 편집 가능 패스를 골라 `PathGesture.update` 40단계, 단계마다 두 번째 `requestAnimationFrame`. M4 `path-latency` 와 같은 정의. 서버 미리보기 왕복은 `serverUpdateMs` 로 따로 기록. 고르기는 그 패스 가운데를 누르고, 가운데가 그 패스를 고르지 않으면(원·호 같은 선 패스, 더 작은 패스가 위에 겹침) 윤곽 꼭짓점을 누른다(2026-10-22, arxiv-2609.10511 "패스 선택·판정 실패" 원인). 앞 30쪽에 편집 가능한 패스가 없으면 `skipped.path`(해당 없음) |
 | 전체 저장 | `m5:save:start` → `m5:save:bytes-ready` | `planSave` + `save({changes: []})`. 편집 전(clean)과 편집 1회 뒤(edited) 각 3회 |
 | 메모리 | `m5:mem:baseline` → `m5:mem:end` | 첫 저장 직후를 기준점으로 50쪽 넘김 왕복(98회 이동) → 편집 20회 → 저장 2회. 끝 측정 시점(사용자 결정 2026-10-21): WASM 은 MuPDF 캐시를 비운(`emptyStore`) 뒤 사용 중 힙(벤치 전용 RPC `benchProbeHeap`, 기준점도 같은 정의), 탭은 끝 30 s 대기 뒤 값(서버 VmRSS 또는 수동 입력). 이전 정의 값(선형 메모리 `wasmHeapBytes` 증가, 대기 전 탭 증가)도 결과에 남긴다 |
 
@@ -39,11 +39,11 @@
 pnpm·Node 설치가 필요 없다. 준비물은 압축해제한 `dist` 폴더와 측정할 PDF 파일뿐이다.
 
 1. Chrome 정식 최신에서 `chrome://extensions` → 개발자 모드 켬 → "압축해제된 확장 프로그램을 로드합니다" → `dist` 폴더 선택.
-2. 확장 ID 를 확인해 주소창에 `chrome-extension://<확장 ID>/bench.html` 을 연다(`viewer.html` 하단 "M5 벤치마크 페이지" 링크도 같다).
+2. 확장 ID 를 확인해 주소창에 `chrome-extension://<확장 ID>/bench.html` 을 연다. `viewer.html` 하단 진단 영역("M0 진단": "진단 결과 복사"·"M5 벤치마크 페이지" 링크)은 2026-10-23 부터 기본으로 숨겨져 있다. 보려면 주소에 `?diag` 를 붙여 열거나(`chrome-extension://<확장 ID>/viewer.html?diag`), PDF 를 MIME handler 로 열어 주소를 바꿀 수 없으면 뷰어를 한 번 누른 뒤 Ctrl+Alt+Shift+D 를 누른다(다시 누르면 숨김). 진단 기록은 숨겨져 있는 동안에도 쌓이므로 켠 뒤 "진단 결과 복사" 를 누르면 처음부터의 기록이 복사된다(docs/m5-release.md 10.2.3).
 3. 측정 조건을 맞춘다: 다른 탭·창을 닫고, 전원 연결, 절전 끔, 다른 확장 끔(가능하면). 측정 중에는 PC 를 건드리지 않는다.
 4. "문서 선택" 에서 `fixtures/bench/manifest.json` 의 문서를 고른다(여러 개 가능). 100 MB 이상 문서는 열기·쪽 넘김·저장만 체크한다.
 5. 지표를 모두 체크하고 "실행". 상태 줄에 진행이 표시된다. 서버에서 문서 하나에 약 40초가 걸린다(문서 크기·PC 에 따라 다름).
-6. 메모리 시나리오는 세 번 멈춘다(기준점·종료 직후·종료 30초 뒤). 종료 직후 값을 넣으면 페이지가 30초를 센 뒤 다시 멈춘다(그동안 PC 를 건드리지 않는다). 멈추면 `Shift+Esc` 로 Chrome 작업 관리자를 열어 이 확장의 뷰어 프레임 행(`확장 프로그램: PDF Editor` 또는 `하위 프레임: chrome-extension://…`)의 "메모리 사용 공간"을 MiB 로 읽어 입력칸에 넣고 "입력했음, 계속" 을 누른다. GB 표시는 ×1024. 판정은 30초 뒤 값이다.
+6. 메모리 시나리오는 세 번 멈춘다(기준점·종료 직후·종료 30초 뒤). 종료 직후 값을 넣으면 페이지가 30초를 센 뒤 다시 멈춘다(그동안 PC 를 건드리지 않는다). 멈추면 `Shift+Esc` 로 Chrome 작업 관리자를 열어 이 확장의 뷰어 프레임 행(`확장 프로그램: PDF Editor` 또는 `하위 프레임: chrome-extension://…`)의 "메모리 사용 공간"을 **새로 읽어** 보이는 그대로 입력칸에 넣고(예: `272,940K` → `272940`, 단위 K 기본) "입력했음, 계속" 을 누른다. 단위는 K(작업 관리자 표시, 1 K = 1024 byte)와 MiB 중 고르고, 값에 `K`·`MB`·`GB` 를 붙여 넣어도 된다. 페이지가 MiB 로 바꿔 판정한다. 직전 값과 같은 값, 세 값이 모두 같은 값, RAM 보다 큰 값, 직전 값의 5배 이상·1/5 이하, 10 MiB 미만이면 경고가 뜬다: 값을 고치거나, 맞으면 같은 값으로 한 번 더 누른다. 결과 JSON `mem.tabInputs` 에 원문·단위·MiB 값·경고가 남는다. 판정은 30초 뒤 값이다.
 7. 끝나면 "결과 JSON 내보내기" 로 받은 파일(`m5-bench-<시각>.json`)을 회신한다. 요약 표(p95)가 화면에도 나온다.
 8. PC 사양(CPU·RAM·Windows·Chrome 버전)은 JSON `env` 에 자동으로 들어가지만, 작업 관리자 행 이름과 이상 현상(멈춤·탭 크래시)은 따로 알려 준다.
 
@@ -58,7 +58,22 @@ BENCH_RUN=1 BENCH_CORPUS_DIR=/mnt/nas4/kjune/pdf-editor/fixtures/corpus BENCH_TI
   pnpm --filter @pdf-editor/extension exec playwright test e2e/bench-run.spec.ts
 ```
 
-환경 변수: `BENCH_TIER`(core·judge-stress·synthetic·large-real), `BENCH_DOCS`, `BENCH_SCENARIOS`, `BENCH_LABEL`, `BENCH_BASELINE`(직전 기록, 기본 `fixtures/bench/baseline-server.json`; +20% 초과 지표를 `regressions` 에 표시).
+환경 변수: `BENCH_TIER`(core·judge-stress·synthetic·large-real), `BENCH_DOCS`, `BENCH_VIEWPORT`·`BENCH_DPR`(헤드리스 뷰포트·dpr 에뮬레이션, 예 Windows 기준 PC `1440x731`·`2`, 기본 `1280x1000`·`1`), `BENCH_IDS`(벤치 세트 밖 코퍼스 문서 id, Windows 실행과 같은 문서를 잴 때), `BENCH_SCENARIOS`, `BENCH_OPTIONS`(측정 옵션 JSON, 예 메모리 구간 진단 `{"mem":{"pages":50,"edits":20,"saves":2,"settleMs":30000,"probePhases":true}}`), `BENCH_LABEL`, `BENCH_BASELINE`(직전 기록, 기본 `fixtures/bench/baseline-server.json`; +20% 초과 지표를 `regressions` 에 표시).
+
+결과 JSON 의 진단 필드(2026-10-22 추가, 판정값의 정의는 같다):
+
+| 필드 | 내용 |
+| --- | --- |
+| `judge.pages`·`judge.reusePages` | 첫 진입·재진입 표본의 쪽(0부터, 표본 순서). 수동 실행도 벤치 세트 문서면 지정 쪽(`kogl-mods-cpi-202609` 4쪽)을 넣는다 |
+| `mem.firstSave` | 첫 저장 직전 선형 메모리(`heapBeforeBytes`, planSave), 직후 선형 메모리(`heapAfterBytes` = 저장 피크 상한 = `firstSavePeakHeapBytes` = `baseline.wasmHeapBytes`), D5 예상 피크, `grewHeap`(저장이 선형 메모리를 늘림), `withinPrediction` |
+| `mem.editLog` | 편집마다 쪽·문단 id·편집 블록 재편집 여부·대상 글자 수·커밋 여부·커밋 뒤 저널 보유 추정(`journalAdvice`)·시간 |
+| `mem.tabInputs` | 탭 메모리 읽기(수동: 원문·단위·MiB·경고, 서버: VmRSS) |
+| `mem.phases[].wasmUsedBytes` | `probePhases` 일 때 구간마다 캐시를 비운 뒤 사용 중 힙(기준점·끝은 늘 잰다) |
+| `mem.phases[].detail` | 서버 자동화만: 렌더러 VmRSS, 페이지·Worker JS 힙(CDP `Runtime.getHeapUsage` 사용·할당), Worker WASM 선형 메모리 |
+| `skipped` | 해당 없음 시나리오와 사유(예: 앞 30쪽에 편집 가능한 패스 없음). 오류(`errors`)와 구분 |
+| `edit.renderScale`·`edit.updates` | 편집 반응 측정 때의 렌더 배율(CSS 배율 × dpr)과 초안 갱신 RPC 마다 왕복 시간·Worker 안 갱신 시간(`DraftUpdate.updateMs`)·영역 픽셀 수(반응 표본과 1:1 아님) |
+
+- 서버 강제 GC(`end-after-gc`)는 이전에 페이지에서만 돌았다(Playwright CDP 세션이 하위 Worker 세션으로 보내지 못함). 2026-10-22 부터 Worker 에도 보낸다(`Target.sendMessageToTarget`). 이전 기록의 "강제 GC 뒤" 값은 페이지 GC 만 반영한다.
 
 ```bash
 # 쪽 판정 구성 분해(Worker 밖, 새 세션 반복)
@@ -132,6 +147,7 @@ node packages/core/bench/oob-fuzz.mjs --runs 200 --jobs 4 --corpus-dir <코퍼�
 - 30 s 대기 동안 탭 메모리가 크게 준다(예: nasa 997 → 424 MiB). 대기 뒤 값과 강제 GC 뒤 값의 차는 5 MiB 이내였다: 30 s 안에 유휴 GC 가 수거 가능한 쓰레기를 대부분 수거한다.
 - 탭 기준점이 이전 기록(420–999 MiB)보다 낮다(301–330 MiB). 원인은 확인하지 않았다. 판정은 같은 실행 안의 증가분이다.
 - kogl-mods-cpi-202609 조사는 `docs/m5-followup.md` 5절.
+- 2026-10-22 W2 수정(커밋 때 큰 스트림 Flate 압축) 뒤 서버 재측정(같은 시나리오, 원자료 `out/m5-bench/w2-before.json`·`w2-after.json`, git 제외): WASM 증가 kogl-mods-cpi-202609 105.2 → **24.3**, kogl-nabo-finstmt2025 14.8 → 14.4, nist-sp800-53r5 27.6 → 27.1 MiB. 탭 증가(30 s 뒤) 661 → 573, 95 → 101, 93 → 86 MiB. kogl-mods-cpi-202609 탭은 그대로 미충족(`docs/m5-followup.md` 5.2).
 - 시험으로 고정한 값: `apps/extension/e2e/bench-memory.spec.ts`(기본 e2e). 합성 60쪽 문서에서 98회 이동·편집 20회·저장 2회 뒤 판정값 WASM 증가 ≤ 64 MiB·탭 증가(30 s 뒤) ≤ 150 MiB, 대기 전 탭 증가 ≤ 250 MiB. 측정값(2026-10-21): WASM 4.5 MiB(선형 0), 탭 24.5 MiB(대기 전 128.9). 실제 코퍼스 `nist-sp800-53r5` 시험은 `BENCH_CORPUS_DIR` 가 있을 때만 돈다(WASM 판정값만 단언).
 
 <details><summary>이전 정의 기록(M5 S2, 2026-10-21, 선형 메모리·종료 직후 탭)</summary>
@@ -213,10 +229,11 @@ node packages/core/bench/oob-fuzz.mjs --runs 200 --jobs 4 --corpus-dir <코퍼�
 
 | # | 항목 | 담당 | 내용 |
 | --- | --- | --- | --- |
-| 1 | Windows 기준 PC 측정 | 사용자 | 1.3 절 절차로 core 5건 + `kogl-mods-cpi-202609` 실행, JSON 회신. 100 MB 이상 문서는 열기·넘김·저장만 |
+| 1 | Windows 기준 PC 측정 | 사용자 | 1.3 절 절차로 core 5건 + `kogl-mods-cpi-202609` 실행, JSON 회신. 100 MB 이상 문서는 열기·넘김·저장만. **2026-10-22 회신**(W1 7문서·W2 3문서, 결과는 `docs/m5-integration.md` 9.2). W2 수정 뒤 새 `dist` 로 메모리 왕복 재측정 필요(탭 값은 작업 관리자 K 그대로 입력) |
 | 2 | 100 MB 이상 실제 문서 | 메인 세션 | `fixtures/bench/manifest.json` 의 `large-real-image`·`large-real-objects` 는 `url: null` 자리만 있다. 확정 시 `prepare.mjs --tier large-real` 로 바로 돈다 |
-| 3 | 쪽 판정 1.0 s(사용자 결정 2026-10-21: Windows 중앙값이 1.0 s·재진입 200 ms 를 넘으면 대체안 구현 사전 승인) | Windows 측정 대기 | 서버 최대 패스 쪽 콜드 1.05 s(0.92–1.15). Windows 에서 초과하면 대체안(패스 판정 지연)이 필요하고, `PageEditability` 에 보류 표시(또는 문단만 판정하는 요청 인자)를 더하는 shared-types 변경이 선행된다. 판정 재진입 200 ms 도 같은 쪽이 306 ms |
-| 4 | 메모리 목표의 정의(사용자 결정 2026-10-21: 목표값 유지, 끝 = `emptyStore` 뒤·30 s 뒤, 3.3 재측정) | 결정됨 | 서버 결과가 WASM 증가 64 MiB 를 4/8 문서, 탭 증가 150 MiB 를 7/8 문서에서 넘는다. 원인은 캐시(누수 아님)·수거 가능한 쓰레기다. Windows 작업 관리자 값이 나오면 목표 값 또는 측정 시점(GC 뒤 등)을 D1 에서 다시 정한다 |
+| 3 | 쪽 판정 1.0 s(사용자 결정 2026-10-21: Windows 중앙값이 1.0 s·재진입 200 ms 를 넘으면 대체안 구현 사전 승인) | 판정 기준 사용자 결정 대기 | 서버 최대 패스 쪽 콜드 1.05 s(0.92–1.15). **Windows(2026-10-22)**: 중앙값 최대 247·재진입 87 ms 라 대체안 조건 불충족(구현 안 함). p95(= 6표본 최댓값) 기준으로는 kogl-mods-cpi-202609 첫 진입 1,276·재진입 491 ms 초과. 첫 표본 원인(서버 확인): 하네스 쪽 순서 [4, 8, …]쪽의 첫 두 쪽 값이다. 4쪽(최대 패스 쪽)은 순서를 바꿔도 779–1,145 ms, 8쪽은 레이아웃이 이웃 9쪽(풀린 8.9 MB)을 추출해 765–827 ms(첫 실행 준비가 아님, 처음 재는 쪽에 더해지는 몫은 0–0.3 s). 서버 브라우저 같은 순서 1,106·596, 재진입 4쪽 291 ms. 중앙값·p95 중 어느 쪽으로 판정할지 사용자 결정 대기 |
+| 4 | 메모리 목표의 정의(사용자 결정 2026-10-21: 목표값 유지, 끝 = `emptyStore` 뒤·30 s 뒤, 3.3 재측정) | 결정됨 | 서버 결과가 WASM 증가 64 MiB 를 4/8 문서, 탭 증가 150 MiB 를 7/8 문서에서 넘는다. 원인은 캐시(누수 아님)·수거 가능한 쓰레기다. Windows 작업 관리자 값이 나오면 목표 값 또는 측정 시점(GC 뒤 등)을 D1 에서 다시 정한다. **2026-10-22**: Windows W2 kogl-mods-cpi-202609 WASM 104.9 MiB 는 저널 원인으로 수정(서버 24.3 MiB, `docs/m5-followup.md` 5.1). 탭 증가(서버 수정 뒤 573 MiB)는 현재 쪽 core 캐시가 대부분이라 대응 결정 대기(5.2) |
 | 5 | S1 머지 | 메인 세션 | `session.ts` 첫 줄 `import './wasm-module.js'` 가 S1 의 저장 힙 모델에 필요(3.4). S1 도 `session.ts` 를 만지므로 충돌 시 이 줄을 유지 |
 | 6 | S3 머지 | S3 | `vite.config.ts` 의 `bench` 입력 1줄과 `viewer.html` 의 링크 1줄은 S3 의 릴리스 빌드·진단 숨김과 구역이 인접하다. 릴리스 빌드에서는 `bench.html` 을 제외하거나 숨긴다(D6: 벤치 버튼은 릴리스에서 숨김) |
 | 7 | OOB 주기 실행 | 사용자/메인 | 릴리스 전 200회 재실행 권고. 합성 셰이딩 경로 추가 여부 |
+| 8 | nasa-se-handbook 편집 반응(Windows 중앙값 118·p95 153 ms)·점프 넘김(p95 349 ms) | 사용자 결정(수정하지 않음) | **원인 가설**: 편집하는 문단(1쪽 표지 머리글)의 미리보기는 입력마다 변경 영역을 장치 배율로 다시 렌더한다. 이 쪽은 쪽 전체 배경 이미지(1202×1581)를 깔고, 같은 배율로 쪽 전체를 한 번 그린 뒤에는 영역 렌더가 그 이미지를 다시 그리는 비용을 매번 낸다. 서버 근거(측정): dpr 2·뷰포트 1440×731 에뮬레이션에서 편집 반응 p50 3 → 34 ms, Worker 갱신 중앙값 2.6 → 33.1 ms(렌더 배율 1.5 → 3.0, 영역 5,382 → 21,175 px, 4배 화소에 13배 시간). Node 같은 배율: 전체 렌더 없이 영역 2.5 ms, 전체 렌더 뒤 32.1 ms, 배경 이미지를 지운 사본은 전체 렌더 뒤에도 1.7 ms. Windows 노트북은 이 값이 2–3 배이고 60 ms 간격 입력이 앞 갱신을 기다리며 쌓여 73–181 ms 로 보인다(추정). 점프 넘김은 미리 렌더가 없는 쪽을 dpr 2 로 처음 그리는 시간(서버 dpr 1 → 2 에서 점프 p95 116 → 176 ms, 측정). **제안**: (a) 초안 시작 때 편집 영역의 배경(문단을 지운 쪽)을 한 번 렌더해 두고 입력마다 편집 블록만 그려 합성, (b) 입력 중에는 CSS 배율로 미리보기하고 멈추면 장치 배율로 다시 그리기(입력 중 선명도가 바뀌므로 사용자 결정), (c) 점프는 저해상도 먼저 그리고 고해상도로 바꾸기(표시 동작 변경) |

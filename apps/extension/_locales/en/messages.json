@@ -1,0 +1,14 @@
+{
+  "appName": {
+    "message": "PDF Editor",
+    "description": "Extension name (Chrome Web Store listing and chrome://extensions). Build step adds \" (dev)\" for dev builds."
+  },
+  "appDescription": {
+    "message": "Open PDFs in Chrome to select, search, edit paragraphs, table cells and shapes, and save. All local.",
+    "description": "Short description, 132 characters or fewer. Source: docs/store/listing.md summary."
+  },
+  "actionTitle": {
+    "message": "Open PDF Editor viewer",
+    "description": "Toolbar button tooltip."
+  }
+}

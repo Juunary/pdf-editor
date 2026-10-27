@@ -20,3 +20,7 @@
   overflow: auto;
   white-space: pre-wrap;
 }
+#bench-manual-warning {
+  display: block;
+  color: #b00020;
+}

@@ -25,6 +25,11 @@ import type {
 } from '@pdf-editor/shared-types';
 import { WORKER_RECOVERED_ERROR_NAME } from '@pdf-editor/viewer-ui';
 
+/** 문서 복구 실패. 화면 문장은 이름으로 만든다(viewer-ui error-text.ts, 사용자 결정 2026-10-26). */
+export class RecoveryFailedError extends Error {
+  override name = 'RecoveryFailedError';
+}
+
 export class WorkerRecoveredError extends Error {
   override name = WORKER_RECOVERED_ERROR_NAME;
   constructor(
@@ -195,7 +200,7 @@ export class ResilientPdf implements PdfWorkerApi {
 
   private async doRecover(failed: WorkerHandle, cause: unknown): Promise<void> {
     const message = cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
-    if (!this.original) throw new Error(`문서를 복구하지 못했습니다(${message})`);
+    if (!this.original) throw new RecoveryFailedError(`문서를 복구하지 못했습니다(${message})`);
     this.deps.log('worker-recover-start', { cause: message, epoch: this.epoch + 1 });
     failed.terminate();
     this.epoch++;
@@ -252,7 +257,7 @@ export class ResilientPdf implements PdfWorkerApi {
       }, 0);
     } catch (e) {
       this.deps.log('worker-recover-failed', String(e));
-      this.broken = new Error(
+      this.broken = new RecoveryFailedError(
         `문서를 복구하지 못했습니다. 파일을 다시 열어 주세요: ${e instanceof Error ? e.message : String(e)}`,
       );
       throw this.broken;

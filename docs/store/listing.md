@@ -6,6 +6,8 @@ PDF Editor (가칭). 상표 검색은 사용자가 합니다([assets.md](assets.
 
 ## 요약(132자 이하)
 
+매니페스트에 현지화 반영(2026-10-26): `apps/extension/_locales/{en,ko}/messages.json` 의 `appDescription` 이 아래 문구와 같고(`appName` 은 두 언어 모두 "PDF Editor"), 매니페스트는 `__MSG_appName__`·`__MSG_appDescription__`·`default_locale: "en"` 입니다. 문구를 바꾸면 두 곳을 함께 고칩니다(`apps/extension/test/release.test.ts` 가 일치를 검사).
+
 | 언어 | 문구 | 글자 수 |
 | --- | --- | --- |
 | 한국어 | Chrome 에서 PDF 를 열어 글자 선택·검색, 문단·표 셀·도형 편집, 저장까지 기기 안에서 처리합니다. | 61 |
@@ -56,4 +58,6 @@ Open source (AGPL-3.0-or-later): https://github.com/Juunary/pdf-editor
 | 항목 | 권고 |
 | --- | --- |
 | 카테고리 | 생산성(Productivity) |
-| 기본 언어 | 한국어, 영어 추가 |
+| 기본 언어 | 영어(매니페스트 `default_locale: "en"`, 사용자 결정 2026-10-26), 한국어 추가 |
+
+대시보드 입력 시 주의: 등록 정보(상세 설명·스크린샷·프로모션 타일)는 언어별로 따로 입력합니다. 기본 언어 영어 항목에 영어 상세 설명을, 한국어 항목에 한국어 상세 설명을 넣습니다. 이름·요약은 패키지의 `_locales` 에서 언어별로 읽히므로 대시보드 값과 위 표가 같은지 제출 전에 확인합니다.

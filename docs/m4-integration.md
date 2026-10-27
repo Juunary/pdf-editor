@@ -4,19 +4,19 @@
 | --- | --- |
 | 작성일 | 2026-10-21 |
 | 범위 | `docs/m4-contract.md` 작업 S1–S4 머지 뒤 통합: 계약 불일치 #4·#5·#7(`docs/m4-pdf-ops.md` 6절), 시작 상태 충실도(`docs/m3-integration.md` 10.4 제안 1·2), R-L3 연결, 통합 e2e, 실제 어댑터 시험, 코퍼스 표본(6.1), V5 |
-| 기준 | `m4` 브랜치 20f823b(네 작업 브랜치 머지) 이후 커밋. 계약 수정 2(6ae4fc7, 메인 세션) |
+| 기준 | `m4` 브랜치 fcc9b2f(네 작업 브랜치 머지) 이후 커밋. 계약 수정 2(38677cd, 메인 세션) |
 | 측정 환경 | 서버 `sailab01`, Node 22.18, npm `mupdf` 1.28.1, pdfjs-dist 6.4.299, Poppler 22.02, Playwright 1.64.1 번들 Chromium 156. Windows Chrome 은 미측정 |
 
 ## 1. 머지
 
 | 순서 | 브랜치 | 머지 커밋 | 작업 문서 |
 | --- | --- | --- | --- |
-| 1 | `m4-pdf-ops`(S1) | ac9bf0f | `docs/m4-pdf-ops.md` |
-| 2 | `m4-core`(S2) | 44dfa5d | `docs/m4-core.md` |
-| 3 | `m4-viewer-ui`(S3) | cff18cd | `docs/m4-viewer-ui.md` |
-| 4 | `m4-m3fu`(S4) | 20f823b | `docs/m3-integration.md` 10절 |
+| 1 | `m4-pdf-ops`(S1) | 9cd2fb2 | `docs/m4-pdf-ops.md` |
+| 2 | `m4-core`(S2) | 66e6ffc | `docs/m4-core.md` |
+| 3 | `m4-viewer-ui`(S3) | 81faa76 | `docs/m4-viewer-ui.md` |
+| 4 | `m4-m3fu`(S4) | fcc9b2f | `docs/m3-integration.md` 10절 |
 
-- main 머지 c2e0251(origin/main 0877dfc, PR #6 도형 라벨 문단 편집 허용). 충돌 3곳: `edit-plan.ts` 는 m4 셀 판정(`cellTarget`)을 살리고 main 의 "표 셀만 `not-flow-paragraph`" 규칙은 M4 셀 편집으로 대체해 `not-flow-paragraph` 를 어디에도 붙이지 않는다. `paragraph-plan.test.ts` 는 표 문단(셀 없음)도 제한 없음 시험으로, main 의 도형 라벨 편집 가능 시험은 그대로. `edit-labels.ts` 는 m4 타입(패스 사유 포함)에 문구를 "본문 흐름 밖의 글자…"(이전 결과 표시용)로. shared-types 사유 주석 갱신.
+- main 머지 8655095(origin/main 0a95d1b, PR #6 도형 라벨 문단 편집 허용). 충돌 3곳: `edit-plan.ts` 는 m4 셀 판정(`cellTarget`)을 살리고 main 의 "표 셀만 `not-flow-paragraph`" 규칙은 M4 셀 편집으로 대체해 `not-flow-paragraph` 를 어디에도 붙이지 않는다. `paragraph-plan.test.ts` 는 표 문단(셀 없음)도 제한 없음 시험으로, main 의 도형 라벨 편집 가능 시험은 그대로. `edit-labels.ts` 는 m4 타입(패스 사유 포함)에 문구를 "본문 흐름 밖의 글자…"(이전 결과 표시용)로. shared-types 사유 주석 갱신.
 
 ## 2. 통합 수정
 
@@ -127,7 +127,7 @@ Playwright(계약 6.2, `e2e/path-latency.spec.ts` 옵트인, kogl-mods-cpi 4쪽,
 
 ## 5. 검증
 
-2026-10-21, 이 worktree `m4`, main 머지(c2e0251) 뒤.
+2026-10-21, 이 worktree `m4`, main 머지(8655095) 뒤.
 
 | 명령 | 결과 |
 | --- | --- |

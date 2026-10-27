@@ -4,7 +4,7 @@
 |---|---|
 | 작성일 | 2026-10-19 (같은 날 계약 수정 1~5 병합 후 `LineInfo.spaceAfter` 반영) |
 | 범위 | `docs/m1-contract.md` 5.3절 (PLAN.md 6절 M1 "텍스트 선택 층·Ctrl+F" + 디버그 오버레이) |
-| 브랜치 | `m1-viewer-ui` (기준: 계약 커밋 `97a6fb4`, 이후 `m1` 계약 수정 5 `e276809` 까지 병합) |
+| 브랜치 | `m1-viewer-ui` (기준: 계약 커밋 `f3d5cac`, 이후 `m1` 계약 수정 5 `451dc77` 까지 병합) |
 | 상태 | **구현·합성 데이터 검증 완료. 실제 `extractPage`·`searchText`·`linkPage` 연동 검증은 통합 후** |
 | 변경 범위 | 허용 파일만 변경. `shared-types`·`core`·`pdf-ops`·`pnpm-lock.yaml`·루트 설정·manifest 무변경, 새 의존성 없음 |
 

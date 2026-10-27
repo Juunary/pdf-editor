@@ -6,7 +6,7 @@
 | 범위 | `docs/m0-day1-log.md` 8절 A5(Chrome 128–150 DNR)·A7(실제 코퍼스), 9.3 V3(pdf.js) 대체, `docs/m0-dod-xobject-redact-save.md` A1-2(공유 XObject 실제 코퍼스). M0 마지막 산출물 "v1 범위·일정 재산정" 의 입력 데이터 |
 | 수행 위치 | Mustree 서버 `sailab01` `/mnt/nas4/kjune/pdf-editor` (AMD Ryzen 9 5950X 32스레드, Node v22.18.0, mupdf 1.28.1, Poppler 22.02.0, pdfjs-dist 6.4.299, Playwright 1.64.1) |
 | 측정 표기 | 이 문서의 수치는 모두 **실측 2026-10-19**, 서버 기준. Windows Chrome 수치 아님 |
-| 기준 커밋 | 작업 시작 `0ee4561`, 작업 중 메인 세션 커밋 `d6974a8`(PLAN.md v2.5) 위에서 진행 |
+| 기준 커밋 | 작업 시작 `4efbb32`, 작업 중 메인 세션 커밋 `45fe1cb`(PLAN.md v2.5) 위에서 진행 |
 | PLAN.md·Day 1 로그 | 수정하지 않음. 반영 필요 사항은 끝의 "PLAN.md 반영 필요" |
 | 결과 원본 | `out/m0-corpus/`(git 제외): `corpus-result.json`, `pdfjs-result.json`, `edited/<id>.pdf`, `pdfjs/*.png`, `dnr/<버전>.json`, `save-bench/*.json`, 대조 실행 `out/m0-corpus-nosubset/` |
 

@@ -4,9 +4,10 @@ import { DomInputBuffer } from './input-buffer.js';
 import { Controls } from './components/Controls.js';
 import { PageArrow } from './components/PageArrow.js';
 import { PageSurface } from './components/PageSurface.js';
+import { pageArrowLayout } from './page-nav.js';
 
 export interface MountTargets {
-  /** 툴바 안 컨트롤(페이지 이동·찾기·디버그 토글)과 검색창. */
+  /** 툴바 안 컨트롤(페이지 이동·찾기·레이아웃·편집 버튼)과 검색창. */
   controls: HTMLElement;
   /** 페이지 표면(캔버스와 오버레이). */
   pages: HTMLElement;
@@ -31,6 +32,17 @@ export function mountViewer(targets: MountTargets, controller: ViewerController)
     targets.pages,
   );
 
+  // 쪽 화살표 자리(좌우 칸 또는 쪽 위 겹침)를 문서 영역 폭으로 정한다(style.css `[data-pe-arrows]`). 호스트의 쪽 맞춤
+  // 폭도 같은 함수(`pageArrowLayout`)로 정하므로 둘이 어긋나지 않는다.
+  const pages = targets.pages;
+  const syncArrows = () => {
+    pages.dataset.peArrows = pageArrowLayout(pages.clientWidth).placement;
+  };
+  syncArrows();
+  const arrowObserver =
+    typeof ResizeObserver === 'function' ? new ResizeObserver(syncArrows) : null;
+  arrowObserver?.observe(pages);
+
   let timer: ReturnType<typeof setTimeout> | null = null;
   const onResize = () => {
     if (timer !== null) clearTimeout(timer);
@@ -43,6 +55,8 @@ export function mountViewer(targets: MountTargets, controller: ViewerController)
 
   return () => {
     window.removeEventListener('resize', onResize);
+    arrowObserver?.disconnect();
+    delete pages.dataset.peArrows;
     if (timer !== null) clearTimeout(timer);
     controller.edit?.setInputBuffer(null);
     render(null, targets.controls);

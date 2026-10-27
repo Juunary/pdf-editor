@@ -23,11 +23,21 @@ export interface SourceEnv {
   mimeHandler: Pick<typeof chrome.mimeHandler, 'getStreamInfo'> | undefined;
   fetch: typeof fetch;
   now: () => number;
+  /** 문맥을 정한 직후(PDF 바이트를 받기 전) 부른다. 머리 영역 확대 보정이 문서 수신을 기다리지 않게 한다. */
+  onContext?(kind: ViewerContextKind, streamInfo: chrome.mimeHandler.StreamInfo | null): void;
+}
+
+/** PDF 요청 실패(HTTP 상태). 화면 문장은 이름·상태로 만든다(viewer-ui error-text.ts, 사용자 결정 2026-10-26). */
+export class PdfRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`PDF 요청 실패: HTTP ${status}`);
+    this.name = 'PdfRequestError';
+  }
 }
 
 async function readAll(env: SourceEnv, url: string, init?: RequestInit): Promise<ArrayBuffer> {
   const res = await env.fetch(url, init);
-  if (!res.ok && res.status !== 0) throw new Error(`PDF 요청 실패: HTTP ${res.status}`);
+  if (!res.ok && res.status !== 0) throw new PdfRequestError(res.status);
   return res.arrayBuffer();
 }
 
@@ -45,10 +55,12 @@ export async function resolveViewerSource(env: SourceEnv): Promise<ViewerSource>
       // MIME handler 가 띄운 페이지가 아니면 실패한다 → 다른 문맥으로 판정.
     }
     if (info) {
+      const kind = info.embedded ? 'mime-handler-embedded' : 'mime-handler-top';
+      env.onContext?.(kind, info);
       const t0 = env.now();
       const bytes = await readAll(env, info.streamUrl);
       return {
-        kind: info.embedded ? 'mime-handler-embedded' : 'mime-handler-top',
+        kind,
         displayUrl: info.originalUrl,
         bytes,
         streamInfo: info,
@@ -59,6 +71,7 @@ export async function resolveViewerSource(env: SourceEnv): Promise<ViewerSource>
 
   const fileUrl = extractFileParam(env.href);
   if (fileUrl) {
+    env.onContext?.('url-param', null);
     const t0 = env.now();
     const bytes = await readAll(env, fileUrl, { credentials: 'include' });
     return {
@@ -70,5 +83,6 @@ export async function resolveViewerSource(env: SourceEnv): Promise<ViewerSource>
     };
   }
 
+  env.onContext?.('viewer-page', null);
   return { kind: 'viewer-page', displayUrl: null, bytes: null, streamInfo: null, fetchMs: 0 };
 }

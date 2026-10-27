@@ -4,22 +4,22 @@
 | --- | --- |
 | 작성일 | 2026-10-20 |
 | 범위 | `docs/m3-contract.md` 7절 통합 순서 1–3(머지·통합 시험·코퍼스 측정). 마일스톤 리뷰(4)·Windows 사용자 확인(5)은 아래 7절 |
-| 기준 | `m3` 브랜치. 계약 55200a2·a7464f1, 계약 수정 1–4(2cc9982·64f6fcd·78a01ce·fbbe205) |
+| 기준 | `m3` 브랜치. 계약 cae2045·f17036e, 계약 수정 1–4(cf07d24·b07c295·927cfde·bec0225) |
 | 측정 환경 | 서버 `sailab01`, Node 22.18, npm `mupdf` 1.28.1, pdfjs-dist 6.4.299, Poppler 22.02, Playwright 1.64.1 번들 Chromium 156. Windows Chrome 은 미측정 |
 
 ## 1. 머지
 
 | 순서 | 브랜치 | 머지 커밋 | 작업 문서 |
 | --- | --- | --- | --- |
-| 1 | `m3-pdf-ops`(S1) | 8682c8a | `docs/m3-pdf-ops.md` |
-| 2 | `m3-reflow`(S2) | 5e4afb7 | `docs/m3-reflow.md` |
-| 3 | `m3-core`(S3) | e4ab414 | `docs/m3-core.md` |
-| 4 | `m3-viewer-ui`(S4) | 63b8ff8 | `docs/m3-viewer-ui.md` |
-| 5 | `m3-layout`(S5) | 82fcee5 | `docs/m2-accuracy.md` 7.2·7.3 |
+| 1 | `m3-pdf-ops`(S1) | b69cdfc | `docs/m3-pdf-ops.md` |
+| 2 | `m3-reflow`(S2) | a9f74ac | `docs/m3-reflow.md` |
+| 3 | `m3-core`(S3) | f4ce336 | `docs/m3-core.md` |
+| 4 | `m3-viewer-ui`(S4) | dd160ae | `docs/m3-viewer-ui.md` |
+| 5 | `m3-layout`(S5) | 795a798 | `docs/m2-accuracy.md` 7.2·7.3 |
 
 - 다섯 브랜치는 서로 다른 파일만 바꿔 충돌이 없었다. 커밋 작성자는 모두 Juunary 이고 AI 공동 저자 표기는 0건이다.
 
-## 2. 통합 보완(bb57aa0 외)
+## 2. 통합 보완(1cc19a7 외)
 
 | 항목 | 내용 |
 | --- | --- |
@@ -140,7 +140,7 @@ EDIT_CORPUS_DIR=<코퍼스> NODE_OPTIONS=--max-old-space-size=12288 pnpm --filte
 
 ### 9.0 Windows 사용자 확인 결과(2026-10-20)
 
-- 환경(사용자 보고): Chrome 155.0.8059.82, Windows 11 Home 10.0.26200, Intel Core Ultra 5 228V, RAM 31.5 GiB, Microsoft 한글 IME. 빌드 main e76ef99 dist.
+- 환경(사용자 보고): Chrome 155.0.8059.82, Windows 11 Home 10.0.26200, Intel Core Ultra 5 228V, RAM 31.5 GiB, Microsoft 한글 IME. 빌드 main c3f84a9 dist.
 - E1–E12: 아래 B1 외에는 문제 없음(사용자 보고, 항목별 관찰·진단 JSON·저장 파일 속성은 상세 미수신). 측정값은 없다.
 - E12(d) Acrobat 표시: 미확인(미설치).
 - 문제 1건(B1): 초과 상태에서 "영역 넓히기"를 누르면 한 문단이 여러 블록·단으로 갈라져 보임(사용자 보고). 파일·쪽·시점·오버레이 여부는 미수신. 9.1 에서 재현·수정.
@@ -165,7 +165,7 @@ EDIT_CORPUS_DIR=<코퍼스> NODE_OPTIONS=--max-old-space-size=12288 pnpm --filte
 - 커밋 뒤 쪽 레이아웃은 M2 레이아웃 복원(`layout-recon` `splitParagraphs`)이 쪽 전체를 다시 나눈다. 편집 블록의 줄은 원 문서의 조판과 다르다(왼쪽 정렬 마지막 줄·강제 줄바꿈 뒤 짧은 줄, 원 문단이 한 줄이면 줄 간격 = 글자 크기 × 1.2, 양쪽 정렬 줄의 넓은 단어 간격). 그래서 `pitch`·`sentence-end`·`short-justified` 등의 규칙으로 블록이 여러 문단이 되거나, 넓힌 영역으로 이웃 문단과 붙으면 이웃 줄과 한 문단이 된다.
 - `planPageEditability`(pdf-ops)는 레이아웃 문단마다 항목을 만들고 상자로 레이아웃 문단 bbox 를 썼다. 편집 대상은 블록 글자를 하나라도 포함하면 블록 전체(계약 D3)인데, 테두리는 갈라진 레이아웃 문단마다 따로 그려졌다(이웃 줄이 섞인 문단은 이웃 글자까지 덮음).
 
-수정(`38a5dd6`)
+수정(`2534680`)
 
 - `packages/pdf-ops/src/paragraph-edit.ts` `planPageEditability`: 편집 블록마다 항목 하나(첫 레이아웃 문단 id), 상자 = 블록 글자 상자(`analyzeBlock`). 같은 블록의 다른 레이아웃 문단은 목록에서 뺀다. 어느 항목으로 편집해도 대상은 블록 전체(기존 D3 규칙 그대로).
 - 시험: core `edit-real.test.ts` "B1" 2건(강제 줄바꿈 블록이 레이아웃 문단 2개여도 판정 1개·상자가 두 줄을 덮음 / 이웃 문단과 한 레이아웃 문단으로 합쳐져도 판정 상자가 블록 글자만 덮음). 수정 전 코드에서 2건 모두 실패 확인. 통합 e2e `edit-integration.spec.ts` "B1"(실제 확장·core: m0-sample 문단을 두 줄로 고쳐 Esc 커밋 → 레이아웃 문단 2개, 두 줄 위 마우스 오버 테두리가 같은 항목이고 두 줄을 덮음).
@@ -273,7 +273,7 @@ M2 정확도 하네스(`layout-accuracy.test.ts`, dev 30쪽)는 `reconstructPage
 
 ## 10. M4 작업 S4: 같은 텍스트 bbox 초과 26/110 진단·R-L3(2026-10-21)
 
-브랜치 `m4-m3fu`(기준 m4 `caa4654`). 계약 `docs/m4-contract.md` 1.2·5.2 작업 S4.
+브랜치 `m4-m3fu`(기준 m4 `b3fdde8`). 계약 `docs/m4-contract.md` 1.2·5.2 작업 S4.
 
 ### 10.1 진단 방법
 

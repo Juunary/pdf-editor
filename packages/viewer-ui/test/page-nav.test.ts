@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { canStep, clampPage, navDisabled, parsePageInput, stepPage } from '../src/page-nav.js';
+import {
+  canStep,
+  clampPage,
+  navDisabled,
+  pageArrowLayout,
+  PAGE_ARROW_GUTTER,
+  parsePageInput,
+  stepPage,
+} from '../src/page-nav.js';
+import { fitWidthScale } from '../src/layout.js';
 
 describe('페이지 이동', () => {
   it('clampPage', () => {
@@ -46,5 +55,34 @@ describe('navDisabled', () => {
 
   it('한 쪽짜리 문서는 둘 다 비활성', () => {
     expect(navDisabled(0, 1)).toEqual({ prev: true, next: true });
+  });
+});
+
+describe('쪽 화살표 자리(사용자 결정 2026-10-26 변경: 자리가 없으면 쪽 위에 겹침)', () => {
+  it('문서 영역 464 px 이상은 좌우 칸, 그 아래는 쪽 위 겹침', () => {
+    expect(pageArrowLayout(1280)).toEqual({
+      placement: 'side',
+      availableWidth: 1280 - 2 * PAGE_ARROW_GUTTER,
+    });
+    expect(pageArrowLayout(464).placement).toBe('side');
+    expect(pageArrowLayout(464).availableWidth).toBe(464 - 2 * PAGE_ARROW_GUTTER);
+    expect(pageArrowLayout(463)).toEqual({ placement: 'overlay', availableWidth: 463 });
+    expect(pageArrowLayout(400)).toEqual({ placement: 'overlay', availableWidth: 400 });
+    expect(pageArrowLayout(320)).toEqual({ placement: 'overlay', availableWidth: 320 });
+  });
+
+  it('좌우 칸일 때 쪽은 최소 폭 이상이라 칸이 들어갈 자리가 남는다', () => {
+    for (const w of [464, 500, 800, 1280]) {
+      const l = pageArrowLayout(w);
+      const pageCss = fitWidthScale({ availableWidth: l.availableWidth, pageWidthPt: 612 }) * 612;
+      expect(pageCss + 2 * PAGE_ARROW_GUTTER + 32, String(w)).toBeLessThanOrEqual(w + 1e-9);
+    }
+  });
+
+  it('쪽 위 겹침일 때는 칸 몫을 빼지 않아 쪽이 넓어진다(400 px: 320 → 368)', () => {
+    const pageCss = (w: number) =>
+      fitWidthScale({ availableWidth: pageArrowLayout(w).availableWidth, pageWidthPt: 612 }) * 612;
+    expect(pageCss(400)).toBeCloseTo(368, 6);
+    expect(pageCss(320)).toBeCloseTo(320, 6); // 최소 폭
   });
 });

@@ -4,7 +4,7 @@
 |---|---|
 | 작성일 | 2026-10-19 |
 | 범위 | `docs/m1-contract.md` 5.2절(`extractPage`·`searchText`·Stream 입력) |
-| 브랜치 | `m1-core` (기준: 계약 커밋 97a6fb4, 계약 수정 1–6 머지) |
+| 브랜치 | `m1-core` (기준: 계약 커밋 f3d5cac, 계약 수정 1–6 머지) |
 | 환경 | 서버 Node 22.18.0, mupdf 1.28.1. 브라우저·Windows 는 미측정 |
 | 재현 | `pnpm --filter @pdf-editor/core build` 후 `node packages/core/scripts/measure-m1.mjs <fixtures｜dir <폴더>｜gen <out> [쪽수]｜compare <file>>` |
 

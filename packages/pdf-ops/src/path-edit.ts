@@ -509,6 +509,7 @@ function planWarnings(ctx: ParagraphEditContext, items: readonly PathItem[]): Ed
       kind: 'tagged-structure-unlinked',
       message:
         'Form 을 복제하면서 /StructParents 를 지웁니다. 태그 PDF 구조와 이 위치의 연결이 끊깁니다.',
+      variant: 'form-clone',
       rects: tagged,
     });
   }
@@ -1211,6 +1212,7 @@ export function writePathEdit(
       kind: 'tagged-structure-unlinked',
       message:
         '태그(MCID)된 콘텐츠 안의 패스를 지웁니다. 태그 PDF 구조 트리에 내용 없는 항목이 남을 수 있습니다.',
+      variant: 'path-removed',
       rects: taggedRects,
     });
   }

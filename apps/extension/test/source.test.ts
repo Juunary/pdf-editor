@@ -63,11 +63,42 @@ describe('resolveViewerSource', () => {
     expect(e.fetch).not.toHaveBeenCalled();
   });
 
+  it('onContext: 문맥을 정한 직후, 바이트를 받기 전에 부른다(머리 영역 확대 보정용)', async () => {
+    const seen: string[] = [];
+    const fetchSpy = vi.fn(async () => {
+      seen.push('fetch');
+      return new Response(PDF.slice(0));
+    }) as unknown as typeof fetch;
+    const onContext = vi.fn((kind: string, info: chrome.mimeHandler.StreamInfo | null) => {
+      seen.push(`${kind}:${info?.tabId ?? '-'}`);
+    });
+    await resolveViewerSource(
+      env({
+        mimeHandler: { getStreamInfo: async () => streamInfo(false) },
+        fetch: fetchSpy,
+        onContext,
+      }),
+    );
+    expect(seen).toEqual(['mime-handler-top:7', 'fetch']);
+    seen.length = 0;
+    await resolveViewerSource(
+      env({ href: `${VIEWER}?file=https://example.com/x.pdf`, fetch: fetchSpy, onContext }),
+    );
+    expect(seen).toEqual(['url-param:-', 'fetch']);
+    seen.length = 0;
+    await resolveViewerSource(env({ onContext }));
+    expect(seen).toEqual(['viewer-page:-']);
+  });
+
   it('HTTP 오류는 예외', async () => {
     const e = env({
       href: `${VIEWER}?file=https://example.com/missing.pdf`,
       fetch: vi.fn(async () => new Response('x', { status: 404 })) as unknown as typeof fetch,
     });
     await expect(resolveViewerSource(e)).rejects.toThrow('HTTP 404');
+    await expect(resolveViewerSource(e)).rejects.toMatchObject({
+      name: 'PdfRequestError',
+      status: 404,
+    });
   });
 });

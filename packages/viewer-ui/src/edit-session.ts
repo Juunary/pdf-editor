@@ -32,6 +32,7 @@ import {
 } from './edit-model.js';
 import { nextBoundary, nextWordStart, prevBoundary, prevWordStart } from './edit-text.js';
 import { classifyFailure } from './failure.js';
+import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 
 /** 편집 RPC 중 세션이 쓰는 것. */
 export type EditRpc = Pick<
@@ -95,6 +96,8 @@ export interface EditSessionDeps {
   log(event: string, data?: unknown): void;
   /** 세션 상태가 바뀔 때마다 호출된다. */
   onChange(view: EditSessionView): void;
+  /** 편집기 안 안내 문자열(기본 한국어). */
+  strings?: ViewerStrings;
 }
 
 interface Frame {
@@ -105,9 +108,6 @@ interface Frame {
 
 /** 반응 시간 표본 보관 상한(긴 편집에서 무한히 늘지 않게). */
 const MAX_LATENCY_SAMPLES = 2000;
-
-const RECOVERED_NOTICE =
-  '작업 모듈이 중단되어 문서를 복구했습니다. 편집 중이던 문단을 다시 열었고, 복구 전 되돌리기 이력은 사라졌습니다.';
 
 export function isWorkerRecovered(error: unknown): boolean {
   return classifyFailure(error).kind === 'recovered';
@@ -141,6 +141,10 @@ export class EditSession {
   private restartPromise: Promise<void> | null = null;
   private readonly initialText: string;
   private readonly initialFormat: ParagraphFormat;
+
+  private get t(): ViewerStrings {
+    return this.deps.strings ?? VIEWER_STRINGS.ko;
+  }
 
   constructor(
     private readonly deps: EditSessionDeps,
@@ -624,7 +628,7 @@ export class EditSession {
     this.pendingT0 = null;
     try {
       const update = await this.deps.rpc.updateParagraphDraft(this.draftId, frame.input);
-      if (this.closed) return { error: '편집 세션이 닫혔습니다' };
+      if (this.closed) return { error: this.t.sessionClosed };
       this.apply(frame, update);
       return 'ok';
     } catch (e) {
@@ -685,9 +689,9 @@ export class EditSession {
   }
 
   private async doRestart(): Promise<void> {
-    this.notice = RECOVERED_NOTICE;
+    this.notice = this.t.sessionRecovered;
     const plan = await this.deps.rpc.planParagraphEdit(this.pageIndex, this.paragraphId);
-    if (!plan.editable) throw new Error('복구 뒤 같은 문단을 다시 편집할 수 없습니다');
+    if (!plan.editable) throw new Error(this.t.restartNotEditable);
     const begun = await this.deps.rpc.beginParagraphEdit(
       this.pageIndex,
       this.paragraphId,

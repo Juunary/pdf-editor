@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { editModel, openEditHarness, startEditHarness, stopEditHarness } from './edit-harness.js';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 
@@ -86,6 +87,32 @@ test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
     await expect(prev).toBeEnabled();
   });
 
+  test('화살표는 48×96 이상이고 기본·hover·비활성 모양이 구분된다(사용자 요청 2026-10-23)', async ({
+    page,
+  }) => {
+    const prev = page.locator('#pe-arrow-prev');
+    const next = page.locator('#pe-arrow-next');
+    for (const el of [prev, next]) {
+      const box = (await el.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(48);
+      expect(box.height).toBeGreaterThanOrEqual(96);
+      await expect(el.locator('svg')).toHaveCount(1);
+    }
+    const look = (sel: string) =>
+      page.evaluate((s) => {
+        const cs = getComputedStyle(document.querySelector(s)!);
+        return `${cs.backgroundColor} ${cs.color} ${cs.borderColor}`;
+      }, sel);
+    await page.mouse.move(1, 1);
+    const enabled = await look('#pe-arrow-next');
+    const disabled = await look('#pe-arrow-prev'); // 첫 쪽
+    expect(disabled).not.toBe(enabled);
+    // 기본 판은 88% 불투명(이전: 배경과 거의 같은 #4a4f54).
+    expect(enabled).toContain('rgba(32, 33, 36, 0.88)');
+    await next.hover();
+    expect(await look('#pe-arrow-next')).not.toBe(enabled);
+  });
+
   test('좌우 방향키는 쪽을 넘기지 않는다(캐럿 이동과 충돌 방지)', async ({ page }) => {
     await page.locator('#pe-page').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('ArrowRight');
@@ -143,17 +170,17 @@ test.describe('쪽 화살표(가짜 편집 호스트, 3쪽)', () => {
 
 // ══ 2. 확장 연동(시험에서 만든 3쪽 PDF) ═══════════════════════════════════
 
-/** Helvetica 한 줄씩 가진 n 쪽 PDF. */
-function makePdf(n: number): Buffer {
+/** Helvetica 한 줄씩 가진 n 쪽 PDF(쪽 612 × heightPt pt). */
+function makePdf(n: number, heightPt = 792): Buffer {
   const objs: string[] = [];
   const kids = Array.from({ length: n }, (_, i) => `${4 + i * 2} 0 R`).join(' ');
   objs.push('<< /Type /Catalog /Pages 2 0 R >>');
   objs.push(`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`);
   objs.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
   for (let i = 0; i < n; i++) {
-    const stream = `BT /F1 24 Tf 72 700 Td (Page ${i + 1} navigation sample) Tj ET`;
+    const stream = `BT /F1 24 Tf 72 ${heightPt - 92} Td (Page ${i + 1} navigation sample) Tj ET`;
     objs.push(
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 ${heightPt}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + i * 2} 0 R >>`,
     );
     objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
   }
@@ -179,10 +206,14 @@ const HOSTS: Record<string, string> = {
 
 function servePdf(): Promise<{ server: Server; base: string }> {
   const pdf = makePdf(3);
+  // 세로로 긴 쪽(612 × 1584 pt, 폭의 2.6 배): 어느 창 크기에서도 쪽이 문서 영역보다 훨씬 길다.
+  const tall = makePdf(2, 1584);
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://x').pathname;
     if (path === '/multi.pdf') {
       res.writeHead(200, { 'content-type': 'application/pdf' }).end(pdf);
+    } else if (path === '/tall.pdf') {
+      res.writeHead(200, { 'content-type': 'application/pdf' }).end(tall);
     } else if (path === '/host.html') {
       const kind = new URL(req.url ?? '/', 'http://x').searchParams.get('kind') ?? '';
       res
@@ -211,6 +242,7 @@ async function withExtension<T>(
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
   try {
@@ -248,6 +280,248 @@ async function navigateAndCheck(frame: Frame): Promise<void> {
   await expect(frame.locator('#pe-page-input')).toHaveValue('1');
   await expect(prev).toBeDisabled();
 }
+
+/** 화살표 두 상자, 쪽 캔버스 상자, 문서 영역의 보이는 범위(안쪽 여백 포함·스크롤바 제외). 모두 뷰포트 좌표. */
+async function arrowGeometry(page: Page) {
+  return page.evaluate(() => {
+    const c = document.getElementById('page-container')!;
+    const box = (id: string) => {
+      const r = document.getElementById(id)!.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    };
+    const cr = c.getBoundingClientRect();
+    const visLeft = cr.left + c.clientLeft;
+    const visTop = cr.top + c.clientTop;
+    return {
+      placement: c.dataset.peArrows ?? null,
+      clientWidth: c.clientWidth,
+      scrollWidth: c.scrollWidth,
+      scroll: { left: c.scrollLeft, top: c.scrollTop },
+      maxScroll: { left: c.scrollWidth - c.clientWidth, top: c.scrollHeight - c.clientHeight },
+      visible: {
+        left: visLeft,
+        top: visTop,
+        right: visLeft + c.clientWidth,
+        bottom: visTop + c.clientHeight,
+      },
+      canvas: box('page-canvas'),
+      prev: box('pe-arrow-prev'),
+      next: box('pe-arrow-next'),
+    };
+  });
+}
+
+type Box = { left: number; top: number; right: number; bottom: number };
+const overlaps = (a: Box, b: Box) =>
+  a.left < b.right - 0.5 &&
+  b.left < a.right - 0.5 &&
+  a.top < b.bottom - 0.5 &&
+  b.top < a.bottom - 0.5;
+const inside = (a: Box, b: Box) =>
+  a.left >= b.left - 0.5 &&
+  a.right <= b.right + 0.5 &&
+  a.top >= b.top - 0.5 &&
+  a.bottom <= b.bottom + 0.5;
+
+/** 문서 영역 안쪽 여백(viewer.css #page-container padding). 겹침 배치의 화살표는 보이는 범위 끝에서 이 안에 있다. */
+const AREA_PADDING = 16;
+
+type Geometry = Awaited<ReturnType<typeof arrowGeometry>>;
+
+function checkPlacement(g: Geometry, tag: string): void {
+  // 판정 기준(page-nav.ts pageArrowLayout): 문서 영역 464 px 이상이면 좌우 칸, 아니면 쪽 위 겹침.
+  expect(g.placement, tag).toBe(g.clientWidth >= 464 ? 'side' : 'overlay');
+  if (g.placement === 'side') {
+    expect(overlaps(g.prev, g.canvas), `${tag}: 이전 화살표 × 쪽`).toBe(false);
+    expect(overlaps(g.next, g.canvas), `${tag}: 다음 화살표 × 쪽`).toBe(false);
+    expect(g.scrollWidth, `${tag}: 가로 넘침 없음`).toBeLessThanOrEqual(g.clientWidth);
+    return;
+  }
+  // 겹침(사용자 결정 2026-10-26 변경): 두 화살표가 보이는 범위 안, 이전은 왼쪽 끝·다음은 오른쪽 끝, 쪽 위에 겹친다.
+  expect(inside(g.prev, g.visible), `${tag}: 이전 화살표가 보이는 범위 안`).toBe(true);
+  expect(inside(g.next, g.visible), `${tag}: 다음 화살표가 보이는 범위 안`).toBe(true);
+  expect(g.prev.left - g.visible.left, `${tag}: 이전은 왼쪽 끝`).toBeLessThanOrEqual(
+    AREA_PADDING + 0.5,
+  );
+  expect(g.visible.right - g.next.right, `${tag}: 다음은 오른쪽 끝`).toBeLessThanOrEqual(
+    AREA_PADDING + 0.5,
+  );
+  expect(overlaps(g.prev, g.canvas), `${tag}: 이전 화살표가 쪽 위`).toBe(true);
+  expect(overlaps(g.next, g.canvas), `${tag}: 다음 화살표가 쪽 위`).toBe(true);
+  // 쪽 폭 = 문서 영역 − 여백(최소 320), 칸 몫을 빼지 않는다. 가로 넘침은 쪽 최소 폭 때문인 만큼만.
+  const pageWidth = g.canvas.right - g.canvas.left;
+  expect(Math.abs(pageWidth - Math.max(320, g.clientWidth - 32)), `${tag}: 쪽 폭`).toBeLessThan(
+    1.5,
+  );
+  const minOverflow = Math.max(0, 320 + 2 * AREA_PADDING - g.clientWidth);
+  expect(
+    g.scrollWidth - g.clientWidth,
+    `${tag}: 가로 넘침은 쪽 최소 폭 때문만`,
+  ).toBeLessThanOrEqual(minOverflow + 1);
+}
+
+test('[통합] 창 폭 320·400·464·800 px: 넓으면 화살표가 쪽 밖 좌우 칸, 좁으면 보이는 범위 좌우 끝에서 쪽 위에 겹친다', async () => {
+  await withExtension(async (env) => {
+    const page = await env.context.newPage();
+    for (const width of [320, 400, 464, 800]) {
+      // 높이를 낮춰 세로로도 넘치게 한다(세로 끝까지 스크롤해도 화살표가 보이는 범위 안인지 본다).
+      await page.setViewportSize({ width, height: 480 });
+      await page.goto(
+        `chrome-extension://${env.extensionId}/viewer.html?file=${env.base}/multi.pdf`,
+      );
+      await waitRendered(page.mainFrame());
+      const g = await arrowGeometry(page);
+      const tag = `${width} px (문서 영역 ${g.clientWidth} px, ${g.placement})`;
+      expect(g.maxScroll.top, `${tag}: 세로 넘침(시험 전제)`).toBeGreaterThan(0);
+      checkPlacement(g, tag);
+      // 가로·세로 끝까지 스크롤해도 같은 조건을 지킨다.
+      await page.evaluate(() => {
+        const c = document.getElementById('page-container')!;
+        c.scrollLeft = c.scrollWidth;
+        c.scrollTop = c.scrollHeight;
+      });
+      const end = await arrowGeometry(page);
+      expect(end.scroll, `${tag}: 끝까지 스크롤`).toEqual(end.maxScroll);
+      checkPlacement(end, `${tag} 끝까지 스크롤 뒤`);
+      if (g.placement === 'overlay') {
+        // 화살표 밖 쪽 가운데·화살표 바로 안쪽은 쪽이 받는다(칸이 포인터를 가로채지 않음).
+        const hits = await page.evaluate(
+          ({ prev, next, canvas }) => {
+            const at = (x: number, y: number) => {
+              const el = document.elementFromPoint(x, y);
+              return {
+                page: el?.closest('#pe-page') !== null,
+                arrow: el?.closest('.pe-arrow-slot') !== null,
+              };
+            };
+            const midY = (prev.top + prev.bottom) / 2;
+            return {
+              center: at((canvas.left + canvas.right) / 2, (canvas.top + canvas.bottom) / 2),
+              besidePrev: at(prev.right + 4, midY),
+              besideNext: at(next.left - 4, midY),
+              abovePrev: at((prev.left + prev.right) / 2, prev.top - 4),
+            };
+          },
+          { prev: end.prev, next: end.next, canvas: end.canvas },
+        );
+        for (const [where, h] of Object.entries(hits)) {
+          expect(h, `${tag}: ${where} 은 쪽이 받음`).toEqual({ page: true, arrow: false });
+        }
+        // 실제 클릭도 쪽으로 간다(쪽 이동 없음, 클릭 대상이 쪽 안).
+        await page.evaluate(() => {
+          const w = window as unknown as { __clickTarget: string | null };
+          w.__clickTarget = null;
+          document.addEventListener(
+            'click',
+            (e) => {
+              w.__clickTarget =
+                (e.target as Element | null)?.closest('#pe-page') !== null ? 'page' : 'other';
+            },
+            { capture: true, once: true },
+          );
+        });
+        const c = end.canvas;
+        const visCenterX =
+          (Math.max(c.left, end.visible.left) + Math.min(c.right, end.visible.right)) / 2;
+        const visCenterY =
+          (Math.max(c.top, end.visible.top) + Math.min(c.bottom, end.visible.bottom)) / 2;
+        await page.mouse.click(visCenterX, visCenterY);
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => (window as unknown as { __clickTarget: string | null }).__clickTarget,
+            ),
+          )
+          .toBe('page');
+        await expect(page.locator('#pe-page-input'), tag).toHaveValue('1');
+        // 화살표로 쪽 이동(끝까지 스크롤한 상태 그대로).
+        await navigateAndCheck(page.mainFrame());
+      }
+    }
+  });
+});
+
+/** 화살표 세로 가운데 허용 오차(px). */
+const CENTER_TOLERANCE = 8;
+
+test('[통합] 긴 쪽 맨 위·가운데·끝 스크롤: 두 화살표가 문서 영역 보이는 범위 안 세로 가운데에 남는다', async () => {
+  await withExtension(async (env) => {
+    const page = await env.context.newPage();
+    const sizes: [number, number][] = [
+      [800, 480],
+      [1280, 600],
+      [400, 480],
+      [320, 480],
+    ];
+    for (const [width, height] of sizes) {
+      await page.setViewportSize({ width, height });
+      await page.goto(
+        `chrome-extension://${env.extensionId}/viewer.html?file=${env.base}/tall.pdf`,
+      );
+      await waitRendered(page.mainFrame());
+      const g = await arrowGeometry(page);
+      const tag = `${width}×${height} (문서 영역 ${g.clientWidth} px, ${g.placement})`;
+      // 시험 전제: 쪽이 문서 영역보다 많이 길다(보이는 높이 이상 넘침).
+      expect(g.maxScroll.top, `${tag}: 세로 넘침`).toBeGreaterThan(
+        g.visible.bottom - g.visible.top,
+      );
+      // 화살표가 스크롤 범위를 늘리지 않는다: 세로 스크롤 높이 = 쪽 높이 + 위아래 여백.
+      const canvasHeight = g.canvas.bottom - g.canvas.top;
+      expect(
+        Math.abs(
+          g.maxScroll.top + (g.visible.bottom - g.visible.top) - (canvasHeight + 2 * AREA_PADDING),
+        ),
+        `${tag}: 세로 스크롤 높이`,
+      ).toBeLessThanOrEqual(1);
+      for (const [where, frac] of [
+        ['맨 위', 0],
+        ['가운데', 0.5],
+        ['끝', 1],
+      ] as const) {
+        await page.evaluate((f) => {
+          const c = document.getElementById('page-container')!;
+          c.scrollTop = Math.round((c.scrollHeight - c.clientHeight) * f);
+          c.scrollLeft = Math.round((c.scrollWidth - c.clientWidth) * f);
+        }, frac);
+        const s = await arrowGeometry(page);
+        const at = `${tag} ${where}(scrollTop ${s.scroll.top}/${s.maxScroll.top})`;
+        expect(s.scroll.top, `${at}: 스크롤 위치`).toBe(Math.round(s.maxScroll.top * frac));
+        checkPlacement(s, at);
+        const visMid = (s.visible.top + s.visible.bottom) / 2;
+        for (const [name, b] of [
+          ['이전', s.prev],
+          ['다음', s.next],
+        ] as const) {
+          expect(inside(b, s.visible), `${at}: ${name} 화살표가 보이는 범위 안`).toBe(true);
+          expect(
+            Math.abs((b.top + b.bottom) / 2 - visMid),
+            `${at}: ${name} 화살표 세로 가운데(위 ${b.top.toFixed(1)}, 보이는 범위 ${s.visible.top}–${s.visible.bottom})`,
+          ).toBeLessThanOrEqual(CENTER_TOLERANCE);
+        }
+        // 칸은 포인터를 받지 않는다: 버튼 바로 위·아래 점은 칸이 아니라 쪽(overlay)이나 문서 영역(side)이 받는다.
+        const hits = await page.evaluate(
+          ({ prev, next }) =>
+            [prev, next].flatMap((b) =>
+              [b.top - 4, b.bottom + 4].map((y) => {
+                const el = document.elementFromPoint((b.left + b.right) / 2, y);
+                return {
+                  slot: el?.closest('.pe-arrow-slot') !== null,
+                  page: el?.closest('#pe-page') !== null,
+                };
+              }),
+            ),
+          { prev: s.prev, next: s.next },
+        );
+        for (const h of hits) {
+          expect(h, `${at}: 버튼 밖은 칸이 받지 않음`).toEqual({
+            slot: false,
+            page: s.placement === 'overlay',
+          });
+        }
+      }
+    }
+  });
+});
 
 test('[통합] 일반 뷰어: 3쪽 PDF 를 화살표로 앞뒤 이동한다', async () => {
   await withExtension(async (env) => {

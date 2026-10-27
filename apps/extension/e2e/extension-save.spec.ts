@@ -7,6 +7,8 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chooseSave } from './toolbar-helpers.js';
+import { E2E_LOCALE } from './locale.js';
 
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const SAMPLE = join(DIST, 'diag/m0-sample.pdf');
@@ -28,6 +30,7 @@ test.beforeAll(async () => {
   context = await chromium.launchPersistentContext(userDataDir, {
     channel: 'chromium',
     headless: true,
+    locale: E2E_LOCALE,
     acceptDownloads: true,
     args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
   });
@@ -135,7 +138,7 @@ test.describe('지원 문서 크기 상한(M5 C7, 리스크 8)', () => {
         },
       }),
     );
-    await page.click('#save-downloads');
+    await chooseSave(page, 'save-downloads');
     const dialog = page.locator('#app-dialog');
     await expect(dialog).toBeVisible();
     await dialog.locator('[data-dialog-button="cancel"]').click();
@@ -161,7 +164,7 @@ test.describe('저장 전 판정(5.8)', () => {
         heap: { ...plan({}).heap, level: 'over-limit', message: '메모리 한계를 넘습니다(테스트)' },
       }),
     );
-    await page.click('#save-downloads');
+    await chooseSave(page, 'save-downloads');
     const dialog = page.locator('#app-dialog');
     await expect(dialog).toBeVisible();
     await expect(dialog.locator('h2')).toHaveText('저장할 수 없습니다');
@@ -189,7 +192,7 @@ test.describe('저장 전 판정(5.8)', () => {
       }),
     );
     const dialog = page.locator('#app-dialog');
-    await page.click('#save-downloads');
+    await chooseSave(page, 'save-downloads');
     await expect(dialog.locator('h2')).toHaveText('저장 전 확인');
     await expect(dialog).toContainText('메모리 한계를 넘습니다(테스트)');
     await expect(dialog).toContainText('이미 커진 작업 메모리');
@@ -215,7 +218,7 @@ test.describe('저장 전 판정(5.8)', () => {
       }),
     );
     const dialog = page.locator('#app-dialog');
-    await page.click('#save-downloads');
+    await chooseSave(page, 'save-downloads');
     await expect(dialog.locator('h2')).toHaveText('저장 전 확인');
     await expect(dialog).toContainText('메모리를 많이 씁니다(테스트)');
     await expect(dialog).toContainText('구조(읽기 순서·태그)와의 연결이 끊어집니다');
@@ -225,7 +228,7 @@ test.describe('저장 전 판정(5.8)', () => {
     await expect(dialog).toBeHidden();
     expect(await diagEvents(page, 'save')).toHaveLength(0);
     // Esc 도 취소
-    await page.click('#save-downloads');
+    await chooseSave(page, 'save-downloads');
     await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
@@ -234,7 +237,7 @@ test.describe('저장 전 판정(5.8)', () => {
     const [download] = await Promise.all([
       page.waitForEvent('download'),
       (async () => {
-        await page.click('#save-downloads');
+        await chooseSave(page, 'save-downloads');
         await dialog.locator('[data-dialog-button="ok"]').click();
       })(),
     ]);
@@ -247,7 +250,7 @@ test.describe('저장 전 판정(5.8)', () => {
     const page = await openViewer();
     const [download] = await Promise.all([
       page.waitForEvent('download'),
-      page.click('#save-downloads'),
+      chooseSave(page, 'save-downloads'),
     ]);
     expect(statSync(await download.path()).size).toBe(statSync(SAMPLE).size);
     await expect(page.locator('#app-dialog')).toBeHidden();
@@ -276,7 +279,7 @@ test.describe('저장 중 Worker 복구(A3-3)', () => {
       };
     });
     const dialog = page.locator('#app-dialog');
-    await page.click('#save-downloads');
+    await chooseSave(page, 'save-downloads');
     await expect(dialog.locator('h2')).toHaveText('저장하지 못했습니다');
     await expect(dialog).toContainText('다시 저장할까요?');
     const [download] = await Promise.all([
@@ -298,7 +301,7 @@ test.describe('저장 중 Worker 복구(A3-3)', () => {
       };
     });
     const dialog = page.locator('#app-dialog');
-    await page.click('#save-downloads');
+    await chooseSave(page, 'save-downloads');
     await expect(dialog.locator('h2')).toHaveText('저장하지 못했습니다');
     await dialog.locator('[data-dialog-button="cancel"]').click();
     await expect(dialog).toBeHidden();

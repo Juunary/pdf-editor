@@ -7,7 +7,9 @@
  * 환경 변수
  *   BENCH_TIER       fixtures/bench/manifest.json 의 tier(쉼표 목록, 기본 core)
  *   BENCH_DOCS       문서 id 쉼표 목록(기본: tier 전체)
+ *   BENCH_IDS        벤치 세트 밖 코퍼스 문서 id 쉼표 목록(prepare.mjs --ids, Windows 실행과 같은 문서를 잴 때)
  *   BENCH_SCENARIOS  시나리오 쉼표 목록(기본: 전체)
+ *   BENCH_OPTIONS    측정 옵션 JSON(BenchOptions 일부, 예 '{"mem":{"pages":50,"edits":0,"saves":2,"settleMs":30000}}')
  *   BENCH_LABEL      결과 파일 이름(기본: 시각)
  *   BENCH_BASELINE   직전 기록 JSON 경로(기본 fixtures/bench/baseline-server.json). +20% 초과 지표를 회귀로 표시한다.
  *
@@ -29,7 +31,7 @@ import {
 } from './bench-harness.js';
 import { compareRuns } from '../src/viewer/bench-stats.js';
 import type { BenchResult } from '../src/viewer/bench.js';
-import { DEFAULT_OPTIONS, type Scenario } from '../src/viewer/bench-run.js';
+import { DEFAULT_OPTIONS, type BenchOptions, type Scenario } from '../src/viewer/bench-run.js';
 
 const RUN = process.env.BENCH_RUN === '1';
 const OUT_DIR = join(REPO, 'out/m5-bench');
@@ -42,6 +44,7 @@ test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
     const tier = process.env.BENCH_TIER ?? 'core';
     const args = ['fixtures/bench/prepare.mjs', '--tier', tier];
     if (process.env.BENCH_CORPUS_DIR) args.push('--corpus-dir', process.env.BENCH_CORPUS_DIR);
+    if (process.env.BENCH_IDS) args.push('--ids', process.env.BENCH_IDS);
     let docs = JSON.parse(
       execFileSync('node', args, { cwd: REPO, maxBuffer: 1 << 24 }).toString(),
     ) as BenchDocFile[];
@@ -50,6 +53,7 @@ test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
     expect(docs.length).toBeGreaterThan(0);
     const scenarios = (process.env.BENCH_SCENARIOS?.split(',') ??
       DEFAULT_OPTIONS.scenarios) as Scenario[];
+    const extra = JSON.parse(process.env.BENCH_OPTIONS ?? '{}') as Partial<BenchOptions>;
 
     // 문서마다 새 브라우저(새 렌더러 프로세스)로 잰다: 앞 문서가 남긴 JS·WASM 메모리가 탭 메모리 기준을 흐리지 않게.
     const { server, base } = await serveDocs(docs);
@@ -73,7 +77,8 @@ test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
           });
           parts.push(
             (await page.evaluate(
-              ([list, sc]) => window.__bench.run(list, { scenarios: sc as never }),
+              ([list, sc, opts]) =>
+                window.__bench.run(list, { ...(opts as object), scenarios: sc as never }),
               [
                 [
                   {
@@ -85,6 +90,7 @@ test.describe('M5 벤치마크 정식 실행(옵트인)', () => {
                   },
                 ],
                 scenarios,
+                extra,
               ] as const,
             )) as unknown as BenchResult,
           );

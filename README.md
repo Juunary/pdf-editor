@@ -1,60 +1,64 @@
 # pdf-editor
 
-PDF 문단 리플로우·표 셀·벡터 패스 편집기. Chrome 확장(MV3), 코어는 TypeScript + MuPDF WebAssembly(npm `mupdf`). 라이선스: AGPL-3.0-or-later.
+PDF editor with paragraph reflow, table-cell and vector-path editing. Chrome extension (MV3); the core is TypeScript + MuPDF WebAssembly (npm `mupdf`). License: AGPL-3.0-or-later.
 
-기능: PDF 열기, 텍스트 선택·복사, 문서 검색, 문단 편집(리플로우, 한글 입력), 표 셀 텍스트 편집, 벡터 패스 편집(이동·크기·점·색·선 두께·삭제), 되돌리기·다시 실행, 편집 가능 표시, 저장.
+Features: open PDFs, select and copy text, search the document, edit paragraphs (reflow, Korean IME input), edit table-cell text, edit vector paths (move, resize, points, colour, stroke width, delete), undo/redo, editability overlay, save. The UI follows the browser language (Korean or English).
 
-## 실행
+## Running
 
 ```bash
-corepack enable pnpm   # pnpm 11.28.6 (package.json packageManager), Node 22.13 이상
+corepack enable pnpm   # pnpm 11.28.6 (package.json packageManager), Node 22.13 or later
 pnpm install
-pnpm build             # apps/extension/dist 생성
-pnpm test              # Vitest + Playwright(번들 Chromium)
+pnpm build             # produces apps/extension/dist
+pnpm test              # Vitest + Playwright (bundled Chromium)
 pnpm lint
 pnpm exec prettier --check .
 ```
 
-최초 e2e 실행 전: `pnpm --filter @pdf-editor/extension exec playwright install chromium`.
+Before the first e2e run: `pnpm --filter @pdf-editor/extension exec playwright install chromium`.
 
-Chrome 에 올리기: `chrome://extensions` → 개발자 모드 → "압축해제된 확장 프로그램을 로드합니다" → `apps/extension/dist`. 자세한 설치·사용은 [docs/user](docs/user/README.md).
+Load into Chrome: `chrome://extensions` → Developer mode → "Load unpacked" → `apps/extension/dist`. Installation and usage details (Korean): [docs/user](docs/user/README.md).
 
-## 구조
+Web Store package: `pnpm --filter @pdf-editor/extension package` → `apps/extension/out/release/`. Procedure: [docs/release.md](docs/release.md).
 
-| 경로 | 내용 |
+## Structure
+
+| Path | Contents |
 | --- | --- |
-| `packages/shared-types` | 공통 타입, Worker RPC 계약 |
-| `packages/core` | MuPDF 수명·문서 상태, 렌더, 편집 엔진, Worker RPC(Comlink) |
-| `packages/pdf-ops` | 콘텐츠 스트림 인터프리터(SourceMap), 텍스트·패스 편집 쓰기, 폰트 임베딩, 저장 방식 결정 |
-| `packages/layout-recon` | 쪽 모델 → 문단·열·표·도형·읽기 순서 |
-| `packages/reflow` | 셰이핑·줄 배치 |
-| `packages/viewer-ui` | Preact 뷰어: 선택 층, 검색, 편집기, 패스 편집, 편집 가능 표시 |
-| `apps/extension` | MV3 셸: manifest, 서비스 워커, 뷰어, Worker, 저장 어댑터 |
-| `assets/fonts` | 폴백 폰트(Noto Sans KR 서브셋 TTF, OFL-1.1) |
-| `fixtures` | 코퍼스 매니페스트, 정확도 라벨, 벤치 매니페스트 |
-| `docs` | 사용자 문서(`docs/user`), 등록 자료(`docs/store`), 계약·작업 기록 |
+| `packages/shared-types` | Shared types, Worker RPC contract |
+| `packages/core` | MuPDF lifecycle and document state, rendering, edit engine, Worker RPC (Comlink) |
+| `packages/pdf-ops` | Content-stream interpreter (SourceMap), text and path edit writers, font embedding, save strategy |
+| `packages/layout-recon` | Page model → paragraphs, columns, tables, figures, reading order |
+| `packages/reflow` | Shaping and line layout |
+| `packages/viewer-ui` | Preact viewer: selection layer, search, editors, path editing, editability overlay |
+| `apps/extension` | MV3 shell: manifest, service worker, viewer, Worker, save adapters |
+| `assets/fonts` | Fallback font (Noto Sans KR subset TTF, OFL-1.1) |
+| `fixtures` | Corpus manifest, accuracy labels, benchmark manifest |
+| `docs` | User docs (`docs/user`), store listing material (`docs/store`), contracts and work records (Korean) |
 
-구조와 데이터 흐름: [docs/architecture.md](docs/architecture.md).
+Architecture and data flow: [docs/architecture.md](docs/architecture.md).
 
-## 결과
+## Results
 
-| 항목 | 값 | 출처 |
+| Item | Value | Source |
 | --- | --- | --- |
-| 코퍼스 편집 330건(문단), 편집 영역 밖 렌더 변화 0 px | MuPDF·pdf.js·Poppler 각 330/330 | `docs/m4-integration.md` 4.1 |
-| 표 셀 편집 63건, 영역 밖 렌더 0 px | 세 엔진 각 63/63 | 같은 문서 4.2 |
-| 패스 편집 60건, 영역 밖 렌더 0 px | 세 엔진 각 60/60 | 같은 문서 4.2 |
-| 재적용 결정성(새 세션 재적용 = 원래) | 셀 63/63, 패스 60/60 | 같은 문서 4.2 |
-| 레이아웃 복원(test2, 라벨 14쪽) | 문단 F1 0.881, 표 P/R 1.0 | `docs/m2-accuracy.md` |
-| 패스 끌기 갱신(코퍼스 최대 패스 쪽, 서버) | p95 89.3 ms(배율 2) | `docs/m4-integration.md` 4.3 |
-| 단위 시험 | pdf-ops 451, core 290, viewer-ui 302, reflow 60, layout-recon 60, extension 74, spike-m0 33, shared-types 4(합계 1,274 통과, 14 건너뜀) | `docs/m5-integration.md` 8.4 |
-| e2e | 141 통과, 5 건너뜀(옵트인) | 같은 문서 8.4 |
+| Corpus edits, 330 (paragraphs), render change outside the edit area 0 px | MuPDF, pdf.js, Poppler 330/330 each | `docs/m4-integration.md` 4.1 |
+| Table-cell edits, 63, render change outside the area 0 px | 63/63 on all three engines | same document 4.2 |
+| Path edits, 60, render change outside the area 0 px | 60/60 on all three engines | same document 4.2 |
+| Reapply determinism (reapply in a new session = original) | cells 63/63, paths 60/60 | same document 4.2 |
+| Layout reconstruction (test2, 14 labelled pages) | paragraph F1 0.881, table P/R 1.0 | `docs/m2-accuracy.md` |
+| Path drag update (largest path page in the corpus, server) | p95 89.3 ms (scale 2) | `docs/m4-integration.md` 4.3 |
+| Windows reference PC (Chrome 155, Core Ultra 5 228V, 7 documents) | open p95 46–1,055 ms, page turn p95 45–287 ms, save p95 66–494 ms | `docs/m5-integration.md` 9.2 |
+| Unit tests | shared-types 4, layout-recon 60, reflow 60, pdf-ops 457, core 308, viewer-ui 331, extension 119, spike-m0 33 (1,372 passed, 16 skipped) | `docs/release-1.0.0.md` |
+| e2e | 191 passed, 6 skipped (opt-in) | same document |
 
-모든 수치는 서버(Linux, Node 22, Playwright 번들 Chromium) 측정입니다. Windows 기준 PC 성능 측정은 M5 에서 진행합니다(`docs/m5-contract.md` D1).
+Numbers other than the Windows row are measured on the server (Linux, Node 22, Playwright bundled Chromium).
 
-## 한계
+## Limitations
 
-- 한 쪽씩 보기(연속 스크롤 없음).
-- 편집 제한 사유가 있는 문단·셀·패스는 편집할 수 없습니다: 세로쓰기·Type3·클립 텍스트·OCR 층·패턴 채움 등. 목록: [docs/user/limits.md](docs/user/limits.md).
-- 행·열 추가, 병합·분할, 새 패스 그리기, 이미지 내용 편집, 폼·서명, OCR 은 지원하지 않습니다.
-- 편집한 문서는 전체 저장입니다. WASM 힙 상한(2 GiB) 때문에 큰 문서는 저장 전에 경고하거나 중단합니다.
-- Web Store 빌드는 Chrome 151 이상. Chrome 128–150 은 개발·레거시 빌드의 제한된 경로입니다.
+- One page at a time (no continuous scrolling).
+- Paragraphs, cells and paths with an edit restriction cannot be edited: vertical text, Type3 fonts, clipped text, OCR layers, pattern fills, etc. List: [docs/user/limits.md](docs/user/limits.md).
+- Not supported: adding rows/columns, merging/splitting cells, drawing new paths, editing image content, forms and signatures, OCR.
+- Edited documents are saved in full. Because of the WASM heap limit (2 GiB), large documents get a warning or are stopped before saving.
+- Known issues in 1.0.0 (measured on the Windows reference PC): edit response on some image-heavy pages exceeds the 100 ms target (median 118 ms on one document); tab memory after long editing sessions on large pages exceeds the 150 MiB target; documents over 100 MB have not been verified. Details: `docs/m5-integration.md` 9.2.
+- The Web Store build requires Chrome 151 or later. Chrome 128–150 is a limited path in the development/legacy build.

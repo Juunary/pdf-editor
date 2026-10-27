@@ -440,6 +440,10 @@ describe('ResilientPdf', () => {
     await expect(pdf.getPageInfo(0)).rejects.toThrow('복구하지 못했습니다');
     expect(spawned()).toBe(2);
     await expect(pdf.renderPage({ pageIndex: 0, scale: 1 })).rejects.toThrow('다시 열어 주세요');
+    // 화면 문장은 이름으로 만든다(영어 화면, 사용자 결정 2026-10-26).
+    await expect(pdf.renderPage({ pageIndex: 0, scale: 1 })).rejects.toMatchObject({
+      name: 'RecoveryFailedError',
+    });
     expect(spawned()).toBe(2); // 더 시도하지 않는다
     await pdf.open(bytes());
     expect(spawned()).toBe(3);

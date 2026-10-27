@@ -392,6 +392,7 @@ function PathPanel({
 }: PanelProps) {
   const paths = controller.edit?.paths;
   if (!paths) return null;
+  const t = controller.strings;
   const editable = plan?.editable === true;
   const multi = count > 1;
   // 채움 색은 채우는 패스, 선 색·선 두께는 긋는 패스가 선택에 있을 때만(리뷰 L6).
@@ -414,10 +415,10 @@ function PathPanel({
       data-pe-keep=""
       style={{ left: `${Math.max(0, Math.min(x, rx))}px`, top: `${y + 8}px` }}
     >
-      <strong>{multi ? `패스 ${count}개 선택` : '패스 1개 선택'}</strong>
+      <strong>{t.pathsSelected(multi ? count : 1)}</strong>
       {!editable && plan && (
         <ul id="pe-path-note" class="pe-path-note">
-          {(note ?? ['이 패스는 편집할 수 없습니다.']).map((n, i) => (
+          {(note ?? [t.pathNotEditable]).map((n, i) => (
             <li key={i}>{n}</li>
           ))}
         </ul>
@@ -425,7 +426,7 @@ function PathPanel({
       {editable && (
         <>
           <label>
-            채움 색
+            {t.fillColor}
             <input
               id="pe-path-fill"
               type="color"
@@ -435,7 +436,7 @@ function PathPanel({
             />
           </label>
           <label>
-            선 색
+            {t.strokeColor}
             <input
               id="pe-path-stroke"
               type="color"
@@ -445,7 +446,7 @@ function PathPanel({
             />
           </label>
           <label>
-            선 두께(pt)
+            {t.lineWidth}
             <input
               id="pe-path-width"
               type="number"
@@ -462,33 +463,29 @@ function PathPanel({
             class="pe-btn"
             disabled={!canPoints || busy}
             aria-pressed={pointMode}
-            title={
-              canPoints
-                ? '꼭짓점·제어점을 끌어 옮깁니다(패스 하나)'
-                : '패스 하나를 선택하면 점 편집을 할 수 있습니다'
-            }
+            title={canPoints ? t.pointEditTitle : t.pointEditNeedsOne}
             onClick={() => paths.setPointMode(!pointMode)}
           >
-            점 편집
+            {t.pointEdit}
           </button>
           <button
             id="pe-path-delete"
             type="button"
             class="pe-btn"
             disabled={busy}
-            title="선택한 패스를 지웁니다 (Delete)"
+            title={t.deletePathTitle}
             onClick={() => void paths.deleteSelected()}
           >
-            삭제
+            {t.deletePath}
           </button>
         </>
       )}
       <button id="pe-path-clear" type="button" class="pe-btn" onClick={() => paths.clear()}>
-        선택 해제
+        {t.clearSelection}
       </button>
       {error && (
         <p id="pe-path-error" class="pe-path-error" role="alert">
-          {error}
+          {t.errorDetail(error)}
         </p>
       )}
     </div>

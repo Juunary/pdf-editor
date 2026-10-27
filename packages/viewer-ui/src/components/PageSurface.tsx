@@ -64,7 +64,7 @@ export function PageSurface({ controller }: Props) {
   if (!view) {
     return state.renderError ? (
       <div id="pe-render-error" class="pe-render-error" role="alert">
-        페이지를 그리지 못했습니다: {state.renderError}
+        {controller.strings.pageRenderFailed(controller.strings.errorDetail(state.renderError))}
       </div>
     ) : null;
   }
@@ -102,7 +102,7 @@ export function PageSurface({ controller }: Props) {
       {!session && text && debug && (
         <DebugLayer model={text.model} linkage={debug.linkage} map={debug.map} layout={layout} />
       )}
-      {!session && doc && <LayoutLayer doc={doc} layout={layout} />}
+      {!session && doc && <LayoutLayer doc={doc} layout={layout} thin={showMarks} />}
       {!session && text && (
         <TextLayer key={view.pageIndex} model={text.model} order={text.order} layout={layout} />
       )}
@@ -117,7 +117,13 @@ export function PageSurface({ controller }: Props) {
         />
       )}
       {showMarks && entry && (
-        <EditableMarks editability={entry} layout={layout} pageRef={pageRef} />
+        <EditableMarks
+          editability={entry}
+          layout={layout}
+          pageRef={pageRef}
+          withLayout={doc !== null}
+          strings={controller.strings}
+        />
       )}
       {entry && (
         <EditEntry

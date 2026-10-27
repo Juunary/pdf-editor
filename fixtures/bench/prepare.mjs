@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // 벤치마크 문서를 준비하고 목록(JSON)을 출력한다.
-//   node fixtures/bench/prepare.mjs [--tier core,synthetic] [--corpus-dir DIR]
+//   node fixtures/bench/prepare.mjs [--tier core,synthetic] [--corpus-dir DIR] [--ids a,b]
 // 코퍼스: <corpusDir>/<id>.pdf 가 있어야 한다(없으면 오류, 내려받기는 scripts/corpus/fetch-corpus.mjs).
+// --ids: 벤치 세트 밖의 코퍼스 문서도 id 로 더한다(Windows 수동 실행과 같은 문서로 서버에서 다시 잴 때). 벤치 세트에 있는
+// 문서면 그 항목(judgePages 등)을 쓴다.
 // 합성: <outDir>/<id>.pdf 가 없거나 해시가 다르면 생성기로 다시 만든다. 대용량 실제 문서 자리(url: null)는 건너뛴다.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -13,7 +15,11 @@ import { parseArgs } from 'node:util';
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, '..', '..');
 const { values } = parseArgs({
-  options: { tier: { type: 'string', default: 'core' }, 'corpus-dir': { type: 'string' } },
+  options: {
+    tier: { type: 'string', default: 'core' },
+    'corpus-dir': { type: 'string' },
+    ids: { type: 'string' },
+  },
 });
 const manifest = JSON.parse(readFileSync(join(here, 'manifest.json'), 'utf8'));
 const corpusManifest = JSON.parse(readFileSync(join(repo, manifest.corpusDir, 'manifest.json'), 'utf8'));
@@ -27,17 +33,25 @@ const tiers = new Set(values.tier.split(','));
 const sha256 = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
 
 const list = [];
+function corpusDoc(doc) {
+  const entry = corpusManifest.documents.find((d) => d.id === doc.id);
+  if (!entry) throw new Error(`코퍼스 manifest 에 ${doc.id} 없음`);
+  const path = join(corpusDir, `${doc.id}.pdf`);
+  if (!existsSync(path)) throw new Error(`${path} 없음(scripts/corpus/fetch-corpus.mjs 로 받는다)`);
+  if (statSync(path).size !== entry.bytes || sha256(path) !== entry.sha256) {
+    throw new Error(`${doc.id}: 코퍼스 해시 불일치`);
+  }
+  return { id: doc.id, path, bytes: entry.bytes, pages: entry.pages, role: doc.role, judgePages: doc.judgePages };
+}
+const extraIds = values.ids ? values.ids.split(',').filter(Boolean) : [];
+for (const id of extraIds) {
+  const doc = manifest.documents.find((d) => d.id === id && d.source === 'corpus') ?? { id, role: 'corpus' };
+  list.push(corpusDoc(doc));
+}
 for (const doc of manifest.documents) {
-  if (!tiers.has(doc.tier)) continue;
+  if (!tiers.has(doc.tier) || extraIds.includes(doc.id)) continue;
   if (doc.source === 'corpus') {
-    const entry = corpusManifest.documents.find((d) => d.id === doc.id);
-    if (!entry) throw new Error(`코퍼스 manifest 에 ${doc.id} 없음`);
-    const path = join(corpusDir, `${doc.id}.pdf`);
-    if (!existsSync(path)) throw new Error(`${path} 없음(scripts/corpus/fetch-corpus.mjs 로 받는다)`);
-    if (statSync(path).size !== entry.bytes || sha256(path) !== entry.sha256) {
-      throw new Error(`${doc.id}: 코퍼스 해시 불일치`);
-    }
-    list.push({ id: doc.id, path, bytes: entry.bytes, pages: entry.pages, role: doc.role, judgePages: doc.judgePages });
+    list.push(corpusDoc(doc));
   } else if (doc.source === 'synthetic') {
     const path = join(outDir, `${doc.id}.pdf`);
     if (!existsSync(path) || statSync(path).size !== doc.bytes || sha256(path) !== doc.sha256) {

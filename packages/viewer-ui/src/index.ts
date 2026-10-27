@@ -37,3 +37,5 @@ export * from './path-colors.js';
 export * from './input-buffer.js';
 export * from './edit-marks.js';
 export * from './table-grid.js';
+export * from './strings.js';
+export * from './error-text.js';

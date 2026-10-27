@@ -473,6 +473,7 @@ function analyzeChars(
     warnings.push({
       kind: 'actualtext-cleared',
       message: `지운 문단의 /ActualText ${base.actualTextClears.length}개를 뺍니다.`,
+      count: base.actualTextClears.length,
       rects: [paragraph.bbox],
     });
   }
@@ -863,6 +864,7 @@ function addPlacementWarnings(env: AnalyzeEnv, a: EditAnalysis): void {
     a.warnings.push({
       kind: 'link-overlap',
       message: `편집 문단과 겹치는 링크 ${links.length}개는 그대로 남습니다(영역을 다시 계산하지 않음).`,
+      count: links.length,
       rects: links,
     });
   }
@@ -871,6 +873,7 @@ function addPlacementWarnings(env: AnalyzeEnv, a: EditAnalysis): void {
     a.warnings.push({
       kind: 'redact-overlap',
       message: `편집 문단이 적용되지 않은 Redact 표시 ${redacts.length}개와 겹칩니다. 나중에 적용하면 새 텍스트도 지워집니다.`,
+      count: redacts.length,
       rects: redacts,
     });
   }

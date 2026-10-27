@@ -102,12 +102,18 @@ describe('SaveTarget', () => {
 
   it('FSA 미지원 → downloads, downloads 도 없으면 실패', async () => {
     const r1 = await new SaveTarget(env()).saveAs(BYTES, 'a');
-    expect(r1).toMatchObject({ channel: 'downloads', status: 'saved', fileName: 'a.pdf' });
+    expect(r1).toMatchObject({
+      channel: 'downloads',
+      status: 'saved',
+      fileName: 'a.pdf',
+      errorCode: null,
+    });
     const r2 = await new SaveTarget(env({ downloads: undefined })).saveAs(BYTES, 'a.pdf');
     expect(r2).toMatchObject({
       channel: 'downloads',
       status: 'failed',
       error: 'chrome.downloads 없음',
+      errorCode: 'no-downloads',
     });
   });
 
@@ -122,6 +128,7 @@ describe('SaveTarget', () => {
       status: 'failed',
       reusedHandle: true,
       error: '쓰기 권한 denied',
+      errorCode: 'write-permission-denied',
     });
     expect(handle.writes).toEqual([4]);
   });

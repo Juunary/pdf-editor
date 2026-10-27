@@ -3,19 +3,26 @@ import {
   EditLog,
   ViewerController,
   classifyFailure,
-  PAGE_ARROW_GUTTER,
   mountViewer,
+  pageArrowLayout,
   type PagePaintedEvent,
 } from '@pdf-editor/viewer-ui';
 import '@pdf-editor/viewer-ui/style.css';
 import { decideInterceptionMode, parseChromeMajor } from '../interception.js';
-import { DiagLog } from './diag.js';
+import { DiagLog, diagRequested, isDiagShortcut } from './diag.js';
 import type { CommitResult, JournalAdvice, SaveHeapEstimate } from '@pdf-editor/shared-types';
 import { aboutContent } from './about.js';
 import { alertDialog, confirmDialog, openDialog } from './dialog.js';
 import {
+  HeaderZoom,
+  chromeTabZoom,
+  compensatesZoom,
+  viewerTabId,
+  watchDevicePixelRatio,
+  type HeaderZoomState,
+} from './header-zoom.js';
+import {
   fileAccessNotice,
-  HISTORY_AFTER_SAVE_NOTICE,
   journalNotice,
   recoveredNotice,
   recoveryProgressNotice,
@@ -24,9 +31,11 @@ import {
   supportedSizeNotice,
 } from './notices.js';
 import { ResilientPdf, type WorkerHandle } from './recovery.js';
+import { setupSaveMenu } from './save-menu.js';
 import { SaveTarget, type SaveOutcome, type WritableFileHandle } from './save-target.js';
 import { decideSave } from './save-plan.js';
 import { resolveViewerSource, type ViewerContextKind, type ViewerSource } from './source.js';
+import { APP_STRINGS, applyDomStrings, detectLang, readLanguageSources } from './strings.js';
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -34,15 +43,18 @@ function byId<T extends HTMLElement>(id: string): T {
   return el as T;
 }
 
+/** 화면 언어(사용자 요청 2026-10-23): 브라우저 UI 언어가 ko 계열이면 한국어, 그 밖은 영어. */
+const lang = detectLang(readLanguageSources());
+const t = APP_STRINGS[lang];
+document.documentElement.lang = lang;
+applyDomStrings(document, t);
+
 const statusEl = byId<HTMLSpanElement>('status');
 const openLabel = byId<HTMLLabelElement>('open-label');
 const openInput = byId<HTMLInputElement>('open-file');
 const diagLogEl = byId<HTMLPreElement>('diag-log');
-const saveButtons = {
-  saveAs: byId<HTMLButtonElement>('save-as'),
-  save: byId<HTMLButtonElement>('save'),
-  downloads: byId<HTMLButtonElement>('save-downloads'),
-};
+/** 저장 메뉴 버튼(프린터 아이콘). 문서를 그리기 전에는 비활성(이전 저장 버튼들과 같은 조건). */
+const saveMenuButton = byId<HTMLButtonElement>('save-menu-button');
 
 const diag = new DiagLog((log) => {
   diagLogEl.textContent = log.toJSON();
@@ -51,8 +63,28 @@ byId<HTMLButtonElement>('copy-diag').addEventListener('click', () => {
   void navigator.clipboard.writeText(diag.toJSON());
 });
 
-function setStatus(state: string, text: string): void {
+/**
+ * 개발 표시(진단 패널·downloads 저장·렌더 경과 상태 줄, 사용자 요청 2026-10-23): 기본은 숨기고 `html[data-diag]` 일 때만
+ * 보인다(viewer.css). 개발 빌드에서 주소에 `?diag` 를 붙여 열거나 Ctrl+Alt+Shift+D 로 켜고 끈다. 스토어 빌드에는 이 코드가
+ * 없고 진단 패널은 늘 숨긴다(계약 D6). 진단 기록 수집(`diag.add`)과 `#diag-log` 내용은 숨겨져 있어도 그대로다.
+ */
+if (__BUILD_KIND__ !== 'store') {
+  const setDiagVisible = (on: boolean) => {
+    document.documentElement.toggleAttribute('data-diag', on);
+    diag.add('diag-visible', on);
+  };
+  if (diagRequested(location.search)) setDiagVisible(true);
+  document.addEventListener('keydown', (e) => {
+    if (!isDiagShortcut(e)) return;
+    e.preventDefault();
+    setDiagVisible(!document.documentElement.hasAttribute('data-diag'));
+  });
+}
+
+/** 상태 줄. `dev` 면 개발 표시(렌더 경과 등)라 진단 표시를 켰을 때만 보인다. */
+function setStatus(state: string, text: string, dev = false): void {
   statusEl.dataset.state = state;
+  statusEl.toggleAttribute('data-dev', dev);
   statusEl.textContent = text;
 }
 
@@ -60,19 +92,66 @@ const noticeBar = byId<HTMLDivElement>('notice-bar');
 const pageContainerEl = byId<HTMLElement>('page-container');
 const dialogEl = byId<HTMLDialogElement>('app-dialog');
 
-/** 검색창(position: fixed)이 툴바·알림 줄 바로 아래에 오도록, 둘의 실제 높이로 CSS 변수를 갱신한다. */
 const toolbarEl = byId<HTMLElement>('toolbar');
+/** 머리 영역 확대 보정 배율 f(header-zoom.ts). 머리 영역(툴바·알림 줄)의 CSS zoom 은 1/f. */
+let headerFactor = 1;
+
+/**
+ * 검색창(position: fixed)이 툴바·알림 줄 바로 아래에 오도록, 둘의 실제 높이로 CSS 변수를 갱신한다.
+ * 검색창은 툴바 안(CSS zoom 1/f)에 그려지므로 top 은 머리 영역 px(화면 px × f)로 준다.
+ */
 function syncFindTop(): void {
   const bottom = Math.max(
     toolbarEl.getBoundingClientRect().bottom,
     noticeBar.hidden ? 0 : noticeBar.getBoundingClientRect().bottom,
   );
-  document.documentElement.style.setProperty('--pe-find-top', `${Math.ceil(bottom) + 4}px`);
+  document.documentElement.style.setProperty(
+    '--pe-find-top',
+    `${Math.ceil(bottom * headerFactor) + 4}px`,
+  );
 }
 const toolbarObserver = new ResizeObserver(syncFindTop);
 toolbarObserver.observe(toolbarEl);
 toolbarObserver.observe(noticeBar);
-syncFindTop();
+
+/** 머리 영역 확대 보정 결과를 반영한다. `data-zoom`·`data-zoom-mode` 는 시험·진단용. */
+function applyHeaderZoom(state: HeaderZoomState): void {
+  headerFactor = state.factor;
+  const root = document.documentElement;
+  root.style.setProperty('--pe-header-zoom', String(1 / state.factor));
+  root.toggleAttribute('data-narrow', state.narrow);
+  root.dataset.zoom = String(Math.round(state.factor * 1e4) / 1e4);
+  root.dataset.zoomMode = state.mode;
+  syncFindTop();
+}
+
+/**
+ * 브라우저 확대·축소에도 머리 영역 크기를 100% 때와 같게 둔다(사용자 요청 2026-10-22). 문맥을 알기 전에는 보정 없이
+ * 좁은 배치만 판정한다(이전 미디어 쿼리와 같다). resize 와 dpr 변화는 같은 프레임 안에서 바로 반영한다.
+ */
+const headerZoom = new HeaderZoom({
+  cssWidth: () => window.innerWidth,
+  devicePixelRatio: () => window.devicePixelRatio || 1,
+  apply: applyHeaderZoom,
+  log: (event, data) => diag.add(event, data),
+});
+window.addEventListener('resize', () => headerZoom.onViewportChange());
+watchDevicePixelRatio(window, () => headerZoom.onViewportChange());
+
+/** 문맥을 안 뒤: 탭 최상위 뷰어만 탭 배율로 보정하고, 임베디드 문맥은 바깥 페이지 확대를 따른다. */
+async function attachHeaderZoom(
+  kind: ViewerContextKind,
+  streamInfo: chrome.mimeHandler.StreamInfo | null,
+): Promise<void> {
+  if (!compensatesZoom(kind, window.top === window)) return headerZoom.attach(null, false);
+  const tabs = typeof chrome === 'object' ? chrome.tabs : undefined;
+  const tabId = await viewerTabId(
+    streamInfo,
+    typeof tabs?.getCurrent === 'function' ? () => tabs.getCurrent() : null,
+  );
+  diag.add('header-zoom-tab', { kind, tabId });
+  await headerZoom.attach(tabId === null ? null : chromeTabZoom(tabId), true);
+}
 
 /** 알림 줄(열기 시 보고·안내·복구). text 가 null 이면 그 id 의 알림을 지운다. */
 function setNotice(id: string, text: string | null): void {
@@ -86,7 +165,8 @@ function setNotice(id: string, text: string | null): void {
     const close = document.createElement('button');
     close.type = 'button';
     close.textContent = '✕';
-    close.title = '닫기';
+    close.title = t.close;
+    close.setAttribute('aria-label', t.close);
     close.addEventListener('click', () => setNotice(id, null));
     row.append(span, close);
     noticeBar.append(row);
@@ -108,7 +188,7 @@ function spawnWorker(): WorkerHandle {
     };
     worker.addEventListener('error', (e) => {
       diag.add('worker-error', e.message || 'Worker 스크립트 로드 실패');
-      setStatus('error', `Worker 오류: ${e.message}`);
+      setStatus('error', t.statusWorkerError(e.message));
       fail(e.message || 'Worker 오류');
     });
     worker.addEventListener('messageerror', () => {
@@ -121,17 +201,20 @@ function spawnWorker(): WorkerHandle {
 }
 
 byId<HTMLButtonElement>('about').addEventListener('click', () => {
-  const about = aboutContent({
-    version: __APP_VERSION__,
-    sourceUrl: __SOURCE_URL__,
-    // 고지 파일은 스토어 빌드 패키지에만 들어간다(scripts/release/package.mjs).
-    noticesUrl:
-      __BUILD_KIND__ === 'store' ? chrome.runtime.getURL('THIRD_PARTY_NOTICES.txt') : null,
-    heap: lastHeap,
-  });
+  const about = aboutContent(
+    {
+      version: __APP_VERSION__,
+      sourceUrl: __SOURCE_URL__,
+      // 고지 파일은 스토어 빌드 패키지에만 들어간다(scripts/release/package.mjs).
+      noticesUrl:
+        __BUILD_KIND__ === 'store' ? chrome.runtime.getURL('THIRD_PARTY_NOTICES.txt') : null,
+      heap: lastHeap,
+    },
+    t,
+  );
   void openDialog(dialogEl, {
     ...about,
-    buttons: [{ id: 'ok', label: '닫기', primary: true }],
+    buttons: [{ id: 'ok', label: t.close, primary: true }],
   });
 });
 
@@ -151,11 +234,11 @@ const pdf = new ResilientPdf({
   log: (event, data) => diag.add(event, data),
   onProgress: (done, total) => {
     // 계약 D4(사용자 결정 2026-10-21): 복구 중 진행 n/N.
-    setNotice('recovered', recoveryProgressNotice(done, total));
-    setStatus('opening', `문서 복구 중: 편집 ${done}/${total}`);
+    setNotice('recovered', recoveryProgressNotice(done, total, t));
+    setStatus('opening', t.statusRecovering(done, total));
   },
   onRecovered: async (info) => {
-    setNotice('recovered', recoveredNotice(info.replayedEdits, info.fromSavedBaseline));
+    setNotice('recovered', recoveredNotice(info.replayedEdits, info.fromSavedBaseline, t));
     await controllerRef?.handleWorkerRecovered();
   },
 });
@@ -251,7 +334,7 @@ type SaveTrigger = 'save-as' | 'save' | 'ctrl+s' | 'downloads';
 async function prepareSave(): Promise<boolean> {
   const edit = controllerRef?.edit;
   if (edit && !(await edit.commitActive())) {
-    setStatus('error', '편집을 마치지 못해 저장하지 않았습니다');
+    setStatus('error', t.statusEditNotFinished);
     return false;
   }
   let plan;
@@ -259,11 +342,11 @@ async function prepareSave(): Promise<boolean> {
     plan = await pdf.planSave({ changes: [] });
   } catch (e) {
     diag.add('save-plan-error', String(e));
-    setStatus('error', `저장 전 판정 실패: ${String(e)}`);
+    setStatus('error', t.statusPlanFailed(t.errorText(e)));
     return false;
   }
   const journal = await queryJournalAdvice();
-  const decision = decideSave(plan, journal);
+  const decision = decideSave(plan, journal, t);
   lastHeap = plan.heap;
   lastPlanHadEdits = plan.edits !== null;
   updateSizeNotice(plan.heap);
@@ -278,20 +361,20 @@ async function prepareSave(): Promise<boolean> {
     warnings: decision.warnings,
   });
   if (decision.block) {
-    await alertDialog(dialogEl, '저장할 수 없습니다', [decision.block]);
-    setStatus('error', `저장 중단: ${decision.block}`);
+    await alertDialog(dialogEl, t.cannotSaveTitle, [decision.block], t.dialogOk);
+    setStatus('error', t.statusSaveBlocked(decision.block));
     return false;
   }
   if (decision.warnings.length > 0) {
     const ok = await confirmDialog(
       dialogEl,
-      '저장 전 확인',
+      t.confirmSaveTitle,
       [...decision.warnings, ...decision.infos],
-      decision.confirmLabel ?? '저장',
-      '취소',
+      decision.confirmLabel ?? t.save,
+      t.dialogCancel,
     );
     if (!ok) {
-      setStatus('idle', '저장을 취소했습니다');
+      setStatus('idle', t.statusSaveCancelled);
       return false;
     }
   }
@@ -302,7 +385,7 @@ async function prepareSave(): Promise<boolean> {
  * 크기 알림 칸 하나(I3): 저장 전 판정이 warn·over-limit 이면 그 문구로 바꾸고, ok 면 열 때 바이트 기준 안내를 그대로 둔다.
  */
 function updateSizeNotice(heap: SaveHeapEstimate): void {
-  const text = sizeLimitNotice(heap);
+  const text = sizeLimitNotice(heap, t);
   if (text) setNotice('size', text);
 }
 
@@ -321,7 +404,7 @@ async function reportJournal(): Promise<void> {
   const advice = await queryJournalAdvice();
   if (!advice) return;
   diag.add('journal-advice', advice);
-  setNotice('journal', journalNotice(advice));
+  setNotice('journal', journalNotice(advice, t));
 }
 
 /** 커밋 RPC 결과를 그대로 돌려주고, 저널 판정은 기다리지 않고 뒤에서 한다. */
@@ -338,7 +421,7 @@ function isRecoveredSave(error: unknown): boolean {
 
 async function runSave(trigger: SaveTrigger): Promise<void> {
   if (!(await prepareSave())) return;
-  setStatus('saving', '저장 중');
+  setStatus('saving', t.statusSaving);
   let outcome: SaveOutcome;
   try {
     outcome =
@@ -350,7 +433,7 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
   } catch (e) {
     diag.add('save-error', { trigger, context: contextKind, error: String(e) });
     if (isRecoveredSave(e)) return askSaveAgain(trigger);
-    setStatus('error', `저장 실패: ${String(e)}`);
+    setStatus('error', t.statusSaveFailed(t.errorText(e)));
     return;
   }
   if (outcome.status === 'failed' && isRecoveredSave(outcome.error)) {
@@ -363,39 +446,46 @@ async function runSave(trigger: SaveTrigger): Promise<void> {
     isTopLevel: window.top === window,
     ...outcome,
   });
-  const where = outcome.channel === 'fsa' ? `파일 ${outcome.fileName}` : 'chrome.downloads';
+  const where = outcome.channel === 'fsa' ? t.savedToFile(outcome.fileName) : t.savedToDownloads;
   // 계약 D4: 사용자 저장이 성공하면 그 바이트가 복구 기준점이다.
   if (outcome.status === 'saved') pdf.confirmSaved();
   else pdf.discardPendingSave();
   setStatus(
-    outcome.status === 'saved' ? 'saved' : outcome.status,
-    `${outcome.status === 'saved' ? '저장됨' : outcome.status}: ${where}${outcome.reusedHandle ? ' (같은 대상 재저장)' : ''}`,
+    outcome.status,
+    outcome.status === 'saved'
+      ? t.statusSaved(where, outcome.reusedHandle)
+      : outcome.status === 'cancelled'
+        ? t.statusSaveCancelled
+        : t.statusSaveFailed(
+            outcome.errorCode
+              ? t.saveErrors[outcome.errorCode]
+              : outcome.error !== null
+                ? t.errorText(outcome.error)
+                : where,
+          ),
   );
   if (outcome.status === 'saved' && lastPlanHadEdits && !historyNoticeShown) {
     historyNoticeShown = true;
-    setNotice('history', HISTORY_AFTER_SAVE_NOTICE);
+    setNotice('history', t.historyAfterSave);
   }
 }
 
 /** 저장 중 Worker 가 죽어 복구한 뒤(계약 5.8, A3-3): 다시 저장할지 묻는다. */
 async function askSaveAgain(trigger: SaveTrigger): Promise<void> {
-  setStatus('error', '저장 중 작업 모듈이 중단되어 문서를 복구했습니다');
+  setStatus('error', t.statusRecoveredDuringSave);
   const again = await confirmDialog(
     dialogEl,
-    '저장하지 못했습니다',
-    [
-      '저장하는 동안 작업 모듈이 중단되어 문서를 복구했습니다. 편집 내용은 복구되었지만 복구 전 되돌리기 이력은 사라졌습니다.',
-      '다시 저장할까요?',
-    ],
-    '다시 저장',
-    '나중에',
+    t.saveFailedTitle,
+    t.saveFailedLines,
+    t.saveAgain,
+    t.later,
   );
   if (again) await runSave(trigger);
 }
 
 /** M0 진단: 브라우저 Worker 에서 전체 저장 시간·WASM 힙 측정(파일은 저장하지 않음). */
 async function benchFullSave(): Promise<void> {
-  setStatus('saving', '전체 저장 측정 중');
+  setStatus('saving', t.statusBenchSaving, true);
   const r = await pdf.save({ changes: ['content-stream'] });
   pdf.discardPendingSave(); // 측정 저장은 복구 기준점이 아니다
   const result = {
@@ -407,25 +497,35 @@ async function benchFullSave(): Promise<void> {
     context: contextKind,
   };
   diag.add('bench-full-save', result);
-  setStatus(
-    'rendered',
-    `전체 저장 ${r.saveMs.toFixed(0)} ms, WASM 힙 ${((r.wasmHeapBytes ?? 0) / 2 ** 20).toFixed(1)} MiB`,
-  );
+  setStatus('rendered', t.statusBenchResult(r.saveMs, (r.wasmHeapBytes ?? 0) / 2 ** 20), true);
 }
 
+/**
+ * 저장 메뉴(사용자 요청 2026-10-22): 저장 / 다른 이름으로 저장 / (개발 빌드만) downloads 저장.
+ * downloads 저장(M0 진단)은 스토어 빌드의 viewer.html 에서 빠지고(vite.config.ts), 아래 분기도 스토어 번들에서 사라진다.
+ */
+const saveMenu = setupSaveMenu({
+  button: saveMenuButton,
+  menu: byId<HTMLElement>('save-menu'),
+  onChoose: (id) => {
+    if (id === 'save') void runSave('save');
+    else if (id === 'save-as') void runSave('save-as');
+    else if (__BUILD_KIND__ !== 'store' && id === 'save-downloads') void runSave('downloads');
+  },
+});
+
 function enableSave(): void {
-  for (const b of Object.values(saveButtons)) b.disabled = false;
+  saveMenuButton.disabled = false;
   const bench = byId<HTMLButtonElement>('bench-full-save');
   bench.disabled = false;
   bench.addEventListener('click', () => {
     void benchFullSave().catch((e: unknown) => diag.add('bench-error', String(e)));
   });
-  saveButtons.saveAs.addEventListener('click', () => void runSave('save-as'));
-  saveButtons.save.addEventListener('click', () => void runSave('save'));
-  saveButtons.downloads.addEventListener('click', () => void runSave('downloads'));
+  // Ctrl+S 는 메뉴 없이 바로 저장한다(Ctrl+Shift+S 는 다른 이름으로 저장).
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
+      saveMenu.close();
       void runSave(e.shiftKey ? 'save-as' : 'ctrl+s');
     }
   });
@@ -450,11 +550,12 @@ function onPagePainted(e: PagePaintedEvent): void {
     saveEnabled = true;
     enableSave();
   }
-  setStatus('rendered', `${e.pageCount} 페이지 · ${e.pageIndex + 1}페이지 렌더 완료`);
+  // 렌더 경과는 개발 표시다(쪽 수는 툴바 "/ N" 에 있다).
+  setStatus('rendered', t.statusRendered(e.pageCount, e.pageIndex + 1), true);
 }
 
 async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
-  setStatus('opening', `여는 중: ${label}`);
+  setStatus('opening', t.statusOpening(label));
   // 이전에 연 문서의 뷰어를 먼저 정리한다. Worker 세션은 open 에서 이전 문서를 닫으므로, 그 사이 이전 뷰어가
   // 렌더·추출을 요청하면 새 문서(또는 닫힌 문서)에 대한 호출이 된다.
   if (unmountViewer) {
@@ -476,7 +577,7 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
   const info = await pdf.open(bytes);
   diag.add('open', info);
   // 크기 알림(I3, 사용자 결정 2026-10-21): 열 때 바이트 기준 안내를 한 번 띄우고, 저장 전 판정은 같은 칸을 바꾼다.
-  setNotice('size', supportedSizeNotice(info.byteLength));
+  setNotice('size', supportedSizeNotice(info.byteLength, undefined, t));
   documentName = label;
   document.title = `${label} - PDF Editor`;
 
@@ -508,11 +609,13 @@ async function openBytes(bytes: ArrayBuffer, label: string): Promise<void> {
     pageCount: info.pageCount,
     getEnvironment: () => ({
       devicePixelRatio: window.devicePixelRatio || 1,
-      // 쪽 좌우 화살표 칸을 뺀 너비에 맞춘다(화살표가 쪽을 가리지 않게).
-      availableWidth: pageContainerEl.clientWidth - 2 * PAGE_ARROW_GUTTER,
+      // 쪽 좌우 화살표 칸을 뺀 너비에 맞춘다(화살표가 쪽을 가리지 않게). 좁은 창은 화살표가 쪽 가장자리 위에 겹치고 칸
+      // 몫을 빼지 않는다(viewer-ui `pageArrowLayout`, 마운트의 data-pe-arrows 와 같은 판정).
+      availableWidth: pageArrowLayout(pageContainerEl.clientWidth).availableWidth,
     }),
     onPagePainted,
     editLog,
+    strings: t.viewer,
   });
   controllerRef = controller;
   unmountViewer = mountViewer(
@@ -547,7 +650,7 @@ async function reportRedactAnnots(): Promise<void> {
     return;
   }
   diag.add('redact-report', report);
-  setNotice('redact', redactNotice(report));
+  setNotice('redact', redactNotice(report, t));
 }
 
 /** DNR 폴백 경로에서 file:// 접근이 꺼져 있으면 안내한다(A5-3). */
@@ -558,12 +661,15 @@ async function reportFileAccess(displayUrl: string | null, mode: string): Promis
   } catch {
     allowed = null;
   }
-  const notice = fileAccessNotice({
-    mode: mode === 'mime-handler' || mode === 'dnr-fallback' ? mode : 'unsupported',
-    fileAccessAllowed: allowed,
-    displayUrl,
-    extensionId: chrome.runtime.id,
-  });
+  const notice = fileAccessNotice(
+    {
+      mode: mode === 'mime-handler' || mode === 'dnr-fallback' ? mode : 'unsupported',
+      fileAccessAllowed: allowed,
+      displayUrl,
+      extensionId: chrome.runtime.id,
+    },
+    t,
+  );
   diag.add('file-access', { mode, allowed, displayUrl, notice: notice !== null });
   setNotice('file-access', notice);
 }
@@ -602,6 +708,12 @@ async function main(): Promise<void> {
     mimeHandler: 'mimeHandler' in chrome ? chrome.mimeHandler : undefined,
     fetch: (input, init) => fetch(input, init),
     now: () => performance.now(),
+    // 머리 영역 확대 보정은 문서 수신을 기다리지 않는다.
+    onContext: (kind, streamInfo) => {
+      attachHeaderZoom(kind, streamInfo).catch((e: unknown) =>
+        diag.add('header-zoom-error', String(e)),
+      );
+    },
   });
   contextKind = source.kind;
   // 문맥 이름은 화면에 보이지 않고 시험·진단용으로 body 에 남긴다.
@@ -632,13 +744,13 @@ async function main(): Promise<void> {
         await chrome.mimeHandler.abortAndFallbackToNativeHandler();
         return;
       }
-      setStatus('error', `열기 실패: ${String(e)}`);
+      setStatus('error', t.statusOpenFailed(t.errorText(e)));
     }
     return;
   }
 
   openLabel.hidden = false;
-  setStatus('idle', 'PDF 파일을 선택하세요');
+  setStatus('idle', t.statusChoosePdf);
   openInput.addEventListener('change', () => {
     const file = openInput.files?.[0];
     if (!file) return;
@@ -647,12 +759,12 @@ async function main(): Promise<void> {
       .then((bytes) => openBytes(bytes, file.name))
       .catch((e: unknown) => {
         diag.add('open-error', String(e));
-        setStatus('error', `열기 실패: ${String(e)}`);
+        setStatus('error', t.statusOpenFailed(t.errorText(e)));
       });
   });
 }
 
 main().catch((e: unknown) => {
   diag.add('fatal', String(e));
-  setStatus('error', String(e));
+  setStatus('error', t.errorText(e));
 });

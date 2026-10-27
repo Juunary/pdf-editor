@@ -9,23 +9,72 @@
   <body>
     <header id="toolbar">
       <label id="open-label" hidden>
-        PDF 열기 <input id="open-file" type="file" accept="application/pdf,.pdf" />
+        <span data-i18n="openPdf">PDF 열기</span>
+        <input id="open-file" type="file" accept="application/pdf,.pdf" />
       </label>
       <div id="viewer-controls"></div>
-      <button id="save-as" type="button" disabled>
-        <span class="long">다른 이름으로 저장</span><span class="short">새 이름</span>
-      </button>
-      <button id="save" type="button" disabled title="Ctrl+S">저장</button>
+      <div id="save-menu-wrap" class="menu-wrap">
+        <button
+          id="save-menu-button"
+          type="button"
+          disabled
+          aria-label="저장"
+          title="저장"
+          data-i18n-aria-label="save"
+          data-i18n-title="save"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          aria-controls="save-menu"
+        >
+          <svg
+            viewBox="0 0 20 20"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M5.5 7.5v-5h9v5" />
+            <path
+              d="M5.5 14.5h-2a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h13a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-2"
+            />
+            <path d="M5.5 11.5h9v6h-9z" />
+            <circle cx="14.5" cy="9.5" r="0.8" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+        <div id="save-menu" class="menu" role="menu" aria-labelledby="save-menu-button" hidden>
+          <button id="save" type="button" role="menuitem" tabindex="-1">
+            <span data-i18n="save">저장</span><span class="menu-key">Ctrl+S</span>
+          </button>
+          <button id="save-as" type="button" role="menuitem" tabindex="-1">
+            <span data-i18n="saveAs">다른 이름으로 저장</span>
+          </button>
+          <button
+            id="save-downloads"
+            class="dev-only"
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            title="M0 진단: chrome.downloads 경로 강제(개발 빌드 전용)"
+            data-i18n-title="saveDownloadsTitle"
+          >
+            <span data-i18n="saveDownloads">downloads 저장</span>
+          </button>
+        </div>
+      </div>
+      <span id="status" data-state="idle" data-dev data-i18n="statusIdle">대기</span>
       <button
-        id="save-downloads"
+        id="about"
         type="button"
-        disabled
-        title="M0 진단: chrome.downloads 경로 강제"
+        title="버전·라이선스·소스 코드"
+        data-i18n="about"
+        data-i18n-title="aboutTitle"
       >
-        downloads 저장
+        정보
       </button>
-      <span id="status" data-state="idle">대기</span>
-      <button id="about" type="button" title="버전·라이선스·소스 코드">정보</button>
     </header>
     <div id="notice-bar" hidden></div>
     <main id="page-container"></main>

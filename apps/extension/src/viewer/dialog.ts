@@ -101,10 +101,11 @@ export async function alertDialog(
   dialog: HTMLDialogElement,
   title: string,
   lines: string[],
+  okLabel = '확인',
 ): Promise<void> {
   await openDialog(dialog, {
     title,
     lines,
-    buttons: [{ id: 'ok', label: '확인', primary: true }],
+    buttons: [{ id: 'ok', label: okLabel, primary: true }],
   });
 }

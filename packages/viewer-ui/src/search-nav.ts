@@ -3,6 +3,7 @@
  * 이므로 0번 결과가 현재 페이지에서 처음 만나는 결과다. 이전·다음은 결과 목록을 순환한다.
  */
 import type { SearchHit, SearchResult } from '@pdf-editor/shared-types';
+import { VIEWER_STRINGS, type ViewerStrings } from './strings.js';
 
 export type FindStatus = 'idle' | 'searching' | 'done' | 'unavailable' | 'error';
 
@@ -89,18 +90,18 @@ export function hitsOnPage(state: FindState, pageIndex: number): PageHit[] {
   return out;
 }
 
-/** "3 / 12", 잘렸으면 "3 / 1000+", 결과가 없으면 "결과 없음". */
-export function findLabel(state: FindState): string {
+/** "3 / 12", 잘렸으면 "3 / 1000+", 결과가 없으면 "결과 없음"(`t.findNoResults`). */
+export function findLabel(state: FindState, t: ViewerStrings = VIEWER_STRINGS.ko): string {
   switch (state.status) {
     case 'searching':
-      return '검색 중';
+      return t.findSearching;
     case 'unavailable':
-      return state.message ?? '검색을 사용할 수 없습니다';
+      return state.message ?? t.findUnavailable;
     case 'error':
-      return state.message ?? '검색 실패';
+      return state.message ?? t.findFailed;
     case 'done':
       return state.hits.length === 0
-        ? '결과 없음'
+        ? t.findNoResults
         : `${state.current + 1} / ${state.hits.length}${state.truncated ? '+' : ''}`;
     default:
       return '';

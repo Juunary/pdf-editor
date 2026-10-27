@@ -276,7 +276,7 @@ PLAN.md 2절은 "Noto Sans KR 서브셋 OTF" 로 적었다. 같은 절차를 CFF
 | 통과 | G1·G2, I1·I2·I3·I5·I6, R1·R2, V1, F1(사용자 보고)·F2(측정)·F3 의 1·2·5 단계 |
 | 미확인 | 임베디드 문맥 F3 의 Ctrl+S 재저장(3·4 단계)과 fsaError 값, F1·F3 진단 JSON, I2 "파일 URL에 대한 액세스 허용" 설정 상태, F2 권한 재요청 창 여부(추정만), I4(로컬 http 임베드), I7(Chrome 128–150 DNR → A5), V2(Acrobat, A2-5 포함), V3(pdf.js), V4(대형 문서 브라우저 측정 → A3-4) |
 | 해당 없음 | G3(이 PC 에 Chrome 128–150 없음) |
-| 2차 확인(2026-10-19 KST, W1–W8) | 확인 빌드 `m2` 110549f dist, Chrome 155.0.8059.82. 통과(사용자 보고): W1 텍스트 선택·복사·한글 검색(F1·F2·F3), W2 object 포커스, W3 여러 임베디드 뷰어. 조건부 통과: W5 임베디드 Ctrl+S(덮어쓰기 미확인). 부분 측정: W6 대형 문서 저장. 화면 판독: W4 레이아웃 오버레이. 미확인: W7(Acrobat 미설치), W8(Chrome 128–149 없음). 추적: U1–U4 `docs/m0-closeout.md` 3절, U5–U7 `docs/m1-integration.md` 3절, W4 `docs/m2-accuracy.md` 7절, 새 Action Item 은 8절 A9–A11 |
+| 2차 확인(2026-10-19 KST, W1–W8) | 확인 빌드 `m2` 10e5ef7 dist, Chrome 155.0.8059.82. 통과(사용자 보고): W1 텍스트 선택·복사·한글 검색(F1·F2·F3), W2 object 포커스, W3 여러 임베디드 뷰어. 조건부 통과: W5 임베디드 Ctrl+S(덮어쓰기 미확인). 부분 측정: W6 대형 문서 저장. 화면 판독: W4 레이아웃 오버레이. 미확인: W7(Acrobat 미설치), W8(Chrome 128–149 없음). 추적: U1–U4 `docs/m0-closeout.md` 3절, U5–U7 `docs/m1-integration.md` 3절, W4 `docs/m2-accuracy.md` 7절, 새 Action Item 은 8절 A9–A11 |
 
 알려진 한계(코드 미수정, PLAN.md 미반영, 사용자 결정 대기)
 - 확장 뷰어는 페이지를 캔버스 이미지로만 그리므로 **확장이 켜진 상태에서는 Ctrl+F 검색과 텍스트 선택·복사가 되지 않는다.** 확장 소스에 텍스트 선택 층 코드가 없음을 grep 으로 확인(측정). 사용자 보고로도 "확장 끄면 가능, 켜면 불가". 텍스트 선택 층·Ctrl+F 를 M1 에 추가할지는 사용자 결정 대기(PLAN.md 에는 반영하지 않음).

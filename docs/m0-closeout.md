@@ -48,7 +48,7 @@
 | U3 | Windows Chrome Worker 대형 문서 전체 저장 피크·시간(Day 1 V4, A3-4) | 100쪽 이상 실제 문서 | **부분 측정**(W6). 492쪽·297쪽 실제 문서 각 1회: saveMs 219.2·349.2, wasmHeapBytes 69,140,480·85,196,800(측정, 진단 JSON). 탭 메모리·PC 사양·반복 측정 미확인. 출력 크기 1.93·6.12배(A3-7), 힙 배율 과소 추정(A3-8). 세부 `docs/m0-dod-xobject-redact-save.md` 3.3 |
 | U4 | Windows 정식 Chrome 128–149 DNR 경로(A5-4) | 선택. CfT 결과로 대체 가능 | **미확인**(W8). 이 PC 의 Chrome 이 155 뿐이라 수행 불가. A5-4 로 남긴다 |
 
-- 2차 확인 기준(2026-10-19 KST): `m2` 브랜치 110549f 의 확장 dist(`/mnt/nas4/kjune/pdf-editor-m2/apps/extension/dist`)를 Windows 로 복사해 로드. Chrome 155.0.8059.82 공식 빌드 64비트, 가로채기 mime-handler. 문맥은 F1 뷰어 페이지, F2 file:// 직접 열기, F3 `embed-test.html` 임베디드.
+- 2차 확인 기준(2026-10-19 KST): `m2` 브랜치 10e5ef7 의 확장 dist(`/mnt/nas4/kjune/pdf-editor-m2/apps/extension/dist`)를 Windows 로 복사해 로드. Chrome 155.0.8059.82 공식 빌드 64비트, 가로채기 mime-handler. 문맥은 F1 뷰어 페이지, F2 file:// 직접 열기, F3 `embed-test.html` 임베디드.
 - 근거 표기: "사용자 보고"(사용자가 직접 확인), "측정"(진단 JSON 또는 파일·명령 출력), "화면 판독"(스크린샷을 보고 판단, 정답 라벨과 대조한 것이 아님), "미확인"(수행하지 않았거나 근거 없음, 사유 병기).
 - W1–W3(M1 U5–U7)은 `docs/m1-integration.md` 3절, W4(M2 레이아웃 오버레이)는 `docs/m2-accuracy.md` 7절에 기록했다.
 

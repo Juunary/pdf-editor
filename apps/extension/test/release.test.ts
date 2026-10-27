@@ -3,7 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { BUILD_KINDS, STORE_MIN_CHROME, buildManifest, sourceUrl } from '../scripts/manifest.mjs';
+import {
+  BUILD_KINDS,
+  DEFAULT_LOCALE,
+  LOCALES,
+  MAX_DESCRIPTION_CHARS,
+  STORE_MIN_CHROME,
+  buildLocaleMessages,
+  buildManifest,
+  readLocales,
+  resolveMessage,
+  sourceUrl,
+} from '../scripts/manifest.mjs';
 import { findReservedNameUse, readNameRecords } from '../../../scripts/release/font-names.mjs';
 import {
   collectBundlePackages,
@@ -31,7 +42,7 @@ describe('빌드 종류별 매니페스트(D7)', () => {
   it('dev: Chrome 128, DNR·호스트 권한·WAR 유지, 이름 표시, 버전은 package.json', () => {
     const m = buildManifest(base, 'dev', pkg.version);
     expect(m.version).toBe(pkg.version);
-    expect(m.name).toBe('PDF Editor (dev)');
+    expect(m.name).toBe('__MSG_appName__');
     expect(m.minimum_chrome_version).toBe('128');
     expect(m.permissions).toContain('declarativeNetRequestWithHostAccess');
     expect(m.host_permissions).toEqual(['<all_urls>']);
@@ -40,7 +51,7 @@ describe('빌드 종류별 매니페스트(D7)', () => {
 
   it('store: Chrome 151, DNR·호스트 권한·WAR 제거, downloads 만 남김', () => {
     const m = buildManifest(base, 'store', pkg.version);
-    expect(m.name).toBe('PDF Editor');
+    expect(m.name).toBe('__MSG_appName__');
     expect(m.version).toBe('1.0.0');
     expect(m.minimum_chrome_version).toBe(STORE_MIN_CHROME);
     expect(m.permissions).toEqual(['downloads']);
@@ -71,8 +82,53 @@ describe('빌드 종류별 매니페스트(D7)', () => {
     expect(Object.keys(m.action.default_icon)).toEqual(['16', '32']);
   });
 
+  it('이름이 메시지 참조가 아니면 dev 는 매니페스트 이름에 (dev) 를 붙인다', () => {
+    const m = buildManifest({ ...base, name: 'X' }, 'dev', '1.0.0');
+    expect(m.name).toBe('X (dev)');
+  });
+
   it('소스 링크는 버전 태그를 가리킨다', () => {
     expect(sourceUrl('1.0.0')).toBe('https://github.com/Juunary/pdf-editor/tree/v1.0.0');
+  });
+});
+
+describe('이름·설명 현지화(사용자 결정 2026-10-26)', () => {
+  const locales = readLocales(join(extRoot, '_locales'));
+  const fields = ['name', 'description'] as const;
+
+  it('기본 언어 en, 이름·설명·툴바 제목은 메시지 참조', () => {
+    expect(base.default_locale).toBe(DEFAULT_LOCALE);
+    expect(Object.keys(locales).sort()).toEqual([...LOCALES].sort());
+    for (const f of fields) expect(base[f]).toMatch(/^__MSG_\w+__$/);
+    expect((base.action as { default_title: string }).default_title).toMatch(/^__MSG_\w+__$/);
+  });
+
+  it('두 언어의 키가 같고 값이 있으며 설명은 132자 이하', () => {
+    expect(Object.keys(locales.ko!).sort()).toEqual(Object.keys(locales.en!).sort());
+    for (const [lang, messages] of Object.entries(locales)) {
+      for (const f of fields) expect(resolveMessage(base[f], messages), lang).toBeTruthy();
+      const description = resolveMessage(base.description, messages)!;
+      expect([...description].length, lang).toBeLessThanOrEqual(MAX_DESCRIPTION_CHARS);
+    }
+    expect(resolveMessage(base.description, locales.en!)).not.toMatch(/[가-힣]/);
+  });
+
+  it('설명은 등록 자료(docs/store/listing.md) 요약과 같다', () => {
+    const listing = readFileSync(join(repoRoot, 'docs/store/listing.md'), 'utf8');
+    for (const messages of Object.values(locales)) {
+      expect(listing).toContain(resolveMessage(base.description, messages)!);
+    }
+  });
+
+  it('스토어는 두 언어 모두 "PDF Editor", 개발 빌드는 " (dev)" 를 붙인다', () => {
+    const store = buildLocaleMessages(locales, 'store');
+    const dev = buildLocaleMessages(locales, 'dev');
+    for (const lang of LOCALES) {
+      expect(resolveMessage(base.name, store[lang]!)).toBe('PDF Editor');
+      expect(resolveMessage(base.name, dev[lang]!)).toBe('PDF Editor (dev)');
+    }
+    expect(resolveMessage(base.name, locales.en!)).toBe('PDF Editor'); // 원본은 그대로
+    expect(() => buildLocaleMessages(locales, 'x' as never)).toThrow();
   });
 });
 

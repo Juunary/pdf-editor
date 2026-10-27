@@ -14,6 +14,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { E2E_LOCALE } from './locale.js';
 
 const CORPUS = process.env.PATH_LATENCY_CORPUS_DIR;
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
@@ -71,6 +72,7 @@ test.describe('패스 끌기 반응 시간(계약 6.2)', () => {
     context = await chromium.launchPersistentContext(userDataDir, {
       channel: 'chromium',
       headless: true,
+      locale: E2E_LOCALE,
       viewport: { width: 1600, height: 1500 },
       args: [`--disable-extensions-except=${DIST}`, `--load-extension=${DIST}`],
     });

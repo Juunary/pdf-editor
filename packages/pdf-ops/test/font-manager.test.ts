@@ -252,6 +252,13 @@ describe('글자 단위 폴백과 glyph-missing', () => {
     expect(w).toContain('font-fallback');
     expect(w).toContain('glyph-missing');
     expect(warnings.find((x) => x.kind === 'glyph-missing')!.message).toContain('😀');
+    // 다른 언어 화면용 수치·글자(2026-10-26): message 의 글자와 같다.
+    const missing = warnings.find((x) => x.kind === 'glyph-missing')!;
+    expect(missing.chars).toContain('😀');
+    expect(missing.count).toBe([...missing.chars!].length);
+    const fallback = warnings.find((x) => x.kind === 'font-fallback')!;
+    expect(fallback.message).toContain(fallback.chars!);
+    expect(fallback.count).toBeGreaterThan(0);
     expect(segments.at(-1)!.end).toBe(runs[0]!.text.length);
   });
 });

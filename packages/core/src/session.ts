@@ -405,6 +405,7 @@ export class PdfSession {
       heap: decision.heap,
       edits: edit?.editSummary() ?? null,
       warnings: edit?.saveWarnings() ?? [],
+      warningCodes: edit?.saveWarningCodes() ?? [],
     };
   }
 

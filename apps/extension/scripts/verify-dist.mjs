@@ -4,19 +4,30 @@
 // - (M3) reflow 가 harfbuzzjs 를 import 하면 harfbuzz wasm 이 원본과 동일한 바이트로 1개 들어갔는지,
 //   harfbuzz 코드가 Worker 청크에만 있는지(reflow 연결 전에는 건너뛴다)
 // - manifest 의 M0 필수 항목(CSP, mime_types_handler + can_embed, DNR 권한, 최소 버전)
+// - 이름·설명·툴바 제목 현지화(사용자 결정 2026-10-26): `default_locale` en, `__MSG_…__` 참조, `_locales/{en,ko}` 의 값
+//   (이름 = PDF Editor, 개발 빌드는 + " (dev)", 설명 132자 이하)
 // - MuPDF 코드가 Worker 청크에만 있는지(뷰어 메인 스레드·서비스 워커에 섞이지 않음)
 //
 // `--release [out/release 디렉터리]`: Web Store 패키지(스테이징·zip) 검사(docs/m5-contract.md D6·D7).
 // 위 공통 검사를 스테이징에 적용하고, 스토어 매니페스트(Chrome 151+, DNR·호스트 권한·WAR 없음), 개발 파일 부재
-// (`diag/`·`*.map`·`sourceMappingURL`·벤치 페이지 `bench.html`·벤치 청크), 크기 상한, 버전 일치, 아이콘·LICENSE·THIRD_PARTY_NOTICES.txt·저작권 고지,
-// OFL 예약 이름, zip 과 스테이징의 일치를 확인한다.
+// (`diag/`·`*.map`·`sourceMappingURL`·벤치 페이지 `bench.html`·벤치 청크·downloads 저장 메뉴), 크기 상한, 버전 일치, 아이콘·LICENSE·THIRD_PARTY_NOTICES.txt·저작권 고지,
+// OFL 예약 이름, zip 과 스테이징의 일치(`_locales` 포함)를 확인한다.
 import { createHash } from 'node:crypto';
 import { unzipSync } from 'fflate';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { STORE_MIN_CHROME } from './manifest.mjs';
+import {
+  DEFAULT_LOCALE,
+  DEV_NAME_SUFFIX,
+  LOCALES,
+  MAX_DESCRIPTION_CHARS,
+  STORE_MIN_CHROME,
+  STORE_NAME,
+  messageKey,
+  resolveMessage,
+} from './manifest.mjs';
 import { findReservedNameUse } from '../../../scripts/release/font-names.mjs';
 import { zipDirectory } from '../../../scripts/release/zip.mjs';
 
@@ -101,9 +112,51 @@ if (files.includes(join(dist, 'manifest.json'))) {
   if (!files.includes(join(dist, m.background?.service_worker ?? ''))) {
     errors.push('background.service_worker 파일 없음');
   }
+  // 현지화(사용자 결정 2026-10-26): 이름·설명·툴바 제목은 메시지 참조, 값은 언어별 messages.json.
+  if (m.default_locale !== DEFAULT_LOCALE) {
+    errors.push(`default_locale != ${DEFAULT_LOCALE}: ${m.default_locale}`);
+  }
+  const localeDirs = existsSync(join(dist, '_locales'))
+    ? readdirSync(join(dist, '_locales')).sort()
+    : [];
+  if (JSON.stringify(localeDirs) !== JSON.stringify([...LOCALES].sort())) {
+    errors.push(`_locales 언어 ${localeDirs.join(',') || '없음'} (기대 ${LOCALES.join(',')})`);
+  }
+  const expectedName = releaseMode ? STORE_NAME : `${STORE_NAME}${DEV_NAME_SUFFIX}`;
+  const localized = [
+    ['name', m.name],
+    ['description', m.description],
+    ['action.default_title', m.action?.default_title],
+  ];
+  for (const [field, value] of localized) {
+    if (messageKey(value) === null) errors.push(`${field} 가 __MSG_…__ 참조가 아님: ${value}`);
+  }
+  for (const lang of LOCALES) {
+    const path = join(dist, '_locales', lang, 'messages.json');
+    if (!existsSync(path)) {
+      errors.push(`누락: _locales/${lang}/messages.json`);
+      continue;
+    }
+    let messages;
+    try {
+      messages = JSON.parse(readFileSync(path, 'utf8'));
+    } catch (e) {
+      errors.push(`_locales/${lang}/messages.json JSON 오류: ${e}`);
+      continue;
+    }
+    for (const [field, value] of localized) {
+      const text = resolveMessage(value, messages);
+      if (!text || text.trim() === '') errors.push(`${lang}: ${field}(${value}) 값 없음`);
+    }
+    const name = resolveMessage(m.name, messages);
+    if (name !== expectedName) errors.push(`${lang}: name != ${expectedName}: ${name}`);
+    const description = resolveMessage(m.description, messages) ?? '';
+    if ([...description].length > MAX_DESCRIPTION_CHARS) {
+      errors.push(`${lang}: description ${[...description].length}자 > ${MAX_DESCRIPTION_CHARS}자`);
+    }
+  }
   if (releaseMode) {
     // D7(a): 스토어 빌드는 mimeHandler 경로만 쓴다.
-    if (m.name !== 'PDF Editor') errors.push(`name != PDF Editor: ${m.name}`);
     if (m.minimum_chrome_version !== STORE_MIN_CHROME) {
       errors.push(`minimum_chrome_version != ${STORE_MIN_CHROME}`);
     }
@@ -191,6 +244,16 @@ if (releaseMode) {
       errors.push(`벤치 페이지 참조: ${rel(f)}`);
     }
   }
+  // 저장 메뉴의 downloads 저장(M0 진단)은 개발 빌드 전용이다(사용자 요청 2026-10-22): 요소·처리 분기·스타일 모두 없어야 한다.
+  for (const f of files.filter((f) => /\.(js|html|css)$/.test(f))) {
+    if (/save-downloads/.test(readFileSync(f, 'utf8'))) {
+      errors.push(`downloads 저장 메뉴 포함: ${rel(f)}`);
+    }
+  }
+  const viewerHtmlPath = join(dist, 'viewer.html');
+  if (existsSync(viewerHtmlPath) && !/id="save-menu"/.test(readFileSync(viewerHtmlPath, 'utf8'))) {
+    errors.push('viewer.html 에 저장 메뉴(#save-menu) 없음');
+  }
   // 벤치 전용 Worker RPC(WASM 사용 중 힙 측정, @pdf-editor/core/bench)도 스토어 빌드에 없어야 한다(D1 사용자 결정 2026-10-21).
   for (const f of files.filter((f) => f.endsWith('.js'))) {
     if (/benchProbeHeap|probeWasmHeap/.test(readFileSync(f, 'utf8'))) {
@@ -266,6 +329,11 @@ if (releaseMode) {
     const entries = unzipSync(new Uint8Array(zipBytes));
     const zipNames = Object.keys(entries).sort();
     const stagingNames = files.map(rel).sort();
+    for (const lang of LOCALES) {
+      if (!zipNames.includes(`_locales/${lang}/messages.json`)) {
+        errors.push(`zip 에 _locales/${lang}/messages.json 없음`);
+      }
+    }
     if (JSON.stringify(zipNames) !== JSON.stringify(stagingNames)) {
       errors.push('zip 항목이 스테이징과 다름');
     } else {

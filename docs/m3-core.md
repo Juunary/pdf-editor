@@ -6,7 +6,7 @@
 | --- | --- |
 | 작성일 | 2026-10-19 |
 | 범위 | `docs/m3-contract.md` 작업 S3(core): 4절 RPC, D6·D7·D9, 5.7·5.8, 6.1 V1(전반)·V8, 11절 |
-| 브랜치 | `m3-core` (기준: `m3` 브랜치 a7464f1) |
+| 브랜치 | `m3-core` (기준: `m3` 브랜치 f17036e) |
 | 환경 | 서버 Node 22.18, mupdf 1.28.1. 브라우저·Windows 는 미측정. pdf-ops·reflow 의 M3 함수는 "M3 미구현"이라 가짜 어댑터로 검증 |
 | 재현 | `pnpm --filter @pdf-editor/core test`(전체), `pnpm --filter @pdf-editor/core build` 후 `node packages/core/scripts/measure-m3.mjs region <코퍼스 폴더> 24 7`, `node --expose-gc packages/core/scripts/measure-m3.mjs journal-heap｜journal-stream｜journal-oneop ...`(스크립트 머리말 참고) |
 
@@ -47,7 +47,7 @@
 - 현상(MuPDF 1.28.1): `doc.addFont(new Font(name, bytes))` 는 폰트 바이트 다이제스트를 키로 문서의 폰트 리소스 표를 조회하고, 있으면 그 객체를 돌려준다. 저널 `abandonOperation`·`undo` 가 폰트 객체를 xref 에서 지워도 표 항목은 남는다. 같은 바이트로 다시 넣으면 같은 객체 번호(관측: 7 0 R)가 돌아오지만 객체는 없다.
 - 증상: `ref.get('Type')` = null, `ref.put(...)` = `not a dict (null)`, 그 참조를 리소스에 넣은 채 저장하면 `TypeError`. 같은 이름·같은 `mupdf.Font` 객체를 쓰든 이름만 바꾸든 동일. 폰트가 이미 문서에 있고 유효하면 같은 객체를 정상 반환한다.
 - 원래 계약 D4 의 "assign 때마다 객체가 있는지 확인하고 없으면 현재 작업 안에서 다시 넣는다"만으로는 V1 두 시나리오(폴백 초안 취소 뒤 새 편집, 폴백 편집 undo 뒤 새 편집)가 실패한다.
-- **계약 수정 1(메인 세션, m3 커밋 2cc9982)**: 폴백 폰트를 저널 작업 안에서 넣지 않는다. core 가 첫 `beginParagraphEdit` 에서 저널을 켜기 직전(작업 밖)에 `embedFont` 를 한 번 하고, 그 객체를 `FallbackFontSource.ref()` 로 FontManager 에 넘긴다. 저널 밖 객체라 취소·undo 로 사라지지 않고, 쓰지 않았으면 저장의 `garbage=yes` 가 뺀다. (core 가 먼저 쓰던 바이트 덧붙이기 우회는 취소마다 폰트 전체(약 4 MB)를 새로 넣게 되어 쓰지 않는다. 제거했다.)
+- **계약 수정 1(메인 세션, m3 커밋 cf07d24)**: 폴백 폰트를 저널 작업 안에서 넣지 않는다. core 가 첫 `beginParagraphEdit` 에서 저널을 켜기 직전(작업 밖)에 `embedFont` 를 한 번 하고, 그 객체를 `FallbackFontSource.ref()` 로 FontManager 에 넘긴다. 저널 밖 객체라 취소·undo 로 사라지지 않고, 쓰지 않았으면 저장의 `garbage=yes` 가 뺀다. (core 가 먼저 쓰던 바이트 덧붙이기 우회는 취소마다 폰트 전체(약 4 MB)를 새로 넣게 되어 쓰지 않는다. 제거했다.)
 - 구현: `EditEngine.#prepareEdit` → `#prepareDocument`(Info 보장 + `embedFont(doc, 'NotoSansKR', bytes)`, 폰트 사전에 `/PdfEditorFallback true` 표지) → `#startJournal`. 판정 RPC 는 저널·폴백 폰트 없이 돈다(`ref()` = null). `loadFallbackFont` 가 없으면 임베딩하지 않고 `ref()` 는 null 로 남는다.
 - 시험으로 고정: 판정만으로는 폴백 폰트·Info 가 생기지 않고 첫 시작에서 한 번 생긴다, 취소·undo·redo 뒤에도 같은 객체 번호, 저장 파일의 폴백 폰트는 쓴 경우에만 1개(쓰지 않았으면 0개), MuPDF 의 끊긴 참조 동작은 `journal-v1` 이 카나리아로 고정한다. MuPDF 를 올릴 때 이 시험이 깨지면 동작이 바뀐 것이다.
 - 비용: 편집을 시작한 문서는 폴백 폰트 4 MB 가 작업 문서 힙에 들어간다(셰이핑용 `Font` 객체 별도). 판정만 한 문서는 해당 없음.
@@ -259,7 +259,7 @@ save:     [journalOn] beginOperation('save')
 
 ## 7. 독립 검토 반영 (2026-10-19, 읽기 전용 Opus 검토 1회)
 
-검토 기준 `a7464f1..c68efeb`(계약 수정 1 이전)(결과: BLOCKER 0, HIGH 1, MEDIUM 2, LOW 6, 해석 차이 6). 조치는 모두 `m3-core` 에 반영했다.
+검토 기준 `f17036e..6afc640`(계약 수정 1 이전)(결과: BLOCKER 0, HIGH 1, MEDIUM 2, LOW 6, 해석 차이 6). 조치는 모두 `m3-core` 에 반영했다.
 
 | 검토 항목 | 조치 |
 | --- | --- |
