@@ -28,6 +28,8 @@
 
 최소 1장은 3번 또는 5번으로 합니다(핵심 기능).
 
+자동 촬영(한국어·영어 각 7장, 1280×800): `apps/extension` 에서 `PDF_EDITOR_STORE_SHOTS=1 pnpm exec playwright test store-screenshots --project ko`. 코퍼스 PDF 가 필요합니다(`STORE_SHOTS_CORPUS_DIR`). 결과는 `apps/extension/out/store-screenshots/{ko,en}/` 에 저장되며 저장소에 넣지 않습니다.
+
 ## 4. 프로모션 타일 440×280
 
 - 구성: 아이콘 + 이름 + 한 줄("Edit PDFs in Chrome"). 상표·타사 로고·실제 문서 내용 없음.
